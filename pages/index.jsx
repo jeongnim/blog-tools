@@ -950,8 +950,12 @@ function KeywordTab(){
         return [];
       });
 
-      // ② AI SEO 분석 (실제 수치 제외, 전략·추천만)
-      const aiPromise = callClaude([{role:"user",content:`"${kw}" 키워드 네이버 블로그 SEO 분석. 순수 JSON만 출력.
+      // ② 네이버 API 결과 기다리기
+      await naverPromise;
+
+      // ③ AI SEO 분석 (API 키 있을 때만)
+      try {
+        const raw = await callClaude([{role:"user",content:`"${kw}" 키워드 네이버 블로그 SEO 분석. 순수 JSON만 출력.
 {
   "competitionLevel": "매우낮음|낮음|보통|높음|매우높음",
   "competitionScore": 0~100,
@@ -964,22 +968,28 @@ function KeywordTab(){
   "titleSuggestions": ["제목1","제목2","제목3"],
   "contentTips": "핵심 콘텐츠 전략 2~3줄",
   "difficultyComment": "상위노출 핵심 조언 한 줄"
-}`}],"Respond ONLY with valid JSON.")
-        .then(raw=>{
-          const cleaned=raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
-          return JSON.parse(cleaned);
+}`}],"Respond ONLY with valid JSON.");
+        const cleaned = raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
+        const aiResult = JSON.parse(cleaned);
+
+        // 연관 키워드 검색량 조회
+        if(aiResult?.relatedKeywords?.length){
+          fetchNaverKeywordStats(aiResult.relatedKeywords.slice(0,6)).then(relList=>{
+            setData(prev=>prev?{...prev,_relatedStats:relList}:null);
+          }).catch(()=>{});
+        }
+        setData(aiResult);
+      } catch(aiErr) {
+        // AI 실패해도 네이버 검색량은 표시
+        setData({
+          competitionLevel:"보통", competitionScore:50,
+          trend:"유지", trendReason:"AI 분석 미연결 상태",
+          peakSeason:"", difficultyComment:"AI API 키 연결 후 상세 분석 가능",
+          relatedKeywords:[], longtailKeywords:[],
+          smartBlocks:["VIEW","블로그"], titleSuggestions:[],
+          contentTips:"AI API 키를 연결하면 상세 전략을 볼 수 있어요."
         });
-
-      const [naverList, aiResult] = await Promise.all([naverPromise, aiPromise]);
-
-      // ③ AI 연관 키워드도 네이버 API로 검색량 조회
-      if(aiResult?.relatedKeywords?.length){
-        fetchNaverKeywordStats(aiResult.relatedKeywords.slice(0,6)).then(relList=>{
-          setData(prev=>prev?{...prev,_relatedStats:relList}:null);
-        }).catch(()=>{});
       }
-
-      setData(aiResult);
     }catch(e){
       setError("분석 오류: "+e.message);
     }
