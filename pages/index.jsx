@@ -50,18 +50,21 @@ function fmtSize(bytes){
   return (bytes/1024/1024).toFixed(2)+"MB";
 }
 async function callClaude(messages,system,maxTokens=2000){
-  const body={model:"claude-sonnet-4-20250514",max_tokens:maxTokens,messages};
-  if(system) body.system=system;
-  const res=await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",
-    headers:{
-      "Content-Type":"application/json",
-      "anthropic-dangerous-direct-browser-access":"true"
-    },
-    body:JSON.stringify(body)
-  });
-  const data=await res.json();
-  return data.content?.[0]?.text||"";
+  // Claude API 키 없으면 빈 문자열 반환 (AI 기능 비활성)
+  try {
+    const body={model:"claude-sonnet-4-20250514",max_tokens:maxTokens,messages};
+    if(system) body.system=system;
+    const res=await fetch("/api/claude",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body)
+    });
+    if(!res.ok) return "";
+    const data=await res.json();
+    return data.content?.[0]?.text||"";
+  } catch(e) {
+    return "";
+  }
 }
 
 const TABS=[
