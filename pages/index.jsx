@@ -55,6 +55,8 @@ async function callClaude(messages,system,maxTokens=2000){
   const res=await fetch("/api/claude",{
     method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   const data=await res.json();
+  if(data._error) throw new Error(data._error);
+  if(!data.content?.length) throw new Error("응답이 비어있습니다. Vercel 환경변수에 ANTHROPIC_API_KEY가 설정되어 있는지 확인하세요.");
   return data.content?.[0]?.text||"";
 }
 
@@ -773,82 +775,73 @@ function KeywordTab(){
 
   const STEPS=["키워드 기본 지표 수집 중...","월간 검색량·트렌드 분석 중...","블로그 포화도·경쟁 분석 중...","스마트블록·연관키워드 추출 중...","제목 추천·콘텐츠 전략 생성 중..."];
 
+  const parseJSON=raw=>{
+    if(!raw||raw.trim()==="") throw new Error("AI 응답이 비어있음 (API 키 미설정 또는 타임아웃)");
+    const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
+    if(s===-1||e===-1) throw new Error("JSON 없음. 응답: "+raw.slice(0,120));
+    return JSON.parse(raw.slice(s,e+1));
+  };
+
   const analyze=async()=>{
     const kw=inputVal.trim();
     if(!kw) return;
     setLoading(true); setError(""); setData(null); setKeyword(kw); setLoadStep(0);
-
     const timer=setInterval(()=>setLoadStep(p=>p<STEPS.length-1?p+1:p),1800);
 
     try{
-      // ── Step 1: 네이버 광고 API로 실제 검색량 데이터 가져오기 ──
+      // ── STEP 1: 네이버 광고 API 실제 검색량 ──
       let naverData=null;
       try{
-        const naverRes=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(kw)}`);
-        if(naverRes.ok){
-          const naverJson=await naverRes.json();
-          const item=(naverJson.keywordList||[])[0];
+        const nr=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(kw)}`);
+        if(nr.ok){
+          const nj=await nr.json();
+          const item=(nj.keywordList||[])[0];
           if(item) naverData={
             monthlySearch:(item.monthlyPcQcCnt||0)+(item.monthlyMobileQcCnt||0),
             monthlyPc:item.monthlyPcQcCnt||0,
             monthlyMobile:item.monthlyMobileQcCnt||0,
-            competitionScore:item.compIdx==="높음"?80:item.compIdx==="중간"?50:20,
+            competitionScore:item.compIdx==="높음"?80:item.compIdx==="중간"?50:25,
             competitionLevel:item.compIdx==="높음"?"높음":item.compIdx==="중간"?"보통":"낮음",
           };
         }
-      }catch(e){ /* 네이버 API 실패 시 AI 추정으로 fallback */ }
+      }catch(e){}
 
-      // ── Step 2: AI로 나머지 지표 분석 ──
-      const naverHint=naverData
-        ? `
-실제 네이버 데이터: 월간검색량=${naverData.monthlySearch}회(PC:${naverData.monthlyPc}+모바일:${naverData.monthlyMobile}), 경쟁강도=${naverData.competitionLevel}. 이 수치를 그대로 사용해.`
-        : "";
+      const sys="Korean Naver blog SEO expert. Output ONLY valid JSON. No markdown, no explanation, no code blocks.";
+      const naverHint=naverData?`월간검색량=${naverData.monthlySearch}회(PC ${naverData.monthlyPc}+모바일 ${naverData.monthlyMobile}), 경쟁강도=${naverData.competitionLevel}. 이 수치를 그대로 JSON에 넣어.`:"";
 
-      const prompt=`네이버 블로그 SEO 관점에서 "${kw}" 키워드를 분석해줘.${naverHint}
-반드시 아래 JSON 형식으로만 출력해. 마크다운, 설명, 코드블록 없이 순수 JSON만.
-{
-  "monthlySearch": 숫자,
-  "monthlyBlogPosts": 숫자,
-  "totalBlogPosts": 숫자,
-  "saturation": 숫자(블로그포화도=월발행량/월검색량*100 소수점1자리),
-  "competitionLevel": "낮음|보통|높음|매우낮음|매우높음",
-  "competitionScore": 0~100,
-  "avgTopDays": 숫자,
-  "avgChars": 숫자,
-  "avgImages": 숫자,
-  "dailyVisitors": 숫자,
-  "trend": "상승|하락|유지",
-  "trendRate": 숫자,
-  "peakMonth": 1~12,
-  "monthlyData": [12개 숫자 0~100 배열],
-  "smartBlocks": ["VIEW","인플루언서","블로그","뉴스","지식iN","쇼핑","동영상","이미지" 중 해당],
-  "smartBlockRanks": [{"block":"블록명","rank":숫자}],
-  "relatedKeywords": [{"keyword":"키워드","searchVolume":숫자,"competition":"낮음|보통|높음","saturation":숫자}],
-  "longtailKeywords": [{"keyword":"키워드","searchVolume":숫자,"difficulty":"쉬움|보통|어려움"}],
-  "titleSuggestions": ["제목1","제목2","제목3"],
-  "contentStructure": {"recommendChars":숫자,"recommendImages":숫자,"recommendVideos":0~2,"sections":["섹션1","섹션2","섹션3","섹션4","섹션5"]},
-  "targetAudience": "타겟 독자층 한 줄",
-  "bestPostingTime": "최적 발행 시간대",
-  "contentTips": "핵심 작성 팁 2~3줄"
-}`;
+      // ── STEP 2: 기본 지표 (첫 번째 호출 — 작고 빠르게) ──
+      const p1=`"${kw}" 네이버 블로그 키워드 분석. ${naverHint}
+순수 JSON만 출력:
+{"monthlySearch":숫자,"monthlyBlogPosts":숫자,"totalBlogPosts":숫자,"saturation":소수점1자리숫자,"competitionLevel":"낮음|보통|높음","competitionScore":숫자0~100,"avgTopDays":숫자,"avgChars":숫자,"avgImages":숫자,"dailyVisitors":숫자,"trend":"상승|하락|유지","trendRate":숫자,"peakMonth":숫자1~12,"monthlyData":[1월~12월상대검색량0~100숫자12개],"smartBlocks":["VIEW","인플루언서","블로그","뉴스","지식iN","쇼핑","동영상" 중해당],"targetAudience":"한줄","bestPostingTime":"시간대"}`;
 
-      const raw=await callClaude([{role:"user",content:prompt}],
-        "You are a Korean Naver blog SEO expert. Output ONLY valid JSON, no markdown, no explanation.",3000);
+      const raw1=await callClaude([{role:"user",content:p1}],sys,1200);
+      const base=parseJSON(raw1);
+      if(naverData){base.monthlySearch=naverData.monthlySearch;base.competitionLevel=naverData.competitionLevel;base.competitionScore=naverData.competitionScore;base._naverReal=true;}
+      setData({...base,relatedKeywords:[],longtailKeywords:[],titleSuggestions:[],contentTips:"분석 중..."});
+      setLoadStep(3);
+
+      // ── STEP 3: 연관·롱테일 키워드 (두 번째 호출) ──
+      const p2=`"${kw}" 관련 네이버 블로그 키워드 목록. 순수 JSON만:
+{"relatedKeywords":[{"keyword":"연관키워드","searchVolume":숫자,"competition":"낮음|보통|높음","saturation":소수}],"longtailKeywords":[{"keyword":"롱테일","searchVolume":숫자,"difficulty":"쉬움|보통|어려움"}]}
+연관키워드 8개, 롱테일 6개`;
+
+      const raw2=await callClaude([{role:"user",content:p2}],sys,1200);
+      const kws=parseJSON(raw2);
+      setData(prev=>({...prev,...kws}));
+      setLoadStep(4);
+
+      // ── STEP 4: 제목·콘텐츠 전략 (세 번째 호출) ──
+      const p3=`"${kw}" 네이버 블로그 포스팅 전략. 순수 JSON만:
+{"titleSuggestions":["SEO최적화제목1","제목2","제목3"],"contentStructure":{"recommendChars":숫자,"recommendImages":숫자,"sections":["소제목1","소제목2","소제목3","소제목4","소제목5"]},"contentTips":"작성팁2~3줄"}`;
+
+      const raw3=await callClaude([{role:"user",content:p3}],sys,1000);
+      const tips=parseJSON(raw3);
       clearInterval(timer);
-      const s=raw.indexOf("{"), e=raw.lastIndexOf("}");
-      if(s===-1||e===-1) throw new Error("JSON 형식 오류");
-      const parsed=JSON.parse(raw.slice(s,e+1));
-      // 실제 네이버 데이터가 있으면 덮어씌우기
-      if(naverData){
-        parsed.monthlySearch=naverData.monthlySearch;
-        parsed.competitionLevel=naverData.competitionLevel;
-        parsed.competitionScore=naverData.competitionScore;
-        parsed._naverReal=true; // 실제 데이터 표시용
-      }
-      setData(parsed);
+      setData(prev=>({...prev,...tips}));
+
     }catch(err){
       clearInterval(timer);
-      setError("분석 중 오류가 발생했습니다. 다시 시도해주세요. ("+err.message+")");
+      setError("⚠️ 오류: "+err.message);
     }
     setLoading(false);
   };
