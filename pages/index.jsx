@@ -50,14 +50,27 @@ function fmtSize(bytes){
   return (bytes/1024/1024).toFixed(2)+"MB";
 }
 async function callClaude(messages,system,maxTokens=2000){
-  const body={model:"claude-sonnet-4-20250514",max_tokens:maxTokens,messages};
-  if(system) body.system=system;
+  // Gemini API 호출 (Claude API와 동일한 인터페이스)
+  const contents=messages.map(m=>({
+    role:m.role==="assistant"?"model":"user",
+    parts:typeof m.content==="string"
+      ?[{text:m.content}]
+      :m.content.map(c=>{
+          if(c.type==="text") return {text:c.text};
+          if(c.type==="image"&&c.source?.data) return {inlineData:{mimeType:c.source.media_type||"image/jpeg",data:c.source.data}};
+          return {text:""};
+        })
+  }));
+  const body={
+    contents,
+    systemInstruction:system?{parts:[{text:system}]}:undefined,
+    generationConfig:{maxOutputTokens:maxTokens,temperature:0.7},
+  };
   const res=await fetch("/api/claude",{
     method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   const data=await res.json();
-  if(data._error) throw new Error(data._error);
-  if(!data.content?.length) throw new Error("응답이 비어있습니다. Vercel 환경변수에 ANTHROPIC_API_KEY가 설정되어 있는지 확인하세요.");
-  return data.content?.[0]?.text||"";
+  if(data._apiKeyMissing) throw new Error("API_KEY_MISSING");
+  return data.text||"";
 }
 
 const TABS=[
@@ -776,7 +789,7 @@ function KeywordTab(){
   const STEPS=["키워드 기본 지표 수집 중...","월간 검색량·트렌드 분석 중...","블로그 포화도·경쟁 분석 중...","스마트블록·연관키워드 추출 중...","제목 추천·콘텐츠 전략 생성 중..."];
 
   const parseJSON=raw=>{
-    if(!raw||raw.trim()==="") throw new Error("AI 응답이 비어있음 (API 키 미설정 또는 타임아웃)");
+    if(raw==="API_KEY_MISSING"||!raw||raw.trim()==="") throw new Error("API_KEY_MISSING");
     const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
     if(s===-1||e===-1) throw new Error("JSON 없음. 응답: "+raw.slice(0,120));
     return JSON.parse(raw.slice(s,e+1));
@@ -880,7 +893,19 @@ function KeywordTab(){
     </div>}
 
     {/* 오류 */}
-    {error&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"10px",padding:"14px 16px",color:"#ff7b72",fontSize:"13px"}}>{error}</div>}
+    {error&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"10px",padding:"14px 16px",fontSize:"13px"}}>
+      {error.includes("API_KEY_MISSING")
+        ? <div>
+            <div style={{color:"#ff7b72",fontWeight:700,marginBottom:"8px"}}>⚠️ ANTHROPIC_API_KEY가 설정되지 않았습니다</div>
+            <div style={{color:"#c9d1d9",lineHeight:"1.8"}}>
+              Vercel → 프로젝트 → Settings → Environment Variables 에서<br/>
+              <code style={{background:"#161b22",padding:"2px 8px",borderRadius:"4px",color:"#ffa657"}}>ANTHROPIC_API_KEY</code> 를 추가하고 Redeploy 해주세요.<br/>
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" style={{color:"#58a6ff"}}>→ API 키 발급받기 (console.anthropic.com)</a>
+            </div>
+          </div>
+        : <div style={{color:"#ff7b72"}}>{error}</div>
+      }
+    </div>}
 
     {/* 결과 */}
     {data&&!loading&&<div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
