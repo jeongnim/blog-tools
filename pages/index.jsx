@@ -1286,7 +1286,7 @@ JSON:
         🔗 네이버 블로그 RSS에서 게시글 URL 직접 확인:<br/>
         <a href={`https://rss.blog.naver.com/${blogId.trim()}`} target="_blank" rel="noreferrer"
           style={{color:"#58a6ff"}}>rss.blog.naver.com/{blogId.trim()}</a>
-        <span style={{color:"#484f58",marginLeft:"6px"}>← 열어서 게시글 URL 복사 후 붙여넣기</span>
+        <span style={{color:"#484f58",marginLeft:"6px"}}>{"← 열어서 게시글 URL 복사 후 붙여넣기"}</span>
       </div>}
     </div>
 
@@ -1425,7 +1425,7 @@ JSON:
       {/* 페이지네이션 */}
       {totalPages>1&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"6px",paddingTop:"4px"}}>
         <button onClick={()=>goPage(page-1)} disabled={page<=1}
-          style={{padding:"7px 14px",background:page<=1?"#0d1117":"#161b22",color:page<=1?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"7px",cursor:page<=1?"not-allowed":"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px"}}>← 이전</button>
+          style={{padding:"7px 14px",background:page<=1?"#0d1117":"#161b22",color:page<=1?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"7px",cursor:page<=1?"not-allowed":"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px"}}>{"← 이전"}</button>
         {Array.from({length:totalPages},(_,i)=>i+1).map(pg=>(
           <button key={pg} onClick={()=>goPage(pg)}
             style={{padding:"7px 12px",background:pg===page?"#1f6feb":"#161b22",color:pg===page?"#fff":"#8b949e",border:`1px solid ${pg===page?"#1f6feb":"#30363d"}`,borderRadius:"7px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:pg===page?700:400,minWidth:"36px"}}>
