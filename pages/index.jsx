@@ -627,14 +627,55 @@ function OcrTab(){
     const onPaste=e=>{const files=[...e.clipboardData.items].filter(i=>i.type.startsWith("image/")).map(i=>i.getAsFile()).filter(Boolean);if(files.length) addFiles(files);};
     window.addEventListener("paste",onPaste); return()=>window.removeEventListener("paste",onPaste);
   },[addFiles]);
+  // 이미지를 세로로 잘라서 base64 배열 반환 (긴 이미지 대응)
+  const sliceImageToChunks=async(file, chunkHeight=1800)=>{
+    return new Promise((resolve)=>{
+      const img=new Image();
+      img.onload=()=>{
+        const {width,height}=img;
+        if(height<=chunkHeight){
+          // 짧은 이미지: 그냥 바로 base64
+          const canvas=document.createElement("canvas");
+          canvas.width=width; canvas.height=height;
+          canvas.getContext("2d").drawImage(img,0,0);
+          resolve([canvas.toDataURL("image/jpeg",0.92).split(",")[1]]);
+          return;
+        }
+        // 긴 이미지: chunkHeight씩 잘라서 여러 조각으로
+        const chunks=[];
+        for(let y=0;y<height;y+=chunkHeight){
+          const h=Math.min(chunkHeight, height-y);
+          const canvas=document.createElement("canvas");
+          canvas.width=width; canvas.height=h;
+          canvas.getContext("2d").drawImage(img,0,y,width,h,0,0,width,h);
+          chunks.push(canvas.toDataURL("image/jpeg",0.92).split(",")[1]);
+        }
+        resolve(chunks);
+      };
+      img.src=URL.createObjectURL(file);
+    });
+  };
+
   const extractText=async(img)=>{
-    setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:true,result:""}:i));
+    setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:true,result:"",progress:""}:i));
     try{
-      const base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(img.file);});
-      const prompt=mode==="rich"?"이 이미지에서 텍스트를 추출해주세요. 표, 목록, 제목 등 서식 구조를 마크다운 형태로 유지해주세요.":"이 이미지에서 텍스트만 순수하게 추출해주세요. 서식 없이 텍스트만 출력하세요.";
-      const result=await callClaude([{role:"user",content:[{type:"image",source:{type:"base64",media_type:img.file.type||"image/jpeg",data:base64}},{type:"text",text:prompt}]}]);
-      setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:false,result}:i));
-    }catch(e){setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:false,result:"⚠️ 오류. 다시 시도해주세요."}:i));}
+      const chunks=await sliceImageToChunks(img.file, 1800);
+      const isRich=mode==="rich";
+      const results=[];
+      for(let ci=0;ci<chunks.length;ci++){
+        setImages(prev=>prev.map(i=>i.id===img.id?{...i,progress:chunks.length>1?`조각 ${ci+1}/${chunks.length} 처리중...`:"분석중..."}:i));
+        const prompt=isRich
+          ?"이 이미지에서 텍스트를 추출해주세요. 표, 목록, 제목 등 서식 구조를 마크다운 형태로 유지해주세요."
+          :"이 이미지에서 텍스트만 순수하게 추출해주세요. 서식 없이 텍스트만 출력하세요.";
+        const part=await callClaude([{role:"user",content:[
+          {type:"image",source:{type:"base64",media_type:"image/jpeg",data:chunks[ci]}},
+          {type:"text",text:prompt}
+        ]}]);
+        results.push(part);
+      }
+      const result=results.join("\n");
+      setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:false,result,progress:""}:i));
+    }catch(e){setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:false,result:"⚠️ 오류. 다시 시도해주세요.",progress:""}:i));}
   };
   const extractAll=()=>images.filter(i=>!i.result&&!i.loading).forEach(i=>extractText(i));
   const totalChars=images.reduce((s,i)=>s+(i.result?.length||0),0);
@@ -682,7 +723,8 @@ function OcrTab(){
             </div>
             <div style={{padding:"14px",display:"flex",flexDirection:"column",gap:"8px"}}>
               {img.loading?<div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-                {["텍스트 인식중...","이미지 분석중...","결과 생성중..."].map((msg,i)=><div key={i} style={{color:"#8b949e",fontSize:"13px",animation:`pulse 1.5s ease ${i*0.3}s infinite`}}>⏳ {msg}</div>)}
+                <div style={{color:"#58a6ff",fontSize:"13px",fontWeight:600,animation:"pulse 1.5s ease infinite"}}>⏳ {img.progress||"이미지 분석중..."}</div>
+                <div style={{color:"#484f58",fontSize:"12px"}}>긴 이미지는 조각으로 나눠 처리합니다</div>
                 <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
               </div>:img.result?<>
                 <div style={{display:"flex",justifyContent:"flex-end",gap:"6px"}}>
