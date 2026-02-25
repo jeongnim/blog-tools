@@ -1284,21 +1284,8 @@ function MissingTab(){
 
   // ── 네이버 블로그탭 순위 조회 ──
   const getNaverRank=async(kw,postNo)=>{
-    try{
-      const url=`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw)}&display=30`;
-      const proxy=`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-      const ctrl=new AbortController();
-      const tid=setTimeout(()=>ctrl.abort(),10000);
-      const res=await fetch(proxy,{signal:ctrl.signal});
-      clearTimeout(tid);
-      if(!res.ok)return null;
-      const html=(await res.json()).contents||"";
-      const found=[];let mm;
-      const pat=/blog\.naver\.com\/[^"'\s<>\/]+\/(\d+)|logNo=(\d+)/g;
-      while((mm=pat.exec(html))!==null){const n=mm[1]||mm[2];if(n&&!found.includes(n))found.push(n);}
-      const idx=found.indexOf(postNo);
-      return idx===-1?null:idx+1;
-    }catch(e){return null;}
+    // 외부 프록시 크롤링은 불안정하므로 null 반환 (직접 확인 링크 제공)
+    return null;
   };
 
   // ── AI 분석 ──
@@ -1331,12 +1318,7 @@ URL: ${post.link||"없음"}
       const ai=JSON.parse(raw.slice(s,e+1));
 
       const kws=ai.keywords||[];
-      const kwData=[];
-      for(let i=0;i<kws.length;i++){
-        const realRank=await getNaverRank(kws[i],post.postNo);
-        kwData.push({rank:i+1,keyword:kws[i],realRank});
-        if(i<kws.length-1)await new Promise(r=>setTimeout(r,400));
-      }
+      const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null}));
       setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kwData}}));
     }catch(e){
       setAnalysis(prev=>({...prev,[post.postNo]:{error:true}}));
@@ -1760,7 +1742,7 @@ function WriteTab(){
 2. 난 ${mainKw} 키워드에 가장 적합한 분야의 전문 블로거야. 해당 분야의 전문성을 살려서 글의 톤을 사실성, 일관성을 바탕으로 공감성을 높여서 작성해. 글의 톤은 10번의 내용을 참고해.
 3. 블로그 글의 주요 목표는 ${goal.trim()}에 대한 정보를 전달하는 것.
 4. Temperature 0.7, Top P 0.4 기준으로 글을 써줘.
-5. 2800~3500자로 글을 작성할거야.
+5. 각 버전은 1800~2200자로 작성해줘.
 6. 5번까지 조건으로 나온 글을 블로그 SEO에 맞춰 내용을 확장 후, 7번부터 진행해.
 7. 메인 키워드는 최대 19회까지 중복 사용 가능해. 다른 단어는 메인키워드 보다 많이 중복되면 안되.
 8. 모든 형태소(키워드)는 메인 키워드와 서브 키워드 보다 많이 사용하면 안되.
@@ -1783,7 +1765,7 @@ function WriteTab(){
 
     try{
       const raw=await callClaude([{role:"user",content:prompt}],
-        "You are a professional Korean blogger and SEO expert who adapts your expertise to match any topic or keyword. Output ONLY valid JSON with no markdown fences.", 16000);
+        "You are a professional Korean blogger and SEO expert who adapts your expertise to match any topic or keyword. Output ONLY valid JSON with no markdown fences.", 8000);
       // JSON 추출: 첫 { 부터 마지막 } 까지만 자름
       const start=raw.indexOf("{");
       const end=raw.lastIndexOf("}");
