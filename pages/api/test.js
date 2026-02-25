@@ -5,42 +5,45 @@ export default async function handler(req, res) {
   const SECRET_KEY  = process.env.NAVER_SECRET_KEY;
   const CUSTOMER_ID = process.env.NAVER_CUSTOMER_ID;
 
-  if (!API_KEY) return res.status(200).json({ error: "NAVER_API_KEY 없음" });
+  const timestamp = Date.now().toString();
+  const method = "GET";
+  const path = "/keywordstool";
 
-  // 여러 키워드로 테스트
-  const tests = ["맛집", "kt올레", "KT올레", "다이어트"];
-  const results = {};
+  // 네이버 공식 서명: hmac-sha256(secret, timestamp + "." + method + "." + uri)
+  // secret key는 base64 디코딩 없이 그냥 문자열로 사용
+  const message = `${timestamp}.${method}.${path}`;
+  
+  // 방법1: secret 그냥 문자열
+  const sig1 = crypto.createHmac("sha256", SECRET_KEY).update(message).digest("base64");
+  
+  // 방법2: secret을 Buffer로
+  const sig2 = crypto.createHmac("sha256", Buffer.from(SECRET_KEY, "utf8")).update(message).digest("base64");
+  
+  // 방법3: message를 Buffer로
+  const sig3 = crypto.createHmac("sha256", SECRET_KEY).update(Buffer.from(message, "utf8")).digest("base64");
 
-  for (const keyword of tests) {
-    const timestamp = Date.now().toString();
-    const message = `${timestamp}.GET./keywordstool`;
-    const signature = crypto.createHmac("sha256", SECRET_KEY).update(message).digest("base64");
-    const encoded = encodeURIComponent(keyword);
-    const apiUrl = `https://api.naver.com/keywordstool?hintKeywords=${encoded}&showDetail=1`;
+  // 각 방법으로 실제 API 호출 테스트
+  const test = async (signature, label) => {
+    const url = `https://api.naver.com/keywordstool?hintKeywords=${encodeURIComponent("맛집")}&showDetail=1`;
+    const r = await fetch(url, { headers: {
+      "X-Timestamp": timestamp, "X-API-KEY": API_KEY,
+      "X-Customer": CUSTOMER_ID, "X-Signature": signature,
+      "Content-Type": "application/json"
+    }});
+    const data = await r.json();
+    return { label, status: r.status, count: data.keywordList?.length, error: data.title };
+  };
 
-    try {
-      const response = await fetch(apiUrl, {
-        headers: {
-          "X-Timestamp": timestamp,
-          "X-API-KEY": API_KEY,
-          "X-Customer": CUSTOMER_ID,
-          "X-Signature": signature,
-          "Content-Type": "application/json",
-        },
-      });
-      const raw = await response.text();
-      let data;
-      try { data = JSON.parse(raw); } catch(e) { data = { parseError: raw.slice(0,200) }; }
-      results[keyword] = {
-        status: response.status,
-        count: data.keywordList?.length ?? "N/A",
-        first: data.keywordList?.[0] ?? data.message ?? data.parseError ?? data
-      };
-    } catch(e) {
-      results[keyword] = { error: e.message };
-    }
-    await new Promise(r => setTimeout(r, 200));
-  }
+  const results = await Promise.all([
+    test(sig1, "방법1-string"),
+    test(sig2, "방법2-buffer"),
+    test(sig3, "방법3-msgBuffer"),
+  ]);
 
-  res.status(200).json(results);
+  res.status(200).json({
+    message,
+    secretKeyLength: SECRET_KEY?.length,
+    secretKeyPrefix: SECRET_KEY?.slice(0,10)+"...",
+    results
+  });
 }
