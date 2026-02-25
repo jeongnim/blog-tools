@@ -921,7 +921,6 @@ function ConvertTab(){
 }
 
 // ─── TAB 5: 키워드 조회 ──────────────────────────────────────────────────
-// Next.js API Route를 통해 네이버 광고 API 실제 데이터 조회 (서버사이드)
 async function fetchNaverKeywordStats(keywords) {
   const res = await fetch(`/api/keyword-stats?keywords=${keywords.map(encodeURIComponent).join(",")}`);
   if (!res.ok) throw new Error(`API 오류 ${res.status}`);
@@ -930,42 +929,40 @@ async function fetchNaverKeywordStats(keywords) {
   return data.keywordList || [];
 }
 
-function KeywordTab({goWrite}){
-  const [inputVal,setInputVal]=useState("");
-  const [keyword,setKeyword]=useState("");
-  const [data,setData]=useState(null);       // AI 분석 결과
-  const [kwStats,setKwStats]=useState(null); // 네이버 API 실제 수치
+function KeywordTab({goWrite, kwResult, setKwResult}){
+  const [inputVal,setInputVal]=useState(kwResult?._inputVal||"");
   const [loading,setLoading]=useState(false);
-  const [apiStatus,setApiStatus]=useState(""); // "ok" | "fail" | ""
   const [error,setError]=useState("");
+
+  const result = kwResult; // 단일 객체: naver + AI 모두 포함
+  const fmtNum = n => n===null||n===undefined ? "-" : n<=10 ? "10 이하" : Number(n).toLocaleString();
 
   const analyze=async()=>{
     const kw=inputVal.trim(); if(!kw) return;
-    setLoading(true);setError("");setData(null);setKwStats(null);setKeyword(kw);setApiStatus("");
+    setLoading(true); setError(""); setKwResult(null);
     try{
-      // ① 네이버 광고 API 실제 검색량 (병렬로 먼저 시작)
-      const naverPromise = fetchNaverKeywordStats([kw]).then(list=>{
-        setKwStats(list);
-        setApiStatus("ok");
-        return list;
-      }).catch(e=>{
-        setApiStatus("fail");
-        return [];
-      });
+      // ① 네이버 광고 API (메인 키워드)
+      let naverMain = [];
+      let naverOk = false;
+      try{
+        naverMain = await fetchNaverKeywordStats([kw]);
+        naverOk = true;
+      }catch(e){ naverOk = false; }
 
-      // ② 네이버 API 결과 기다리기
-      await naverPromise;
+      // naverMain에서 메인 키워드 수치 바로 추출 (대소문자 무시)
+      const mainStat = naverMain.find(i=>i.relKeyword?.toLowerCase()===kw.toLowerCase()) || naverMain[0] || null;
+      const pcMonthly   = mainStat?.monthlyPcQcCnt ?? null;
+      const mobMonthly  = mainStat?.monthlyMobileQcCnt ?? null;
+      const totalMonthly = (pcMonthly!==null&&mobMonthly!==null) ? pcMonthly+mobMonthly : null;
 
-      // ③ AI SEO 분석 (API 키 있을 때만)
-      try {
-        const raw = await callClaude([{role:"user",content:`"${kw}" 키워드 네이버 블로그 SEO 분석. 순수 JSON만 출력.
+      // ② AI 분석 (블로그 발행량 포함)
+      const raw = await callClaude([{role:"user",content:`"${kw}" 키워드 네이버 블로그 SEO 분석. 순수 JSON만 출력.
 {
-  "competitionLevel": "매우낮음|낮음|보통|높음|매우높음",
-  "competitionScore": 0~100,
+  "monthlyBlogPosts": 이 키워드로 한달에 발행되는 네이버 블로그 포스팅 추정 수(숫자만),
   "trend": "상승|하락|유지",
-  "trendReason": "최근 검색 트렌드 이유를 구체적으로 한 줄 (예: 최신 모델 출시, 계절적 요인 등)",
-  "peakSeason": "성수기 및 검색량이 높은 시기 설명",
-  "difficultyComment": "상위노출을 위한 핵심 조언 한 줄",
+  "trendReason": "최근 검색 트렌드 이유 한 줄",
+  "peakSeason": "검색량이 높은 시기 설명",
+  "difficultyComment": "상위노출 핵심 조언 한 줄",
   "relatedKeywords": ["연관키워드1","연관키워드2","연관키워드3","연관키워드4","연관키워드5","연관키워드6","연관키워드7","연관키워드8"],
   "longtailKeywords": [
     "검색량 높은 연관키워드를 포함한 문장형 키워드 (예: 아이폰16 스펙 디자인 한번에 몰아보기)",
@@ -976,53 +973,49 @@ function KeywordTab({goWrite}){
     "초보자/입문자 대상 문장형 키워드",
     "최신/신규 정보 문장형 키워드"
   ]
-}`}],"Respond ONLY with valid JSON. longtailKeywords must be complete sentences including the main keyword and related keywords, not just word combinations.");
-        const cleaned = raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
-        const aiResult = JSON.parse(cleaned);
+}`}],"Respond ONLY with valid JSON. longtailKeywords must be complete sentences, not word combinations.");
+      const cleaned = raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
+      const aiResult = JSON.parse(cleaned);
 
-        // 연관 키워드 검색량 조회 (await해서 한번에 표시)
-        let relStats = [];
-        if(aiResult?.relatedKeywords?.length){
-          try{
-            relStats = await fetchNaverKeywordStats(aiResult.relatedKeywords.slice(0,8));
-          }catch(e){}
-        }
-        setData({...aiResult, _relatedStats: relStats});
-      } catch(aiErr) {
-        // AI 실패해도 네이버 검색량은 표시
-        setData({
-          competitionLevel:"보통", competitionScore:50,
-          trend:"유지", trendReason:"AI 분석 미연결 상태",
-          peakSeason:"", difficultyComment:"AI API 키 연결 후 상세 분석 가능",
-          relatedKeywords:[], longtailKeywords:[],
-          smartBlocks:["VIEW","블로그"], titleSuggestions:[],
-          contentTips:"AI API 키를 연결하면 상세 전략을 볼 수 있어요."
-        });
+      // ③ 연관 키워드 네이버 검색량
+      let relStats = [];
+      if(aiResult?.relatedKeywords?.length){
+        try{ relStats = await fetchNaverKeywordStats(aiResult.relatedKeywords.slice(0,8)); }catch(e){}
       }
+
+      // 경쟁 강도: 월 블로그발행량 / 월 검색량
+      const monthlyBlogPosts = aiResult.monthlyBlogPosts || 0;
+      const ratio = totalMonthly && totalMonthly > 0 ? (monthlyBlogPosts / totalMonthly) : null;
+      const compLevel = ratio===null ? "알 수 없음"
+        : ratio < 0.5 ? "매우낮음"
+        : ratio < 1.5 ? "낮음"
+        : ratio < 3 ? "보통"
+        : ratio < 6 ? "높음" : "매우높음";
+      const compScore = ratio===null ? 50 : Math.min(Math.round(ratio/8*100), 100);
+
+      setKwResult({
+        _inputVal: kw,
+        keyword: kw,
+        naverOk,
+        pcMonthly, mobMonthly, totalMonthly,
+        monthlyBlogPosts,
+        ratio, compLevel, compScore,
+        relStats,
+        ...aiResult,
+      });
     }catch(e){
       setError("분석 오류: "+e.message);
     }
     setLoading(false);
   };
 
-  // 네이버 API에서 특정 키워드 수치 찾기
-  const getStat = (kw, field) => {
-    const item = kwStats?.find(i=>i.relKeyword?.toLowerCase()===kw?.toLowerCase());
+  const COMP_COLOR={"매우낮음":"#3fb950","낮음":"#58a6ff","보통":"#ffa657","높음":"#ff7b72","매우높음":"#f85149","알 수 없음":"#8b949e"};
+  const compColor = COMP_COLOR[result?.compLevel||"보통"]||"#ffa657";
+
+  const getRelStat = (kw, field) => {
+    const item = result?.relStats?.find(i=>i.relKeyword?.toLowerCase()===kw?.toLowerCase());
     return item?.[field] ?? null;
   };
-  const getRelStat = (kw, field, relStats) => {
-    const item = relStats?.find(i=>i.relKeyword?.toLowerCase()===kw?.toLowerCase());
-    return item?.[field] ?? null;
-  };
-
-  // 메인 키워드 수치
-  const pcMonthly  = getStat(keyword,"monthlyPcQcCnt");
-  const mobMonthly = getStat(keyword,"monthlyMobileQcCnt");
-  const totalMonthly = (pcMonthly!==null&&mobMonthly!==null) ? pcMonthly+mobMonthly : null;
-  const compIdx    = getStat(keyword,"compIdx"); // "낮음"|"보통"|"높음"
-  const compColor  = data?(COMPETITION_COLOR[data.competitionLevel]||"#ffa657"):"#ffa657";
-
-  const fmtNum = n => n===null||n===undefined ? "-" : n<=10 ? "10 이하" : Number(n).toLocaleString();
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
     <style>{`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`}</style>
@@ -1033,53 +1026,58 @@ function KeywordTab({goWrite}){
           color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",outline:"none"}}
         onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
       <Btn onClick={analyze} loading={loading}>🔍 분석하기</Btn>
+      {result&&<button onClick={()=>{setKwResult(null);setInputVal("");setError("");}}
+        style={{padding:"13px 16px",background:"#21262d",border:"1px solid #30363d",borderRadius:"10px",
+          color:"#8b949e",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",whiteSpace:"nowrap"}}>
+        🗑️ 초기화
+      </button>}
     </div>
 
     {error&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"10px",padding:"14px",color:"#ff7b72"}}>{error}</div>}
 
     {loading&&<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-      {["📡 네이버 광고 API 검색량 조회 중...","🤖 AI SEO 전략 분석 중...","🔗 연관 키워드 수집 중...","✏️ 제목·콘텐츠 전략 생성 중..."].map((msg,i)=>(
+      {["📡 네이버 광고 API 검색량 조회 중...","🤖 AI 분석 중 (블로그 발행량 추정)...","🔗 연관 키워드 검색량 조회 중..."].map((msg,i)=>(
         <div key={i} style={{background:"#161b22",borderRadius:"10px",padding:"12px 16px",border:"1px solid #30363d",
-          color:"#8b949e",fontSize:"13px",animation:`pulse 1.5s ease ${i*0.3}s infinite`,display:"flex",gap:"8px",alignItems:"center"}}>
+          color:"#8b949e",fontSize:"13px",animation:`pulse 1.5s ease ${i*0.3}s infinite`}}>
           {msg}
         </div>
       ))}
     </div>}
 
-    {data&&!loading&&<div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+    {result&&!loading&&<div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
 
       {/* ── 헤더 + 실제 검색량 ── */}
       <div style={{background:"linear-gradient(135deg,#1a2332,#0d1f35)",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"18px 20px"}}>
         <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"14px"}}>
-          <div style={{fontSize:"20px",fontWeight:700,color:"#fff"}}>🔍 <span style={{color:"#58a6ff"}}>"{keyword}"</span></div>
-          {apiStatus==="ok"
-            ?<span style={{fontSize:"11px",color:"#3fb950",background:"#0d2019",border:"1px solid #2ea04333",borderRadius:"20px",padding:"2px 10px"}}>📡 네이버 실제 데이터</span>
-            :apiStatus==="fail"
-            ?<span style={{fontSize:"11px",color:"#ffa657",background:"#2d1e0a",border:"1px solid #ffa65733",borderRadius:"20px",padding:"2px 10px"}}>⚠️ 서버 미실행 · AI 추정</span>
-            :<span style={{fontSize:"11px",color:"#484f58",background:"#21262d",borderRadius:"20px",padding:"2px 10px"}}>조회 중...</span>}
-          <span style={{marginLeft:"auto",color:data.trend==="상승"?"#3fb950":data.trend==="하락"?"#ff7b72":"#8b949e",
-            background:data.trend==="상승"?"#0d201966":data.trend==="하락"?"#2d111766":"#21262d",
-            border:`1px solid ${data.trend==="상승"?"#2ea04344":data.trend==="하락"?"#da363344":"#30363d"}`,
+          <div style={{fontSize:"20px",fontWeight:700,color:"#fff"}}>🔍 <span style={{color:"#58a6ff"}}>"{result.keyword}"</span></div>
+          <span style={{fontSize:"11px",color:result.naverOk?"#3fb950":"#ffa657",
+            background:result.naverOk?"#0d2019":"#2d1e0a",
+            border:`1px solid ${result.naverOk?"#2ea04333":"#ffa65733"}`,
+            borderRadius:"20px",padding:"2px 10px"}}>
+            {result.naverOk?"📡 네이버 실제 데이터":"⚠️ 네이버 API 실패"}
+          </span>
+          <span style={{marginLeft:"auto",
+            color:result.trend==="상승"?"#3fb950":result.trend==="하락"?"#ff7b72":"#8b949e",
+            background:result.trend==="상승"?"#0d201966":result.trend==="하락"?"#2d111766":"#21262d",
+            border:`1px solid ${result.trend==="상승"?"#2ea04344":result.trend==="하락"?"#da363344":"#30363d"}`,
             borderRadius:"20px",padding:"4px 12px",fontSize:"13px",fontWeight:600}}>
-            {data.trend==="상승"?"📈 상승세":data.trend==="하락"?"📉 하락세":"➡️ 유지"}
+            {result.trend==="상승"?"📈 상승세":result.trend==="하락"?"📉 하락세":"➡️ 유지"}
           </span>
         </div>
-
-        {/* 핵심 수치 카드 */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"10px"}}>
           {[
-            ["월간 검색량 (합산)", totalMonthly!==null ? fmtNum(totalMonthly)+"회" : apiStatus==="fail" ? "조회 실패" : apiStatus==="ok" ? "데이터 없음" : "조회 중...", "#58a6ff"],
-            ["PC 검색량",          pcMonthly!==null  ? fmtNum(pcMonthly)+"회"    : apiStatus==="ok" ? "없음" : "-",  "#79c0ff"],
-            ["모바일 검색량",       mobMonthly!==null ? fmtNum(mobMonthly)+"회"   : apiStatus==="ok" ? "없음" : "-",  "#d2a8ff"],
-            ["경쟁 강도",          compIdx||data.competitionLevel||"-",                            compColor],
+            ["월간 검색량", result.totalMonthly!==null ? fmtNum(result.totalMonthly)+"회" : "데이터 없음", "#58a6ff"],
+            ["PC 검색량",  result.pcMonthly!==null  ? fmtNum(result.pcMonthly)+"회"  : "-", "#79c0ff"],
+            ["모바일",     result.mobMonthly!==null ? fmtNum(result.mobMonthly)+"회" : "-", "#d2a8ff"],
+            ["월 발행량",  fmtNum(result.monthlyBlogPosts)+"건 (AI추정)", "#ffa657"],
           ].map(([l,v,c])=>(
             <div key={l} style={{background:"#0d1117aa",borderRadius:"10px",padding:"12px 10px",border:"1px solid #30363d",textAlign:"center"}}>
-              <div style={{color:c,fontSize:"16px",fontWeight:700,marginBottom:"4px"}}>{v}</div>
+              <div style={{color:c,fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>{v}</div>
               <div style={{color:"#8b949e",fontSize:"10px"}}>{l}</div>
             </div>
           ))}
         </div>
-        {totalMonthly!==null&&<div style={{marginTop:"10px",fontSize:"11px",color:"#484f58",textAlign:"right"}}>
+        {result.totalMonthly!==null&&<div style={{marginTop:"10px",fontSize:"11px",color:"#484f58",textAlign:"right"}}>
           ※ 네이버 검색광고 API 기준 · 10 이하는 "10 이하"로 표시
         </div>}
       </div>
@@ -1089,57 +1087,58 @@ function KeywordTab({goWrite}){
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
           <SectionTitle>📈 트렌드 분석 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추정</span></SectionTitle>
           <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}>
-            <span style={{fontSize:"32px"}}>{data.trend==="상승"?"📈":data.trend==="하락"?"📉":"➡️"}</span>
+            <span style={{fontSize:"32px"}}>{result.trend==="상승"?"📈":result.trend==="하락"?"📉":"➡️"}</span>
             <div>
-              <div style={{color:data.trend==="상승"?"#3fb950":data.trend==="하락"?"#ff7b72":"#8b949e",fontSize:"16px",fontWeight:700}}>
-                {data.trend==="상승"?"상승세":data.trend==="하락"?"하락세":"유지세"}
+              <div style={{color:result.trend==="상승"?"#3fb950":result.trend==="하락"?"#ff7b72":"#8b949e",fontSize:"16px",fontWeight:700}}>
+                {result.trend==="상승"?"상승세":result.trend==="하락"?"하락세":"유지세"}
               </div>
-              <div style={{color:"#8b949e",fontSize:"12px",marginTop:"3px",lineHeight:"1.6"}}>{data.trendReason||""}</div>
+              <div style={{color:"#8b949e",fontSize:"12px",marginTop:"3px",lineHeight:"1.6"}}>{result.trendReason||""}</div>
             </div>
           </div>
-          {data.peakSeason&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"9px 13px",border:"1px solid #ffa65733",fontSize:"12px",color:"#ffa657",lineHeight:"1.6",marginBottom:"8px"}}>
-            🌟 <strong>성수기:</strong> {data.peakSeason}
+          {result.peakSeason&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"9px 13px",border:"1px solid #ffa65733",fontSize:"12px",color:"#ffa657",lineHeight:"1.6",marginBottom:"8px"}}>
+            🌟 <strong>성수기:</strong> {result.peakSeason}
           </div>}
-          {data.difficultyComment&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"9px 13px",border:"1px solid #1f6feb33",fontSize:"12px",color:"#8b949e",lineHeight:"1.6"}}>
-            💡 {data.difficultyComment}
+          {result.difficultyComment&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"9px 13px",border:"1px solid #1f6feb33",fontSize:"12px",color:"#8b949e",lineHeight:"1.6"}}>
+            💡 {result.difficultyComment}
           </div>}
         </div>
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-          <SectionTitle>⚡ 경쟁 강도 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추정</span></SectionTitle>
+          <SectionTitle>⚡ 경쟁 강도</SectionTitle>
           <div style={{position:"relative",marginBottom:"8px"}}>
             <div style={{height:"10px",background:"linear-gradient(90deg,#3fb950,#ffa657,#f85149)",borderRadius:"5px"}}/>
-            <div style={{position:"absolute",top:"-4px",left:`calc(${data.competitionScore||50}% - 9px)`,width:"18px",height:"18px",background:"#fff",borderRadius:"50%",border:`3px solid ${compColor}`}}/>
+            <div style={{position:"absolute",top:"-4px",left:`calc(${result.compScore}% - 9px)`,width:"18px",height:"18px",background:"#fff",borderRadius:"50%",border:`3px solid ${compColor}`}}/>
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginBottom:"12px"}}><span>낮음</span><span>높음</span></div>
-          <div style={{textAlign:"center"}}>
-            <div style={{color:compColor,fontSize:"20px",fontWeight:700}}>{compIdx||data.competitionLevel}</div>
-            <div style={{color:"#8b949e",fontSize:"11px",marginTop:"4px"}}>경쟁도 {data.competitionScore}/100</div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginBottom:"10px"}}><span>낮음</span><span>높음</span></div>
+          <div style={{textAlign:"center",marginBottom:"10px"}}>
+            <div style={{color:compColor,fontSize:"18px",fontWeight:700}}>{result.compLevel}</div>
           </div>
-          <div style={{marginTop:"10px",fontSize:"11px",color:"#8b949e",background:"#0d1117",borderRadius:"6px",padding:"8px",lineHeight:"1.5"}}>
-            {(data.competitionScore||50)<30?"✅ 신규 블로거도 가능":(data.competitionScore||50)<60?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
+          <div style={{background:"#0d1117",borderRadius:"6px",padding:"8px",fontSize:"11px",color:"#8b949e",lineHeight:"1.6"}}>
+            <div>월 발행량 <strong style={{color:"#ffa657"}}>{fmtNum(result.monthlyBlogPosts)}</strong></div>
+            <div>월 검색량 <strong style={{color:"#58a6ff"}}>{result.totalMonthly!==null?fmtNum(result.totalMonthly):"-"}</strong></div>
+            {result.ratio!==null&&<div style={{marginTop:"4px",borderTop:"1px solid #21262d",paddingTop:"4px"}}>
+              발행/검색 비율 <strong style={{color:compColor}}>{result.ratio.toFixed(2)}x</strong>
+            </div>}
+            <div style={{marginTop:"4px",color:result.compScore<30?"#3fb950":result.compScore<60?"#ffa657":"#ff7b72"}}>
+              {result.compScore<30?"✅ 신규 블로거도 가능":result.compScore<60?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
+            </div>
           </div>
         </div>
       </div>
 
-
-
-      {/* ── 연관 키워드 + 실제 검색량 ── */}
+      {/* ── 연관 키워드 ── */}
       <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
         <SectionTitle>🔗 연관 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 네이버 실제 검색량</span></SectionTitle>
         <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"6px"}}>
-          {data.relatedKeywords?.map((kw)=>{
-            const relStats = data._relatedStats;
-            const rpc  = getRelStat(kw,"monthlyPcQcCnt",relStats);
-            const rmob = getRelStat(kw,"monthlyMobileQcCnt",relStats);
+          {result.relatedKeywords?.map((kw)=>{
+            const rpc  = getRelStat(kw,"monthlyPcQcCnt");
+            const rmob = getRelStat(kw,"monthlyMobileQcCnt");
             const rtotal = (rpc!==null&&rmob!==null) ? rpc+rmob : null;
-            const rcomp = getRelStat(kw,"compIdx",relStats);
+            const rcomp = getRelStat(kw,"compIdx");
             const rcc = COMPETITION_COLOR[rcomp]||"#8b949e";
             return(
-              <div key={kw} onClick={()=>setInputVal(kw)}
+              <div key={kw}
                 style={{display:"flex",alignItems:"center",gap:"8px",background:"#0d1117",borderRadius:"8px",
-                  padding:"9px 12px",border:"1px solid #21262d",cursor:"pointer"}}
-                onMouseEnter={e=>e.currentTarget.style.borderColor="#1f6feb44"}
-                onMouseLeave={e=>e.currentTarget.style.borderColor="#21262d"}>
+                  padding:"9px 12px",border:"1px solid #21262d"}}>
                 <span style={{flex:1,color:"#c9d1d9",fontSize:"13px"}}>{kw}</span>
                 {rtotal!==null
                   ?<span style={{color:"#58a6ff",fontSize:"11px",fontWeight:600,background:"#1f6feb22",borderRadius:"4px",padding:"2px 6px",whiteSpace:"nowrap"}}>{fmtNum(rtotal)}회</span>
@@ -1149,18 +1148,15 @@ function KeywordTab({goWrite}){
             );
           })}
         </div>
-        <div style={{marginTop:"8px",fontSize:"11px",color:"#484f58"}}>💡 클릭 시 해당 키워드로 재분석</div>
       </div>
 
       {/* ── 롱테일 키워드 ── */}
       <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-        <SectionTitle>🎯 롱테일 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 클릭하면 글 작성 탭으로 이동</span></SectionTitle>
+        <SectionTitle>🎯 롱테일 키워드</SectionTitle>
         <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-          {data.longtailKeywords?.map((kw,i)=>(
-            <div key={kw} style={{display:"flex",alignItems:"center",gap:"10px",background:"#0d1117",borderRadius:"8px",padding:"9px 14px",border:"1px solid #21262d",
-              cursor:"pointer",transition:"border .15s"}}
-              onMouseEnter={e=>e.currentTarget.style.borderColor="#1f6feb44"}
-              onMouseLeave={e=>e.currentTarget.style.borderColor="#21262d"}>
+          {result.longtailKeywords?.map((kw,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",background:"#0d1117",borderRadius:"8px",
+              padding:"9px 14px",border:"1px solid #21262d"}}>
               <span style={{color:"#484f58",fontSize:"12px",minWidth:"20px"}}>{i+1}</span>
               <span style={{flex:1,color:"#c9d1d9",fontSize:"13px",lineHeight:"1.5"}}>{kw}</span>
               <button onClick={()=>goWrite&&goWrite(kw)}
@@ -1173,8 +1169,6 @@ function KeywordTab({goWrite}){
           ))}
         </div>
       </div>
-
-
 
     </div>}
   </div>;
@@ -1965,6 +1959,7 @@ const TOOL_MAP={keyword:KeywordTab,write:WriteTab,analyze:AnalyzeTab,ocr:OcrTab,
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
   const [pendingWriteKw,setPendingWriteKw]=useState("");
+  const [kwResult,setKwResult]=useState(null);
   const goWrite=(kw)=>{setPendingWriteKw(kw);setActive("write");};
   const ActiveTool=TOOL_MAP[active];
   const tab=TABS.find(t=>t.id===active);
@@ -1993,7 +1988,7 @@ export default function BlogTools(){
     </div>
     <div style={{padding:"22px 24px",maxWidth:"960px",margin:"0 auto"}}>
       <h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3"}}>{tab?.icon} {tab?.label}</h2>
-      <ActiveTool goWrite={goWrite} pendingWriteKw={pendingWriteKw} setPendingWriteKw={setPendingWriteKw} setActive={setActive}/>
+      <ActiveTool goWrite={goWrite} pendingWriteKw={pendingWriteKw} setPendingWriteKw={setPendingWriteKw} setActive={setActive} kwResult={kwResult} setKwResult={setKwResult}/>
     </div>
   </div>;
 }
