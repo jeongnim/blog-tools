@@ -937,8 +937,9 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
   const result = kwResult; // 단일 객체: naver + AI 모두 포함
   const fmtNum = n => n===null||n===undefined ? "-" : n<=10 ? "10 이하" : Number(n).toLocaleString();
 
-  const analyze=async()=>{
-    const kw=inputVal.trim(); if(!kw) return;
+  const analyze=async(overrideKw)=>{
+    const kw=(overrideKw||inputVal).trim(); if(!kw) return;
+    setInputVal(kw);
     setLoading(true); setError(""); setKwResult(null);
     try{
       // ① 네이버 광고 API (메인 키워드)
@@ -1042,7 +1043,7 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
         style={{flex:1,padding:"13px 18px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",
           color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",outline:"none"}}
         onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
-      <Btn onClick={analyze} loading={loading}>🔍 분석하기</Btn>
+      <Btn onClick={()=>analyze()} loading={loading}>🔍 분석하기</Btn>
       {result&&<button onClick={()=>{setKwResult(null);setInputVal("");setError("");}}
         style={{padding:"13px 16px",background:"#21262d",border:"1px solid #30363d",borderRadius:"10px",
           color:"#8b949e",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",whiteSpace:"nowrap"}}>
@@ -1083,10 +1084,9 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"10px"}}>
           {[
-            ["월간 검색량", result.totalMonthly!==null ? fmtNum(result.totalMonthly)+"회" : "데이터 없음", "#58a6ff"],
+            ["월간 검색량 (합산)", result.totalMonthly!==null ? fmtNum(result.totalMonthly)+"회" : "데이터 없음", "#58a6ff"],
             ["PC 검색량",  result.pcMonthly!==null  ? fmtNum(result.pcMonthly)+"회"  : "-", "#79c0ff"],
-            ["모바일",     result.mobMonthly!==null ? fmtNum(result.mobMonthly)+"회" : "-", "#d2a8ff"],
-            ["블로그 총 게시물", result.totalBlogPosts!==null ? fmtNum(result.totalBlogPosts)+"건" : "조회 중...", "#ffa657"],
+            ["모바일 검색량", result.mobMonthly!==null ? fmtNum(result.mobMonthly)+"회" : "-", "#d2a8ff"],
           ].map(([l,v,c])=>(
             <div key={l} style={{background:"#0d1117aa",borderRadius:"10px",padding:"12px 10px",border:"1px solid #30363d",textAlign:"center"}}>
               <div style={{color:c,fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>{v}</div>
@@ -1094,7 +1094,18 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
             </div>
           ))}
         </div>
-        {result.totalMonthly!==null&&<div style={{marginTop:"10px",fontSize:"11px",color:"#484f58",textAlign:"right"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginTop:"10px"}}>
+          {[
+            ["월평균 클릭수 (PC)", result.pcAvgClick!==null ? fmtNum(result.pcAvgClick)+"회" : "-", "#56d364"],
+            ["월평균 클릭수 (모바일)", result.mobAvgClick!==null ? fmtNum(result.mobAvgClick)+"회" : "-", "#ffa657"],
+          ].map(([l,v,c])=>(
+            <div key={l} style={{background:"#0d1117aa",borderRadius:"10px",padding:"10px",border:"1px solid #30363d",textAlign:"center"}}>
+              <div style={{color:c,fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>{v}</div>
+              <div style={{color:"#8b949e",fontSize:"10px"}}>{l}</div>
+            </div>
+          ))}
+        </div>
+        {result.totalMonthly!==null&&<div style={{marginTop:"8px",fontSize:"11px",color:"#484f58",textAlign:"right"}}>
           ※ 네이버 검색광고 API 기준 · 10 이하는 "10 이하"로 표시
         </div>}
       </div>
@@ -1146,38 +1157,25 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
 
       {/* ── 연관 키워드 ── */}
       <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-        <SectionTitle>🔗 연관 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 네이버 실제 검색량</span></SectionTitle>
-        <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+        <SectionTitle>🔗 연관 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 월검색량 클릭시 재분석</span></SectionTitle>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"6px"}}>
           {result.relatedKeywords?.map((kw)=>{
             const rpc  = getRelStat(kw,"monthlyPcQcCnt");
             const rmob = getRelStat(kw,"monthlyMobileQcCnt");
-            const rpc2  = getRelStat(kw,"monthlyAvePcClkCnt");
-            const rmob2 = getRelStat(kw,"monthlyAveMobileClkCnt");
             const rtotal = (rpc!==null&&rmob!==null) ? rpc+rmob : null;
-            const rcomp = getRelStat(kw,"compIdx");
-            const rcc = COMPETITION_COLOR[rcomp]||"#8b949e";
             return(
-              <div key={kw} style={{background:"#0d1117",borderRadius:"8px",padding:"10px 14px",border:"1px solid #21262d"}}>
-                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom: rtotal!==null?"6px":"0"}}>
-                  <span style={{flex:1,color:"#e6edf3",fontSize:"13px",fontWeight:600}}>{kw}</span>
-                  {rtotal!==null
-                    ?<span style={{color:"#58a6ff",fontSize:"12px",fontWeight:700}}>합산 {fmtNum(rtotal)}회</span>
-                    :<span style={{color:"#484f58",fontSize:"11px"}}>검색량 없음</span>}
-                  {rcomp&&<span style={{color:rcc,fontSize:"11px",fontWeight:600,background:rcc+"22",borderRadius:"4px",padding:"2px 6px"}}>{rcomp}</span>}
-                </div>
-                {rtotal!==null&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"6px"}}>
-                  {[
-                    ["PC 검색량", rpc, "#79c0ff"],
-                    ["모바일 검색량", rmob, "#d2a8ff"],
-                    ["PC 클릭수", rpc2, "#56d364"],
-                    ["모바일 클릭수", rmob2, "#ffa657"],
-                  ].map(([label,val,color])=>(
-                    <div key={label} style={{background:"#161b22",borderRadius:"6px",padding:"6px 8px",textAlign:"center",border:"1px solid #21262d"}}>
-                      <div style={{color,fontSize:"12px",fontWeight:700}}>{fmtNum(val)}{typeof val==="number"&&val>0?"회":""}</div>
-                      <div style={{color:"#484f58",fontSize:"10px",marginTop:"2px"}}>{label}</div>
-                    </div>
-                  ))}
-                </div>}
+              <div key={kw}
+                onClick={()=>{ setInputVal(kw); analyze(kw); }}
+                style={{display:"flex",alignItems:"center",gap:"8px",background:"#0d1117",
+                  borderRadius:"8px",padding:"9px 12px",border:"1px solid #21262d",
+                  cursor:"pointer",transition:"border .15s"}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor="#1f6feb44"}
+                onMouseLeave={e=>e.currentTarget.style.borderColor="#21262d"}>
+                <span style={{flex:1,color:"#c9d1d9",fontSize:"13px"}}>{kw}</span>
+                <span style={{color:"#58a6ff",fontSize:"11px",fontWeight:600,
+                  background:"#1f6feb22",borderRadius:"4px",padding:"2px 6px",whiteSpace:"nowrap"}}>
+                  {rtotal!==null ? fmtNum(rtotal)+"회" : "-"}
+                </span>
               </div>
             );
           })}
