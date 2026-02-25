@@ -970,32 +970,36 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
         }
       } catch(e) {}
 
-      // ③ AI 분석 (트렌드, 연관키워드, 롱테일)
-      const raw = await callClaude([{role:"user",content:`"${kw}" 키워드 네이버 블로그 SEO 분석. 순수 JSON만 출력.
-{
-  "trend": "상승|하락|유지",
-  "trendReason": "최근 검색 트렌드 이유 한 줄",
-  "peakSeason": "검색량이 높은 시기 설명",
-  "difficultyComment": "상위노출 핵심 조언 한 줄",
-  "relatedKeywords": ["연관키워드1","연관키워드2","연관키워드3","연관키워드4","연관키워드5","연관키워드6","연관키워드7","연관키워드8"],
-  "longtailKeywords": [
-    "검색량 높은 연관키워드를 포함한 문장형 키워드 (예: 아이폰16 스펙 디자인 한번에 몰아보기)",
-    "비교/추천형 문장 (예: 유플러스 아이들나라 vs 올레TV 아이 있는 집 어디가 나을까)",
-    "구체적 정보탐색 문장형 키워드",
-    "후기/경험 기반 문장형 키워드",
-    "가격/할인 관련 문장형 키워드",
-    "초보자/입문자 대상 문장형 키워드",
-    "최신/신규 정보 문장형 키워드"
-  ]
-}`}],"Respond ONLY with valid JSON. longtailKeywords must be complete sentences, not word combinations.");
+      // ③ 네이버 인기 블로그 글 제목 가져오기 (롱테일 기반)
+      let blogTitles = [];
+      try {
+        const btRes = await fetch(`/api/blog-titles?keyword=${encodeURIComponent(kw)}`);
+        const btData = await btRes.json();
+        blogTitles = btData.titles || [];
+      } catch(e) {}
+
+      // ④ AI 분석 (트렌드 + 인기글 기반 롱테일)
+      // ④ AI 분석 (트렌드 + 인기글 기반 롱테일)
+      const titlesAppend = blogTitles.length > 0
+        ? ["", "", "실제 네이버 블로그 인기글 제목 (참고용):"].concat(blogTitles.slice(0,15).map((t,i)=>(i+1)+". "+t)).join("\n")
+        : "";
+      const msgContent = [
+        '"'+kw+'" 키워드 분석. 순수 JSON만 출력.',
+        '{',
+        '  "trend": "상승|하락|유지",',
+        '  "trendReason": "최근 검색 트렌드 이유 한 줄",',
+        '  "peakSeason": "검색량이 높은 시기 설명",',
+        '  "difficultyComment": "상위노출 핵심 조언 한 줄",',
+        '  "smartBlockType": "블로그|지도/플레이스|리뷰|쇼핑|비교/추천|정보/지식 중 이 키워드 검색 시 네이버에서 가장 먼저 뜨는 스마트블록 유형",',
+        '  "smartBlockReason": "왜 이 유형의 스마트블록이 뜨는지 한 줄",',
+        '  "blogStrategy": "이 스마트블록 유형에서 블로그가 노출될 수 있는 전략 한 줄",',
+        '  "longtailKeywords": ["인기글 제목과 스마트블록 유형을 참고해 실제 블로거가 쓸 만한 문장형 키워드 10개. 단순 단어조합 금지"]',
+        '}' + titlesAppend
+      ].join("\n");
+      const raw = await callClaude([{role:"user",content:msgContent}],"Respond ONLY with valid JSON.");
       const cleaned = raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
       const aiResult = JSON.parse(cleaned);
-
-      // ④ 연관 키워드 네이버 검색량
-      let relStats = [];
-      if(aiResult?.relatedKeywords?.length){
-        try{ relStats = await fetchNaverKeywordStats(aiResult.relatedKeywords.slice(0,8)); }catch(e){}
-      }
+      const relStats = [];
 
       // 경쟁 강도: 월 블로그 발행량 / 월 검색량 (pandarank 방식)
       const blogTotal = totalBlogPosts;
@@ -1020,9 +1024,8 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
         mobAvgClick: mainStat?.monthlyAveMobileClkCnt ?? null,
         totalBlogPosts,
         ratio, compLevel, compScore,
-        relStats,
+        blogTitles,
         ...aiResult,
-        monthlyBlogPosts, // aiResult.monthlyBlogPosts 덮어쓰기 방지
       });
     }catch(e){
       setError("분석 오류: "+e.message);
@@ -1033,10 +1036,6 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
   const COMP_COLOR={"매우낮음":"#3fb950","낮음":"#58a6ff","보통":"#ffa657","높음":"#ff7b72","매우높음":"#f85149","알 수 없음":"#8b949e"};
   const compColor = COMP_COLOR[result?.compLevel||"보통"]||"#ffa657";
 
-  const getRelStat = (kw, field) => {
-    const item = result?.relStats?.find(i=>i.relKeyword?.toLowerCase()===kw?.toLowerCase());
-    return item?.[field] ?? null;
-  };
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
     <style>{`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`}</style>
@@ -1144,50 +1143,73 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
             <div style={{color:compColor,fontSize:"18px",fontWeight:700}}>{result.compLevel}</div>
           </div>
           <div style={{background:"#0d1117",borderRadius:"6px",padding:"8px",fontSize:"11px",color:"#8b949e",lineHeight:"1.6"}}>
-            <div>월 발행량 <strong style={{color:"#ffa657"}}>{result.monthlyBlogPosts?fmtNum(result.monthlyBlogPosts)+"건":"-"}</strong>{result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실제</span>}</div>
-            <div>월 검색량 <strong style={{color:"#58a6ff"}}>{result.totalMonthly!==null?fmtNum(result.totalMonthly)+"회":"-"}</strong></div>
-            {result.ratio!==null&&<div style={{marginTop:"4px",borderTop:"1px solid #21262d",paddingTop:"4px"}}>
-              포화도 <strong style={{color:compColor}}>{result.ratio.toFixed(1)}x</strong>
-              <span style={{color:"#484f58",fontSize:"10px",marginLeft:"4px"}}>(게시물/검색량)</span>
-            </div>}
-            {!result.blogCountOk&&<div style={{color:"#484f58",fontSize:"10px",marginTop:"4px"}}>※ Search API 미설정시 AI 추정</div>}
-            <div style={{marginTop:"4px",color:result.compScore<30?"#3fb950":result.compScore<60?"#ffa657":"#ff7b72"}}>
+            <div style={{marginTop:"4px",color:result.compScore<30?"#3fb950":result.compScore<60?"#ffa657":"#ff7b72",fontSize:"12px",fontWeight:700}}>
               {result.compScore<30?"✅ 신규 블로거도 가능":result.compScore<60?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
             </div>
+            <div style={{color:"#484f58",fontSize:"10px",marginTop:"4px"}}>· AI 트렌드 기반 추정</div>
           </div>
         </div>
       </div>
 
-      {/* ── 연관 키워드 ── */}
-      <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-        <SectionTitle>🔗 연관 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 월검색량 클릭시 재분석</span></SectionTitle>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"6px"}}>
-          {result.relatedKeywords?.map((kw)=>{
-            const rpc  = getRelStat(kw,"monthlyPcQcCnt");
-            const rmob = getRelStat(kw,"monthlyMobileQcCnt");
-            const rtotal = (rpc!==null&&rmob!==null) ? rpc+rmob : null;
-            return(
-              <div key={kw}
-                onClick={()=>{ setInputVal(kw); analyze(kw); }}
-                style={{display:"flex",alignItems:"center",gap:"8px",background:"#0d1117",
-                  borderRadius:"8px",padding:"9px 12px",border:"1px solid #21262d",
-                  cursor:"pointer",transition:"border .15s"}}
-                onMouseEnter={e=>e.currentTarget.style.borderColor="#1f6feb44"}
-                onMouseLeave={e=>e.currentTarget.style.borderColor="#21262d"}>
-                <span style={{flex:1,color:"#c9d1d9",fontSize:"13px"}}>{kw}</span>
-                <span style={{color:"#58a6ff",fontSize:"11px",fontWeight:600,
-                  background:"#1f6feb22",borderRadius:"4px",padding:"2px 6px",whiteSpace:"nowrap"}}>
-                  {rtotal!==null ? fmtNum(rtotal)+"회" : "-"}
-                </span>
-              </div>
-            );
-          })}
+
+
+      {/* ── 스마트블록 분석 ── */}
+      {result.smartBlockType&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
+        <SectionTitle>⬛ 스마트블록 분석 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추정</span></SectionTitle>
+        <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}>
+          <div style={{
+            background: result.smartBlockType==="블로그"?"#1f6feb33":
+              result.smartBlockType==="지도/플레이스"?"#2ea04333":
+              result.smartBlockType==="쇼핑"?"#da363333":
+              result.smartBlockType==="리뷰"?"#8957e533":"#ffa65733",
+            border: "1px solid "+(result.smartBlockType==="블로그"?"#1f6feb":
+              result.smartBlockType==="지도/플레이스"?"#2ea043":
+              result.smartBlockType==="쇼핑"?"#da3633":
+              result.smartBlockType==="리뷰"?"#8957e5":"#ffa657"),
+            borderRadius:"10px",padding:"10px 18px",textAlign:"center",minWidth:"100px",flexShrink:0
+          }}>
+            <div style={{fontSize:"20px",marginBottom:"4px"}}>
+              {result.smartBlockType==="블로그"?"✍️":
+               result.smartBlockType==="지도/플레이스"?"📍":
+               result.smartBlockType==="쇼핑"?"🛍️":
+               result.smartBlockType==="리뷰"?"⭐":
+               result.smartBlockType==="비교/추천"?"⚖️":"💡"}
+            </div>
+            <div style={{color:"#e6edf3",fontSize:"13px",fontWeight:700}}>{result.smartBlockType}</div>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{color:"#c9d1d9",fontSize:"13px",lineHeight:"1.7",marginBottom:"8px"}}>{result.smartBlockReason}</div>
+            <div style={{
+              background: result.smartBlockType==="블로그"?"#0d1f35":"#1a1a2e",
+              borderRadius:"8px",padding:"10px 14px",border:"1px solid #30363d",
+              color:"#58a6ff",fontSize:"12px",lineHeight:"1.7"
+            }}>
+              💡 <strong>블로그 전략:</strong> {result.blogStrategy}
+            </div>
+          </div>
         </div>
-      </div>
+        {result.smartBlockType!=="블로그"&&<div style={{background:"#2d1e0a",border:"1px solid #ffa65733",borderRadius:"8px",padding:"10px 14px",fontSize:"12px",color:"#ffa657",lineHeight:"1.7"}}>
+          ⚠️ 이 키워드는 블로그 영역보다 <strong>{result.smartBlockType}</strong> 영역이 먼저 노출됩니다. 블로그로 접근 시 아래 롱테일 키워드 전략을 참고하세요.
+        </div>}
+      </div>}
+
+      {/* ── 인기글 제목 (스마트블록 기반) ── */}
+      {result.blogTitles?.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
+        <SectionTitle>📰 네이버 인기 블로그글 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 실제 상위노출 제목</span></SectionTitle>
+        <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
+          {result.blogTitles.slice(0,10).map((title,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",background:"#0d1117",
+              borderRadius:"8px",padding:"9px 14px",border:"1px solid #21262d"}}>
+              <span style={{color:"#484f58",fontSize:"11px",minWidth:"18px"}}>{i+1}</span>
+              <span style={{flex:1,color:"#c9d1d9",fontSize:"12px",lineHeight:"1.5"}}>{title}</span>
+            </div>
+          ))}
+        </div>
+      </div>}
 
       {/* ── 롱테일 키워드 ── */}
       <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-        <SectionTitle>🎯 롱테일 키워드</SectionTitle>
+        <SectionTitle>🎯 롱테일 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 인기글 기반 AI 추출</span></SectionTitle>
         <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
           {result.longtailKeywords?.map((kw,i)=>(
             <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",background:"#0d1117",borderRadius:"8px",
