@@ -958,12 +958,14 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
 
       // ② 블로그 총 게시물 수 (네이버 Search API 실제 데이터)
       let totalBlogPosts = null;
+      let monthlyBlogPostsReal = null;
       let blogCountOk = false;
       try {
         const bcRes = await fetch(`/api/blog-count?keyword=${encodeURIComponent(kw)}`);
         const bcData = await bcRes.json();
-        if (bcData.total !== null && bcData.total !== undefined && !bcData.error) {
-          totalBlogPosts = bcData.total;
+        if (!bcData.error) {
+          totalBlogPosts = bcData.total ?? null;
+          monthlyBlogPostsReal = bcData.monthly ?? null;
           blogCountOk = true;
         }
       } catch(e) {}
@@ -995,12 +997,12 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
         try{ relStats = await fetchNaverKeywordStats(aiResult.relatedKeywords.slice(0,8)); }catch(e){}
       }
 
-      // 경쟁 강도: 블로그 총 게시물 수 / 월 검색량 (pandarank 방식)
-      const blogTotal = totalBlogPosts; // 네이버 Search API 실제값
-      const monthlyBlogPosts = aiResult.monthlyBlogPosts || 0;
-      const ratio = (blogTotal !== null && totalMonthly && totalMonthly > 0)
-        ? (blogTotal / totalMonthly)
-        : (totalMonthly && totalMonthly > 0 ? (monthlyBlogPosts / totalMonthly) : null);
+      // 경쟁 강도: 월 블로그 발행량 / 월 검색량 (pandarank 방식)
+      const blogTotal = totalBlogPosts;
+      const monthlyBlogPosts = monthlyBlogPostsReal ?? (aiResult.monthlyBlogPosts || 0);
+      const ratio = totalMonthly && totalMonthly > 0
+        ? (monthlyBlogPosts / totalMonthly)
+        : null;
       const compLevel = ratio===null ? "알 수 없음"
         : ratio < 1   ? "매우낮음"
         : ratio < 5   ? "낮음"
@@ -1017,6 +1019,8 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
         pcAvgClick: mainStat?.monthlyAvePcClkCnt ?? null,
         mobAvgClick: mainStat?.monthlyAveMobileClkCnt ?? null,
         totalBlogPosts,
+        monthlyBlogPosts,
+        blogCountOk,
         ratio, compLevel, compScore,
         relStats,
         ...aiResult,
@@ -1141,7 +1145,7 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
             <div style={{color:compColor,fontSize:"18px",fontWeight:700}}>{result.compLevel}</div>
           </div>
           <div style={{background:"#0d1117",borderRadius:"6px",padding:"8px",fontSize:"11px",color:"#8b949e",lineHeight:"1.6"}}>
-            <div>총 게시물 <strong style={{color:"#ffa657"}}>{result.totalBlogPosts!==null?fmtNum(result.totalBlogPosts)+"건":(result.monthlyBlogPosts?"AI추정 "+fmtNum(result.monthlyBlogPosts)+"건/월":"-")}</strong>{result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실제</span>}</div>
+            <div>월 발행량 <strong style={{color:"#ffa657"}}>{result.monthlyBlogPosts?fmtNum(result.monthlyBlogPosts)+"건":"-"}</strong>{result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실제</span>}</div>
             <div>월 검색량 <strong style={{color:"#58a6ff"}}>{result.totalMonthly!==null?fmtNum(result.totalMonthly)+"회":"-"}</strong></div>
             {result.ratio!==null&&<div style={{marginTop:"4px",borderTop:"1px solid #21262d",paddingTop:"4px"}}>
               포화도 <strong style={{color:compColor}}>{result.ratio.toFixed(1)}x</strong>
