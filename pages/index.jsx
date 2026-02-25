@@ -1013,6 +1013,8 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
         naverOk,
         blogCountOk,
         pcMonthly, mobMonthly, totalMonthly,
+        pcAvgClick: mainStat?.monthlyAvePcClkCnt ?? null,
+        mobAvgClick: mainStat?.monthlyAveMobileClkCnt ?? null,
         totalBlogPosts,
         ratio, compLevel, compScore,
         relStats,
@@ -1145,22 +1147,37 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
       {/* ── 연관 키워드 ── */}
       <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
         <SectionTitle>🔗 연관 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 네이버 실제 검색량</span></SectionTitle>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"6px"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
           {result.relatedKeywords?.map((kw)=>{
             const rpc  = getRelStat(kw,"monthlyPcQcCnt");
             const rmob = getRelStat(kw,"monthlyMobileQcCnt");
+            const rpc2  = getRelStat(kw,"monthlyAvePcClkCnt");
+            const rmob2 = getRelStat(kw,"monthlyAveMobileClkCnt");
             const rtotal = (rpc!==null&&rmob!==null) ? rpc+rmob : null;
             const rcomp = getRelStat(kw,"compIdx");
             const rcc = COMPETITION_COLOR[rcomp]||"#8b949e";
             return(
-              <div key={kw}
-                style={{display:"flex",alignItems:"center",gap:"8px",background:"#0d1117",borderRadius:"8px",
-                  padding:"9px 12px",border:"1px solid #21262d"}}>
-                <span style={{flex:1,color:"#c9d1d9",fontSize:"13px"}}>{kw}</span>
-                {rtotal!==null
-                  ?<span style={{color:"#58a6ff",fontSize:"11px",fontWeight:600,background:"#1f6feb22",borderRadius:"4px",padding:"2px 6px",whiteSpace:"nowrap"}}>{fmtNum(rtotal)}회</span>
-                  :<span style={{color:"#484f58",fontSize:"11px"}}>-</span>}
-                {rcomp&&<span style={{color:rcc,fontSize:"11px",fontWeight:600,background:rcc+"22",borderRadius:"4px",padding:"2px 6px"}}>{rcomp}</span>}
+              <div key={kw} style={{background:"#0d1117",borderRadius:"8px",padding:"10px 14px",border:"1px solid #21262d"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom: rtotal!==null?"6px":"0"}}>
+                  <span style={{flex:1,color:"#e6edf3",fontSize:"13px",fontWeight:600}}>{kw}</span>
+                  {rtotal!==null
+                    ?<span style={{color:"#58a6ff",fontSize:"12px",fontWeight:700}}>합산 {fmtNum(rtotal)}회</span>
+                    :<span style={{color:"#484f58",fontSize:"11px"}}>검색량 없음</span>}
+                  {rcomp&&<span style={{color:rcc,fontSize:"11px",fontWeight:600,background:rcc+"22",borderRadius:"4px",padding:"2px 6px"}}>{rcomp}</span>}
+                </div>
+                {rtotal!==null&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"6px"}}>
+                  {[
+                    ["PC 검색량", rpc, "#79c0ff"],
+                    ["모바일 검색량", rmob, "#d2a8ff"],
+                    ["PC 클릭수", rpc2, "#56d364"],
+                    ["모바일 클릭수", rmob2, "#ffa657"],
+                  ].map(([label,val,color])=>(
+                    <div key={label} style={{background:"#161b22",borderRadius:"6px",padding:"6px 8px",textAlign:"center",border:"1px solid #21262d"}}>
+                      <div style={{color,fontSize:"12px",fontWeight:700}}>{fmtNum(val)}{typeof val==="number"&&val>0?"회":""}</div>
+                      <div style={{color:"#484f58",fontSize:"10px",marginTop:"2px"}}>{label}</div>
+                    </div>
+                  ))}
+                </div>}
               </div>
             );
           })}
