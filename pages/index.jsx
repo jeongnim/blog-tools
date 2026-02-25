@@ -1019,11 +1019,10 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
         pcAvgClick: mainStat?.monthlyAvePcClkCnt ?? null,
         mobAvgClick: mainStat?.monthlyAveMobileClkCnt ?? null,
         totalBlogPosts,
-        monthlyBlogPosts,
-        blogCountOk,
         ratio, compLevel, compScore,
         relStats,
         ...aiResult,
+        monthlyBlogPosts, // aiResult.monthlyBlogPosts 덮어쓰기 방지
       });
     }catch(e){
       setError("분석 오류: "+e.message);
