@@ -955,10 +955,21 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
       const mobMonthly  = mainStat?.monthlyMobileQcCnt ?? null;
       const totalMonthly = (pcMonthly!==null&&mobMonthly!==null) ? pcMonthly+mobMonthly : null;
 
-      // ② AI 분석 (블로그 발행량 포함)
+      // ② 블로그 총 게시물 수 (네이버 Search API 실제 데이터)
+      let totalBlogPosts = null;
+      let blogCountOk = false;
+      try {
+        const bcRes = await fetch(`/api/blog-count?keyword=${encodeURIComponent(kw)}`);
+        const bcData = await bcRes.json();
+        if (bcData.total !== null && bcData.total !== undefined && !bcData.error) {
+          totalBlogPosts = bcData.total;
+          blogCountOk = true;
+        }
+      } catch(e) {}
+
+      // ③ AI 분석 (트렌드, 연관키워드, 롱테일)
       const raw = await callClaude([{role:"user",content:`"${kw}" 키워드 네이버 블로그 SEO 분석. 순수 JSON만 출력.
 {
-  "monthlyBlogPosts": 이 키워드로 한달에 발행되는 네이버 블로그 포스팅 추정 수(숫자만),
   "trend": "상승|하락|유지",
   "trendReason": "최근 검색 트렌드 이유 한 줄",
   "peakSeason": "검색량이 높은 시기 설명",
@@ -977,28 +988,32 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
       const cleaned = raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
       const aiResult = JSON.parse(cleaned);
 
-      // ③ 연관 키워드 네이버 검색량
+      // ④ 연관 키워드 네이버 검색량
       let relStats = [];
       if(aiResult?.relatedKeywords?.length){
         try{ relStats = await fetchNaverKeywordStats(aiResult.relatedKeywords.slice(0,8)); }catch(e){}
       }
 
-      // 경쟁 강도: 월 블로그발행량 / 월 검색량
+      // 경쟁 강도: 블로그 총 게시물 수 / 월 검색량 (pandarank 방식)
+      const blogTotal = totalBlogPosts; // 네이버 Search API 실제값
       const monthlyBlogPosts = aiResult.monthlyBlogPosts || 0;
-      const ratio = totalMonthly && totalMonthly > 0 ? (monthlyBlogPosts / totalMonthly) : null;
+      const ratio = (blogTotal !== null && totalMonthly && totalMonthly > 0)
+        ? (blogTotal / totalMonthly)
+        : (totalMonthly && totalMonthly > 0 ? (monthlyBlogPosts / totalMonthly) : null);
       const compLevel = ratio===null ? "알 수 없음"
-        : ratio < 0.5 ? "매우낮음"
-        : ratio < 1.5 ? "낮음"
-        : ratio < 3 ? "보통"
-        : ratio < 6 ? "높음" : "매우높음";
-      const compScore = ratio===null ? 50 : Math.min(Math.round(ratio/8*100), 100);
+        : ratio < 1   ? "매우낮음"
+        : ratio < 5   ? "낮음"
+        : ratio < 15  ? "보통"
+        : ratio < 30  ? "높음" : "매우높음";
+      const compScore = ratio===null ? 50 : Math.min(Math.round(ratio/40*100), 100);
 
       setKwResult({
         _inputVal: kw,
         keyword: kw,
         naverOk,
+        blogCountOk,
         pcMonthly, mobMonthly, totalMonthly,
-        monthlyBlogPosts,
+        totalBlogPosts,
         ratio, compLevel, compScore,
         relStats,
         ...aiResult,
@@ -1036,7 +1051,7 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
     {error&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"10px",padding:"14px",color:"#ff7b72"}}>{error}</div>}
 
     {loading&&<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-      {["📡 네이버 광고 API 검색량 조회 중...","🤖 AI 분석 중 (블로그 발행량 추정)...","🔗 연관 키워드 검색량 조회 중..."].map((msg,i)=>(
+      {["📡 네이버 광고 API 검색량 조회 중...","📊 블로그 총 게시물 수 조회 중...","🤖 AI 트렌드 분석 중...","🔗 연관 키워드 검색량 조회 중..."].map((msg,i)=>(
         <div key={i} style={{background:"#161b22",borderRadius:"10px",padding:"12px 16px",border:"1px solid #30363d",
           color:"#8b949e",fontSize:"13px",animation:`pulse 1.5s ease ${i*0.3}s infinite`}}>
           {msg}
@@ -1069,7 +1084,7 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
             ["월간 검색량", result.totalMonthly!==null ? fmtNum(result.totalMonthly)+"회" : "데이터 없음", "#58a6ff"],
             ["PC 검색량",  result.pcMonthly!==null  ? fmtNum(result.pcMonthly)+"회"  : "-", "#79c0ff"],
             ["모바일",     result.mobMonthly!==null ? fmtNum(result.mobMonthly)+"회" : "-", "#d2a8ff"],
-            ["월 발행량",  fmtNum(result.monthlyBlogPosts)+"건 (AI추정)", "#ffa657"],
+            ["블로그 총 게시물", result.totalBlogPosts!==null ? fmtNum(result.totalBlogPosts)+"건" : "조회 중...", "#ffa657"],
           ].map(([l,v,c])=>(
             <div key={l} style={{background:"#0d1117aa",borderRadius:"10px",padding:"12px 10px",border:"1px solid #30363d",textAlign:"center"}}>
               <div style={{color:c,fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>{v}</div>
@@ -1113,11 +1128,13 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
             <div style={{color:compColor,fontSize:"18px",fontWeight:700}}>{result.compLevel}</div>
           </div>
           <div style={{background:"#0d1117",borderRadius:"6px",padding:"8px",fontSize:"11px",color:"#8b949e",lineHeight:"1.6"}}>
-            <div>월 발행량 <strong style={{color:"#ffa657"}}>{fmtNum(result.monthlyBlogPosts)}</strong></div>
-            <div>월 검색량 <strong style={{color:"#58a6ff"}}>{result.totalMonthly!==null?fmtNum(result.totalMonthly):"-"}</strong></div>
+            <div>총 게시물 <strong style={{color:"#ffa657"}}>{result.totalBlogPosts!==null?fmtNum(result.totalBlogPosts)+"건":(result.monthlyBlogPosts?"AI추정 "+fmtNum(result.monthlyBlogPosts)+"건/월":"-")}</strong>{result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실제</span>}</div>
+            <div>월 검색량 <strong style={{color:"#58a6ff"}}>{result.totalMonthly!==null?fmtNum(result.totalMonthly)+"회":"-"}</strong></div>
             {result.ratio!==null&&<div style={{marginTop:"4px",borderTop:"1px solid #21262d",paddingTop:"4px"}}>
-              발행/검색 비율 <strong style={{color:compColor}}>{result.ratio.toFixed(2)}x</strong>
+              포화도 <strong style={{color:compColor}}>{result.ratio.toFixed(1)}x</strong>
+              <span style={{color:"#484f58",fontSize:"10px",marginLeft:"4px"}}>(게시물/검색량)</span>
             </div>}
+            {!result.blogCountOk&&<div style={{color:"#484f58",fontSize:"10px",marginTop:"4px"}}>※ Search API 미설정시 AI 추정</div>}
             <div style={{marginTop:"4px",color:result.compScore<30?"#3fb950":result.compScore<60?"#ffa657":"#ff7b72"}}>
               {result.compScore<30?"✅ 신규 블로거도 가능":result.compScore<60?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
             </div>
