@@ -930,7 +930,7 @@ async function fetchNaverKeywordStats(keywords) {
   return data.keywordList || [];
 }
 
-function KeywordTab(){
+function KeywordTab({goWrite}){
   const [inputVal,setInputVal]=useState("");
   const [keyword,setKeyword]=useState("");
   const [data,setData]=useState(null);       // AI 분석 결과
@@ -963,25 +963,31 @@ function KeywordTab(){
   "competitionLevel": "매우낮음|낮음|보통|높음|매우높음",
   "competitionScore": 0~100,
   "trend": "상승|하락|유지",
-  "trendReason": "트렌드 이유 한 줄",
-  "peakSeason": "성수기 설명",
-  "relatedKeywords": ["연관키워드1","연관키워드2","연관키워드3","연관키워드4","연관키워드5","연관키워드6"],
-  "longtailKeywords": ["롱테일1","롱테일2","롱테일3","롱테일4","롱테일5"],
-  "smartBlocks": ["VIEW","블로그","뉴스","이미지","동영상","지식iN","쇼핑","인플루언서"],
-  "titleSuggestions": ["제목1","제목2","제목3"],
-  "contentTips": "핵심 콘텐츠 전략 2~3줄",
-  "difficultyComment": "상위노출 핵심 조언 한 줄"
-}`}],"Respond ONLY with valid JSON.");
+  "trendReason": "최근 검색 트렌드 이유를 구체적으로 한 줄 (예: 최신 모델 출시, 계절적 요인 등)",
+  "peakSeason": "성수기 및 검색량이 높은 시기 설명",
+  "difficultyComment": "상위노출을 위한 핵심 조언 한 줄",
+  "relatedKeywords": ["연관키워드1","연관키워드2","연관키워드3","연관키워드4","연관키워드5","연관키워드6","연관키워드7","연관키워드8"],
+  "longtailKeywords": [
+    "검색량 높은 연관키워드를 포함한 문장형 키워드 (예: 아이폰16 스펙 디자인 한번에 몰아보기)",
+    "비교/추천형 문장 (예: 유플러스 아이들나라 vs 올레TV 아이 있는 집 어디가 나을까)",
+    "구체적 정보탐색 문장형 키워드",
+    "후기/경험 기반 문장형 키워드",
+    "가격/할인 관련 문장형 키워드",
+    "초보자/입문자 대상 문장형 키워드",
+    "최신/신규 정보 문장형 키워드"
+  ]
+}`}],"Respond ONLY with valid JSON. longtailKeywords must be complete sentences including the main keyword and related keywords, not just word combinations.");
         const cleaned = raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
         const aiResult = JSON.parse(cleaned);
 
-        // 연관 키워드 검색량 조회
+        // 연관 키워드 검색량 조회 (await해서 한번에 표시)
+        let relStats = [];
         if(aiResult?.relatedKeywords?.length){
-          fetchNaverKeywordStats(aiResult.relatedKeywords.slice(0,6)).then(relList=>{
-            setData(prev=>prev?{...prev,_relatedStats:relList}:null);
-          }).catch(()=>{});
+          try{
+            relStats = await fetchNaverKeywordStats(aiResult.relatedKeywords.slice(0,8));
+          }catch(e){}
         }
-        setData(aiResult);
+        setData({...aiResult, _relatedStats: relStats});
       } catch(aiErr) {
         // AI 실패해도 네이버 검색량은 표시
         setData({
@@ -1062,9 +1068,9 @@ function KeywordTab(){
         {/* 핵심 수치 카드 */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"10px"}}>
           {[
-            ["월간 검색량 (합산)", totalMonthly!==null ? fmtNum(totalMonthly)+"회" : "조회 중...", "#58a6ff"],
-            ["PC 검색량",          pcMonthly!==null  ? fmtNum(pcMonthly)+"회"    : "-",           "#79c0ff"],
-            ["모바일 검색량",       mobMonthly!==null ? fmtNum(mobMonthly)+"회"   : "-",           "#d2a8ff"],
+            ["월간 검색량 (합산)", totalMonthly!==null ? fmtNum(totalMonthly)+"회" : apiStatus==="fail" ? "조회 실패" : apiStatus==="ok" ? "데이터 없음" : "조회 중...", "#58a6ff"],
+            ["PC 검색량",          pcMonthly!==null  ? fmtNum(pcMonthly)+"회"    : apiStatus==="ok" ? "없음" : "-",  "#79c0ff"],
+            ["모바일 검색량",       mobMonthly!==null ? fmtNum(mobMonthly)+"회"   : apiStatus==="ok" ? "없음" : "-",  "#d2a8ff"],
             ["경쟁 강도",          compIdx||data.competitionLevel||"-",                            compColor],
           ].map(([l,v,c])=>(
             <div key={l} style={{background:"#0d1117aa",borderRadius:"10px",padding:"12px 10px",border:"1px solid #30363d",textAlign:"center"}}>
@@ -1081,7 +1087,7 @@ function KeywordTab(){
       {/* ── 트렌드 + 경쟁도 ── */}
       <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:"14px"}}>
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-          <SectionTitle>📈 트렌드 분석</SectionTitle>
+          <SectionTitle>📈 트렌드 분석 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추정</span></SectionTitle>
           <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}>
             <span style={{fontSize:"32px"}}>{data.trend==="상승"?"📈":data.trend==="하락"?"📉":"➡️"}</span>
             <div>
@@ -1099,7 +1105,7 @@ function KeywordTab(){
           </div>}
         </div>
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-          <SectionTitle>⚡ 경쟁 강도</SectionTitle>
+          <SectionTitle>⚡ 경쟁 강도 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추정</span></SectionTitle>
           <div style={{position:"relative",marginBottom:"8px"}}>
             <div style={{height:"10px",background:"linear-gradient(90deg,#3fb950,#ffa657,#f85149)",borderRadius:"5px"}}/>
             <div style={{position:"absolute",top:"-4px",left:`calc(${data.competitionScore||50}% - 9px)`,width:"18px",height:"18px",background:"#fff",borderRadius:"50%",border:`3px solid ${compColor}`}}/>
@@ -1115,15 +1121,7 @@ function KeywordTab(){
         </div>
       </div>
 
-      {/* ── 스마트블록 ── */}
-      {data.smartBlocks?.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-        <SectionTitle>⭐ 예상 스마트블록</SectionTitle>
-        <div style={{display:"flex",flexWrap:"wrap",gap:"8px"}}>
-          {data.smartBlocks.map(b=><div key={b} style={{background:"#1f6feb22",border:"1px solid #1f6feb55",borderRadius:"8px",padding:"8px 14px",color:"#58a6ff",fontSize:"13px",fontWeight:600}}>
-            {b==="인플루언서"?"👑":b==="VIEW"?"📋":b==="쇼핑"?"🛍️":b==="지식iN"?"💡":b==="뉴스"?"📰":b==="동영상"?"▶️":b==="블로그"?"✍️":"🖼️"} {b}
-          </div>)}
-        </div>
-      </div>}
+
 
       {/* ── 연관 키워드 + 실제 검색량 ── */}
       <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
@@ -1156,50 +1154,27 @@ function KeywordTab(){
 
       {/* ── 롱테일 키워드 ── */}
       <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-        <SectionTitle>🎯 롱테일 키워드</SectionTitle>
+        <SectionTitle>🎯 롱테일 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 클릭하면 글 작성 탭으로 이동</span></SectionTitle>
         <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
           {data.longtailKeywords?.map((kw,i)=>(
-            <div key={kw} style={{display:"flex",alignItems:"center",gap:"10px",background:"#0d1117",borderRadius:"8px",padding:"9px 14px",border:"1px solid #21262d"}}>
+            <div key={kw} style={{display:"flex",alignItems:"center",gap:"10px",background:"#0d1117",borderRadius:"8px",padding:"9px 14px",border:"1px solid #21262d",
+              cursor:"pointer",transition:"border .15s"}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor="#1f6feb44"}
+              onMouseLeave={e=>e.currentTarget.style.borderColor="#21262d"}>
               <span style={{color:"#484f58",fontSize:"12px",minWidth:"20px"}}>{i+1}</span>
-              <span style={{flex:1,color:"#c9d1d9",fontSize:"13px"}}>{kw}</span>
-              <button onClick={()=>setInputVal(kw)}
-                style={{background:"#1f6feb22",border:"1px solid #1f6feb44",color:"#58a6ff",borderRadius:"4px",padding:"3px 8px",fontSize:"11px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"}}>
-                조회
-              </button>
-              <button onClick={()=>navigator.clipboard.writeText(kw)}
-                style={{background:"none",border:"1px solid #30363d",color:"#8b949e",borderRadius:"4px",padding:"3px 8px",fontSize:"11px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"}}>
-                복사
+              <span style={{flex:1,color:"#c9d1d9",fontSize:"13px",lineHeight:"1.5"}}>{kw}</span>
+              <button onClick={()=>goWrite&&goWrite(kw)}
+                style={{background:"linear-gradient(135deg,#1f6feb,#388bfd)",border:"none",color:"#fff",
+                  borderRadius:"6px",padding:"5px 12px",fontSize:"11px",fontWeight:700,cursor:"pointer",
+                  fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
+                ✍️ 글쓰기
               </button>
             </div>
           ))}
         </div>
       </div>
 
-      {/* ── 제목 추천 + 콘텐츠 팁 ── */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px"}}>
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-          <SectionTitle>✏️ 제목 추천</SectionTitle>
-          <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-            {data.titleSuggestions?.map((t,i)=>(
-              <div key={i} style={{background:"#0d1117",borderRadius:"8px",padding:"10px 14px",border:"1px solid #21262d",
-                color:"#e6edf3",fontSize:"13px",lineHeight:"1.5",display:"flex",gap:"8px",alignItems:"flex-start"}}>
-                <span style={{color:"#1f6feb",fontWeight:700,minWidth:"16px"}}>{i+1}</span>
-                <span style={{flex:1}}>{t}</span>
-                <button onClick={()=>navigator.clipboard.writeText(t)}
-                  style={{background:"none",border:"1px solid #30363d",color:"#8b949e",borderRadius:"4px",
-                    padding:"3px 8px",fontSize:"11px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",flexShrink:0}}>
-                  복사
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-          <SectionTitle>💡 콘텐츠 작성 팁</SectionTitle>
-          <div style={{background:"#0d1117",borderRadius:"8px",padding:"14px",border:"1px solid #21262d",
-            color:"#c9d1d9",fontSize:"13px",lineHeight:"1.8"}}>{data.contentTips}</div>
-        </div>
-      </div>
+
 
     </div>}
   </div>;
