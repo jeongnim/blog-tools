@@ -1698,7 +1698,7 @@ function EmojiTab(){
 
 
 // ─── TAB: 글 작성 ────────────────────────────────────────────────────────
-function WriteTab(){
+function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive}){
   const [kw1,setKw1]=useState("");
   const [kw2,setKw2]=useState("");
   const [goal,setGoal]=useState("");
@@ -1706,6 +1706,12 @@ function WriteTab(){
   const [result,setResult]=useState(null);
   const [activeVer,setActiveVer]=useState(0);
   const [copied,setCopied]=useState(-1);
+  useEffect(()=>{
+    if(pendingWriteKw){
+      setKw1(pendingWriteKw);
+      if(setPendingWriteKw) setPendingWriteKw("");
+    }
+  },[pendingWriteKw]);
 
   const generate=async()=>{
     if(!kw1.trim()||!goal.trim()) return;
@@ -1747,6 +1753,8 @@ function WriteTab(){
       const cleaned=start!==-1&&end!==-1?raw.slice(start,end+1):raw;
       const parsed=JSON.parse(cleaned);
       setResult(parsed); setActiveVer(0);
+      // 글 생성 완료 후 3초 뒤 분석 탭으로 자동 이동
+      // setTimeout(()=>setActive&&setActive("analyze"),3000);
     }catch(e){
       setResult({error:"글 생성 중 오류가 발생했습니다. 다시 시도해주세요."});
     }
@@ -1956,6 +1964,8 @@ const TOOL_MAP={keyword:KeywordTab,write:WriteTab,analyze:AnalyzeTab,ocr:OcrTab,
 
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
+  const [pendingWriteKw,setPendingWriteKw]=useState("");
+  const goWrite=(kw)=>{setPendingWriteKw(kw);setActive("write");};
   const ActiveTool=TOOL_MAP[active];
   const tab=TABS.find(t=>t.id===active);
   return <div style={{minHeight:"100vh",background:"#010409",fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:"#e6edf3"}}>
@@ -1983,7 +1993,7 @@ export default function BlogTools(){
     </div>
     <div style={{padding:"22px 24px",maxWidth:"960px",margin:"0 auto"}}>
       <h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3"}}>{tab?.icon} {tab?.label}</h2>
-      <ActiveTool/>
+      <ActiveTool goWrite={goWrite} pendingWriteKw={pendingWriteKw} setPendingWriteKw={setPendingWriteKw} setActive={setActive}/>
     </div>
   </div>;
 }
