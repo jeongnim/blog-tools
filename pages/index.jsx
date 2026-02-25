@@ -1007,11 +1007,11 @@ function KeywordTab({goWrite}){
 
   // 네이버 API에서 특정 키워드 수치 찾기
   const getStat = (kw, field) => {
-    const item = kwStats?.find(i=>i.relKeyword===kw);
+    const item = kwStats?.find(i=>i.relKeyword?.toLowerCase()===kw?.toLowerCase());
     return item?.[field] ?? null;
   };
   const getRelStat = (kw, field, relStats) => {
-    const item = relStats?.find(i=>i.relKeyword===kw);
+    const item = relStats?.find(i=>i.relKeyword?.toLowerCase()===kw?.toLowerCase());
     return item?.[field] ?? null;
   };
 
