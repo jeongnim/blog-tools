@@ -49,10 +49,10 @@ function fmtSize(bytes){
   if(bytes<1024*1024) return (bytes/1024).toFixed(1)+"KB";
   return (bytes/1024/1024).toFixed(2)+"MB";
 }
-async function callClaude(messages,system,maxTokens=2000){
-  // Claude API 키 없으면 빈 문자열 반환 (AI 기능 비활성)
+async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5-20251001"){
+  // 키워드분석/짧은작업: haiku (저렴), 글작성: sonnet (고품질)
   try {
-    const body={model:"claude-sonnet-4-20250514",max_tokens:maxTokens,messages};
+    const body={model,max_tokens:maxTokens,messages};
     if(system) body.system=system;
     const res=await fetch("/api/claude",{
       method:"POST",
@@ -1775,7 +1775,7 @@ function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive}){
 
     try{
       const raw=await callClaude([{role:"user",content:prompt}],
-        "You are a professional Korean blogger and SEO expert who adapts your expertise to match any topic or keyword. Output ONLY valid JSON with no markdown fences.", 8000);
+        "You are a professional Korean blogger and SEO expert who adapts your expertise to match any topic or keyword. Output ONLY valid JSON with no markdown fences.", 8000, "claude-sonnet-4-20250514");
       // JSON 추출: 첫 { 부터 마지막 } 까지만 자름
       const start=raw.indexOf("{");
       const end=raw.lastIndexOf("}");
