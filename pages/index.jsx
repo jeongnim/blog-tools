@@ -1184,24 +1184,15 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
             {result.trend==="상승"?"📈 상승세":result.trend==="하락"?"📉 하락세":"➡️ 유지"}
           </span>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"10px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"10px"}}>
           {[
             ["월간 검색량 (합산)", result.totalMonthly!==null ? fmtNum(result.totalMonthly)+"회" : "데이터 없음", "#58a6ff"],
-            ["PC 검색량",  result.pcMonthly!==null  ? fmtNum(result.pcMonthly)+"회"  : "-", "#79c0ff"],
-            ["모바일 검색량", result.mobMonthly!==null ? fmtNum(result.mobMonthly)+"회" : "-", "#d2a8ff"],
+            ["PC 검색량",         result.pcMonthly!==null    ? fmtNum(result.pcMonthly)+"회"    : "-",           "#79c0ff"],
+            ["모바일 검색량",     result.mobMonthly!==null   ? fmtNum(result.mobMonthly)+"회"   : "-",           "#d2a8ff"],
+            ["월평균 클릭수 (PC)",     result.pcAvgClick!==null   ? fmtNum(result.pcAvgClick)+"회"   : "-",       "#56d364"],
+            ["월평균 클릭수 (모바일)", result.mobAvgClick!==null  ? fmtNum(result.mobAvgClick)+"회"  : "-",       "#ffa657"],
           ].map(([l,v,c])=>(
             <div key={l} style={{background:"#0d1117aa",borderRadius:"10px",padding:"12px 10px",border:"1px solid #30363d",textAlign:"center"}}>
-              <div style={{color:c,fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>{v}</div>
-              <div style={{color:"#8b949e",fontSize:"10px"}}>{l}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginTop:"10px"}}>
-          {[
-            ["월평균 클릭수 (PC)", result.pcAvgClick!==null ? fmtNum(result.pcAvgClick)+"회" : "-", "#56d364"],
-            ["월평균 클릭수 (모바일)", result.mobAvgClick!==null ? fmtNum(result.mobAvgClick)+"회" : "-", "#ffa657"],
-          ].map(([l,v,c])=>(
-            <div key={l} style={{background:"#0d1117aa",borderRadius:"10px",padding:"10px",border:"1px solid #30363d",textAlign:"center"}}>
               <div style={{color:c,fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>{v}</div>
               <div style={{color:"#8b949e",fontSize:"10px"}}>{l}</div>
             </div>
