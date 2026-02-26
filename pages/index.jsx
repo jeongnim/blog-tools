@@ -616,86 +616,104 @@ JSON 형식:
 function OcrTab(){
   const [images,setImages]=useState([]);
   const [dragOver,setDragOver]=useState(false);
-  const [mode,setMode]=useState("simple");
+  const [tesseractReady,setTesseractReady]=useState(false);
+  const [tesseractLoading,setTesseractLoading]=useState(false);
   const fileInputRef=useRef(null);
+  const workerRef=useRef(null);
+
+  // Tesseract.js 로드 (CDN)
+  const loadTesseract=async()=>{
+    if(workerRef.current) return workerRef.current;
+    setTesseractLoading(true);
+    return new Promise((resolve,reject)=>{
+      if(window.Tesseract){
+        initWorker(resolve,reject);
+        return;
+      }
+      const script=document.createElement("script");
+      script.src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.5/tesseract.min.js";
+      script.onload=()=>initWorker(resolve,reject);
+      script.onerror=()=>reject(new Error("Tesseract 로드 실패"));
+      document.head.appendChild(script);
+    });
+  };
+  const initWorker=async(resolve,reject)=>{
+    try{
+      const worker=await window.Tesseract.createWorker(["kor","eng"],1,{
+        logger: m=>{
+          if(m.status==="recognizing text"){
+            const pct=Math.round((m.progress||0)*100);
+            setImages(prev=>prev.map(i=>i.processing?{...i,progress:pct}:i));
+          }
+        }
+      });
+      workerRef.current=worker;
+      setTesseractReady(true);
+      setTesseractLoading(false);
+      resolve(worker);
+    }catch(e){ setTesseractLoading(false); reject(e); }
+  };
+
   const addFiles=useCallback((files)=>{
     const valid=[...files].filter(f=>f.type.startsWith("image/"));
     if(!valid.length) return;
-    setImages(prev=>[...prev,...valid.map(f=>({file:f,preview:URL.createObjectURL(f),result:"",loading:false,id:Date.now()+Math.random()}))]);
+    setImages(prev=>[...prev,...valid.map(f=>({file:f,preview:URL.createObjectURL(f),result:"",loading:false,processing:false,progress:0,id:Date.now()+Math.random()}))]);
   },[]);
+
   useEffect(()=>{
-    const onPaste=e=>{const files=[...e.clipboardData.items].filter(i=>i.type.startsWith("image/")).map(i=>i.getAsFile()).filter(Boolean);if(files.length) addFiles(files);};
-    window.addEventListener("paste",onPaste); return()=>window.removeEventListener("paste",onPaste);
+    const onPaste=e=>{
+      const files=[...e.clipboardData.items].filter(i=>i.type.startsWith("image/")).map(i=>i.getAsFile()).filter(Boolean);
+      if(files.length) addFiles(files);
+    };
+    window.addEventListener("paste",onPaste);
+    return()=>window.removeEventListener("paste",onPaste);
   },[addFiles]);
-  // 이미지를 세로로 잘라서 base64 배열 반환 (긴 이미지 대응)
-  const sliceImageToChunks=async(file, chunkHeight=1800)=>{
-    return new Promise((resolve)=>{
-      const img=new Image();
-      img.onload=()=>{
-        const {width,height}=img;
-        if(height<=chunkHeight){
-          // 짧은 이미지: 그냥 바로 base64
-          const canvas=document.createElement("canvas");
-          canvas.width=width; canvas.height=height;
-          canvas.getContext("2d").drawImage(img,0,0);
-          resolve([canvas.toDataURL("image/jpeg",0.92).split(",")[1]]);
-          return;
-        }
-        // 긴 이미지: chunkHeight씩 잘라서 여러 조각으로
-        const chunks=[];
-        for(let y=0;y<height;y+=chunkHeight){
-          const h=Math.min(chunkHeight, height-y);
-          const canvas=document.createElement("canvas");
-          canvas.width=width; canvas.height=h;
-          canvas.getContext("2d").drawImage(img,0,y,width,h,0,0,width,h);
-          chunks.push(canvas.toDataURL("image/jpeg",0.92).split(",")[1]);
-        }
-        resolve(chunks);
-      };
-      img.src=URL.createObjectURL(file);
-    });
-  };
+
+  // 컴포넌트 언마운트 시 워커 종료
+  useEffect(()=>()=>{ workerRef.current?.terminate(); },[]);
 
   const extractText=async(img)=>{
-    setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:true,result:"",progress:""}:i));
+    setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:true,processing:true,result:"",progress:0}:i));
     try{
-      const chunks=await sliceImageToChunks(img.file, 1800);
-      const isRich=mode==="rich";
-      const results=[];
-      for(let ci=0;ci<chunks.length;ci++){
-        setImages(prev=>prev.map(i=>i.id===img.id?{...i,progress:chunks.length>1?`조각 ${ci+1}/${chunks.length} 처리중...`:"분석중..."}:i));
-        const prompt=isRich
-          ?"이 이미지에서 텍스트를 추출해주세요. 표, 목록, 제목 등 서식 구조를 마크다운 형태로 유지해주세요."
-          :"이 이미지에서 텍스트만 순수하게 추출해주세요. 서식 없이 텍스트만 출력하세요.";
-        const part=await callClaude([{role:"user",content:[
-          {type:"image",source:{type:"base64",media_type:"image/jpeg",data:chunks[ci]}},
-          {type:"text",text:prompt}
-        ]}]);
-        results.push(part);
-      }
-      const result=results.join("\n");
-      setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:false,result,progress:""}:i));
-    }catch(e){setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:false,result:"⚠️ 오류. 다시 시도해주세요.",progress:""}:i));}
+      const worker=await loadTesseract();
+      const {data:{text}}=await worker.recognize(img.file);
+      setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:false,processing:false,result:text.trim(),progress:100}:i));
+    }catch(e){
+      setImages(prev=>prev.map(i=>i.id===img.id?{...i,loading:false,processing:false,result:"⚠️ 오류: "+e.message}:i));
+    }
   };
+
   const extractAll=()=>images.filter(i=>!i.result&&!i.loading).forEach(i=>extractText(i));
   const totalChars=images.reduce((s,i)=>s+(i.result?.length||0),0);
+  const fmtSize=n=>n>1024*1024?(n/1024/1024).toFixed(1)+"MB":(n/1024).toFixed(0)+"KB";
+
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
-    <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
-      <span style={{color:"#8b949e",fontSize:"13px"}}>추출 방식:</span>
-      {[["simple","📄 간단한 텍스트"],["rich","📋 서식 있는 텍스트"]].map(([v,l])=>(
-        <button key={v} onClick={()=>setMode(v)} style={{padding:"7px 14px",borderRadius:"6px",border:`1px solid ${mode===v?"#58a6ff":"#30363d"}`,background:mode===v?"#1f6feb22":"#21262d",color:mode===v?"#58a6ff":"#8b949e",cursor:"pointer",fontSize:"13px",fontFamily:"'Noto Sans KR',sans-serif"}}>{l}</button>
-      ))}
+    <div style={{background:"#0d2019",border:"1px solid #2ea04333",borderRadius:"10px",padding:"12px 16px",display:"flex",alignItems:"center",gap:"10px"}}>
+      <span style={{fontSize:"18px"}}>⚡</span>
+      <div>
+        <div style={{color:"#3fb950",fontSize:"13px",fontWeight:600}}>Tesseract OCR 엔진 사용 (무료 · 빠름 · Claude 비용 없음)</div>
+        <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>한국어+영어 인식 · 긴 이미지도 한 번에 처리</div>
+      </div>
+      {tesseractLoading&&<span style={{color:"#ffa657",fontSize:"12px",marginLeft:"auto"}}>⏳ OCR 엔진 로딩중...</span>}
+      {tesseractReady&&<span style={{color:"#3fb950",fontSize:"12px",marginLeft:"auto"}}>✅ 준비됨</span>}
     </div>
-    <div onClick={()=>fileInputRef.current?.click()} onDrop={e=>{e.preventDefault();setDragOver(false);addFiles(e.dataTransfer.files);}} onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)}
-      style={{border:`2px dashed ${dragOver?"#58a6ff":"#30363d"}`,borderRadius:"12px",padding:"36px 20px",textAlign:"center",cursor:"pointer",background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
+
+    <div onClick={()=>fileInputRef.current?.click()}
+      onDrop={e=>{e.preventDefault();setDragOver(false);addFiles(e.dataTransfer.files);}}
+      onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+      onDragLeave={()=>setDragOver(false)}
+      style={{border:`2px dashed ${dragOver?"#58a6ff":"#30363d"}`,borderRadius:"12px",padding:"36px 20px",
+        textAlign:"center",cursor:"pointer",background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
       <div style={{fontSize:"36px",marginBottom:"10px"}}>🖼️</div>
       <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:600,marginBottom:"6px"}}>이미지를 드래그하거나 클릭하여 업로드</div>
-      <div style={{color:"#484f58",fontSize:"13px"}}>JPG, PNG, GIF, WEBP, BMP, AVIF · 여러 장 동시 가능</div>
+      <div style={{color:"#484f58",fontSize:"13px"}}>JPG, PNG, GIF, WEBP · 긴 스크린샷도 가능</div>
       <input ref={fileInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>addFiles(e.target.files)}/>
     </div>
+
     <div style={{background:"#161b22",borderRadius:"8px",padding:"10px 14px",border:"1px solid #30363d",color:"#8b949e",fontSize:"12px"}}>
       💡 <strong style={{color:"#c9d1d9"}}>Ctrl+V</strong> 로 클립보드 이미지(스크린샷)를 바로 붙여넣기 가능
     </div>
+
     {images.length>0&&<>
       <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center"}}>
         <Btn onClick={extractAll} loading={images.some(i=>i.loading)}>🔍 전체 텍스트 추출</Btn>
@@ -722,10 +740,14 @@ function OcrTab(){
               <img src={img.preview} alt="" style={{maxWidth:"100%",maxHeight:"180px",objectFit:"contain",borderRadius:"6px"}}/>
             </div>
             <div style={{padding:"14px",display:"flex",flexDirection:"column",gap:"8px"}}>
-              {img.loading?<div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-                <div style={{color:"#58a6ff",fontSize:"13px",fontWeight:600,animation:"pulse 1.5s ease infinite"}}>⏳ {img.progress||"이미지 분석중..."}</div>
-                <div style={{color:"#484f58",fontSize:"12px"}}>긴 이미지는 조각으로 나눠 처리합니다</div>
-                <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
+              {img.loading?<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{color:"#8b949e",fontSize:"13px"}}>⏳ 텍스트 인식중...</span>
+                  <span style={{color:"#58a6ff",fontSize:"13px",fontWeight:700}}>{img.progress||0}%</span>
+                </div>
+                <div style={{background:"#21262d",borderRadius:"4px",height:"6px",overflow:"hidden"}}>
+                  <div style={{background:"linear-gradient(90deg,#1f6feb,#58a6ff)",height:"100%",width:`${img.progress||0}%`,transition:"width .3s",borderRadius:"4px"}}/>
+                </div>
               </div>:img.result?<>
                 <div style={{display:"flex",justifyContent:"flex-end",gap:"6px"}}>
                   <span style={{color:"#484f58",fontSize:"11px",marginRight:"auto"}}>{img.result.length.toLocaleString()}자 추출됨</span>
