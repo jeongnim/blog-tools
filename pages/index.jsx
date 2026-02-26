@@ -1243,10 +1243,27 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
             <div style={{color:compColor,fontSize:"18px",fontWeight:700}}>{result.compLevel}</div>
           </div>
           <div style={{background:"#0d1117",borderRadius:"6px",padding:"8px",fontSize:"11px",color:"#8b949e",lineHeight:"1.6"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
+              <span>월 발행량</span>
+              <strong style={{color:"#ffa657"}}>
+                {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"건":"확인중"}
+                {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실측</span>}
+              </strong>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
+              <span>월 검색량</span>
+              <strong style={{color:"#58a6ff"}}>{result.totalMonthly!=null?fmtNum(result.totalMonthly)+"회":"-"}</strong>
+            </div>
+            {result.ratio!=null&&<div style={{display:"flex",justifyContent:"space-between",paddingTop:"6px",borderTop:"1px solid #21262d",marginBottom:"6px"}}>
+              <span>포화도 (발행÷검색)</span>
+              <strong style={{color:compColor}}>{result.ratio.toFixed(1)}x</strong>
+            </div>}
             <div style={{marginTop:"4px",color:result.compScore<30?"#3fb950":result.compScore<60?"#ffa657":"#ff7b72",fontSize:"12px",fontWeight:700}}>
               {result.compScore<30?"✅ 신규 블로거도 가능":result.compScore<60?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
             </div>
-            <div style={{color:"#484f58",fontSize:"10px",marginTop:"4px"}}>· AI 트렌드 기반 추정</div>
+            <div style={{color:"#484f58",fontSize:"10px",marginTop:"6px",borderTop:"1px solid #21262d",paddingTop:"6px"}}>
+              기준: ~1x 매우낮음 · 1~5x 낮음 · 5~15x 보통 · 15~30x 높음 · 30x+ 매우높음
+            </div>
           </div>
         </div>
       </div>
