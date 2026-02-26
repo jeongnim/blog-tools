@@ -1,5 +1,5 @@
 // pages/api/blog-count.js
-// 네이버 Search API로 월 블로그 발행량 조회
+// 네이버 Search API로 월 블로그 발행량 추정
 export const config = { maxDuration: 30 };
 
 export default async function handler(req, res) {
@@ -13,47 +13,52 @@ export default async function handler(req, res) {
     return res.status(200).json({ total: null, monthly: null, error: "NAVER_CLIENT_ID/SECRET 없음" });
   }
 
+  const headers = {
+    "X-Naver-Client-Id": clientId,
+    "X-Naver-Client-Secret": clientSecret,
+  };
+
   try {
-    // ① 최신 100개 가져와서 pubDate로 1개월치 비율 계산
-    const url = `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=100&start=1&sort=date`;
-    const response = await fetch(url, {
-      headers: {
-        "X-Naver-Client-Id": clientId,
-        "X-Naver-Client-Secret": clientSecret,
-      },
-    });
-    const data = await response.json();
-    if (data.errorCode) return res.status(200).json({ total: null, monthly: null, error: data.errorMessage });
+    // ① 전체 게시물 수
+    const r1 = await fetch(
+      `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=1&sort=sim`,
+      { headers }
+    );
+    const d1 = await r1.json();
+    if (d1.errorCode) return res.status(200).json({ total: null, monthly: null, error: d1.errorMessage });
+    const total = d1.total || 0;
 
-    const total = data.total || 0;
-    const items = data.items || [];
+    // ② 최신 100개 pubDate → 일 평균 계산 → 30일치
+    const r2 = await fetch(
+      `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=100&start=1&sort=date`,
+      { headers }
+    );
+    const d2 = await r2.json();
+    const items = d2.items || [];
 
-    // ② 1개월 이내 게시물 카운트
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+    let monthly = null;
+    if (items.length >= 2) {
+      // 가장 오래된 것과 최신 것의 날짜 차이로 일 평균 계산
+      const dates = items
+        .map(i => new Date(i.pubDate))
+        .filter(d => !isNaN(d))
+        .sort((a, b) => b - a);
 
-    let monthlyCount = 0;
-    for (const item of items) {
-      const pubDate = new Date(item.pubDate);
-      if (pubDate >= oneMonthAgo) monthlyCount++;
+      if (dates.length >= 2) {
+        const newest = dates[0];
+        const oldest = dates[dates.length - 1];
+        const daysDiff = Math.max(1, (newest - oldest) / (1000 * 60 * 60 * 24));
+        const dailyAvg = dates.length / daysDiff;
+        monthly = Math.round(dailyAvg * 30);
+      } else {
+        // pubDate 파싱 실패시 1달 이내 직접 카운트
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+        monthly = items.filter(i => new Date(i.pubDate) >= oneMonthAgo).length;
+      }
     }
 
-    // ③ 월 발행량 추정
-    // 방법1: 100개 샘플에서 직접 카운트 (가장 정확, 단 최대 100건)
-    // 방법2: 비율 기반 추정 (전체가 더 클 때)
-    const ratio = items.length > 0 ? monthlyCount / items.length : 0;
-    const estimated = Math.round(total * ratio);
-
-    // 실제 카운트가 더 신뢰할 수 있으면 그걸 사용
-    // 샘플 100개 중 1개월치가 100개 미만이면 실제값, 100개면 비율 추정
-    const monthly = monthlyCount < items.length ? monthlyCount : estimated;
-
-    res.status(200).json({ 
-      total,           // 전체 누적 게시물
-      monthly,         // 월 발행량
-      sampleSize: items.length,
-      monthlyInSample: monthlyCount,
-    });
+    res.status(200).json({ total, monthly });
   } catch (err) {
     res.status(200).json({ total: null, monthly: null, error: err.message });
   }
