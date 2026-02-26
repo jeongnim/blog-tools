@@ -298,11 +298,23 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
 }
 
 // ─── TAB 1: 글 분석 ──────────────────────────────────────────────────────
-function AnalyzeTab(){
+function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText}){
   const [text,setText]=useState("");
   const [activeSection,setActiveSection]=useState("stats");
   const [analyzing,setAnalyzing]=useState(false);
   const [aiResult,setAiResult]=useState(null);
+  const [autoLoading,setAutoLoading]=useState(false);
+  useEffect(()=>{
+    if(!pendingAnalyzeText) return;
+    if(pendingAnalyzeText==="__loading__"){
+      setAutoLoading(true);
+      setText("");
+    } else {
+      setAutoLoading(false);
+      setText(pendingAnalyzeText);
+      if(setPendingAnalyzeText) setPendingAnalyzeText("");
+    }
+  },[pendingAnalyzeText]);
   const [lastText,setLastText]=useState("");
   const [threshold,setThreshold]=useState(5);
   // forbidden replace state
@@ -399,7 +411,15 @@ JSON 형식:
 
     {/* 텍스트 입력 */}
     <div style={{position:"relative"}}>
-      <Textarea value={text} onChange={t=>{setText(t);}} placeholder="분석할 블로그 글을 입력하세요..." rows={9}/>
+      {autoLoading&&<div style={{background:"#0d2019",border:"1px solid #2ea04333",borderRadius:"10px",padding:"20px",textAlign:"center",marginBottom:"10px"}}>
+        <div style={{color:"#3fb950",fontSize:"14px",fontWeight:700,marginBottom:"8px"}}>✍️ 키워드 기반 글 자동 생성 중...</div>
+        <div style={{color:"#484f58",fontSize:"12px"}}>Sonnet으로 SEO 최적화 글 작성중. 잠시만 기다려주세요.</div>
+        <div style={{marginTop:"12px",height:"4px",background:"#21262d",borderRadius:"2px",overflow:"hidden"}}>
+          <div style={{height:"100%",background:"linear-gradient(90deg,#2ea043,#3fb950)",animation:"slideBar 1.5s ease infinite",borderRadius:"2px"}}/>
+        </div>
+        <style>{"@keyframes slideBar{0%{width:0%,marginLeft:0}50%{width:70%}100%{width:0%,marginLeft:100%}}"}</style>
+      </div>}
+      {!autoLoading&&<Textarea value={text} onChange={t=>{setText(t);}} placeholder="분석할 블로그 글을 입력하세요..." rows={9}/>}
       <div style={{position:"absolute",bottom:"10px",right:"14px",color:text.length>9000?"#ff7b72":"#484f58",fontSize:"12px"}}>{text.length.toLocaleString()} / 10,000자</div>
     </div>
 
@@ -985,6 +1005,9 @@ function ConvertTab(){
 }
 
 // ─── TAB 5: 키워드 조회 ──────────────────────────────────────────────────
+// 키워드 분석 캐시 (세션 동안 유지, 같은 키워드 재분석 시 AI 호출 생략)
+const KW_CACHE = {};
+
 async function fetchNaverKeywordStats(keywords) {
   const res = await fetch(`/api/keyword-stats?keywords=${keywords.map(encodeURIComponent).join(",")}`);
   if (!res.ok) throw new Error(`API 오류 ${res.status}`);
@@ -993,7 +1016,7 @@ async function fetchNaverKeywordStats(keywords) {
   return data.keywordList || [];
 }
 
-function KeywordTab({goWrite, kwResult, setKwResult}){
+function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
   const [inputVal,setInputVal]=useState(kwResult?._inputVal||"");
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -1004,6 +1027,11 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
   const analyze=async(overrideKw)=>{
     const kw=(overrideKw||inputVal).trim(); if(!kw) return;
     setInputVal(kw);
+    // 캐시 확인 - 같은 키워드면 저장된 결과 바로 표시
+    if(KW_CACHE[kw]){
+      setKwResult(KW_CACHE[kw]);
+      return;
+    }
     setLoading(true); setError(""); setKwResult(null);
     try{
       // ① 네이버 광고 API (메인 키워드)
@@ -1057,7 +1085,12 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
         '  "smartBlockType": "블로그|지도/플레이스|리뷰|쇼핑|비교/추천|정보/지식 중 이 키워드 검색 시 네이버에서 가장 먼저 뜨는 스마트블록 유형",',
         '  "smartBlockReason": "왜 이 유형의 스마트블록이 뜨는지 한 줄",',
         '  "blogStrategy": "이 스마트블록 유형에서 블로그가 노출될 수 있는 전략 한 줄",',
-        '  "longtailKeywords": ["인기글 제목과 스마트블록 유형을 참고해 실제 블로거가 쓸 만한 문장형 키워드 10개. 단순 단어조합 금지"]',
+        '  "longtailKeywords": [',
+        '    "스마트블록 유형(smartBlockType)에 따라 아래 전략으로 문장형 키워드 10개 작성:",',
+        '    "블로그형→정보/후기/비교 문장형, 지도형→블로그 우회 구체적 경험형,",',
+        '    "쇼핑형→구매 전 탐색형, 리뷰형→상세 사용기/비교형, 비교형→vs구도/추천형.",',
+        '    "반드시 완성된 문장형으로. 단어 나열 금지. 실제 블로거가 쓸 제목처럼."',
+        '  ]',
         '}' + titlesAppend
       ].join("\n");
       const raw = await callClaude([{role:"user",content:msgContent}],"Respond ONLY with valid JSON.");
@@ -1078,7 +1111,7 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
         : ratio < 30  ? "높음" : "매우높음";
       const compScore = ratio===null ? 50 : Math.min(Math.round(ratio/40*100), 100);
 
-      setKwResult({
+      const kwRes = {
         _inputVal: kw,
         keyword: kw,
         naverOk,
@@ -1090,7 +1123,10 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
         ratio, compLevel, compScore,
         blogTitles,
         ...aiResult,
-      });
+        monthlyBlogPosts,
+      };
+      KW_CACHE[kw] = kwRes;
+      setKwResult(kwRes);
     }catch(e){
       setError("분석 오류: "+e.message);
     }
@@ -1280,11 +1316,11 @@ function KeywordTab({goWrite, kwResult, setKwResult}){
               padding:"9px 14px",border:"1px solid #21262d"}}>
               <span style={{color:"#484f58",fontSize:"12px",minWidth:"20px"}}>{i+1}</span>
               <span style={{flex:1,color:"#c9d1d9",fontSize:"13px",lineHeight:"1.5"}}>{kw}</span>
-              <button onClick={()=>goWrite&&goWrite(kw)}
+              <button onClick={()=>goAutoWrite?goAutoWrite(kw,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy):goWrite&&goWrite(kw)}
                 style={{background:"linear-gradient(135deg,#1f6feb,#388bfd)",border:"none",color:"#fff",
                   borderRadius:"6px",padding:"5px 12px",fontSize:"11px",fontWeight:700,cursor:"pointer",
                   fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
-                ✍️ 글쓰기
+                ✍️ 자동 글쓰기
               </button>
             </div>
           ))}
@@ -1832,30 +1868,35 @@ function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive}){
     if(!kw1.trim()||!goal.trim()) return;
     setLoading(true); setResult(null);
     const mainKw=kw2.trim()?`"${kw1.trim()}"과 "${kw2.trim()}"`:`"${kw1.trim()}"`;
-    const prompt=`다음 조건으로 블로그 글 3가지 버전을 작성해줘.
+    const year = new Date().getFullYear();
+    const prompt=`다음 조건으로 네이버 블로그 글 3가지 버전을 작성해줘.
 
-1. ${mainKw}을 메인 키워드로 글을 작성 할거야.
-2. 난 ${mainKw} 키워드에 가장 적합한 분야의 전문 블로거야. 해당 분야의 전문성을 살려서 글의 톤을 사실성, 일관성을 바탕으로 공감성을 높여서 작성해. 글의 톤은 10번의 내용을 참고해.
-3. 블로그 글의 주요 목표는 ${goal.trim()}에 대한 정보를 전달하는 것.
-4. Temperature 0.7, Top P 0.4 기준으로 글을 써줘.
-5. 각 버전은 1800~2200자로 작성해줘.
-6. 5번까지 조건으로 나온 글을 블로그 SEO에 맞춰 내용을 확장 후, 7번부터 진행해.
-7. 메인 키워드는 최대 19회까지 중복 사용 가능해. 다른 단어는 메인키워드 보다 많이 중복되면 안되.
-8. 모든 형태소(키워드)는 메인 키워드와 서브 키워드 보다 많이 사용하면 안되.
-9. 글은 3가지 버전으로 작성해.
-10. 3개의 글은 모두 다른 사람이 쓴 것처럼 글 문단의 순서와 관점 등을 모두 바꿔서 작성 해야만해. 버전2, 버전3은 친근한 말투로 작성하고 싶어.
-     버전1) 니다- 체를 사용해서 100% 정보(객관성)에 기반해서 작성해. 각 문단마다 소제목을 붙여 문단을 정확하게 나눠서 작성하고 문단은 총 5~6개로 작성해.
-     버전2) 주관적 20% + 정보성(객관성) 80% 정도를 섞어서 작성해. -니다 체와 -요 체 등의 다양한 어휘를 적절하게 섞고, 문단을 나누지는 않지만 4개정도로 나뉠 수 있도록 글을 쓰고 싶어.
-     버전3) 감정과 경험을 기반으로 정보성 60% + 주관적인 생각 40% 정도로 작성해. -요 체 위주로만 사용해.
-11. 버전2와 버전3은 문단의 소주제를 정하진 않지만, 4~5개정도의 문단을 나눠서 작성해줘.
-12. 각 버전 별로 본문 내용과 일치율이 높고 검색도가 좋은 제목을 한개씩 추천해줘. 제목에는 메인 키워드를 반드시 써야하고, 간결한 제목이 좋아.
+메인 키워드: ${mainKw}
+주요 목표: ${goal.trim()}
 
-응답 형식: 아래 JSON 형식으로만 답해줘. 마크다운 코드블록 없이 순수 JSON만.
+조건:
+0. ${year}년 기준 최신 정보를 토대로 작성.
+1. 메인 키워드 ${mainKw}를 중심으로 작성.
+2. 해당 분야 전문 블로거 관점으로 작성.
+3. 주요 목표(${goal.trim()})에 맞는 정보를 전달.
+4. Temperature 0.7, Top P 0.4 기준.
+5. 한글+공백 포함 버전당 최소 1,800자 ~ 2,500자.
+6. 1,800자 미만 버전이 있으면 SEO에 맞춰 내용 보강 후 재작성.
+7. 메인 키워드 최대 19회.
+8. 모든 형태소는 메인 키워드보다 많이 사용하면 안됨.
+9. 3개의 글은 다른 사람이 쓴 것처럼 순서, 관점, 어휘 모두 다르게.
+   - 버전1) 정보성 100%, 니다체. 소제목 포함 5~6개 문단.
+   - 버전2) 감정 10% + 정보성 90%. 니다체/요체 혼합. 소제목 없이 4~5개 문단.
+   - 버전3) 감정 40% + 정보성 60%. 요체 위주. 소제목 없이 4~5개 문단.
+10. 각 버전마다 SEO 제목 1개. 메인 키워드 반드시 포함. 특수문자 사용 금지.
+    예시: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리"
+
+응답 형식: 아래 JSON 형식으로만. 마크다운 코드블록 없이 순수 JSON만.
 {
   "versions": [
-    {"title":"버전1 추천 제목","label":"버전1 · 객관적 (니다체)","content":"버전1 본문 전체"},
-    {"title":"버전2 추천 제목","label":"버전2 · 혼합 (니다+요체)","content":"버전2 본문 전체"},
-    {"title":"버전3 추천 제목","label":"버전3 · 감성 (요체)","content":"버전3 본문 전체"}
+    {"title":"버전1 제목","label":"버전1 · 객관적 (니다체)","content":"버전1 본문 전체"},
+    {"title":"버전2 제목","label":"버전2 · 혼합 (니다+요체)","content":"버전2 본문 전체"},
+    {"title":"버전3 제목","label":"버전3 · 감성 (요체)","content":"버전3 본문 전체"}
   ]
 }`;
 
@@ -2081,7 +2122,53 @@ export default function BlogTools(){
   const [active,setActive]=useState("keyword");
   const [pendingWriteKw,setPendingWriteKw]=useState("");
   const [kwResult,setKwResult]=useState(null);
+  const [pendingAnalyzeText,setPendingAnalyzeText]=useState("");
+  // 키워드탭 글쓰기: 자동 생성 후 분석탭으로 이동
   const goWrite=(kw)=>{setPendingWriteKw(kw);setActive("write");};
+  const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy)=>{
+    setPendingAnalyzeText("__loading__");
+    setActive("analyze");
+    // 자동 글 생성 (버전1 하나만)
+    try{
+      const year = new Date().getFullYear();
+      const prompt=[
+        '다음 조건으로 네이버 블로그 글 1편을 작성해줘.',
+        '',
+        '메인 키워드: "'+kw+'"',
+        '롱테일 키워드(글의 주요 목표): "'+kw+'"',
+        '스마트블록 유형: '+(smartBlockType||"블로그"),
+        '블로그 전략: '+(blogStrategy||""),
+        '',
+        '조건:',
+        '0. '+year+'년 기준 최신 정보를 토대로 작성.',
+        '1. 메인 키워드 "'+kw+'"를 중심으로 작성.',
+        '2. 해당 분야 전문 블로거 관점으로 작성.',
+        '3. 롱테일 키워드의 주제와 의도에 맞춰 글의 목표를 설정.',
+        '4. Temperature 0.7, Top P 0.4 기준.',
+        '5. 한글+공백 포함 최소 1,800자 ~ 2,500자.',
+        '6. 1,800자 미만이면 SEO에 맞춰 내용 보강 후 재작성.',
+        '7. 메인 키워드 최대 19회.',
+        '8. 모든 형태소는 메인 키워드보다 많이 사용하면 안됨.',
+        '9. 스마트블록 인기글의 톤 참고하되, 순서/관점/어휘 완전히 바꿔서 다른 사람이 쓴 것처럼.',
+        '10. 네이버 SEO에 맞는 제목 1개. 메인 키워드 반드시 포함. 특수문자 사용 금지.',
+        '    예시: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리"',
+        '',
+        '응답: 아래 JSON만. 마크다운 없이.',
+        '{"title":"제목","content":"본문전체"}'
+      ].join("\n");
+      const res = await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:8000,
+          system:"You are a professional Korean blogger. Output ONLY valid JSON.",
+          messages:[{role:"user",content:prompt}]})});
+      const data = await res.json();
+      const raw = data.content?.[0]?.text||"";
+      const s=raw.indexOf("{"); const e=raw.lastIndexOf("}");
+      const parsed = JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
+      setPendingAnalyzeText(parsed.content||"");
+    }catch(err){
+      setPendingAnalyzeText("");
+    }
+  };
   const ActiveTool=TOOL_MAP[active];
   const tab=TABS.find(t=>t.id===active);
   return <div style={{minHeight:"100vh",background:"#010409",fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:"#e6edf3"}}>
@@ -2109,7 +2196,7 @@ export default function BlogTools(){
     </div>
     <div style={{padding:"22px 24px",maxWidth:"960px",margin:"0 auto"}}>
       <h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3"}}>{tab?.icon} {tab?.label}</h2>
-      <ActiveTool goWrite={goWrite} pendingWriteKw={pendingWriteKw} setPendingWriteKw={setPendingWriteKw} setActive={setActive} kwResult={kwResult} setKwResult={setKwResult}/>
+      <ActiveTool goWrite={goWrite} goAutoWrite={goAutoWrite} pendingWriteKw={pendingWriteKw} setPendingWriteKw={setPendingWriteKw} setActive={setActive} kwResult={kwResult} setKwResult={setKwResult} pendingAnalyzeText={pendingAnalyzeText} setPendingAnalyzeText={setPendingAnalyzeText}/>
     </div>
   </div>;
 }
