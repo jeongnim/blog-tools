@@ -298,28 +298,37 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
 }
 
 // ─── TAB 1: 글 분석 ──────────────────────────────────────────────────────
-function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText}){
-  const [text,setText]=useState("");
-  const [activeSection,setActiveSection]=useState("stats");
+function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
+  analyzeText,setAnalyzeText,analyzeAiResult,setAnalyzeAiResult,
+  analyzeLastText,setAnalyzeLastText,analyzeThreshold,setAnalyzeThreshold,
+  analyzeReplacements,setAnalyzeReplacements,analyzeWorkingText,setAnalyzeWorkingText,
+  analyzeActiveSection,setAnalyzeActiveSection}){
+  const text=analyzeText; const setText=setAnalyzeText;
+  const activeSection=analyzeActiveSection; const setActiveSection=setAnalyzeActiveSection;
   const [analyzing,setAnalyzing]=useState(false);
-  const [aiResult,setAiResult]=useState(null);
   const [autoLoading,setAutoLoading]=useState(false);
+  const aiResult=analyzeAiResult; const setAiResult=setAnalyzeAiResult;
+  const lastText=analyzeLastText; const setLastText=setAnalyzeLastText;
+  const threshold=analyzeThreshold; const setThreshold=setAnalyzeThreshold;
+  const replacements=analyzeReplacements; const setReplacements=setAnalyzeReplacements;
+  const workingText=analyzeWorkingText; const setWorkingText=setAnalyzeWorkingText;
+  // 초기화
+  const resetAll=()=>{setAnalyzeText("");setAnalyzeAiResult(null);setAnalyzeLastText("");
+    setAnalyzeWorkingText("");setAnalyzeReplacements({});setAnalyzeActiveSection("stats");};
   useEffect(()=>{
     if(!pendingAnalyzeText) return;
     if(pendingAnalyzeText==="__loading__"){
       setAutoLoading(true);
-      setText("");
+      setAnalyzeText("");
     } else {
       setAutoLoading(false);
-      setText(pendingAnalyzeText);
+      setAnalyzeText(pendingAnalyzeText);
+      setAnalyzeWorkingText("");
+      setAnalyzeAiResult(null);
+      setAnalyzeLastText("");
       if(setPendingAnalyzeText) setPendingAnalyzeText("");
     }
   },[pendingAnalyzeText]);
-  const [lastText,setLastText]=useState("");
-  const [threshold,setThreshold]=useState(5);
-  // forbidden replace state
-  const [replacements,setReplacements]=useState({});
-  const [workingText,setWorkingText]=useState("");
 
   const s=countChars(text);
   const grade=s.noSpace<1000?["#ff7b72","⚠️ 짧음 (1,000자 미만)","SEO 불리"]:
@@ -424,8 +433,9 @@ JSON 형식:
     </div>
 
     {/* 분석 버튼 */}
-    <div style={{display:"flex",gap:"10px",alignItems:"center"}}>
+    <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
       <Btn onClick={runAnalysis} loading={analyzing}>🔍 통합 분석 실행</Btn>
+      {(text||aiResult)&&<Btn onClick={resetAll} variant="secondary">🗑️ 초기화</Btn>}
       {isDirty&&<span style={{color:"#ffa657",fontSize:"12px"}}>⚠️ 텍스트가 변경됐습니다. 재분석 필요</span>}
       {aiResult&&!aiResult.error&&!isDirty&&<span style={{color:"#3fb950",fontSize:"12px"}}>✅ 분석 완료</span>}
     </div>
@@ -1253,7 +1263,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
               {result.compScore<30?"✅ 신규 블로거도 가능":result.compScore<60?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
             </div>
             <div style={{color:"#484f58",fontSize:"10px",marginTop:"6px",borderTop:"1px solid #21262d",paddingTop:"6px"}}>
-              기준: ~1x 매우낮음 · 1~5x 낮음 · 5~15x 보통 · 15~30x 높음 · 30x+ 매우높음
+              · 네이버 Search API 실측 기준
             </div>
           </div>
         </div>
@@ -1857,17 +1867,21 @@ function EmojiTab(){
 
 
 // ─── TAB: 글 작성 ────────────────────────────────────────────────────────
-function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive}){
-  const [kw1,setKw1]=useState("");
-  const [kw2,setKw2]=useState("");
-  const [goal,setGoal]=useState("");
+function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive,
+  writeKw1,setWriteKw1,writeKw2,setWriteKw2,writeGoal,setWriteGoal,
+  writeResult,setWriteResult,writeActiveVer,setWriteActiveVer}){
+  const kw1=writeKw1??""; const setKw1=setWriteKw1;
+  const kw2=writeKw2??""; const setKw2=setWriteKw2;
+  const goal=writeGoal??""; const setGoal=setWriteGoal;
+  const result=writeResult??null; const setResult=setWriteResult;
+  const activeVer=writeActiveVer??0; const setActiveVer=setWriteActiveVer;
   const [loading,setLoading]=useState(false);
-  const [result,setResult]=useState(null);
-  const [activeVer,setActiveVer]=useState(0);
   const [copied,setCopied]=useState(-1);
+  // 초기화 함수
+  const resetAll=()=>{setWriteKw1("");setWriteKw2("");setWriteGoal("");setWriteResult(null);setWriteActiveVer(0);};
   useEffect(()=>{
     if(pendingWriteKw){
-      setKw1(pendingWriteKw);
+      setWriteKw1(pendingWriteKw);
       if(setPendingWriteKw) setPendingWriteKw("");
     }
   },[pendingWriteKw]);
@@ -1896,7 +1910,8 @@ function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive}){
    - 버전1) 정보성 100%, 니다체. 소제목 포함 5~6개 문단.
    - 버전2) 감정 10% + 정보성 90%. 니다체/요체 혼합. 소제목 없이 4~5개 문단.
    - 버전3) 감정 40% + 정보성 60%. 요체 위주. 소제목 없이 4~5개 문단.
-10. 각 버전마다 SEO 제목 1개. 메인 키워드 반드시 포함. 특수문자 사용 금지.
+10. 각 버전 모두 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 문장 절대 금지. 바로 본론부터 시작.
+11. 각 버전마다 SEO 제목 1개. 메인 키워드 반드시 포함. 특수문자 사용 금지.
     예시: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리"
 
 응답 형식: 아래 JSON 형식으로만. 마크다운 코드블록 없이 순수 JSON만.
@@ -2009,6 +2024,7 @@ function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive}){
       <Btn onClick={generate} loading={loading} disabled={!kw1.trim()||!goal.trim()}>
         ✍️ 블로그 글 자동 생성 (3가지 버전)
       </Btn>
+      {(kw1||kw2||goal||result)&&<Btn onClick={resetAll} variant="secondary">🗑️ 초기화</Btn>}
     </div>
 
     {/* 로딩 */}
@@ -2131,6 +2147,20 @@ export default function BlogTools(){
   const [pendingWriteKw,setPendingWriteKw]=useState("");
   const [kwResult,setKwResult]=useState(null);
   const [pendingAnalyzeText,setPendingAnalyzeText]=useState("");
+  // WriteTab 상태 (탭 이동해도 유지)
+  const [writeKw1,setWriteKw1]=useState("");
+  const [writeKw2,setWriteKw2]=useState("");
+  const [writeGoal,setWriteGoal]=useState("");
+  const [writeResult,setWriteResult]=useState(null);
+  const [writeActiveVer,setWriteActiveVer]=useState(0);
+  // AnalyzeTab 상태 (탭 이동해도 유지)
+  const [analyzeText,setAnalyzeText]=useState("");
+  const [analyzeAiResult,setAnalyzeAiResult]=useState(null);
+  const [analyzeLastText,setAnalyzeLastText]=useState("");
+  const [analyzeThreshold,setAnalyzeThreshold]=useState(5);
+  const [analyzeReplacements,setAnalyzeReplacements]=useState({});
+  const [analyzeWorkingText,setAnalyzeWorkingText]=useState("");
+  const [analyzeActiveSection,setAnalyzeActiveSection]=useState("stats");
   // 키워드탭 글쓰기: 자동 생성 후 분석탭으로 이동
   const goWrite=(kw)=>{setPendingWriteKw(kw);setActive("write");};
   const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy)=>{
@@ -2158,7 +2188,8 @@ export default function BlogTools(){
         '7. 메인 키워드 최대 19회.',
         '8. 모든 형태소는 메인 키워드보다 많이 사용하면 안됨.',
         '9. 스마트블록 인기글의 톤 참고하되, 순서/관점/어휘 완전히 바꿔서 다른 사람이 쓴 것처럼.',
-        '10. 네이버 SEO에 맞는 제목 1개. 메인 키워드 반드시 포함. 특수문자 사용 금지.',
+        '10. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 문장 절대 금지. 바로 본론부터 시작.',
+        '11. 네이버 SEO에 맞는 제목 1개. 메인 키워드 반드시 포함. 특수문자 사용 금지.',
         '    예시: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리"',
         '',
         '응답: 아래 JSON만. 마크다운 없이.',
@@ -2204,7 +2235,23 @@ export default function BlogTools(){
     </div>
     <div style={{padding:"22px 24px",maxWidth:"960px",margin:"0 auto"}}>
       <h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3"}}>{tab?.icon} {tab?.label}</h2>
-      <ActiveTool goWrite={goWrite} goAutoWrite={goAutoWrite} pendingWriteKw={pendingWriteKw} setPendingWriteKw={setPendingWriteKw} setActive={setActive} kwResult={kwResult} setKwResult={setKwResult} pendingAnalyzeText={pendingAnalyzeText} setPendingAnalyzeText={setPendingAnalyzeText}/>
+      <ActiveTool goWrite={goWrite} goAutoWrite={goAutoWrite}
+      pendingWriteKw={pendingWriteKw} setPendingWriteKw={setPendingWriteKw}
+      setActive={setActive} kwResult={kwResult} setKwResult={setKwResult}
+      pendingAnalyzeText={pendingAnalyzeText} setPendingAnalyzeText={setPendingAnalyzeText}
+      writeKw1={writeKw1} setWriteKw1={setWriteKw1}
+      writeKw2={writeKw2} setWriteKw2={setWriteKw2}
+      writeGoal={writeGoal} setWriteGoal={setWriteGoal}
+      writeResult={writeResult} setWriteResult={setWriteResult}
+      writeActiveVer={writeActiveVer} setWriteActiveVer={setWriteActiveVer}
+      analyzeText={analyzeText} setAnalyzeText={setAnalyzeText}
+      analyzeAiResult={analyzeAiResult} setAnalyzeAiResult={setAnalyzeAiResult}
+      analyzeLastText={analyzeLastText} setAnalyzeLastText={setAnalyzeLastText}
+      analyzeThreshold={analyzeThreshold} setAnalyzeThreshold={setAnalyzeThreshold}
+      analyzeReplacements={analyzeReplacements} setAnalyzeReplacements={setAnalyzeReplacements}
+      analyzeWorkingText={analyzeWorkingText} setAnalyzeWorkingText={setAnalyzeWorkingText}
+      analyzeActiveSection={analyzeActiveSection} setAnalyzeActiveSection={setAnalyzeActiveSection}
+    />
     </div>
   </div>;
 }
