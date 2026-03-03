@@ -1925,7 +1925,7 @@ function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive,
 
     try{
       const raw=await callClaude([{role:"user",content:prompt}],
-        "You are a professional Korean blogger and SEO expert who adapts your expertise to match any topic or keyword. Output ONLY valid JSON with no markdown fences.", 8000, "claude-sonnet-4-20250514");
+        "You are a professional Korean blogger and SEO expert who adapts your expertise to match any topic or keyword. Output ONLY valid JSON with no markdown fences.", 8000, "claude-sonnet-4-6");
       // JSON 추출: 첫 { 부터 마지막 } 까지만 자름
       const start=raw.indexOf("{");
       const end=raw.lastIndexOf("}");
@@ -2196,7 +2196,7 @@ export default function BlogTools(){
         '{"title":"제목","content":"본문전체"}'
       ].join("\n");
       const res = await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:8000,
+        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,
           system:"You are a professional Korean blogger. Output ONLY valid JSON.",
           messages:[{role:"user",content:prompt}]})});
       const data = await res.json();
