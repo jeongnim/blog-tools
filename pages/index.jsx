@@ -1,14 +1,204 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
 // ─── Constants ────────────────────────────────────────────────────────────
-const FORBIDDEN_WORDS = [
-  "가격","가장","관리자","구매","야하","에미","요가","의사","이메일","이반",
-  "저렴","전화","최대","추천","카드","할인","호로","환불","광고","클릭",
-  "카지노","도박","슬롯","배팅","토토","먹튀","성인","야동","포르노","마약",
-  "대출","사기","불법","비아그라","시알리스","낙태","음란","매춘","성매매",
-  "무료","이벤트","당첨","선착순","한정","특가","프로모션","협찬","대가성",
-  "블로그","체험단","서포터즈","기자단","공구","판매","구입","쇼핑","배송",
+const FORBIDDEN_CATEGORIES = [
+  {
+    id:"adult", icon:"🔞", label:"19금·성인",
+    color:"#f85149", bg:"#2d0b0b", border:"#f8514944",
+    severity:"high", desc:"네이버 검색 노출 차단 위험",
+    words:[
+      "섹스","성관계","오르가즘","야동","포르노","음란","성매매","매춘","원조교제",
+      "조건만남","야설","에로","누드","자위","강간","성폭행","몰카","불법촬영",
+      "보지","자지","씹","성기","음경","음부","항문","구강성교","페니스","딜도",
+      "바이브레이터","스와핑","원나잇","섹파","성욕","변태","관음",
+      "노출증","음란물","성인물","하드코어","포르노그래피","성인동영상",
+      "성인사이트","야한","야사","야화","성행위","성경험","성감대","에로틱",
+      "19금","18금","성인전용","만남구함","만남신청","잠자리","합방",
+      // 성인용품/콘텐츠
+      "성인용품","성인샵","러브샵","섹스샵","딜도샵","바이브샵","성인몰",
+      "애널","SM","BDSM","bondage","페티시","코스프레야동","성인코스프레",
+      "유흥알바","조건알바","만남알바","성인알바","밤알바","룸알바","노래방도우미"
+    ]
+  },
+  {
+    id:"gambling", icon:"🎰", label:"사행산업·도박",
+    color:"#ff7b72", bg:"#2d1117", border:"#ff7b7244",
+    severity:"high", desc:"사행성·불법 도박 관련 차단 대상",
+    words:[
+      "카지노","도박","슬롯","배팅","토토","먹튀","스포츠토토","불법도박",
+      "사설토토","온라인도박","배당률","핸디캡","불법카지노","해외카지노",
+      "강원랜드꿀팁","블랙잭","룰렛","포커머니","홀덤머니","바카라",
+      "복권당첨비법","로또조작","경마베팅","개경주","투견","소싸움베팅"
+    ]
+  },
+  {
+    id:"drug_weapon", icon:"🚫", label:"마약·무기·불법",
+    color:"#f85149", bg:"#2d0b0b", border:"#f8514944",
+    severity:"high", desc:"불법 물품 거래·제조 관련",
+    words:[
+      // 마약류
+      "마약","대마","필로폰","히로뽕","헤로인","코카인","엑스터시","LSD","케타민",
+      "마약구매","마약판매","마약거래","마약제조","마약밀수","대마초구매","대마구입",
+      "향정신성","마약류관리","GHB","프로포폴남용","졸피뎀남용",
+      // 총포도검화약
+      "총기구매","총기판매","불법총기","권총구매","엽총개조","화약구매",
+      "폭발물","폭탄제조","수류탄","다이너마이트","뇌관구매","화공품불법",
+      "도검판매","칼구매불법","둔기제조",
+      // 불법개조
+      "불법개조","튜닝불법","소음기제작","총열개조","불법개조부품",
+      // 저작권
+      "무료다운로드영화","무료드라마다시보기","토렌트","웹하드불법","불법복제",
+      "저작권위반","크랙다운","시리얼크랙","불법소프트웨어","키젠","무료툴불법"
+    ]
+  },
+  {
+    id:"medical_illegal", icon:"💊", label:"의료·의약품 불법",
+    color:"#ffa657", bg:"#2d1e0a", border:"#ffa65744",
+    severity:"high", desc:"의료법·약사법 위반 가능성",
+    words:[
+      "비아그라","시알리스","레비트라","발기부전약무처방","낙태약","낙태시술",
+      "낙태병원","임신중절비용","낙태비용","미프진구매","미소프로스톨",
+      "무처방약","처방전없이","약처방없이","의사처방없이","무허가의약품",
+      "탈모약직구","다이어트약직구","식욕억제제불법","리덕틸","시부트라민",
+      "스테로이드구매","근육증가제불법","도핑약물","EPO구매","성장호르몬불법"
+    ]
+  },
+  {
+    id:"finance_illegal", icon:"💸", label:"금융·대출·코인 불법",
+    color:"#d2a8ff", bg:"#1e1533", border:"#d2a8ff44",
+    severity:"high", desc:"불법 금융·사기 관련 표현",
+    words:[
+      // 대출·대부
+      "불법대출","사채","사금융","고리대금","일수","週수","무직자대출무심사",
+      "신불자대출","대출사기","작업대출","통장매매","통장팔기","통장구매",
+      // 코인·투자사기
+      "코인다단계","코인사기","폰지","다단계투자","불법다단계","유사수신",
+      "폰테크","대포폰","폰개통대리","명의도용개통","소액결제현금화",
+      // 핀테크 사기
+      "상품권현금화","상품권깡","카드깡","카드현금화불법","신용카드깡",
+      "피싱","보이스피싱","스미싱","파밍","해킹","개인정보판매","개인정보불법"
+    ]
+  },
+  {
+    id:"regulated_biz", icon:"⚖️", label:"규제업종 광고",
+    color:"#79c0ff", bg:"#0d1e33", border:"#79c0ff44",
+    severity:"mid", desc:"네이버 정책상 광고 제한 업종",
+    words:[
+      // 병원·의료기기·의약품
+      "병원비교","병원순위","성형비용공개","성형전후사진","의료기기무허가",
+      "의약품직거래","약직거래","처방약판매","의료광고불법",
+      // 건강기능식품
+      "질병치료효능","암치료효능","당뇨완치","혈압완치","효능보장","임상미검증",
+      "건기식치료","건강식품처방","의약품급효능",
+      // 법률
+      "불법법률상담","변호사무허가","무자격법률","법률사기",
+      // 부동산
+      "부동산무허가중개","무자격중개","복비흥정불법","이중계약","전세사기방법",
+      // 맛집 허위
+      "맛집조작","리뷰조작","별점조작","바이럴마케팅허위","후기조작",
+      // 주류
+      "미성년자주류","청소년술","미성년음주","술배달불법","주류불법거래",
+      // 웨딩
+      "웨딩사기","결혼사기","웨딩업체먹튀",
+      // 안경·렌즈
+      "렌즈무처방","안경무자격","콘택트렌즈불법판매",
+      // 안마·마사지
+      "불법안마","무자격마사지","성인마사지","해피엔딩","풀사롱","키스방","오피",
+      "건마","감성마사지","조건마사지",
+      // 중고차
+      "침수차판매","사고차숨김","허위매물","주행거리조작","중고차사기",
+      // 운전연수·주차대행
+      "무자격운전연수","불법운전연수","주차대행사기",
+      // 문신·타투
+      "무면허타투","불법문신시술","타투무허가",
+      // 왁싱
+      "불법왁싱","무자격왁싱시술",
+      // 누수
+      "누수사기","누수허위수리","누수바가지"
+    ]
+  },
+  {
+    id:"sensitive", icon:"🏛️", label:"정치·종교·사회 분란",
+    color:"#ffa657", bg:"#2d1e0a", border:"#ffa65744",
+    severity:"mid", desc:"커뮤니티 분란·혐오 표현",
+    words:[
+      // 정치
+      "선거조작","투표조작","부정선거","정치공작","종북","빨갱이","토착왜구",
+      "극우","극좌","일베","좌파척결","우파척결","정치테러","정치음모",
+      // 종교
+      "사이비종교","이단","신천지","JMS","구원파","사이비교주","종교사기",
+      "종교착취","헌금강요","세뇌종교",
+      // 혐오
+      "여혐","남혐","인종혐오","장애인혐오","성소수자혐오","외국인혐오",
+      "지역혐오","집단따돌림조장","학교폭력조장"
+    ]
+  },
+  {
+    id:"counterfeit", icon:"👜", label:"이미테이션·불법복제",
+    color:"#8b949e", bg:"#21262d", border:"#8b949e44",
+    severity:"mid", desc:"상표권·지식재산권 침해",
+    words:[
+      "이미테이션","짝퉁","레플리카","A급짝퉁","명품짝퉁","고퀄짝퉁",
+      "샤넬짝퉁","루이비통짝퉁","구찌짝퉁","롤렉스짝퉁","명품레플",
+      "레플구매","짝퉁구매","가품판매","위조상품","짝퉁쇼핑몰",
+      "상표위조","특허침해","디자인도용","위조지폐","위조화폐"
+    ]
+  },
+  {
+    id:"tobacco_diet", icon:"🚬", label:"담배·다이어트·탈모",
+    color:"#8b949e", bg:"#21262d", border:"#8b949e44",
+    severity:"low", desc:"네이버 광고 제한·저품질 처리 가능",
+    words:[
+      // 담배·전자담배
+      "담배추천","전자담배추천","액상추천","니코틴무제한","미성년자흡연",
+      "담배불법거래","담배밀수","담배무관세",
+      // 다이어트 과장
+      "한달에10kg","일주일다이어트","기적의다이어트","살빼는약추천",
+      "다이어트보장","체중감량보장","비만치료보장",
+      // 탈모 과장
+      "탈모완치","탈모보장치료","머리카락재생보장","탈모약효능보장"
+    ]
+  },
+  {
+    id:"ad", icon:"📢", label:"광고·협찬",
+    color:"#ffa657", bg:"#2d1e0a", border:"#ffa65744",
+    severity:"mid", desc:"네이버 블로그 저품질 처리 대상",
+    words:[
+      "협찬","대가성","체험단","서포터즈","기자단","무료제공","홍보비","원고료",
+      "광고비","제공받아","지원받아","협찬받은","무료로받은","광고성","유료광고",
+      "뒷광고","내돈내산아님","제품협찬","서비스협찬","금전적대가"
+    ]
+  },
+  {
+    id:"spam", icon:"💰", label:"상업·스팸",
+    color:"#d2a8ff", bg:"#1e1533", border:"#d2a8ff44",
+    severity:"low", desc:"스팸성 키워드로 검색 순위 하락",
+    words:[
+      "클릭","지금바로","한정수량","선착순","특가","최저가","공구","당첨",
+      "프로모션","이벤트참여","캐시백","포인트적립","카드할인","무료배송",
+      "특별할인","할인쿠폰","공짜","사은품","경품","초특가","역대급","미친가격",
+      "대박","압도적","엄청난혜택","공짜로","무조건당첨","100%당첨"
+    ]
+  },
+  {
+    id:"quality", icon:"⚠️", label:"저품질 패턴",
+    color:"#484f58", bg:"#161b22", border:"#48485844",
+    severity:"low", desc:"네이버 AI가 저품질로 판단할 수 있는 표현",
+    words:[
+      "무조건","반드시","꼭봐야","충격적","놀라운","대박나는","돈버는","부업",
+      "재택근무","월수익","월천","투자수익","수익인증","불로소득","주식대박","코인대박",
+      "클릭하세요","지금확인","바로가기","여기클릭","링크클릭","지금신청"
+    ]
+  },
 ];
+
+// 금칙어 전체 목록 (detectForbidden에서 사용)
+const FORBIDDEN_WORDS = FORBIDDEN_CATEGORIES.flatMap(c=>c.words);
+
+// 카테고리 매핑
+function getForbiddenCategory(word){
+  return FORBIDDEN_CATEGORIES.find(c=>c.words.includes(word));
+}
 const OUTPUT_FORMATS = [
   { id:"jpeg", label:"JPEG", mime:"image/jpeg", ext:"jpg", hasQuality:true },
   { id:"png",  label:"PNG",  mime:"image/png",  ext:"png", hasQuality:false },
@@ -19,8 +209,23 @@ const COMPETITION_COLOR = {"매우낮음":"#3fb950","낮음":"#79c0ff","보통":
 // ─── Helpers ──────────────────────────────────────────────────────────────
 function escapeRegex(s){return s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");}
 function detectForbidden(text){
-  return FORBIDDEN_WORDS.map(w=>({word:w,count:(text.match(new RegExp(escapeRegex(w),"g"))||[]).length}))
-    .filter(({count})=>count>0).sort((a,b)=>b.count-a.count);
+  const results=[];
+  FORBIDDEN_CATEGORIES.forEach(cat=>{
+    cat.words.forEach(w=>{
+      const matches=text.match(new RegExp(escapeRegex(w),"g"))||[];
+      if(matches.length>0){
+        // 구문 추출: 단어 주변 20자
+        const idx=text.indexOf(w);
+        const start=Math.max(0,idx-10);
+        const end=Math.min(text.length,idx+w.length+10);
+        const phrase=text.slice(start,end).replace(/\n/g," ");
+        results.push({word:w,count:matches.length,catId:cat.id,catIcon:cat.icon,catLabel:cat.label,catColor:cat.color,catBg:cat.bg,catBorder:cat.border,severity:cat.severity,phrase});
+      }
+    });
+  });
+  // 심각도 순 정렬: high → mid → low
+  const sevOrder={high:0,mid:1,low:2};
+  return results.sort((a,b)=>(sevOrder[a.severity]??2)-(sevOrder[b.severity]??2));
 }
 function highlightText(text,list,repl){
   const active=list.filter(({word})=>!repl[word]?.trim()).map(({word})=>word);
@@ -74,9 +279,9 @@ const TABS=[
   {id:"missing",  icon:"📡", label:"누락 확인"},
   {id:"ocr",      icon:"🖼️", label:"이미지→텍스트"},
   {id:"convert",  icon:"🔄", label:"이미지 변환"},
+  {id:"restore",  icon:"✨", label:"사진 복원·향상"},
   {id:"emoji",    icon:"😀", label:"이모지"},
 ];
-
 // ─── Shared UI ────────────────────────────────────────────────────────────
 function Textarea({value,onChange,placeholder,rows=9}){
   return <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} rows={rows}
@@ -182,120 +387,147 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
     }
   };
 
+  // 카테고리별 그룹화
+  const byCat={};
+  forbidden.forEach(item=>{
+    if(!byCat[item.catId]) byCat[item.catId]=[];
+    byCat[item.catId].push(item);
+  });
+  const highCount=forbidden.filter(f=>f.severity==="high").length;
+
   return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
     {!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 <strong style={{color:"#8b949e"}}>통합 분석 실행</strong>을 눌러주세요</div>}
     {workingText&&<>
-      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
-        {forbidden.length>0&&<button onClick={aiRecommendAll} disabled={aiLoading}
-          style={{padding:"8px 16px",background:aiLoading?"#21262d":"linear-gradient(135deg,#1f6feb,#8957e5)",
-            color:aiLoading?"#484f58":"#fff",border:"none",borderRadius:"8px",cursor:aiLoading?"not-allowed":"pointer",
-            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,display:"flex",alignItems:"center",gap:"6px",transition:"opacity .2s"}}>
-          {aiLoading?"⏳ AI 추천 중...":"✨ AI 전체 추천"}
-        </button>}
-        {forbidden.length>0&&Object.values(replacements).some(v=>v?.trim())&&
-          <button onClick={doReplaceAll}
-            style={{padding:"8px 16px",background:"#2ea043",color:"#fff",border:"none",borderRadius:"8px",
-              cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700}}>
-            ✅ 전체 바꾸기
+      {/* 요약 헤더 */}
+      <div style={{background:highCount>0?"#2d0b0b":"#0d2019",border:`1px solid ${highCount>0?"#f8514944":"#2ea04344"}`,borderRadius:"12px",padding:"14px 16px",display:"flex",alignItems:"center",gap:"14px"}}>
+        <div style={{fontSize:"28px"}}>{highCount>0?"🔞":forbidden.length>0?"⚠️":"✅"}</div>
+        <div style={{flex:1}}>
+          <div style={{color:highCount>0?"#f85149":forbidden.length>0?"#ffa657":"#3fb950",fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>
+            {highCount>0?`19금·위험 단어 ${highCount}개 발견 — 네이버 노출 차단 위험`:forbidden.length>0?`금칙어 총 ${forbidden.length}개 발견`:"금칙어 없음 ✓"}
+          </div>
+          <div style={{color:"#8b949e",fontSize:"12px"}}>
+            {FORBIDDEN_CATEGORIES.filter(c=>byCat[c.id]).map(c=>`${c.icon} ${c.label} ${byCat[c.id].length}개`).join(" · ")||"모든 카테고리 통과"}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:"6px",flexDirection:"column",alignItems:"flex-end"}}>
+          {forbidden.length>0&&<button onClick={aiRecommendAll} disabled={aiLoading}
+            style={{padding:"7px 14px",background:aiLoading?"#21262d":"linear-gradient(135deg,#1f6feb,#8957e5)",
+              color:aiLoading?"#484f58":"#fff",border:"none",borderRadius:"8px",cursor:aiLoading?"not-allowed":"pointer",
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700}}>
+            {aiLoading?"⏳ 추천중...":"✨ AI 전체 대체 추천"}
           </button>}
-        <button onClick={()=>navigator.clipboard.writeText(workingText)}
-          style={{padding:"8px 14px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-            borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px"}}>
-          📋 결과 복사
-        </button>
-        {forbidden.length>0
-          ?<span style={{color:"#ff7b72",fontSize:"13px",fontWeight:600,marginLeft:"auto"}}>금칙어 {forbidden.length}개 발견</span>
-          :<span style={{color:"#3fb950",fontSize:"13px",fontWeight:600,marginLeft:"auto"}}>✅ 금칙어 없음</span>}
+          {forbidden.length>0&&Object.values(replacements).some(v=>v?.trim())&&
+            <button onClick={doReplaceAll}
+              style={{padding:"7px 14px",background:"#2ea043",color:"#fff",border:"none",borderRadius:"8px",
+                cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700}}>
+              ✅ 전체 바꾸기
+            </button>}
+          <button onClick={()=>navigator.clipboard.writeText(workingText)}
+            style={{padding:"7px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+              borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px"}}>
+            📋 결과 복사
+          </button>
+        </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px"}}>
-        <div>
-          <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"8px",fontWeight:600}}>📄 검사 결과 미리보기</div>
-          <div style={{fontSize:"11px",color:"#8b949e",marginBottom:"8px",lineHeight:"1.7"}}>
-            · 금칙어는 <span style={{color:"#ff7b72"}}>빨간색</span>으로 표시됩니다.<br/>
-            · 글의 의도에 따라 실제 금칙어가 아닐 수 있습니다.
-          </div>
-          <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px",
-            fontSize:"13px",lineHeight:"1.9",color:"#c9d1d9",maxHeight:"420px",overflowY:"auto",
-            whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
-            {Array.isArray(hp)
-              ?hp.map((p,i)=><span key={i} style={p.h?{color:"#ff7b72",background:"#ff7b7222",borderRadius:"2px",padding:"0 2px"}:{}}>{p.text}</span>)
-              :workingText}
-          </div>
-        </div>
-
-        <div>
-          <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"8px"}}>📋 금칙어 위반 목록</div>
-          {forbidden.length===0
-            ?<div style={{background:"#0d2019",border:"1px solid #2ea043",borderRadius:"10px",padding:"16px",color:"#3fb950",fontSize:"14px",textAlign:"center"}}>✅ 금칙어 없음!</div>
-            :<div style={{borderRadius:"10px",overflow:"hidden",border:"1px solid #21262d"}}>
-              <div style={{display:"grid",gridTemplateColumns:"22px 76px 1fr 70px",gap:"6px",padding:"8px 10px",background:"#21262d",fontSize:"11px",color:"#8b949e",fontWeight:600,alignItems:"center"}}>
-                <span>#</span><span>금칙어</span><span>변경 단어</span><span style={{textAlign:"right"}}>액션</span>
-              </div>
-              <div style={{maxHeight:"420px",overflowY:"auto"}}>
-                {forbidden.map(({word,count},idx)=>{
-                  const isPerLoading=perLoading[word]===true;
-                  const suggRaw=perLoading[`${word}__suggestions`];
-                  const suggList=suggRaw?suggRaw.split(",").map(s=>s.trim()).filter(Boolean):[];
-                  return <div key={word} style={{borderBottom:idx<forbidden.length-1?"1px solid #21262d":"none",background:idx%2===0?"#161b22":"#0d1117"}}>
-                    <div style={{display:"grid",gridTemplateColumns:"22px 76px 1fr 70px",gap:"6px",padding:"9px 10px",alignItems:"center"}}>
-                      <span style={{color:"#484f58",fontSize:"11px"}}>{idx+1}</span>
-                      <div>
-                        <div style={{color:"#ff7b72",fontWeight:700,fontSize:"13px"}}>{word}</div>
-                        <div style={{color:"#484f58",fontSize:"10px"}}>{count}회</div>
-                      </div>
-                      <input
-                        value={replacements[word]||""}
-                        onChange={e=>setReplacements(p=>({...p,[word]:e.target.value}))}
-                        placeholder={isPerLoading?"AI 추천 중...":"직접 입력 또는 AI 추천 →"}
-                        onKeyDown={e=>e.key==="Enter"&&doReplace(word)}
-                        style={{padding:"6px 8px",background:"#0d1117",
-                          border:`1px solid ${replacements[word]?.trim()?"#1f6feb66":"#30363d"}`,
-                          borderRadius:"6px",color:"#e6edf3",fontSize:"12px",outline:"none",
-                          fontFamily:"'Noto Sans KR',sans-serif",width:"100%",boxSizing:"border-box"}}
-                        onFocus={e=>e.target.style.borderColor="#58a6ff"}
-                        onBlur={e=>e.target.style.borderColor=replacements[word]?.trim()?"#1f6feb66":"#30363d"}/>
-                      <div style={{display:"flex",gap:"4px",justifyContent:"flex-end"}}>
-                        <button onClick={()=>aiRecommendOne(word)} disabled={isPerLoading}
-                          title="AI가 문맥에 맞는 대체어 추천"
-                          style={{padding:"5px 7px",background:isPerLoading?"#21262d":"#8957e522",
-                            color:isPerLoading?"#484f58":"#d2a8ff",
-                            border:`1px solid ${isPerLoading?"#30363d":"#8957e544"}`,
-                            borderRadius:"6px",cursor:isPerLoading?"not-allowed":"pointer",fontSize:"13px"}}>
-                          {isPerLoading?"⏳":"✨"}
-                        </button>
-                        <button onClick={()=>doReplace(word)}
-                          style={{padding:"5px 8px",background:replacements[word]?.trim()?"#1f6feb":"#21262d",
-                            color:replacements[word]?.trim()?"#fff":"#484f58",border:"none",
-                            borderRadius:"6px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
-                            fontSize:"11px",fontWeight:600}}>
-                          바꾸기
-                        </button>
-                      </div>
+      {/* 카테고리별 금칙어 목록 */}
+      {forbidden.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+        {FORBIDDEN_CATEGORIES.filter(c=>byCat[c.id]).map(cat=>(
+          <div key={cat.id} style={{background:cat.bg,border:`1px solid ${cat.border}`,borderRadius:"12px",overflow:"hidden"}}>
+            <div style={{padding:"10px 14px",borderBottom:`1px solid ${cat.border}`,display:"flex",alignItems:"center",gap:"8px"}}>
+              <span style={{fontSize:"16px"}}>{cat.icon}</span>
+              <span style={{color:cat.color,fontWeight:700,fontSize:"13px"}}>{cat.label}</span>
+              <span style={{background:cat.color+"22",color:cat.color,border:`1px solid ${cat.color}44`,borderRadius:"20px",padding:"1px 10px",fontSize:"11px",fontWeight:700}}>{byCat[cat.id].length}개</span>
+              <span style={{color:"#484f58",fontSize:"11px",marginLeft:"4px"}}>{cat.desc}</span>
+            </div>
+            <div style={{display:"flex",flexDirection:"column"}}>
+              {byCat[cat.id].map((item,i)=>{
+                const isPerLoading=perLoading[item.word]===true;
+                const suggRaw=perLoading[`${item.word}__suggestions`];
+                const suggList=suggRaw?suggRaw.split(",").map(s=>s.trim()).filter(Boolean):[];
+                return <div key={item.word} style={{borderBottom:i<byCat[cat.id].length-1?`1px solid ${cat.border}`:"none",padding:"10px 14px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:suggList.length>0?"6px":"0"}}>
+                    {/* 금칙어 + 구문 */}
+                    <div style={{minWidth:"120px"}}>
+                      <span style={{color:cat.color,fontWeight:700,fontSize:"13px"}}>"{item.word}"</span>
+                      <span style={{color:"#484f58",fontSize:"10px",marginLeft:"6px"}}>{item.count}회</span>
+                      {item.phrase&&<div style={{color:"#8b949e",fontSize:"10px",marginTop:"2px",fontStyle:"italic"}}>
+                        ...{item.phrase}...
+                      </div>}
                     </div>
-                    {suggList.length>0&&<div style={{padding:"0 10px 9px 114px",display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"center"}}>
-                      <span style={{color:"#484f58",fontSize:"10px",flexShrink:0}}>추천:</span>
-                      {suggList.map((s,i)=>(
-                        <button key={i} onClick={()=>setReplacements(p=>({...p,[word]:s}))}
-                          style={{padding:"2px 10px",
-                            background:replacements[word]===s?"#1f6feb22":"#21262d",
-                            color:replacements[word]===s?"#58a6ff":"#8b949e",
-                            border:`1px solid ${replacements[word]===s?"#1f6feb55":"#30363d"}`,
-                            borderRadius:"20px",cursor:"pointer",fontSize:"11px",
-                            fontFamily:"'Noto Sans KR',sans-serif",transition:"all .1s"}}>
-                          {s}
-                        </button>
-                      ))}
-                    </div>}
-                  </div>;
-                })}
-              </div>
-            </div>}
+                    {/* 대체어 입력 */}
+                    <input
+                      value={replacements[item.word]||""}
+                      onChange={e=>setReplacements(p=>({...p,[item.word]:e.target.value}))}
+                      placeholder={isPerLoading?"AI 추천 중...":"대체 단어 입력 또는 AI 추천 →"}
+                      onKeyDown={e=>e.key==="Enter"&&doReplace(item.word)}
+                      style={{flex:1,padding:"6px 8px",background:"#0d1117",
+                        border:`1px solid ${replacements[item.word]?.trim()?"#1f6feb66":"#30363d"}`,
+                        borderRadius:"6px",color:"#e6edf3",fontSize:"12px",outline:"none",
+                        fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
+                      onFocus={e=>e.target.style.borderColor="#58a6ff"}
+                      onBlur={e=>e.target.style.borderColor=replacements[item.word]?.trim()?"#1f6feb66":"#30363d"}/>
+                    {/* 버튼 */}
+                    <button onClick={()=>aiRecommendOne(item.word)} disabled={isPerLoading} title="AI 대체어 추천"
+                      style={{padding:"6px 8px",background:isPerLoading?"#21262d":"#8957e522",
+                        color:isPerLoading?"#484f58":"#d2a8ff",border:`1px solid ${isPerLoading?"#30363d":"#8957e544"}`,
+                        borderRadius:"6px",cursor:isPerLoading?"not-allowed":"pointer",fontSize:"13px",flexShrink:0}}>
+                      {isPerLoading?"⏳":"✨"}
+                    </button>
+                    <button onClick={()=>doReplace(item.word)}
+                      style={{padding:"6px 12px",background:replacements[item.word]?.trim()?"#1f6feb":"#21262d",
+                        color:replacements[item.word]?.trim()?"#fff":"#484f58",border:"none",
+                        borderRadius:"6px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
+                        fontSize:"11px",fontWeight:600,flexShrink:0}}>
+                      바꾸기
+                    </button>
+                  </div>
+                  {suggList.length>0&&<div style={{display:"flex",gap:"5px",flexWrap:"wrap",paddingLeft:"130px"}}>
+                    <span style={{color:"#484f58",fontSize:"10px",flexShrink:0,alignSelf:"center"}}>추천:</span>
+                    {suggList.map((s,si)=>(
+                      <button key={si} onClick={()=>setReplacements(p=>({...p,[item.word]:s}))}
+                        style={{padding:"2px 10px",background:replacements[item.word]===s?"#1f6feb22":"#21262d",
+                          color:replacements[item.word]===s?"#58a6ff":"#8b949e",
+                          border:`1px solid ${replacements[item.word]===s?"#1f6feb55":"#30363d"}`,
+                          borderRadius:"20px",cursor:"pointer",fontSize:"11px",
+                          fontFamily:"'Noto Sans KR',sans-serif"}}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>}
+                </div>;
+              })}
+            </div>
+          </div>
+        ))}
+      </div>}
+
+      {/* 미리보기 */}
+      {forbidden.length>0&&<div>
+        <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"8px",fontWeight:600}}>📄 텍스트 미리보기 (금칙어 하이라이트)</div>
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px",
+          fontSize:"13px",lineHeight:"1.9",color:"#c9d1d9",maxHeight:"300px",overflowY:"auto",
+          whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
+          {Array.isArray(hp)
+            ?hp.map((p,i)=>{
+              const cat=p.h?getForbiddenCategory(p.text):null;
+              return <span key={i} style={p.h?{color:cat?.color||"#ff7b72",background:(cat?.color||"#ff7b72")+"22",borderRadius:"2px",padding:"0 2px",fontWeight:700}:{}}>
+                {p.text}
+              </span>;
+            })
+            :workingText}
         </div>
-      </div>
+      </div>}
+
+      {forbidden.length===0&&<div style={{background:"#0d2019",border:"1px solid #2ea04344",borderRadius:"10px",padding:"20px",textAlign:"center"}}>
+        <div style={{fontSize:"24px",marginBottom:"8px"}}>✅</div>
+        <div style={{color:"#3fb950",fontSize:"14px",fontWeight:700}}>모든 카테고리 금칙어 없음</div>
+        <div style={{color:"#484f58",fontSize:"12px",marginTop:"4px"}}>19금 · 도박 · 광고 · 스팸 · 저품질 패턴 모두 통과</div>
+      </div>}
     </>}
   </div>;
 }
+
 
 // ─── TAB 1: 글 분석 ──────────────────────────────────────────────────────
 function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
@@ -372,8 +604,14 @@ JSON 형식:
 분석 기준:
 - morpheme.words: 명사/동사/형용사 어근만, 조사·어미 제거, 2글자 이상, 빈도순 상위 40개
 - morpheme.seo: high=SEO 핵심어(메인키워드급), mid=관련어, low=일반어
-- lowQuality.items: 비속어, 욕설, 광고/홍보성 문구, 동일 단어 과도 반복(15회+), 스팸성 패턴, 어뷰징 의심 표현 등 실제로 발견된 것만
-- lowQuality.score: 낮을수록 저품질 위험 적음 (0=완전 안전, 100=매우 위험)`;
+- lowQuality.items 감지 대상:
+  * 19금/성인: 성적 표현, 성행위 묘사, 음란성 단어·구문 → category="19금·성인" severity="high"
+  * 도박/불법: 토토·카지노·마약·해킹 관련 → category="도박·불법" severity="high"
+  * 광고/협찬: 협찬·체험단·대가성 표현 → category="광고·협찬" severity="mid"
+  * 키워드 도배: 동일 단어 15회 이상 반복 → category="키워드도배" severity="mid"
+  * 스팸 패턴: 과도한 상업성·어뷰징 표현 → category="스팸·어뷰징" severity="low"
+- lowQuality.score: 낮을수록 저품질 위험 적음 (0=완전 안전, 100=매우 위험)
+- 19금 단어나 성인 구문이 하나라도 있으면 score 80 이상, verdict="위험"`;
 
     try{
       const raw=await callClaude([{role:"user",content:prompt}],
@@ -1776,6 +2014,97 @@ const EMOJI_CATEGORIES = [
   { id:"flag", label:"🚩 깃발", emojis:"🏁 🚩 🎌 🏴 🏳️ 🏳️‍🌈 🏳️‍⚧️ 🏴‍☠️ 🇺🇳 🇰🇷 🇺🇸 🇯🇵 🇨🇳 🇬🇧 🇫🇷 🇩🇪 🇮🇹 🇪🇸 🇷🇺 🇧🇷 🇮🇳 🇦🇺 🇨🇦 🇲🇽 🇰🇵 🇵🇭 🇻🇳 🇹🇭 🇮🇩 🇲🇾 🇸🇬 🇭🇰 🇹🇼 🇸🇦 🇦🇪 🇹🇷 🇪🇬 🇿🇦 🇳🇬 🇦🇷 🇨🇱 🇨🇴 🇵🇪 🇪🇺 🇵🇹 🇳🇱 🇧🇪 🇨🇭 🇦🇹 🇵🇱 🇸🇪 🇳🇴 🇩🇰 🇫🇮 🇬🇷 🇨🇿 🇭🇺 🇷🇴 🇺🇦 🇮🇱 🇮🇷 🇮🇶 🇵🇰 🇧🇩 🇳🇵 🇱🇰 🇲🇲 🇰🇭 🇱🇦 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🏴󠁧󠁢󠁳󠁣󠁴󠁿 🏴󠁧󠁢󠁷󠁬󠁳󠁿" },
 ];
 
+// ─── TAB: 사진 복원·향상 (jpgHD 임베드) ──────────────────────────────────
+function RestoreTab(){
+  const [iframeError,setIframeError]=useState(false);
+  const [loaded,setLoaded]=useState(false);
+
+  const features=[
+    {icon:"🧹",title:"스크래치·손상 복원",desc:"긁힘·얼룩·파손된 오래된 사진을 AI로 복구"},
+    {icon:"🎨",title:"흑백 사진 컬러화",desc:"흑백 사진을 자연스러운 컬러로 자동 변환"},
+    {icon:"🔍",title:"초고화질 업스케일",desc:"2X / 4X 무손실 확대, AI 노이즈 제거"},
+    {icon:"✨",title:"Magic Photo",desc:"인물 사진을 생동감 있게 움직이는 사진으로"},
+    {icon:"🖼️",title:"아트·애니메이션 지원",desc:"일러스트·만화·로고 등 모든 이미지 지원"},
+  ];
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+    {/* 기능 안내 배너 */}
+    <div style={{background:"linear-gradient(135deg,#0d1f3c,#1a2a4a)",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"16px 20px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}>
+        <span style={{fontSize:"28px"}}>✨</span>
+        <div>
+          <div style={{color:"#58a6ff",fontSize:"16px",fontWeight:700}}>AI 사진 복원 · 업스케일 (jpgHD)</div>
+          <div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px"}}>최신 AI로 손상된 사진 복원 · 흑백 컬러화 · 초고해상도 변환</div>
+        </div>
+        <a href="https://jpghd.com/kr" target="_blank" rel="noopener noreferrer"
+          style={{marginLeft:"auto",padding:"8px 16px",background:"#1f6feb",color:"#fff",
+            borderRadius:"8px",textDecoration:"none",fontSize:"13px",fontWeight:700,flexShrink:0}}>
+          🔗 새 탭으로 열기
+        </a>
+      </div>
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+        {features.map(f=>(
+          <div key={f.icon} style={{background:"#0d1117aa",border:"1px solid #30363d",borderRadius:"8px",
+            padding:"8px 12px",display:"flex",alignItems:"center",gap:"8px",flex:"1 1 180px",minWidth:"160px"}}>
+            <span style={{fontSize:"18px",flexShrink:0}}>{f.icon}</span>
+            <div>
+              <div style={{color:"#c9d1d9",fontSize:"12px",fontWeight:600}}>{f.title}</div>
+              <div style={{color:"#484f58",fontSize:"10px",marginTop:"2px",lineHeight:"1.4"}}>{f.desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{marginTop:"10px",padding:"8px 12px",background:"#161b22",borderRadius:"6px",
+        fontSize:"11px",color:"#8b949e",display:"flex",gap:"16px",flexWrap:"wrap"}}>
+        <span>📌 무료: 월 5장 · 최대 3000px</span>
+        <span>⭐ 유료: 무제한 업로드 · 4X 업스케일 · 우선 처리</span>
+        <span>🔒 3일 후 자동 삭제</span>
+      </div>
+    </div>
+
+    {/* iframe 영역 */}
+    <div style={{position:"relative",background:"#0d1117",borderRadius:"12px",
+      border:"1px solid #30363d",overflow:"hidden"}}>
+      {!loaded&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,
+        display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+        background:"#0d1117",zIndex:2,gap:"12px"}}>
+        <div style={{fontSize:"32px",animation:"spin 1.2s linear infinite"}}>⏳</div>
+        <div style={{color:"#8b949e",fontSize:"13px"}}>jpgHD 로딩 중...</div>
+        <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+      </div>}
+      {iframeError?
+        <div style={{padding:"40px",textAlign:"center",display:"flex",flexDirection:"column",gap:"12px",alignItems:"center"}}>
+          <span style={{fontSize:"36px"}}>🚫</span>
+          <div style={{color:"#ff7b72",fontSize:"14px",fontWeight:600}}>사이트가 임베드를 차단했습니다</div>
+          <div style={{color:"#8b949e",fontSize:"12px"}}>아래 버튼을 눌러 새 탭에서 이용하세요</div>
+          <a href="https://jpghd.com/kr" target="_blank" rel="noopener noreferrer"
+            style={{padding:"12px 24px",background:"linear-gradient(135deg,#1f6feb,#388bfd)",
+              color:"#fff",borderRadius:"10px",textDecoration:"none",fontSize:"14px",fontWeight:700}}>
+            ✨ jpgHD 바로 가기
+          </a>
+        </div>
+      :
+        <iframe
+          src="https://jpghd.com/kr"
+          style={{width:"100%",height:"820px",border:"none",display:loaded?"block":"block",
+            background:"#fff",borderRadius:"12px"}}
+          onLoad={()=>setLoaded(true)}
+          onError={()=>{setIframeError(true);setLoaded(true);}}
+          title="jpgHD AI 사진 복원"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+        />
+      }
+    </div>
+
+    <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",
+      padding:"10px 14px",fontSize:"11px",color:"#484f58",lineHeight:"1.7"}}>
+      💡 임베드가 정상 작동하지 않으면 상단의 <strong style={{color:"#8b949e"}}>새 탭으로 열기</strong> 버튼을 이용하세요.
+      jpgHD 계정으로 로그인하면 기록이 저장됩니다.
+    </div>
+  </div>;
+}
+
+
 function EmojiTab(){
   const [activeCat,setActiveCat]=useState("face");
   const [search,setSearch]=useState("");
@@ -2140,7 +2469,7 @@ function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive,
   </div>;
 }
 
-const TOOL_MAP={keyword:KeywordTab,write:WriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,emoji:EmojiTab,missing:MissingTab};
+const TOOL_MAP={keyword:KeywordTab,write:WriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,emoji:EmojiTab,missing:MissingTab,restore:RestoreTab};
 
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
