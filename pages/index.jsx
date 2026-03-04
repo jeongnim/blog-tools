@@ -280,7 +280,8 @@ const TABS=[
   {id:"ocr",      icon:"🖼️", label:"이미지→텍스트"},
   {id:"convert",  icon:"🔄", label:"이미지 변환"},
   {id:"restore",  icon:"✨", label:"사진 복원·향상"},
-  ];
+  {id:"video",    icon:"🎬", label:"동영상 압축"},
+];
 // ─── Shared UI ────────────────────────────────────────────────────────────
 function Textarea({value,onChange,placeholder,rows=9}){
   return <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} rows={rows}
@@ -2013,6 +2014,368 @@ const EMOJI_CATEGORIES = [
   { id:"flag", label:"🚩 깃발", emojis:"🏁 🚩 🎌 🏴 🏳️ 🏳️‍🌈 🏳️‍⚧️ 🏴‍☠️ 🇺🇳 🇰🇷 🇺🇸 🇯🇵 🇨🇳 🇬🇧 🇫🇷 🇩🇪 🇮🇹 🇪🇸 🇷🇺 🇧🇷 🇮🇳 🇦🇺 🇨🇦 🇲🇽 🇰🇵 🇵🇭 🇻🇳 🇹🇭 🇮🇩 🇲🇾 🇸🇬 🇭🇰 🇹🇼 🇸🇦 🇦🇪 🇹🇷 🇪🇬 🇿🇦 🇳🇬 🇦🇷 🇨🇱 🇨🇴 🇵🇪 🇪🇺 🇵🇹 🇳🇱 🇧🇪 🇨🇭 🇦🇹 🇵🇱 🇸🇪 🇳🇴 🇩🇰 🇫🇮 🇬🇷 🇨🇿 🇭🇺 🇷🇴 🇺🇦 🇮🇱 🇮🇷 🇮🇶 🇵🇰 🇧🇩 🇳🇵 🇱🇰 🇲🇲 🇰🇭 🇱🇦 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🏴󠁧󠁢󠁳󠁣󠁴󠁿 🏴󠁧󠁢󠁷󠁬󠁳󠁿" },
 ];
 
+// ─── TAB: 동영상 압축 (FFmpeg.wasm) ────────────────────────────────────────
+function VideoTab(){
+  const [file,setFile]=useState(null);
+  const [preview,setPreview]=useState(null);
+  const [status,setStatus]=useState("idle"); // idle|loading|ready|processing|done|error
+  const [progress,setProgress]=useState(0);
+  const [log,setLog]=useState("");
+  const [resultUrl,setResultUrl]=useState(null);
+  const [origSize,setOrigSize]=useState(0);
+  const [resultSize,setResultSize]=useState(0);
+  const [dragOver,setDragOver]=useState(false);
+  const [opts,setOpts]=useState({
+    crf:"28",         // 압축 품질 (18=고화질, 28=기본, 40=저용량)
+    preset:"medium",  // 인코딩 속도
+    scale:"original", // 해상도
+    fps:"original",   // 프레임
+    format:"mp4",     // 출력 포맷
+  });
+  const ffmpegRef=useRef(null);
+  const fileInputRef=useRef(null);
+
+  // FFmpeg.wasm 로드
+  const loadFFmpeg=async()=>{
+    if(ffmpegRef.current?.loaded) return ffmpegRef.current;
+    setStatus("loading");
+    setLog("FFmpeg 엔진 로딩 중... (최초 1회 약 20MB 다운로드)");
+    try{
+      // FFmpeg.wasm CDN 로드
+      await loadScript("https://unpkg.com/@ffmpeg/ffmpeg@0.12.6/dist/umd/ffmpeg.js");
+      await loadScript("https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js");
+      const {FFmpeg}=window.FFmpegWASM||window.FFmpegModule||{};
+      if(!window.FFmpeg&&typeof FFmpeg==="undefined"){
+        throw new Error("FFmpeg 로드 실패");
+      }
+      const ff=new (window.FFmpeg||FFmpeg)();
+      ff.on("log",({message})=>setLog(message));
+      ff.on("progress",({progress:p})=>{
+        setProgress(Math.round(p*100));
+      });
+      await ff.load({
+        coreURL:"https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js",
+      });
+      ffmpegRef.current=ff;
+      setStatus("ready");
+      setLog("");
+      return ff;
+    }catch(e){
+      setStatus("error");
+      setLog("FFmpeg 로드 실패: "+e.message);
+      return null;
+    }
+  };
+
+  const loadScript=(src)=>new Promise((res,rej)=>{
+    if(document.querySelector(`script[src="${src}"]`)){res();return;}
+    const s=document.createElement("script");
+    s.src=src; s.onload=res; s.onerror=rej;
+    document.head.appendChild(s);
+  });
+
+  const onFile=(f)=>{
+    if(!f||!f.type.startsWith("video/")) return;
+    setFile(f);
+    setOrigSize(f.size);
+    setResultUrl(null);
+    setResultSize(0);
+    setProgress(0);
+    setLog("");
+    setStatus("ready");
+    const url=URL.createObjectURL(f);
+    setPreview(url);
+  };
+
+  const compress=async()=>{
+    if(!file) return;
+    const ff=await loadFFmpeg();
+    if(!ff){return;}
+    setStatus("processing");
+    setProgress(0);
+    setLog("파일 읽는 중...");
+    try{
+      const {fetchFile}=window.FFmpegUtil||{fetchFile:async(f)=>new Uint8Array(await f.arrayBuffer())};
+      const inputName="input."+file.name.split(".").pop();
+      const outputName="output."+opts.format;
+
+      await ff.writeFile(inputName, await fetchFile(file));
+      setLog("압축 시작...");
+
+      // FFmpeg 명령 구성
+      const args=["-i",inputName];
+      // 비디오 코덱
+      if(opts.format==="mp4") args.push("-c:v","libx264","-crf",opts.crf,"-preset",opts.preset);
+      else if(opts.format==="webm") args.push("-c:v","libvpx-vp9","-crf",opts.crf,"-b:v","0");
+      else args.push("-c:v","libx264","-crf",opts.crf,"-preset",opts.preset);
+      // 오디오
+      args.push("-c:a","aac","-b:a","128k");
+      // 해상도
+      if(opts.scale!=="original") args.push("-vf",`scale=${opts.scale}:-2`);
+      // FPS
+      if(opts.fps!=="original") args.push("-r",opts.fps);
+      args.push("-movflags","+faststart",outputName);
+
+      await ff.exec(args);
+
+      const data=await ff.readFile(outputName);
+      const blob=new Blob([data.buffer],{type:`video/${opts.format}`});
+      setResultUrl(URL.createObjectURL(blob));
+      setResultSize(blob.size);
+      setStatus("done");
+      setLog("압축 완료!");
+      setProgress(100);
+    }catch(e){
+      setStatus("error");
+      setLog("오류: "+e.message);
+    }
+  };
+
+  const fmtSz=n=>{
+    if(n===0) return "-";
+    if(n>1024*1024*1024) return (n/1024/1024/1024).toFixed(2)+"GB";
+    if(n>1024*1024) return (n/1024/1024).toFixed(1)+"MB";
+    return (n/1024).toFixed(0)+"KB";
+  };
+  const saving=resultSize&&origSize?Math.round((1-resultSize/origSize)*100):null;
+
+  const crfOptions=[
+    {val:"18",label:"고화질",desc:"파일 큼"},
+    {val:"23",label:"표준",desc:"균형"},
+    {val:"28",label:"기본",desc:"권장"},
+    {val:"35",label:"소용량",desc:"화질 저하"},
+    {val:"40",label:"최소화",desc:"파일 최소"},
+  ];
+  const presetOptions=[
+    {val:"ultrafast",label:"초고속"},
+    {val:"fast",label:"빠름"},
+    {val:"medium",label:"보통"},
+    {val:"slow",label:"느림 (고효율)"},
+  ];
+  const scaleOptions=[
+    {val:"original",label:"원본"},
+    {val:"1920",label:"1080p"},
+    {val:"1280",label:"720p"},
+    {val:"854",label:"480p"},
+    {val:"640",label:"360p"},
+  ];
+  const fpsOptions=[
+    {val:"original",label:"원본"},
+    {val:"30",label:"30fps"},
+    {val:"24",label:"24fps"},
+    {val:"15",label:"15fps"},
+  ];
+
+  const isProcessing=status==="processing"||status==="loading";
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+
+    {/* 업로드 */}
+    {!file&&<div
+      onClick={()=>fileInputRef.current?.click()}
+      onDrop={e=>{e.preventDefault();setDragOver(false);onFile(e.dataTransfer.files[0]);}}
+      onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+      onDragLeave={()=>setDragOver(false)}
+      style={{border:`2px dashed ${dragOver?"#58a6ff":"#30363d"}`,borderRadius:"12px",
+        padding:"48px 20px",textAlign:"center",cursor:"pointer",
+        background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
+      <div style={{fontSize:"48px",marginBottom:"12px"}}>🎬</div>
+      <div style={{color:"#c9d1d9",fontSize:"16px",fontWeight:700,marginBottom:"6px"}}>동영상을 드래그하거나 클릭하여 업로드</div>
+      <div style={{color:"#484f58",fontSize:"13px"}}>MP4, MOV, AVI, WEBM, MKV 등 모든 형식</div>
+      <input ref={fileInputRef} type="file" accept="video/*" style={{display:"none"}}
+        onChange={e=>onFile(e.target.files[0])}/>
+    </div>}
+
+    {file&&<div style={{display:"grid",gridTemplateColumns:"280px 1fr",gap:"14px",alignItems:"start"}}>
+
+      {/* ─ 왼쪽: 옵션 ─ */}
+      <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+
+        {/* 파일 정보 */}
+        <div style={{background:"#161b22",borderRadius:"10px",padding:"12px 14px",border:"1px solid #30363d"}}>
+          <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:600,
+            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:"4px"}}>
+            🎬 {file.name}
+          </div>
+          <div style={{color:"#484f58",fontSize:"11px"}}>{fmtSz(origSize)}</div>
+        </div>
+
+        {/* 압축 품질 */}
+        <div style={{background:"#161b22",borderRadius:"10px",padding:"14px",border:"1px solid #30363d"}}>
+          <div style={{fontSize:"11px",color:"#8b949e",fontWeight:700,marginBottom:"8px"}}>🎯 압축 품질 (CRF)</div>
+          <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
+            {crfOptions.map(o=>(
+              <button key={o.val} onClick={()=>setOpts(p=>({...p,crf:o.val}))}
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                  padding:"8px 12px",borderRadius:"6px",border:`1px solid ${opts.crf===o.val?"#58a6ff":"#30363d"}`,
+                  background:opts.crf===o.val?"#1f6feb22":"transparent",
+                  color:opts.crf===o.val?"#58a6ff":"#8b949e",
+                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",textAlign:"left"}}>
+                <span style={{fontWeight:opts.crf===o.val?700:400}}>{o.label}</span>
+                <span style={{fontSize:"10px",color:"#484f58"}}>{o.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 해상도 */}
+        <div style={{background:"#161b22",borderRadius:"10px",padding:"14px",border:"1px solid #30363d"}}>
+          <div style={{fontSize:"11px",color:"#8b949e",fontWeight:700,marginBottom:"8px"}}>📐 출력 해상도</div>
+          <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+            {scaleOptions.map(o=>(
+              <button key={o.val} onClick={()=>setOpts(p=>({...p,scale:o.val}))}
+                style={{padding:"6px 10px",borderRadius:"6px",border:`1px solid ${opts.scale===o.val?"#3fb950":"#30363d"}`,
+                  background:opts.scale===o.val?"#3fb95022":"transparent",
+                  color:opts.scale===o.val?"#3fb950":"#8b949e",
+                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px",fontWeight:opts.scale===o.val?700:400}}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* FPS + 포맷 */}
+        <div style={{background:"#161b22",borderRadius:"10px",padding:"14px",border:"1px solid #30363d",display:"flex",flexDirection:"column",gap:"12px"}}>
+          <div>
+            <div style={{fontSize:"11px",color:"#8b949e",fontWeight:700,marginBottom:"6px"}}>🎞️ 프레임레이트</div>
+            <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+              {fpsOptions.map(o=>(
+                <button key={o.val} onClick={()=>setOpts(p=>({...p,fps:o.val}))}
+                  style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${opts.fps===o.val?"#ffa657":"#30363d"}`,
+                    background:opts.fps===o.val?"#ffa65722":"transparent",
+                    color:opts.fps===o.val?"#ffa657":"#8b949e",
+                    cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px"}}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:"11px",color:"#8b949e",fontWeight:700,marginBottom:"6px"}}>📦 출력 포맷</div>
+            <div style={{display:"flex",gap:"5px"}}>
+              {["mp4","webm","mov"].map(f=>(
+                <button key={f} onClick={()=>setOpts(p=>({...p,format:f}))}
+                  style={{flex:1,padding:"6px",borderRadius:"6px",border:`1px solid ${opts.format===f?"#d2a8ff":"#30363d"}`,
+                    background:opts.format===f?"#d2a8ff22":"transparent",
+                    color:opts.format===f?"#d2a8ff":"#8b949e",
+                    cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700}}>
+                  {f.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* 속도 */}
+        <div style={{background:"#161b22",borderRadius:"10px",padding:"14px",border:"1px solid #30363d"}}>
+          <div style={{fontSize:"11px",color:"#8b949e",fontWeight:700,marginBottom:"6px"}}>⚡ 인코딩 속도</div>
+          <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+            {presetOptions.map(o=>(
+              <button key={o.val} onClick={()=>setOpts(p=>({...p,preset:o.val}))}
+                style={{flex:1,padding:"5px 4px",borderRadius:"6px",border:`1px solid ${opts.preset===o.val?"#79c0ff":"#30363d"}`,
+                  background:opts.preset===o.val?"#79c0ff22":"transparent",
+                  color:opts.preset===o.val?"#79c0ff":"#8b949e",
+                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"10px",
+                  fontWeight:opts.preset===o.val?700:400}}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 압축 버튼 */}
+        <button onClick={compress} disabled={isProcessing}
+          style={{padding:"13px",background:isProcessing?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",
+            border:"none",borderRadius:"10px",color:isProcessing?"#484f58":"#fff",
+            cursor:isProcessing?"not-allowed":"pointer",fontSize:"14px",fontWeight:700,
+            fontFamily:"'Noto Sans KR',sans-serif",transition:"all .2s"}}>
+          {status==="loading"?"⏳ FFmpeg 로딩 중...":isProcessing?"⏳ 압축 중...":"🎬 압축 시작"}
+        </button>
+
+        {/* 결과 다운로드 */}
+        {status==="done"&&resultUrl&&<>
+          <div style={{background:"#0d2019",border:"1px solid #2ea04344",borderRadius:"10px",padding:"12px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
+              <span style={{color:"#8b949e",fontSize:"12px"}}>원본</span>
+              <span style={{color:"#8b949e",fontSize:"12px",fontWeight:600}}>{fmtSz(origSize)}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px"}}>
+              <span style={{color:"#3fb950",fontSize:"12px"}}>결과</span>
+              <span style={{color:"#3fb950",fontSize:"12px",fontWeight:700}}>{fmtSz(resultSize)}</span>
+            </div>
+            {saving!=null&&<div style={{textAlign:"center",color:saving>0?"#3fb950":"#ff7b72",fontSize:"18px",fontWeight:700}}>
+              {saving>0?`▼ ${saving}% 압축`:saving<0?`▲ ${Math.abs(saving)}% 증가`:"변화 없음"}
+            </div>}
+          </div>
+          <a href={resultUrl} download={`compressed.${opts.format}`}
+            style={{display:"block",padding:"11px",background:"#2ea043",borderRadius:"10px",
+              color:"#fff",textDecoration:"none",fontSize:"13px",fontWeight:700,
+              textAlign:"center",fontFamily:"'Noto Sans KR',sans-serif"}}>
+            ⬇️ 결과 다운로드
+          </a>
+        </>}
+
+        <button onClick={()=>{setFile(null);setPreview(null);setResultUrl(null);setStatus("idle");setLog("");}}
+          style={{padding:"9px",background:"none",border:"1px solid #30363d",borderRadius:"8px",
+            color:"#8b949e",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+          🗑️ 새 파일 업로드
+        </button>
+      </div>
+
+      {/* ─ 오른쪽: 미리보기 + 로그 ─ */}
+      <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+
+        {/* 동영상 미리보기 */}
+        <div style={{background:"#0d1117",borderRadius:"12px",overflow:"hidden",border:"1px solid #30363d"}}>
+          {preview&&<video src={resultUrl||preview} controls
+            style={{width:"100%",maxHeight:"400px",display:"block",background:"#000"}}/>}
+          {resultUrl&&<div style={{padding:"8px 12px",fontSize:"11px",color:"#3fb950",background:"#0d2019",
+            borderTop:"1px solid #2ea04333"}}>
+            ✅ 압축 완료 — 위 영상은 결과물 미리보기입니다
+          </div>}
+        </div>
+
+        {/* 진행 상태 */}
+        {isProcessing&&<div style={{background:"#161b22",borderRadius:"10px",padding:"16px",border:"1px solid #30363d"}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px"}}>
+            <span style={{color:"#8b949e",fontSize:"13px"}}>⏳ 압축 진행 중...</span>
+            <span style={{color:"#58a6ff",fontWeight:700,fontSize:"13px"}}>{progress}%</span>
+          </div>
+          <div style={{height:"6px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
+            <div style={{height:"100%",width:`${progress}%`,
+              background:"linear-gradient(90deg,#1f6feb,#58a6ff)",
+              borderRadius:"3px",transition:"width .3s"}}/>
+          </div>
+          <div style={{color:"#484f58",fontSize:"11px",marginTop:"8px",fontFamily:"monospace",
+            whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {log||"처리 중..."}
+          </div>
+        </div>}
+
+        {/* 에러 */}
+        {status==="error"&&<div style={{background:"#2d1117",border:"1px solid #da363333",
+          borderRadius:"10px",padding:"14px",color:"#ff7b72",fontSize:"13px"}}>
+          ⚠️ {log}
+          <div style={{marginTop:"8px",fontSize:"11px",color:"#484f58"}}>
+            FFmpeg.wasm은 브라우저 환경에 따라 동작하지 않을 수 있습니다. SharedArrayBuffer가 필요합니다.
+          </div>
+        </div>}
+
+        {/* 안내 */}
+        <div style={{background:"#161b22",borderRadius:"8px",padding:"12px 14px",border:"1px solid #30363d",
+          fontSize:"11px",color:"#484f58",lineHeight:"1.8"}}>
+          <div style={{color:"#8b949e",fontWeight:600,marginBottom:"4px"}}>💡 사용 안내</div>
+          · 모든 처리는 <strong style={{color:"#c9d1d9"}}>브라우저 내에서만</strong> 이루어져 서버로 업로드되지 않습니다<br/>
+          · FFmpeg.wasm 첫 로드 시 약 20MB 다운로드가 필요합니다<br/>
+          · 대용량 파일(1GB+)은 브라우저 메모리 한계로 실패할 수 있습니다<br/>
+          · 일부 브라우저에서 <strong style={{color:"#c9d1d9"}}>SharedArrayBuffer</strong> 제한으로 동작하지 않을 수 있습니다
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+
 // ─── TAB: 사진 복원·향상 (자체 Canvas 처리) ────────────────────────────────
 function RestoreTab(){
   const [imgSrc,setImgSrc]=useState(null);      // 원본 dataURL
@@ -2616,7 +2979,7 @@ function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive,
   </div>;
 }
 
-const TOOL_MAP={keyword:KeywordTab,write:WriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab};
+const TOOL_MAP={keyword:KeywordTab,write:WriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab};
 
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
