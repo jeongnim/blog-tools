@@ -2035,27 +2035,23 @@ function VideoTab(){
   const ffmpegRef=useRef(null);
   const fileInputRef=useRef(null);
 
-  // FFmpeg.wasm 로드
+  // FFmpeg.wasm 로드 (0.11.x - crossOriginIsolated 불필요)
   const loadFFmpeg=async()=>{
-    if(ffmpegRef.current?.loaded) return ffmpegRef.current;
+    if(ffmpegRef.current) return ffmpegRef.current;
     setStatus("loading");
-    setLog("FFmpeg 엔진 로딩 중... (최초 1회 약 20MB 다운로드)");
+    setLog("FFmpeg 엔진 로딩 중... (최초 1회 약 25MB 다운로드)");
     try{
-      // FFmpeg.wasm CDN 로드
-      await loadScript("https://unpkg.com/@ffmpeg/ffmpeg@0.12.6/dist/umd/ffmpeg.js");
-      await loadScript("https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js");
-      const {FFmpeg}=window.FFmpegWASM||window.FFmpegModule||{};
-      if(!window.FFmpeg&&typeof FFmpeg==="undefined"){
-        throw new Error("FFmpeg 로드 실패");
-      }
-      const ff=new (window.FFmpeg||FFmpeg)();
-      ff.on("log",({message})=>setLog(message));
-      ff.on("progress",({progress:p})=>{
-        setProgress(Math.round(p*100));
+      await loadScript("https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js");
+      const {createFFmpeg,fetchFile:ff_fetchFile}=window.FFmpeg||{};
+      if(!createFFmpeg) throw new Error("FFmpeg 스크립트 로드 실패");
+      window._ffFetchFile=ff_fetchFile;
+      const ff=createFFmpeg({
+        log:false,
+        logger:({message})=>setLog(message),
+        progress:({ratio})=>setProgress(Math.round(ratio*100)),
+        corePath:"https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js",
       });
-      await ff.load({
-        coreURL:"https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js",
-      });
+      await ff.load();
       ffmpegRef.current=ff;
       setStatus("ready");
       setLog("");
@@ -2070,6 +2066,7 @@ function VideoTab(){
   const loadScript=(src)=>new Promise((res,rej)=>{
     if(document.querySelector(`script[src="${src}"]`)){res();return;}
     const s=document.createElement("script");
+    s.crossOrigin="anonymous";
     s.src=src; s.onload=res; s.onerror=rej;
     document.head.appendChild(s);
   });
@@ -2095,19 +2092,22 @@ function VideoTab(){
     setProgress(0);
     setLog("파일 읽는 중...");
     try{
-      const {fetchFile}=window.FFmpegUtil||{fetchFile:async(f)=>new Uint8Array(await f.arrayBuffer())};
-      const inputName="input."+file.name.split(".").pop();
+      const fetchFile=window._ffFetchFile||(async(f)=>new Uint8Array(await f.arrayBuffer()));
+      const ext=file.name.split(".").pop().toLowerCase();
+      const inputName="input."+ext;
       const outputName="output."+opts.format;
 
-      await ff.writeFile(inputName, await fetchFile(file));
+      ff.FS("writeFile", inputName, await fetchFile(file));
       setLog("압축 시작...");
 
-      // FFmpeg 명령 구성
+      // FFmpeg 명령 구성 (0.11.x: ff.run 사용)
       const args=["-i",inputName];
       // 비디오 코덱
-      if(opts.format==="mp4") args.push("-c:v","libx264","-crf",opts.crf,"-preset",opts.preset);
-      else if(opts.format==="webm") args.push("-c:v","libvpx-vp9","-crf",opts.crf,"-b:v","0");
-      else args.push("-c:v","libx264","-crf",opts.crf,"-preset",opts.preset);
+      if(opts.format==="mp4"||opts.format==="mov"){
+        args.push("-c:v","libx264","-crf",opts.crf,"-preset",opts.preset);
+      } else if(opts.format==="webm"){
+        args.push("-c:v","libvpx-vp9","-crf",opts.crf,"-b:v","0");
+      }
       // 오디오
       args.push("-c:a","aac","-b:a","128k");
       // 해상도
@@ -2116,9 +2116,9 @@ function VideoTab(){
       if(opts.fps!=="original") args.push("-r",opts.fps);
       args.push("-movflags","+faststart",outputName);
 
-      await ff.exec(args);
+      await ff.run(...args);
 
-      const data=await ff.readFile(outputName);
+      const data=ff.FS("readFile", outputName);
       const blob=new Blob([data.buffer],{type:`video/${opts.format}`});
       setResultUrl(URL.createObjectURL(blob));
       setResultSize(blob.size);
