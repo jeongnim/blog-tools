@@ -2376,211 +2376,238 @@ function VideoTab(){
 }
 
 
-// ─── TAB: 사진 복원·향상 (자체 Canvas 처리) ────────────────────────────────
+// ─── TAB: 사진 복원·향상 (Canvas 자체 처리) ────────────────────────────────
 function RestoreTab(){
-  const [imgSrc,setImgSrc]=useState(null);      // 원본 dataURL
-  const [resultSrc,setResultSrc]=useState(null); // 처리 결과 dataURL
+  const [imgFile,setImgFile]=useState(null);
+  const [origUrl,setOrigUrl]=useState(null);
+  const [resultUrl,setResultUrl]=useState(null);
   const [processing,setProcessing]=useState(false);
+  const [errMsg,setErrMsg]=useState("");
   const [dragOver,setDragOver]=useState(false);
-  const [sliderX,setSliderX]=useState(50);      // Before/After 슬라이더 %
-  const [isDragging,setIsDragging]=useState(false);
-  const [origSize,setOrigSize]=useState({w:0,h:0,bytes:0});
-  const [resultSize,setResultSize]=useState({w:0,h:0,bytes:0});
+  const [sliderX,setSliderX]=useState(50);
+  const [dragging,setDragging]=useState(false);
+  const [origInfo,setOrigInfo]=useState(null);
+  const [resultInfo,setResultInfo]=useState(null);
   const [opts,setOpts]=useState({
-    scale:"2",      // 1 / 2 / 4
-    sharpen:60,     // 0~100
-    denoise:20,     // 0~100
-    brightness:0,   // -100~100
-    contrast:0,     // -100~100
-    saturation:0,   // -100~100
+    scale:"2",
+    sharpen:60,
+    denoise:20,
+    brightness:0,
+    contrast:0,
+    saturation:0,
   });
-  const fileInputRef=useRef(null);
-  const sliderRef=useRef(null);
+  const fileRef=useRef(null);
+  const sliderContRef=useRef(null);
 
-  // ── 이미지 로드 ──
-  const loadFile=(file)=>{
+  // ── 파일 로드 ──
+  const loadFile=useCallback((file)=>{
     if(!file||!file.type.startsWith("image/")) return;
-    const reader=new FileReader();
-    reader.onload=e=>{
-      const src=e.target.result;
-      setImgSrc(src); setResultSrc(null);
-      const img=new Image();
-      img.onload=()=>setOrigSize({w:img.naturalWidth,h:img.naturalHeight,bytes:file.size});
-      img.src=src;
+    const url=URL.createObjectURL(file);
+    setImgFile(file);
+    setOrigUrl(url);
+    setResultUrl(null);
+    setResultInfo(null);
+    setErrMsg("");
+    // 크기 정보
+    const img=new Image();
+    img.onload=()=>setOrigInfo({w:img.naturalWidth,h:img.naturalHeight,bytes:file.size});
+    img.src=url;
+  },[]);
+
+  // Ctrl+V 붙여넣기
+  useEffect(()=>{
+    const onPaste=e=>{
+      const items=[...e.clipboardData.items];
+      const imgItem=items.find(i=>i.type.startsWith("image/"));
+      if(imgItem) loadFile(imgItem.getAsFile());
     };
-    reader.readAsDataURL(file);
-  };
+    window.addEventListener("paste",onPaste);
+    return()=>window.removeEventListener("paste",onPaste);
+  },[loadFile]);
+
+  // ── 이미지 로드 헬퍼 (onload 확실히 대기) ──
+  const loadImg=src=>new Promise((res,rej)=>{
+    const img=new Image();
+    img.crossOrigin="anonymous";
+    img.onload=()=>res(img);
+    img.onerror=rej;
+    img.src=src;
+    // 이미 complete 인 경우 (캐시)
+    if(img.complete&&img.naturalWidth>0) res(img);
+  });
 
   // ── 핵심 처리 ──
-  const process=async()=>{
-    if(!imgSrc) return;
-    setProcessing(true); setResultSrc(null);
-    await new Promise(r=>setTimeout(r,30)); // UI 업데이트 기회
+  const runProcess=async()=>{
+    if(!origUrl) return;
+    setProcessing(true); setResultUrl(null); setErrMsg("");
+    try{
+      await new Promise(r=>setTimeout(r,20)); // React 렌더 기회
+      const img=await loadImg(origUrl);
+      const sc=Number(opts.scale);
+      const dw=Math.round(img.naturalWidth*sc);
+      const dh=Math.round(img.naturalHeight*sc);
 
-    const img=new Image();
-    img.src=imgSrc;
-    await new Promise(r=>{img.onload=r;});
+      const cvs=document.createElement("canvas");
+      cvs.width=dw; cvs.height=dh;
+      const ctx=cvs.getContext("2d",{willReadFrequently:true});
+      ctx.imageSmoothingEnabled=true;
+      ctx.imageSmoothingQuality="high";
+      ctx.drawImage(img,0,0,dw,dh);
 
-    const sc=Number(opts.scale);
-    const dw=img.naturalWidth*sc, dh=img.naturalHeight*sc;
-
-    // 1) 업스케일
-    const cvs=document.createElement("canvas");
-    cvs.width=dw; cvs.height=dh;
-    const ctx=cvs.getContext("2d");
-    ctx.imageSmoothingEnabled=true;
-    ctx.imageSmoothingQuality="high";
-    ctx.drawImage(img,0,0,dw,dh);
-
-    // 2) 밝기·대비·채도 (픽셀 단위)
-    if(opts.brightness!==0||opts.contrast!==0||opts.saturation!==0){
-      const id=ctx.getImageData(0,0,dw,dh);
-      const d=id.data;
-      const br=opts.brightness/100*255;
-      const ct=opts.contrast/100;
-      const ctFactor=(259*(ct*100+255))/(255*(259-ct*100));
-      const st=1+opts.saturation/100;
-      for(let i=0;i<d.length;i+=4){
-        let r=d[i],g=d[i+1],b=d[i+2];
-        // 밝기
-        r+=br; g+=br; b+=br;
-        // 대비
-        r=ctFactor*(r-128)+128;
-        g=ctFactor*(g-128)+128;
-        b=ctFactor*(b-128)+128;
-        // 채도 (HSL 변환 없이 luma 기반 근사)
-        const luma=0.299*r+0.587*g+0.114*b;
-        r=luma+(r-luma)*st;
-        g=luma+(g-luma)*st;
-        b=luma+(b-luma)*st;
-        d[i]=Math.max(0,Math.min(255,r));
-        d[i+1]=Math.max(0,Math.min(255,g));
-        d[i+2]=Math.max(0,Math.min(255,b));
-      }
-      ctx.putImageData(id,0,0);
-    }
-
-    // 3) 노이즈 제거 (가우시안 근사 - 박스블러 3회)
-    if(opts.denoise>0){
-      const passes=Math.ceil(opts.denoise/33); // 1~3회
-      for(let p=0;p<passes;p++){
+      // ① 밝기·대비·채도
+      if(opts.brightness||opts.contrast||opts.saturation){
         const id=ctx.getImageData(0,0,dw,dh);
-        const src2=new Uint8ClampedArray(id.data);
-        const dst=id.data;
-        const w=dw;
-        for(let y=1;y<dh-1;y++){
-          for(let x=1;x<w-1;x++){
-            const i=(y*w+x)*4;
-            for(let c=0;c<3;c++){
-              dst[i+c]=Math.round((
-                src2[i+c]+
-                src2[((y-1)*w+x)*4+c]+
-                src2[((y+1)*w+x)*4+c]+
-                src2[(y*w+x-1)*4+c]+
-                src2[(y*w+x+1)*4+c]
-              )/5);
-            }
-          }
+        const d=id.data;
+        const br=(opts.brightness/100)*255;
+        const ctRaw=opts.contrast/100;
+        const ctF=(259*(ctRaw*100+255))/(255*(259-ctRaw*100));
+        const sat=1+(opts.saturation/100);
+        for(let i=0;i<d.length;i+=4){
+          let r=d[i],g=d[i+1],b=d[i+2];
+          r+=br; g+=br; b+=br;
+          r=ctF*(r-128)+128; g=ctF*(g-128)+128; b=ctF*(b-128)+128;
+          const L=0.299*r+0.587*g+0.114*b;
+          r=L+(r-L)*sat; g=L+(g-L)*sat; b=L+(b-L)*sat;
+          d[i]=r<0?0:r>255?255:r;
+          d[i+1]=g<0?0:g>255?255:g;
+          d[i+2]=b<0?0:b>255?255:b;
         }
         ctx.putImageData(id,0,0);
       }
-    }
 
-    // 4) 언샤프 마스킹 (선명도)
-    if(opts.sharpen>0){
-      const amount=opts.sharpen/100;
-      // 원본 복사 후 blur → 차이를 원본에 더하기
-      const cvs2=document.createElement("canvas");
-      cvs2.width=dw; cvs2.height=dh;
-      const ctx2=cvs2.getContext("2d");
-      ctx2.filter=`blur(1px)`;
-      ctx2.drawImage(cvs,0,0);
-      const sharp=ctx.getImageData(0,0,dw,dh);
-      const blurred=ctx2.getImageData(0,0,dw,dh);
-      const sd=sharp.data, bd=blurred.data;
-      for(let i=0;i<sd.length;i+=4){
-        for(let c=0;c<3;c++){
-          const diff=sd[i+c]-bd[i+c];
-          sd[i+c]=Math.max(0,Math.min(255,sd[i+c]+diff*amount*2));
+      // ② 노이즈 제거 (박스블러 반복)
+      if(opts.denoise>0){
+        const passes=opts.denoise<34?1:opts.denoise<67?2:3;
+        for(let p=0;p<passes;p++){
+          const id=ctx.getImageData(0,0,dw,dh);
+          const s=new Uint8ClampedArray(id.data);
+          const d=id.data;
+          for(let y=1;y<dh-1;y++){
+            for(let x=1;x<dw-1;x++){
+              const i=(y*dw+x)*4;
+              for(let c=0;c<3;c++){
+                d[i+c]=(s[i+c]+s[((y-1)*dw+x)*4+c]+s[((y+1)*dw+x)*4+c]+s[(y*dw+x-1)*4+c]+s[(y*dw+x+1)*4+c]+1)/5|0;
+              }
+            }
+          }
+          ctx.putImageData(id,0,0);
         }
       }
-      ctx.putImageData(sharp,0,0);
-    }
 
-    // 결과 저장
-    cvs.toBlob(blob=>{
-      const url=URL.createObjectURL(blob);
-      setResultSrc(url);
-      setResultSize({w:dw,h:dh,bytes:blob.size});
-      setProcessing(false);
-    },"image/jpeg",0.95);
+      // ③ 선명도 (언샤프 마스킹)
+      if(opts.sharpen>0){
+        const sharp=ctx.getImageData(0,0,dw,dh);
+        const tmp=document.createElement("canvas");
+        tmp.width=dw; tmp.height=dh;
+        const tc=tmp.getContext("2d");
+        tc.filter="blur(1px)";
+        tc.drawImage(cvs,0,0);
+        const blurred=tc.getImageData(0,0,dw,dh);
+        const sd=sharp.data, bd=blurred.data;
+        const amt=(opts.sharpen/100)*2;
+        for(let i=0;i<sd.length;i+=4){
+          for(let c=0;c<3;c++){
+            const v=sd[i+c]+(sd[i+c]-bd[i+c])*amt;
+            sd[i+c]=v<0?0:v>255?255:v;
+          }
+        }
+        ctx.putImageData(sharp,0,0);
+      }
+
+      // ④ 결과 추출
+      const blob=await new Promise(res=>cvs.toBlob(res,"image/jpeg",0.95));
+      setResultUrl(URL.createObjectURL(blob));
+      setResultInfo({w:dw,h:dh,bytes:blob.size});
+    }catch(e){
+      setErrMsg("처리 오류: "+e.message);
+    }
+    setProcessing(false);
   };
 
-  // ── 슬라이더 드래그 ──
-  const onSliderMouseMove=useCallback((e)=>{
-    if(!isDragging||!sliderRef.current) return;
-    const rect=sliderRef.current.getBoundingClientRect();
-    const x=((e.clientX-rect.left)/rect.width)*100;
-    setSliderX(Math.max(2,Math.min(98,x)));
-  },[isDragging]);
+  // ── 슬라이더 드래그 (mouse + touch) ──
+  const onPointerMove=useCallback(e=>{
+    if(!dragging||!sliderContRef.current) return;
+    const rect=sliderContRef.current.getBoundingClientRect();
+    const cx=(e.touches?e.touches[0].clientX:e.clientX);
+    const pct=((cx-rect.left)/rect.width)*100;
+    setSliderX(Math.max(2,Math.min(98,pct)));
+  },[dragging]);
 
   useEffect(()=>{
-    if(isDragging){
-      window.addEventListener("mousemove",onSliderMouseMove);
-      window.addEventListener("mouseup",()=>setIsDragging(false));
-    }
+    const up=()=>setDragging(false);
+    window.addEventListener("mousemove",onPointerMove);
+    window.addEventListener("mouseup",up);
+    window.addEventListener("touchmove",onPointerMove,{passive:true});
+    window.addEventListener("touchend",up);
     return()=>{
-      window.removeEventListener("mousemove",onSliderMouseMove);
+      window.removeEventListener("mousemove",onPointerMove);
+      window.removeEventListener("mouseup",up);
+      window.removeEventListener("touchmove",onPointerMove);
+      window.removeEventListener("touchend",up);
     };
-  },[isDragging,onSliderMouseMove]);
+  },[onPointerMove]);
 
-  const fmtSz=n=>n>1024*1024?(n/1024/1024).toFixed(1)+"MB":(n/1024).toFixed(0)+"KB";
-  const fmtPx=(w,h)=>`${w.toLocaleString()}×${h.toLocaleString()}px`;
+  const fmtSz=n=>n>1048576?(n/1048576).toFixed(1)+"MB":(n/1024).toFixed(0)+"KB";
+  const fmtPx=(w,h)=>`${w}×${h}px`;
+  const saving=resultInfo&&origInfo?Math.round((1-resultInfo.bytes/origInfo.bytes)*100):null;
 
-  // 슬라이더 UI 컴포넌트
-  const Slider=({label,val,min,max,unit,onChange,color="#58a6ff"})=>(
+  const SliderCtrl=({label,val,min,max,color="#58a6ff",onChange})=>(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:"11px",color:"#8b949e",marginBottom:"5px"}}>
-        <span>{label}</span>
-        <span style={{color,fontWeight:700}}>{val>0?"+":""}{val}{unit}</span>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:"11px",color:"#8b949e",marginBottom:"4px"}}>
+        <span>{label}</span><span style={{color,fontWeight:700}}>{val>0?"+":""}{val}</span>
       </div>
-      <input type="range" min={min} max={max} value={val}
-        onChange={e=>onChange(Number(e.target.value))}
-        style={{width:"100%",accentColor:color,cursor:"pointer",height:"4px"}}/>
+      <input type="range" min={min} max={max} value={val} onChange={e=>onChange(+e.target.value)}
+        style={{width:"100%",accentColor:color,cursor:"pointer"}}/>
     </div>
   );
 
   return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
 
-    {/* 업로드 영역 */}
-    {!imgSrc&&<div
-      onClick={()=>fileInputRef.current?.click()}
-      onDrop={e=>{e.preventDefault();setDragOver(false);loadFile(e.dataTransfer.files[0]);}}
-      onDragOver={e=>{e.preventDefault();setDragOver(true);}}
-      onDragLeave={()=>setDragOver(false)}
-      style={{border:`2px dashed ${dragOver?"#58a6ff":"#30363d"}`,borderRadius:"12px",padding:"48px 20px",
-        textAlign:"center",cursor:"pointer",background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
-      <div style={{fontSize:"48px",marginBottom:"12px"}}>✨</div>
-      <div style={{color:"#c9d1d9",fontSize:"16px",fontWeight:700,marginBottom:"6px"}}>이미지를 드래그하거나 클릭하여 업로드</div>
-      <div style={{color:"#484f58",fontSize:"13px"}}>JPG, PNG, WEBP 등 모든 이미지 · Ctrl+V 붙여넣기 가능</div>
-      <input ref={fileInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>loadFile(e.target.files[0])}/>
-    </div>}
+    {/* 업로드 */}
+    {!origUrl&&<>
+      <div onClick={()=>fileRef.current?.click()}
+        onDrop={e=>{e.preventDefault();setDragOver(false);loadFile(e.dataTransfer.files[0]);}}
+        onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+        onDragLeave={()=>setDragOver(false)}
+        style={{border:`2px dashed ${dragOver?"#58a6ff":"#30363d"}`,borderRadius:"12px",
+          padding:"52px 20px",textAlign:"center",cursor:"pointer",
+          background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
+        <div style={{fontSize:"52px",marginBottom:"12px"}}>✨</div>
+        <div style={{color:"#c9d1d9",fontSize:"16px",fontWeight:700,marginBottom:"6px"}}>
+          이미지 드래그 · 클릭 · Ctrl+V
+        </div>
+        <div style={{color:"#484f58",fontSize:"13px"}}>JPG · PNG · WEBP · GIF</div>
+        <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}}
+          onChange={e=>loadFile(e.target.files[0])}/>
+      </div>
+      {/* 기능 안내 */}
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+        {[["🔍","업스케일 2X/4X"],["✨","선명도 향상"],["🧹","노이즈 제거"],["☀️","밝기·대비"],["🎨","채도 조정"],["↔️","Before/After"]].map(([ic,lb])=>(
+          <div key={lb} style={{flex:"1 1 140px",background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",
+            padding:"10px 12px",display:"flex",alignItems:"center",gap:"8px"}}>
+            <span style={{fontSize:"18px"}}>{ic}</span>
+            <span style={{color:"#8b949e",fontSize:"12px",fontWeight:600}}>{lb}</span>
+          </div>
+        ))}
+      </div>
+    </>}
 
-    {imgSrc&&<div style={{display:"grid",gridTemplateColumns:"260px 1fr",gap:"14px",alignItems:"start"}}>
+    {origUrl&&<div style={{display:"grid",gridTemplateColumns:"240px 1fr",gap:"14px",alignItems:"start"}}>
 
-      {/* ─ 왼쪽: 설정 패널 ─ */}
+      {/* ─ 왼쪽 패널 ─ */}
       <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
 
         {/* 원본 썸네일 */}
-        <div style={{background:"#161b22",borderRadius:"10px",overflow:"hidden",border:"1px solid #30363d"}}>
-          <img src={imgSrc} alt="원본" style={{width:"100%",display:"block",maxHeight:"180px",objectFit:"contain",background:"#0d1117"}}/>
-          <div style={{padding:"8px 12px",fontSize:"11px",color:"#484f58"}}>
-            원본 · {fmtPx(origSize.w,origSize.h)} · {fmtSz(origSize.bytes)}
-          </div>
+        <div style={{borderRadius:"10px",overflow:"hidden",border:"1px solid #30363d",background:"#0d1117"}}>
+          <img src={origUrl} style={{width:"100%",maxHeight:"160px",objectFit:"contain",display:"block"}}/>
+          {origInfo&&<div style={{padding:"6px 10px",fontSize:"10px",color:"#484f58"}}>
+            원본 · {fmtPx(origInfo.w,origInfo.h)} · {fmtSz(origInfo.bytes)}
+          </div>}
         </div>
 
-        {/* 옵션 패널 */}
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px",display:"flex",flexDirection:"column",gap:"12px"}}>
+        {/* 옵션들 */}
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px",
+          display:"flex",flexDirection:"column",gap:"12px"}}>
           <div style={{fontSize:"12px",color:"#8b949e",fontWeight:700}}>⚙️ 처리 옵션</div>
 
           {/* 업스케일 */}
@@ -2593,117 +2620,130 @@ function RestoreTab(){
                     border:`1px solid ${opts.scale===s?"#58a6ff":"#30363d"}`,
                     background:opts.scale===s?"#1f6feb22":"#21262d",
                     color:opts.scale===s?"#58a6ff":"#8b949e",
-                    cursor:"pointer",fontWeight:700,fontSize:"13px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+                    cursor:"pointer",fontWeight:700,fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif"}}>
                   {s}X
                 </button>
               ))}
             </div>
-            {opts.scale!=="1"&&<div style={{fontSize:"10px",color:"#484f58",marginTop:"5px"}}>
-              결과: {fmtPx(origSize.w*Number(opts.scale),origSize.h*Number(opts.scale))}
+            {origInfo&&opts.scale!=="1"&&<div style={{fontSize:"10px",color:"#484f58",marginTop:"4px"}}>
+              → {fmtPx(origInfo.w*+opts.scale,origInfo.h*+opts.scale)}
             </div>}
           </div>
 
-          <Slider label="✨ 선명도 (언샤프 마스킹)" val={opts.sharpen} min={0} max={100} unit="%" color="#79c0ff"
+          <SliderCtrl label="✨ 선명도" val={opts.sharpen} min={0} max={100} color="#79c0ff"
             onChange={v=>setOpts(o=>({...o,sharpen:v}))}/>
-          <Slider label="🧹 노이즈 제거" val={opts.denoise} min={0} max={100} unit="%" color="#3fb950"
+          <SliderCtrl label="🧹 노이즈 제거" val={opts.denoise} min={0} max={100} color="#3fb950"
             onChange={v=>setOpts(o=>({...o,denoise:v}))}/>
-          <Slider label="☀️ 밝기" val={opts.brightness} min={-100} max={100} unit="" color="#ffa657"
+          <SliderCtrl label="☀️ 밝기" val={opts.brightness} min={-100} max={100} color="#ffa657"
             onChange={v=>setOpts(o=>({...o,brightness:v}))}/>
-          <Slider label="◑ 대비" val={opts.contrast} min={-100} max={100} unit="" color="#d2a8ff"
+          <SliderCtrl label="◑ 대비" val={opts.contrast} min={-100} max={100} color="#d2a8ff"
             onChange={v=>setOpts(o=>({...o,contrast:v}))}/>
-          <Slider label="🎨 채도" val={opts.saturation} min={-100} max={100} unit="" color="#ff7b72"
+          <SliderCtrl label="🎨 채도" val={opts.saturation} min={-100} max={100} color="#ff7b72"
             onChange={v=>setOpts(o=>({...o,saturation:v}))}/>
 
-          {/* 초기화 */}
           <button onClick={()=>setOpts({scale:"2",sharpen:60,denoise:20,brightness:0,contrast:0,saturation:0})}
-            style={{padding:"6px",background:"none",border:"1px solid #30363d",borderRadius:"6px",
+            style={{padding:"5px",background:"none",border:"1px solid #30363d",borderRadius:"6px",
               color:"#484f58",cursor:"pointer",fontSize:"11px",fontFamily:"'Noto Sans KR',sans-serif"}}>
             🔄 기본값으로
           </button>
         </div>
 
         {/* 처리 버튼 */}
-        <button onClick={process} disabled={processing}
-          style={{padding:"13px",background:processing?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",
-            border:"none",borderRadius:"10px",color:processing?"#484f58":"#fff",
-            cursor:processing?"not-allowed":"pointer",fontSize:"14px",fontWeight:700,
-            fontFamily:"'Noto Sans KR',sans-serif",transition:"all .2s"}}>
+        <button onClick={runProcess} disabled={processing}
+          style={{padding:"13px",
+            background:processing?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",
+            border:"none",borderRadius:"10px",
+            color:processing?"#8b949e":"#fff",cursor:processing?"not-allowed":"pointer",
+            fontSize:"14px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}>
           {processing?"⏳ 처리 중...":"✨ 이미지 향상 시작"}
         </button>
 
-        {/* 다운로드 */}
-        {resultSrc&&<>
-          <a href={resultSrc} download="enhanced.jpg"
-            style={{display:"block",padding:"11px",background:"#2ea043",border:"none",borderRadius:"10px",
-              color:"#fff",textDecoration:"none",fontSize:"13px",fontWeight:700,textAlign:"center",
-              fontFamily:"'Noto Sans KR',sans-serif"}}>
+        {errMsg&&<div style={{background:"#2d1117",border:"1px solid #da363333",borderRadius:"8px",
+          padding:"10px 12px",color:"#ff7b72",fontSize:"12px"}}>{errMsg}</div>}
+
+        {/* 결과 정보 + 다운로드 */}
+        {resultUrl&&<>
+          <div style={{background:"#0d2019",border:"1px solid #2ea04333",borderRadius:"8px",padding:"10px 12px"}}>
+            {origInfo&&<div style={{display:"flex",justifyContent:"space-between",fontSize:"11px",marginBottom:"4px"}}>
+              <span style={{color:"#484f58"}}>원본</span>
+              <span style={{color:"#484f58"}}>{fmtSz(origInfo.bytes)}</span>
+            </div>}
+            {resultInfo&&<div style={{display:"flex",justifyContent:"space-between",fontSize:"11px",marginBottom:"6px"}}>
+              <span style={{color:"#3fb950"}}>결과</span>
+              <span style={{color:"#3fb950",fontWeight:700}}>{fmtPx(resultInfo.w,resultInfo.h)} · {fmtSz(resultInfo.bytes)}</span>
+            </div>}
+            {saving!=null&&<div style={{textAlign:"center",color:saving>=0?"#3fb950":"#ffa657",
+              fontSize:"16px",fontWeight:700}}>
+              {saving>=0?`▼ ${saving}% 용량 감소`:`▲ ${Math.abs(saving)}% 증가 (업스케일)`}
+            </div>}
+          </div>
+          <a href={resultUrl} download="enhanced.jpg"
+            style={{display:"block",padding:"11px",background:"#2ea043",borderRadius:"10px",
+              color:"#fff",textDecoration:"none",fontSize:"13px",fontWeight:700,
+              textAlign:"center",fontFamily:"'Noto Sans KR',sans-serif"}}>
             ⬇️ 결과 다운로드
           </a>
-          <div style={{fontSize:"10px",color:"#484f58",textAlign:"center"}}>
-            {fmtPx(resultSize.w,resultSize.h)} · {fmtSz(resultSize.bytes)}
-          </div>
         </>}
 
-        {/* 새 이미지 */}
-        <button onClick={()=>{setImgSrc(null);setResultSrc(null);}}
-          style={{padding:"9px",background:"none",border:"1px solid #30363d",borderRadius:"8px",
+        <button onClick={()=>{setOrigUrl(null);setResultUrl(null);setImgFile(null);setOrigInfo(null);setResultInfo(null);setErrMsg("");}}
+          style={{padding:"8px",background:"none",border:"1px solid #30363d",borderRadius:"8px",
             color:"#8b949e",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-          🗑️ 새 이미지 업로드
+          🗑️ 새 이미지
         </button>
       </div>
 
-      {/* ─ 오른쪽: Before/After 비교 ─ */}
+      {/* ─ 오른쪽: Before/After ─ */}
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         <div style={{fontSize:"12px",color:"#8b949e",fontWeight:600}}>
-          {resultSrc?"↔️ 슬라이더를 드래그해서 Before/After 비교":"📷 원본 미리보기"}
+          {resultUrl?"↔️ 슬라이더를 드래그해서 Before / After 비교":"📷 원본 미리보기 — 옵션 설정 후 [이미지 향상 시작] 클릭"}
         </div>
 
-        {resultSrc?(
-          // Before/After 슬라이더
-          <div ref={sliderRef} style={{position:"relative",borderRadius:"12px",overflow:"hidden",
-            border:"1px solid #30363d",cursor:"ew-resize",userSelect:"none",background:"#0d1117"}}
-            onMouseDown={e=>{e.preventDefault();setIsDragging(true);}}>
-            {/* After (전체) */}
-            <img src={resultSrc} alt="after" style={{display:"block",width:"100%",maxHeight:"560px",objectFit:"contain"}}/>
-            {/* Before (클립) */}
-            <div style={{position:"absolute",top:0,left:0,height:"100%",width:`${sliderX}%`,overflow:"hidden"}}>
-              <img src={imgSrc} alt="before" style={{display:"block",width:`${100/sliderX*100}%`,maxHeight:"560px",objectFit:"contain"}}/>
+        {resultUrl?(
+          <div ref={sliderContRef}
+            onMouseDown={e=>{e.preventDefault();setDragging(true);}}
+            onTouchStart={()=>setDragging(true)}
+            style={{position:"relative",borderRadius:"12px",overflow:"hidden",
+              border:"1px solid #30363d",cursor:"ew-resize",userSelect:"none",
+              background:"#000",lineHeight:0}}>
+            {/* AFTER (전체) */}
+            <img src={resultUrl} style={{display:"block",width:"100%",maxHeight:"560px",objectFit:"contain"}}/>
+            {/* BEFORE (클립) */}
+            <div style={{position:"absolute",inset:0,overflow:"hidden",width:`${sliderX}%`,pointerEvents:"none"}}>
+              <img src={origUrl} style={{display:"block",width:`${10000/sliderX}%`,maxHeight:"560px",objectFit:"contain"}}/>
             </div>
             {/* 구분선 */}
-            <div style={{position:"absolute",top:0,left:`${sliderX}%`,transform:"translateX(-50%)",
-              height:"100%",width:"3px",background:"#fff",boxShadow:"0 0 8px rgba(0,0,0,.8)",pointerEvents:"none"}}>
-              <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",
-                width:"32px",height:"32px",borderRadius:"50%",background:"#fff",
-                boxShadow:"0 2px 8px rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",
-                fontSize:"13px",fontWeight:700,color:"#0d1117",cursor:"ew-resize"}}>↔</div>
+            <div style={{position:"absolute",top:0,bottom:0,left:`${sliderX}%`,
+              transform:"translateX(-50%)",width:"3px",background:"#fff",
+              boxShadow:"0 0 8px rgba(0,0,0,.8)",pointerEvents:"none"}}>
+              <div style={{position:"absolute",top:"50%",left:"50%",
+                transform:"translate(-50%,-50%)",width:"34px",height:"34px",
+                borderRadius:"50%",background:"#fff",boxShadow:"0 2px 10px rgba(0,0,0,.6)",
+                display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:"14px",fontWeight:900,color:"#0d1117",cursor:"ew-resize"}}>↔</div>
             </div>
-            {/* 라벨 */}
-            <div style={{position:"absolute",top:"10px",left:"10px",background:"rgba(0,0,0,.7)",
-              color:"#fff",padding:"3px 10px",borderRadius:"20px",fontSize:"11px",fontWeight:600}}>BEFORE</div>
-            <div style={{position:"absolute",top:"10px",right:"10px",background:"rgba(31,111,235,.9)",
-              color:"#fff",padding:"3px 10px",borderRadius:"20px",fontSize:"11px",fontWeight:600}}>AFTER</div>
+            <div style={{position:"absolute",top:"10px",left:"10px",
+              background:"rgba(0,0,0,.7)",color:"#fff",padding:"3px 10px",
+              borderRadius:"20px",fontSize:"11px",fontWeight:700,pointerEvents:"none"}}>BEFORE</div>
+            <div style={{position:"absolute",top:"10px",right:"10px",
+              background:"rgba(31,111,235,.9)",color:"#fff",padding:"3px 10px",
+              borderRadius:"20px",fontSize:"11px",fontWeight:700,pointerEvents:"none"}}>AFTER</div>
           </div>
         ):(
-          <div style={{borderRadius:"12px",overflow:"hidden",border:"1px solid #30363d",background:"#0d1117"}}>
-            <img src={imgSrc} alt="원본" style={{display:"block",width:"100%",maxHeight:"560px",objectFit:"contain"}}/>
+          <div style={{borderRadius:"12px",overflow:"hidden",border:"1px solid #30363d",background:"#0d1117",lineHeight:0}}>
+            <img src={origUrl} style={{display:"block",width:"100%",maxHeight:"560px",objectFit:"contain"}}/>
           </div>
         )}
 
-        {/* 처리 옵션 요약 */}
-        {resultSrc&&<div style={{background:"#161b22",borderRadius:"8px",padding:"10px 14px",
-          fontSize:"11px",color:"#8b949e",display:"flex",gap:"12px",flexWrap:"wrap"}}>
-          <span>🔍 {opts.scale}X 업스케일</span>
-          <span>✨ 선명도 {opts.sharpen}%</span>
-          <span>🧹 노이즈제거 {opts.denoise}%</span>
-          {opts.brightness!==0&&<span>☀️ 밝기 {opts.brightness>0?"+":""}{opts.brightness}</span>}
-          {opts.contrast!==0&&<span>◑ 대비 {opts.contrast>0?"+":""}{opts.contrast}</span>}
-          {opts.saturation!==0&&<span>🎨 채도 {opts.saturation>0?"+":""}{opts.saturation}</span>}
+        {processing&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",
+          padding:"14px",textAlign:"center"}}>
+          <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+          <div style={{fontSize:"28px",animation:"spin 1s linear infinite",display:"inline-block",marginBottom:"6px"}}>⚙️</div>
+          <div style={{color:"#8b949e",fontSize:"13px"}}>이미지 처리 중... 잠시만 기다려주세요</div>
         </div>}
       </div>
     </div>}
   </div>;
 }
-
 
 // ─── TAB: 글 작성 ────────────────────────────────────────────────────────
 function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive,
