@@ -278,7 +278,7 @@ const TABS=[
   {id:"analyze",  icon:"📊", label:"글 분석 · 금칙어"},
   {id:"missing",  icon:"📡", label:"누락 확인"},
   {id:"ocr",      icon:"🖼️", label:"이미지→텍스트"},
-  {id:"convert",  icon:"🔄", label:"이미지 변환"},
+  {id:"convert",  icon:"🔄", label:"이미지 형식변환"},
   {id:"restore",  icon:"✨", label:"사진 복원·향상"},
   {id:"video",    icon:"🎬", label:"동영상 압축"},
 ];
@@ -956,15 +956,8 @@ function OcrTab(){
   const fmtSize=n=>n>1024*1024?(n/1024/1024).toFixed(1)+"MB":(n/1024).toFixed(0)+"KB";
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
-    <div style={{background:"#0d2019",border:"1px solid #2ea04333",borderRadius:"10px",padding:"12px 16px",display:"flex",alignItems:"center",gap:"10px"}}>
-      <span style={{fontSize:"18px"}}>⚡</span>
-      <div>
-        <div style={{color:"#3fb950",fontSize:"13px",fontWeight:600}}>Tesseract OCR 엔진 사용 (무료 · 빠름 · Claude 비용 없음)</div>
-        <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>한국어+영어 인식 · 긴 이미지도 한 번에 처리</div>
-      </div>
-      {tesseractLoading&&<span style={{color:"#ffa657",fontSize:"12px",marginLeft:"auto"}}>⏳ OCR 엔진 로딩중...</span>}
-      {tesseractReady&&<span style={{color:"#3fb950",fontSize:"12px",marginLeft:"auto"}}>✅ 준비됨</span>}
-    </div>
+    {tesseractLoading&&<div style={{color:"#ffa657",fontSize:"12px"}}>⏳ OCR 엔진 로딩중...</div>}
+    {tesseractReady&&<div style={{color:"#3fb950",fontSize:"12px"}}>✅ OCR 준비됨</div>}
 
     <div onClick={()=>fileInputRef.current?.click()}
       onDrop={e=>{e.preventDefault();setDragOver(false);addFiles(e.dataTransfer.files);}}
@@ -3025,8 +3018,7 @@ export default function BlogTools(){
     <div style={{borderBottom:"1px solid #21262d",padding:"16px 24px",background:"#0d1117",display:"flex",alignItems:"center",gap:"12px"}}>
       <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"17px"}}>✍️</div>
       <div>
-        <div style={{fontSize:"16px",fontWeight:700,color:"#fff"}}>블로그 올인원 도구</div>
-        <div style={{color:"#8b949e",fontSize:"11px"}}>7가지 블로그 도구 통합</div>
+        <div style={{fontSize:"16px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div>
       </div>
     </div>
     <div style={{display:"flex",overflowX:"auto",borderBottom:"1px solid #21262d",background:"#0d1117",padding:"0 10px",gap:"2px"}}>
