@@ -273,14 +273,15 @@ async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5
 }
 
 const TABS=[
-  {id:"keyword",  icon:"🔍", label:"키워드 조회"},
-  {id:"write",    icon:"✍️",  label:"글 작성"},
-  {id:"analyze",  icon:"📊", label:"글 분석 · 금칙어"},
-  {id:"missing",  icon:"📡", label:"누락 확인"},
-  {id:"ocr",      icon:"🖼️", label:"이미지→텍스트"},
-  {id:"convert",  icon:"🔄", label:"이미지 형식변환"},
-  {id:"restore",  icon:"✨", label:"사진 복원·향상"},
-  {id:"video",    icon:"🎬", label:"동영상 압축"},
+  {id:"keyword",   icon:"🔍", label:"키워드 조회"},
+  {id:"write",     icon:"✍️",  label:"글 작성"},
+  {id:"autowrite", icon:"🤖", label:"자동글쓰기"},
+  {id:"analyze",   icon:"📊", label:"글 분석 · 금칙어"},
+  {id:"missing",   icon:"📡", label:"누락 확인"},
+  {id:"ocr",       icon:"🖼️", label:"이미지→텍스트"},
+  {id:"convert",   icon:"🔄", label:"이미지 형식변환"},
+  {id:"restore",   icon:"✨", label:"사진 복원·향상"},
+  {id:"video",     icon:"🎬", label:"동영상 압축"},
 ];
 // ─── Shared UI ────────────────────────────────────────────────────────────
 function Textarea({value,onChange,placeholder,rows=9}){
@@ -2937,7 +2938,293 @@ function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive,
   </div>;
 }
 
-const TOOL_MAP={keyword:KeywordTab,write:WriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab};
+// ─── TAB: 자동글쓰기 ─────────────────────────────────────────────────────
+const NAVER_AUTO_CATEGORIES=[
+  {group:"🍽️ 생활/음식",items:[
+    {value:"요리·레시피",label:"요리·레시피"},{value:"맛집·카페",label:"맛집·카페"},
+    {value:"다이어트·건강식",label:"다이어트·건강식"},{value:"카페·디저트",label:"카페·디저트"},
+  ]},
+  {group:"💄 패션/뷰티",items:[
+    {value:"패션·코디",label:"패션·코디"},{value:"뷰티·메이크업",label:"뷰티·메이크업"},
+    {value:"스킨케어·화장품",label:"스킨케어·화장품"},{value:"헤어·네일",label:"헤어·네일"},
+  ]},
+  {group:"🏠 인테리어/생활",items:[
+    {value:"인테리어·DIY",label:"인테리어·DIY"},{value:"살림·생활꿀팁",label:"살림·생활꿀팁"},
+    {value:"청소·정리정돈",label:"청소·정리정돈"},{value:"원예·식물",label:"원예·식물"},
+  ]},
+  {group:"✈️ 여행",items:[
+    {value:"국내여행",label:"국내여행"},{value:"해외여행",label:"해외여행"},
+    {value:"캠핑·아웃도어",label:"캠핑·아웃도어"},{value:"호텔·숙소",label:"호텔·숙소"},
+  ]},
+  {group:"💰 재테크/금융",items:[
+    {value:"재테크·투자",label:"재테크·투자"},{value:"부동산",label:"부동산"},
+    {value:"주식·ETF",label:"주식·ETF"},{value:"보험·연금",label:"보험·연금"},
+  ]},
+  {group:"💻 IT/디지털",items:[
+    {value:"IT·가전",label:"IT·가전"},{value:"스마트폰·앱",label:"스마트폰·앱"},
+    {value:"게임",label:"게임"},{value:"AI·기술트렌드",label:"AI·기술트렌드"},
+  ]},
+  {group:"🏋️ 건강/운동",items:[
+    {value:"운동·피트니스",label:"운동·피트니스"},{value:"건강·의학정보",label:"건강·의학정보"},
+    {value:"멘탈케어·심리",label:"멘탈케어·심리"},{value:"한방·영양제",label:"한방·영양제"},
+  ]},
+  {group:"👶 육아/교육",items:[
+    {value:"육아·아이",label:"육아·아이"},{value:"교육·학습",label:"교육·학습"},
+    {value:"임신·출산",label:"임신·출산"},{value:"유아교육·장난감",label:"유아교육·장난감"},
+  ]},
+  {group:"🚗 자동차",items:[
+    {value:"자동차",label:"자동차"},{value:"중고차·신차",label:"중고차·신차"},
+    {value:"전기차·하이브리드",label:"전기차·하이브리드"},
+  ]},
+  {group:"🐾 반려동물",items:[
+    {value:"반려견",label:"반려견"},{value:"반려묘",label:"반려묘"},
+    {value:"반려동물 건강",label:"반려동물 건강"},
+  ]},
+  {group:"🎬 엔터테인먼트",items:[
+    {value:"영화·드라마",label:"영화·드라마"},{value:"음악·공연",label:"음악·공연"},
+    {value:"책·독서",label:"책·독서"},{value:"웹툰·만화",label:"웹툰·만화"},
+  ]},
+];
+
+function AutoWriteTab(){
+  const [selCat,setSelCat]=useState("");
+  const [loadingKw,setLoadingKw]=useState(false);
+  const [keywords,setKeywords]=useState([]);
+  const [writingIdx,setWritingIdx]=useState(null);
+  const [post,setPost]=useState(null);
+  const [postKw,setPostKw]=useState("");
+  const [copied,setCopied]=useState(false);
+  const [err,setErr]=useState("");
+  const postRef=useRef(null);
+
+  const year=new Date().getFullYear();
+
+  // ── 롱테일 키워드 생성 ──
+  const genKeywords=async()=>{
+    if(!selCat) return;
+    setLoadingKw(true); setKeywords([]); setPost(null); setErr("");
+    try{
+      const prompt=`카테고리: "${selCat}"
+
+이 카테고리에서 ${year}년 현재 네이버 블로그 홈판(스마트블록)에 노출되기 유리한 롱테일 키워드 10개를 선정해줘.
+
+조건:
+- 실제 네이버에서 사람들이 검색하는 자연스러운 검색어 형태
+- 각 키워드는 3~6어절의 구체적인 롱테일 키워드
+- ${year}년 최신 트렌드와 시의성 반영
+- 검색량 대비 경쟁도가 낮아 홈판 노출 가능성이 높은 키워드
+- 실용적이고 정보성이 높은 주제
+
+반드시 순수 JSON만 출력. 마크다운 없이.
+{"keywords":[{"rank":1,"keyword":"롱테일키워드","reason":"선정 이유 한 줄"},...]}`
+
+      const raw=await callClaude([{role:"user",content:prompt}],
+        "You are a Naver blog SEO expert. Output ONLY valid JSON, no markdown.",1500,"claude-haiku-4-5-20251001");
+      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
+      const parsed=JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
+      setKeywords(parsed.keywords||[]);
+    }catch(ex){setErr("롱테일 키워드 생성 오류: "+ex.message);}
+    setLoadingKw(false);
+  };
+
+  // ── 블로그 글 생성 ──
+  const genPost=async(kw,idx)=>{
+    setWritingIdx(idx); setPost(null); setPostKw(kw); setErr(""); setCopied(false);
+    setTimeout(()=>postRef.current?.scrollIntoView({behavior:"smooth"}),300);
+    try{
+      const prompt=`롱테일 키워드: "${kw}"
+카테고리: "${selCat}"
+작성 기준 연도: ${year}년
+
+위 롱테일 키워드를 주제로 네이버 블로그 홈판 최적화 글을 작성해줘.
+
+작성 규칙:
+0. 최우선 목표: 네이버 홈판(스마트블록)에 노출될 수 있는 글 구조와 품질 유지
+1. ${year}년 최신 정보 기준으로 작성
+2. 롱테일 키워드에서 핵심 "메인 키워드"를 추출해서 글의 메인으로 사용
+3. ${selCat} 분야 전문 블로거 관점으로 작성
+4. 롱테일 키워드 내용이 글의 주요 목표
+5. Temperature 0.7, Top P 0.4 기준
+6. 한글+공백 포함 최소 1,800자 ~ 2,500자 (필수 준수)
+7. 1,800자 미만이면 SEO에 맞춰 내용 보강 후 재작성
+8. 메인 키워드 최대 19회
+9. 모든 형태소(키워드)는 메인 키워드보다 더 많이 중복 사용 금지
+10. 네이버 SEO에 맞는 제목 1개 (메인 키워드 포함, 특수문자 없음, 예: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리")
+11. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 절대 금지. 바로 본론 시작
+12. 소제목(##)으로 내용 구조화
+13. 해시태그 5개
+
+반드시 순수 JSON만 출력. 마크다운 없이.
+{"title":"제목","main_keyword":"메인키워드","content":"본문전체(##소제목포함)","tags":["태그1","태그2","태그3","태그4","태그5"]}`
+
+      const raw=await callClaude([{role:"user",content:prompt}],
+        "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",8000,"claude-sonnet-4-6");
+      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
+      const parsed=JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
+      // 실제 글자수 / 키워드 횟수 계산
+      const content=parsed.content||"";
+      const mainKw=parsed.main_keyword||"";
+      parsed.actual_chars=content.length;
+      const esc=mainKw.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+      parsed.actual_kw_count=(content.match(new RegExp(esc,"g"))||[]).length;
+      setPost(parsed);
+    }catch(ex){setErr("글 작성 오류: "+ex.message);}
+    setWritingIdx(null);
+  };
+
+  const doCopy=()=>{
+    if(!post) return;
+    const txt=`${post.title}\n\n${post.content}\n\n${post.tags?.map(t=>"#"+t).join(" ")||""}`;
+    navigator.clipboard.writeText(txt);
+    setCopied(true); setTimeout(()=>setCopied(false),2000);
+  };
+
+  const charOk=post&&post.actual_chars>=1800&&post.actual_chars<=2500;
+  const kwOk=post&&post.actual_kw_count<=19;
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+
+    {/* ── STEP 1: 카테고리 ── */}
+    <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
+      <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 1</div>
+      <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"12px"}}>카테고리 선택</div>
+      <select value={selCat} onChange={e=>{setSelCat(e.target.value);setKeywords([]);setPost(null);setErr("");}}
+        style={{width:"100%",padding:"10px 14px",background:"#0d1117",border:"1px solid #30363d",
+          borderRadius:"8px",color:selCat?"#e6edf3":"#484f58",fontSize:"14px",outline:"none",cursor:"pointer",
+          fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}>
+        <option value="">── 카테고리를 선택하세요 ──</option>
+        {NAVER_AUTO_CATEGORIES.map(g=>(
+          <optgroup key={g.group} label={g.group}>
+            {g.items.map(it=><option key={it.value} value={it.value}>{it.label}</option>)}
+          </optgroup>
+        ))}
+      </select>
+      <button onClick={genKeywords} disabled={!selCat||loadingKw}
+        style={{marginTop:"12px",padding:"10px 22px",background:!selCat||loadingKw?"#21262d":"#1f6feb",
+          color:!selCat||loadingKw?"#484f58":"#fff",border:"none",borderRadius:"8px",
+          cursor:!selCat||loadingKw?"not-allowed":"pointer",
+          fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,transition:"background .2s"}}>
+        {loadingKw?"⏳ 롱테일 키워드 분석 중...":"🔍 롱테일 키워드 10개 추출"}
+      </button>
+    </div>
+
+    {/* 에러 */}
+    {err&&<div style={{background:"#2d1117",border:"1px solid #da363344",borderRadius:"10px",padding:"12px 16px",color:"#ff7b72",fontSize:"13px"}}>⚠️ {err}</div>}
+
+    {/* ── STEP 2: 롱테일 키워드 목록 ── */}
+    {keywords.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
+      <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 2</div>
+      <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"4px"}}>롱테일 키워드 선택</div>
+      <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>오른쪽 <span style={{color:"#58a6ff",fontWeight:700}}>✍️ 자동글쓰기</span> 버튼을 클릭하면 홈판 최적화 블로그 글이 생성됩니다.</div>
+      <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+        {keywords.map((kw,idx)=>(
+          <div key={idx} style={{
+            display:"flex",alignItems:"center",gap:"12px",
+            background:postKw===kw.keyword?"#0d2019":"#0d1117",
+            border:`1px solid ${postKw===kw.keyword?"#2ea04366":"#21262d"}`,
+            borderRadius:"10px",padding:"12px 14px",transition:"all .2s",
+          }}>
+            {/* 순위 */}
+            <span style={{minWidth:"26px",height:"26px",borderRadius:"50%",background:"#1f6feb22",
+              color:"#58a6ff",border:"1px solid #1f6feb44",display:"flex",alignItems:"center",
+              justifyContent:"center",fontSize:"11px",fontWeight:700,flexShrink:0}}>
+              {kw.rank}
+            </span>
+            {/* 키워드 + 이유 */}
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:"#e6edf3",fontWeight:600,fontSize:"14px",marginBottom:"2px"}}>{kw.keyword}</div>
+              <div style={{color:"#484f58",fontSize:"11px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{kw.reason}</div>
+            </div>
+            {/* 자동글쓰기 버튼 */}
+            <button onClick={()=>genPost(kw.keyword,idx)} disabled={writingIdx!==null}
+              style={{padding:"7px 14px",borderRadius:"7px",border:"none",
+                background:writingIdx===idx?"#30363d":writingIdx!==null?"#21262d":"#2ea043",
+                color:writingIdx!==null?"#484f58":"#fff",
+                fontSize:"12px",fontWeight:700,cursor:writingIdx!==null?"not-allowed":"pointer",
+                flexShrink:0,fontFamily:"'Noto Sans KR',sans-serif",transition:"background .2s",minWidth:"90px"}}>
+              {writingIdx===idx?"✏️ 작성중...":"✍️ 자동글쓰기"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>}
+
+    {/* ── STEP 3: 생성된 글 ── */}
+    <div ref={postRef}/>
+    {post&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px",display:"flex",flexDirection:"column",gap:"14px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+        <div style={{display:"inline-block",background:"#2ea043",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",letterSpacing:"0.05em"}}>STEP 3</div>
+        <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>생성된 블로그 글</div>
+      </div>
+
+      {/* 검증 배지 */}
+      <div style={{display:"flex",flexWrap:"wrap",gap:"8px"}}>
+        <div style={{background:charOk?"#0d2019":"#2d1117",border:`1px solid ${charOk?"#2ea04344":"#da363344"}`,borderRadius:"8px",padding:"6px 12px",display:"flex",alignItems:"center",gap:"6px",fontSize:"12px"}}>
+          <span style={{color:"#8b949e"}}>글자수</span>
+          <span style={{color:charOk?"#3fb950":"#ff7b72",fontWeight:700}}>{post.actual_chars?.toLocaleString()}자</span>
+          <span style={{color:charOk?"#3fb950":"#ff7b72",fontSize:"11px"}}>{charOk?"✅ 적정 (1,800~2,500)":"⚠️ 범위 벗어남"}</span>
+        </div>
+        <div style={{background:kwOk?"#0d2019":"#2d1117",border:`1px solid ${kwOk?"#2ea04344":"#da363344"}`,borderRadius:"8px",padding:"6px 12px",display:"flex",alignItems:"center",gap:"6px",fontSize:"12px"}}>
+          <span style={{color:"#8b949e"}}>메인키워드</span>
+          <span style={{color:"#58a6ff",fontWeight:700}}>"{post.main_keyword}"</span>
+          <span style={{color:kwOk?"#3fb950":"#ff7b72",fontWeight:700}}>{post.actual_kw_count}회</span>
+          <span style={{color:kwOk?"#3fb950":"#ff7b72",fontSize:"11px"}}>{kwOk?"✅ 적정 (19회 이하)":"⚠️ 19회 초과"}</span>
+        </div>
+      </div>
+
+      {/* SEO 제목 */}
+      <div style={{background:"#0d2019",border:"1px solid #2ea04344",borderRadius:"10px",padding:"12px 16px"}}>
+        <div style={{color:"#3fb950",fontSize:"10px",fontWeight:700,marginBottom:"4px",letterSpacing:"0.05em"}}>📌 네이버 SEO 최적화 제목</div>
+        <div style={{color:"#e6edf3",fontSize:"16px",fontWeight:700,lineHeight:1.5}}>{post.title}</div>
+      </div>
+
+      {/* 본문 */}
+      <div style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"10px",padding:"18px 20px",
+        maxHeight:"580px",overflowY:"auto",position:"relative"}}>
+        <div style={{position:"sticky",top:0,right:0,textAlign:"right",marginBottom:"6px"}}>
+          <span style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"4px",
+            padding:"2px 8px",color:"#484f58",fontSize:"11px"}}>{post.actual_chars?.toLocaleString()}자</span>
+        </div>
+        {(post.content||"").split("\n").map((line,i)=>{
+          if(line.startsWith("## ")) return <div key={i} style={{color:"#e6edf3",fontWeight:700,fontSize:"15px",marginTop:"18px",marginBottom:"6px",borderLeft:"3px solid #1f6feb",paddingLeft:"10px"}}>{line.replace("## ","")}</div>;
+          if(line.startsWith("### ")) return <div key={i} style={{color:"#c9d1d9",fontWeight:600,fontSize:"14px",marginTop:"12px",marginBottom:"4px"}}>{line.replace("### ","")}</div>;
+          return <div key={i} style={{color:"#c9d1d9",fontSize:"14px",lineHeight:"2.0",minHeight:line?"auto":"10px"}}>{line}</div>;
+        })}
+      </div>
+
+      {/* 해시태그 */}
+      {post.tags&&<div>
+        <div style={{color:"#484f58",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>해시태그</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
+          {post.tags.map((tag,i)=>(
+            <span key={i} style={{background:"#1f6feb18",color:"#58a6ff",border:"1px solid #1f6feb33",borderRadius:"20px",padding:"3px 10px",fontSize:"12px",fontWeight:500}}>#{tag}</span>
+          ))}
+        </div>
+      </div>}
+
+      {/* 복사 버튼 */}
+      <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+        <button onClick={doCopy}
+          style={{padding:"9px 20px",background:copied?"#2ea043":"#1f6feb",color:"#fff",border:"none",
+            borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
+            fontSize:"13px",fontWeight:700,transition:"background .2s"}}>
+          {copied?"✅ 복사됨!":"📋 제목 + 본문 + 해시태그 복사"}
+        </button>
+        <button onClick={()=>{
+          const blob=new Blob([post.title+"\n\n"+post.content+"\n\n"+(post.tags?.map(t=>"#"+t).join(" ")||"")],{type:"text/plain"});
+          const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+          a.download=`자동글쓰기_${postKw.replace(/\s/g,"_")}.txt`; a.click();
+        }} style={{padding:"9px 16px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+          borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px"}}>
+          ⬇️ TXT 다운로드
+        </button>
+        <span style={{color:"#484f58",fontSize:"11px"}}>※ 복사 후 네이버 블로그에 붙여넣기 하세요</span>
+      </div>
+    </div>}
+  </div>;
+}
+
+const TOOL_MAP={keyword:KeywordTab,write:WriteTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab};
 
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
