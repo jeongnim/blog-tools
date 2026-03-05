@@ -2881,6 +2881,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
   const [writingIdx,setWritingIdx]=useState(null);
+  const [postKw,setPostKw]=useState("");
   const [err,setErr]=useState("");
 
   const year=new Date().getFullYear();
@@ -2888,7 +2889,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
   // ── 롱테일 키워드 생성 ──
   const genKeywords=async()=>{
     if(!selCat) return;
-    setLoadingKw(true); setKeywords([]); setPost(null); setErr("");
+    setLoadingKw(true); setKeywords([]); setPostKw(""); setErr("");
     try{
       const prompt=`카테고리: "${selCat}"
 
@@ -2915,7 +2916,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
 
   // ── 블로그 글 생성 ──
   const genPost=async(kw,idx)=>{
-    setWritingIdx(idx); setErr("");
+    setWritingIdx(idx); setPostKw(kw); setErr("");
     try{
       const prompt=`롱테일 키워드: "${kw}"
 카테고리: "${selCat}"
@@ -2974,7 +2975,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
     <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 1</div>
       <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"12px"}}>카테고리 선택</div>
-      <select value={selCat} onChange={e=>{setSelCat(e.target.value);setKeywords([]);setPost(null);setErr("");}}
+      <select value={selCat} onChange={e=>{setSelCat(e.target.value);setKeywords([]);setPostKw("");setErr("");}}
         style={{width:"100%",padding:"10px 14px",background:"#0d1117",border:"1px solid #30363d",
           borderRadius:"8px",color:selCat?"#e6edf3":"#484f58",fontSize:"14px",outline:"none",cursor:"pointer",
           fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}>
@@ -4464,9 +4465,9 @@ export default function BlogTools(){
         const TabComp=TOOL_MAP[t.id];
         if(!TabComp) return null;
         const isActive=active===t.id;
-        const meta=IMAGE_SUBTABS.find(s=>s.id===t.id)||t;
+        const meta=WRITE_SUBTABS.find(s=>s.id===t.id)||IMAGE_SUBTABS.find(s=>s.id===t.id)||t;
         return <div key={t.id} style={{display:isActive?"block":"none"}}>
-          {isActive&&<h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3"}}>{meta.icon} {meta.label}</h2>}
+          <h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3",display:isActive?"block":"none"}}>{meta.icon} {meta.label}</h2>
           <TabComp {...sharedProps}/>
         </div>;
       })}
