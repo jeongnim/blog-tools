@@ -4617,6 +4617,7 @@ export default function BlogTools(){
   const [dropdownTop, setDropdownTop] = useState(96);
   const [dropdownLeft, setDropdownLeft] = useState(0);
   const imgBtnRef = useRef(null);
+  const imgMenuRef = useRef(null);
   const [pendingWriteKw,setPendingWriteKw]=useState("");
   const [kwResult,setKwResult]=useState(null);
   const [pendingAnalyzeText,setPendingAnalyzeText]=useState("");
@@ -4762,11 +4763,14 @@ export default function BlogTools(){
           // ── 이미지 편집 드롭다운 ──
           const isAct=isImageSub;
           return (
-            <div key={t.id} ref={imgMenuRef} style={{position:"relative",display:"inline-flex",alignItems:"stretch",flexShrink:0}}>
+            <div key={t.id}
+              ref={imgMenuRef}
+              onMouseEnter={openImgMenu}
+              onMouseLeave={()=>setImgMenuOpen(false)}
+              style={{position:"relative",display:"inline-flex",alignItems:"stretch",flexShrink:0}}>
               <button
                 ref={imgBtnRef}
                 onClick={()=>imgMenuOpen?setImgMenuOpen(false):openImgMenu()}
-                onMouseEnter={openImgMenu}
                 style={{
                   padding:"11px 16px",border:"none",background:"none",
                   borderBottom:`2px solid ${isAct?"#1f6feb":"transparent"}`,
@@ -4778,48 +4782,43 @@ export default function BlogTools(){
                 <span style={{fontSize:"9px",opacity:.7,display:"inline-block",
                   transform:imgMenuOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform .2s"}}>▼</span>
               </button>
-
-              {/* 드롭다운 — position:fixed로 overflow 탈출 */}
               {imgMenuOpen && (
-                <div
-                  onMouseLeave={()=>setImgMenuOpen(false)}
-                  style={{
-                    position:"fixed",
-                    top:`${dropdownTop}px`,
-                    left:`${dropdownLeft}px`,
-                    background:"#0d1117",
-                    border:"1px solid #444c56",
-                    borderTop:"none",
-                    borderRadius:"0 0 10px 10px",
-                    minWidth:"180px",
-                    boxShadow:"0 12px 40px rgba(0,0,0,.85)",
-                    zIndex:9999,
-                    display:"flex",flexDirection:"column",
-                    overflow:"hidden",
-                  }}>
-                  {/* 드롭다운 헤더 */}
-                  <div style={{padding:"10px 16px 8px",borderBottom:"1px solid #21262d",
-                    color:"#484f58",fontSize:"10px",fontWeight:700,letterSpacing:"0.08em"}}>
-                    🖼️ 이미지 편집
+                <div style={{
+                  position:"fixed",
+                  top:`${dropdownTop}px`,
+                  left:`${dropdownLeft}px`,
+                  background:"#161b22",
+                  border:"1px solid #444c56",
+                  borderRadius:"0 0 12px 12px",
+                  minWidth:"190px",
+                  boxShadow:"0 16px 48px rgba(0,0,0,.9)",
+                  zIndex:99999,
+                  overflow:"hidden",
+                }}>
+                  <div style={{padding:"8px 16px 7px",borderBottom:"1px solid #30363d",
+                    color:"#58a6ff",fontSize:"11px",fontWeight:700,background:"#0d1117"}}>
+                    🖼️ 이미지 편집 도구
                   </div>
                   {IMAGE_SUBTABS.map(sub=>{
                     const isSel=active===sub.id;
-                    return <button key={sub.id} onClick={()=>selectImageSub(sub.id)}
+                    return <button key={sub.id}
+                      onClick={()=>selectImageSub(sub.id)}
                       style={{
-                        padding:"12px 18px",border:"none",borderRadius:0,
-                        background:isSel?"#1f6feb":"transparent",
-                        color:isSel?"#fff":"#c9d1d9",
-                        cursor:"pointer",textAlign:"left",whiteSpace:"nowrap",
-                        fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:isSel?700:400,
+                        width:"100%",padding:"11px 18px",border:"none",
+                        background:isSel?"#1f6feb22":"transparent",
+                        color:isSel?"#58a6ff":"#c9d1d9",
+                        cursor:"pointer",textAlign:"left",
+                        fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",
+                        fontWeight:isSel?700:400,
                         display:"flex",alignItems:"center",gap:"10px",
-                        borderLeft:`3px solid ${isSel?"#58a6ff":"transparent"}`,
-                        transition:"background .12s",
+                        borderLeft:`3px solid ${isSel?"#1f6feb":"transparent"}`,
+                        transition:"background .1s",
                       }}
-                      onMouseEnter={e=>{ if(!isSel){e.currentTarget.style.background="#21262d";} }}
-                      onMouseLeave={e=>{ if(!isSel){e.currentTarget.style.background="transparent";} }}>
-                      <span style={{fontSize:"16px",width:"20px",textAlign:"center"}}>{sub.icon}</span>
+                      onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background="#21262d";}}
+                      onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background="transparent";}}>
+                      <span style={{fontSize:"17px"}}>{sub.icon}</span>
                       <span>{sub.label}</span>
-                      {isSel&&<span style={{marginLeft:"auto",fontSize:"10px",opacity:.8}}>✓</span>}
+                      {isSel&&<span style={{marginLeft:"auto",color:"#1f6feb"}}>✓</span>}
                     </button>;
                   })}
                 </div>
