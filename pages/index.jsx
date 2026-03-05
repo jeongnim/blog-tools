@@ -277,7 +277,7 @@ const TABS=[
   {id:"keyword",   icon:"🔍", label:"키워드 조회"},
   {id:"write",     icon:"✍️",  label:"글 작성"},
   {id:"autowrite", icon:"🤖", label:"카테고리 글쓰기"},
-  {id:"analyze",   icon:"📊", label:"글 분석 · 금칙어"},
+  {id:"analyze",   icon:"📊", label:"글분석"},
   {id:"missing",   icon:"📡", label:"누락 확인"},
   {id:"image",     icon:"🖼️", label:"이미지 편집", isGroup:true}, // 드롭다운 그룹
   {id:"video",     icon:"🎬", label:"동영상 압축"},
@@ -287,7 +287,7 @@ const TABS=[
 
 // 이미지 편집 서브탭
 const IMAGE_SUBTABS=[
-  {id:"ocr",         icon:"🖼️", label:"이미지→텍스트"},
+  {id:"ocr",         icon:"🖼️", label:"이미지 텍스트추출"},
   {id:"convert",     icon:"🔄", label:"이미지 형식변환"},
   {id:"crop",        icon:"✂️",  label:"이미지 자르기"},
   {id:"resize",      icon:"📐", label:"이미지 크기조절"},
@@ -548,24 +548,48 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
 }
 
 
-// ─── TAB 1: 글 분석 ──────────────────────────────────────────────────────
+// ─── TAB 1: 글분석 ──────────────────────────────────────────────────────
 function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
+  pendingAnalyzePost,setPendingAnalyzePost,
   analyzeText,setAnalyzeText,analyzeAiResult,setAnalyzeAiResult,
   analyzeLastText,setAnalyzeLastText,analyzeThreshold,setAnalyzeThreshold,
   analyzeReplacements,setAnalyzeReplacements,analyzeWorkingText,setAnalyzeWorkingText,
   analyzeActiveSection,setAnalyzeActiveSection}){
+
   const text=analyzeText; const setText=setAnalyzeText;
   const activeSection=analyzeActiveSection; const setActiveSection=setAnalyzeActiveSection;
   const [analyzing,setAnalyzing]=useState(false);
   const [autoLoading,setAutoLoading]=useState(false);
+  const [postMeta,setPostMeta]=useState(null); // {title,main_keyword,content,tags}
+  const [qualReplacements,setQualReplacements]=useState({}); // 저품질 대체어
+  const [qualLoading,setQualLoading]=useState({}); // per-item AI 로딩
+  const [copiedAll,setCopiedAll]=useState(false);
   const aiResult=analyzeAiResult; const setAiResult=setAnalyzeAiResult;
   const lastText=analyzeLastText; const setLastText=setAnalyzeLastText;
   const threshold=analyzeThreshold; const setThreshold=setAnalyzeThreshold;
   const replacements=analyzeReplacements; const setReplacements=setAnalyzeReplacements;
   const workingText=analyzeWorkingText; const setWorkingText=setAnalyzeWorkingText;
-  // 초기화
-  const resetAll=()=>{setAnalyzeText("");setAnalyzeAiResult(null);setAnalyzeLastText("");
-    setAnalyzeWorkingText("");setAnalyzeReplacements({});setAnalyzeActiveSection("stats");};
+
+  const resetAll=()=>{
+    setAnalyzeText("");setAnalyzeAiResult(null);setAnalyzeLastText("");
+    setAnalyzeWorkingText("");setAnalyzeReplacements({});setAnalyzeActiveSection("stats");
+    setPostMeta(null);setQualReplacements({});setQualLoading({});
+    if(setPendingAnalyzePost) setPendingAnalyzePost(null);
+  };
+
+  // pendingAnalyzePost (카테고리 글쓰기에서 넘어올 때)
+  useEffect(()=>{
+    if(!pendingAnalyzePost) return;
+    setPostMeta(pendingAnalyzePost);
+    setAnalyzeText(pendingAnalyzePost.content||"");
+    setAnalyzeWorkingText("");
+    setAnalyzeAiResult(null);
+    setAnalyzeLastText("");
+    setQualReplacements({});
+    if(setPendingAnalyzePost) setPendingAnalyzePost(null);
+  },[pendingAnalyzePost]);
+
+  // pendingAnalyzeText (키워드탭 자동글쓰기에서 넘어올 때)
   useEffect(()=>{
     if(!pendingAnalyzeText) return;
     if(pendingAnalyzeText==="__loading__"){
@@ -591,8 +615,7 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
   const runAnalysis=async()=>{
     if(!text.trim()) return;
     setAnalyzing(true); setAiResult(null);
-    // also run forbidden check
-    setWorkingText(text); setReplacements({});
+    setWorkingText(text); setReplacements({}); setQualReplacements({});
 
     const prompt=`다음 블로그 글을 두 가지 관점에서 분석해줘. 반드시 순수 JSON만 출력해. 마크다운 없이.
 
@@ -635,29 +658,77 @@ JSON 형식:
     try{
       const raw=await callClaude([{role:"user",content:prompt}],
         "You are a Korean blog SEO and quality analysis expert. Output ONLY valid JSON.", 4000);
-      const s=raw.indexOf("{"), e=raw.lastIndexOf("}");
-      const parsed=JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
+      const si=raw.indexOf("{"), ei=raw.lastIndexOf("}");
+      const parsed=JSON.parse(si!==-1&&ei!==-1?raw.slice(si,ei+1):raw);
       parsed.morpheme.words=parsed.morpheme.words.sort((a,b)=>b.count-a.count);
       setAiResult(parsed);
       setLastText(text);
-      setActiveSection("morpheme");
+      setActiveSection("quality");
     }catch(err){
       setAiResult({error:true});
     }
     setAnalyzing(false);
   };
 
-  // forbidden helpers
+  // 금칙어
   const forbidden=workingText?detectForbidden(workingText):[];
   const hp=workingText?highlightText(workingText,forbidden,replacements):null;
   const doReplace=(word)=>{const r=replacements[word];if(!r?.trim())return;setWorkingText(p=>p.split(word).join(r.trim()));setReplacements(p=>{const n={...p};delete n[word];return n;});};
   const doReplaceAll=()=>{let t=workingText;Object.entries(replacements).forEach(([w,r])=>{if(r?.trim())t=t.split(w).join(r.trim());});setWorkingText(t);setReplacements({});};
 
+  // 저품질 AI 대체어 추천 (개별)
+  const aiQualRecommend=async(item)=>{
+    const key=item.text;
+    setQualLoading(p=>({...p,[key]:true}));
+    try{
+      const prompt=`블로그 글에서 저품질/스팸으로 감지된 표현이 있습니다.
+감지된 표현: "${item.text}" (카테고리: ${item.category})
+맥락: ${item.suggestion}
+
+이 표현을 대체할 수 있는 자연스러운 한국어 표현 3개를 추천해주세요.
+반드시 순수 JSON만 출력. 마크다운 없이.
+{"suggestions":["대체표현1","대체표현2","대체표현3"]}`;
+      const raw=await callClaude([{role:"user",content:prompt}],null,500);
+      const si=raw.indexOf("{"),ei=raw.lastIndexOf("}");
+      const parsed=JSON.parse(si!==-1&&ei!==-1?raw.slice(si,ei+1):raw);
+      const suggs=(parsed.suggestions||[]).join(",");
+      setQualLoading(p=>({...p,[key]:false,[key+"__sugg"]:suggs}));
+    }catch(e){
+      setQualLoading(p=>({...p,[key]:false}));
+    }
+  };
+
+  // 저품질 단어 본문에서 직접 교체
+  const doQualReplace=(word)=>{
+    const r=qualReplacements[word];
+    if(!r?.trim()) return;
+    setWorkingText(p=>p.split(word).join(r.trim()));
+    setQualReplacements(p=>{const n={...p};delete n[word];return n;});
+    setQualLoading(p=>{const n={...p};delete n[word];delete n[word+"__sugg"];return n;});
+  };
+
+  // 복사/다운로드 (제목+본문+해시태그)
+  const buildFullText=()=>{
+    const title=postMeta?.title||"";
+    const kw=postMeta?.main_keyword||"";
+    const body=workingText||text;
+    const tags=(postMeta?.tags||[]).map(t=>"#"+t).join(" ");
+    return [kw?"[메인키워드] "+kw:"",title?"[제목] "+title:"",body,tags].filter(Boolean).join("\n\n");
+  };
+  const doCopyAll=()=>{
+    navigator.clipboard.writeText(buildFullText());
+    setCopiedAll(true); setTimeout(()=>setCopiedAll(false),2000);
+  };
+  const doDownload=()=>{
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([buildFullText()],{type:"text/plain"}));
+    a.download="블로그글_분석완료.txt"; a.click();
+  };
+
   const SECTIONS=[
-    {id:"stats",  icon:"📝", label:"글자수"},
-    {id:"morpheme",icon:"🔤",label:"형태소·SEO"},
-    {id:"quality", icon:"🛡️",label:"저품질 감지"},
-    {id:"forbidden",icon:"🚫",label:"금칙어"},
+    {id:"stats",   icon:"📝", label:"글자수"},
+    {id:"morpheme",icon:"🔤", label:"형태소·SEO"},
+    {id:"quality", icon:"🛡️", label:"저품질·금칙어"},
   ];
   const typeColor={"명사":"#58a6ff","동사":"#3fb950","형용사":"#ffa657"};
   const seoColor={"high":"#3fb950","mid":"#58a6ff","low":"#484f58"};
@@ -668,14 +739,47 @@ JSON 형식:
     "경고":["#ff7b72","#2d1117","🔶"],
     "위험":["#f85149","#2d0b0b","🚨"],
   };
-
   const filtered=(aiResult?.morpheme?.words||[]).filter(w=>w.count>=threshold);
   const maxCount=filtered[0]?.count||1;
+
+  // 합산 이슈 수 (저품질 + 금칙어)
+  const totalIssues=(aiResult?.lowQuality?.items?.length||0)+(forbidden?.length||0);
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
     <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
 
-    {/* 텍스트 입력 */}
+    {/* ── 카테고리글쓰기에서 넘어온 경우: 메타 정보 표시 ── */}
+    {postMeta&&<div style={{background:"linear-gradient(135deg,#0d2019,#0d1f35)",border:"1px solid #2ea04333",borderRadius:"12px",padding:"16px 18px",display:"flex",flexDirection:"column",gap:"10px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"2px"}}>
+        <span style={{fontSize:"13px",fontWeight:700,color:"#3fb950"}}>📋 카테고리 글쓰기 결과</span>
+        <span style={{fontSize:"11px",color:"#484f58",marginLeft:"auto"}}>분석 후 아래에서 복사·다운로드 가능</span>
+      </div>
+      {postMeta.main_keyword&&<div style={{display:"flex",gap:"10px",alignItems:"flex-start"}}>
+        <span style={{color:"#484f58",fontSize:"12px",minWidth:"72px",paddingTop:"2px"}}>메인키워드</span>
+        <span style={{color:"#58a6ff",fontSize:"13px",fontWeight:700}}>{postMeta.main_keyword}</span>
+      </div>}
+      <div style={{display:"flex",gap:"10px",alignItems:"flex-start"}}>
+        <span style={{color:"#484f58",fontSize:"12px",minWidth:"72px",paddingTop:"2px"}}>제목</span>
+        <span style={{color:"#e6edf3",fontSize:"13px",fontWeight:600,lineHeight:"1.5"}}>{postMeta.title||"(없음)"}</span>
+      </div>
+      <div style={{display:"flex",gap:"10px",alignItems:"flex-start"}}>
+        <span style={{color:"#484f58",fontSize:"12px",minWidth:"72px",paddingTop:"2px"}}>본문내용</span>
+        <div style={{flex:1,color:"#8b949e",fontSize:"12px",lineHeight:"1.6",maxHeight:"72px",overflow:"hidden",position:"relative"}}>
+          {(workingText||text).slice(0,200)}…
+          <span style={{color:"#484f58",marginLeft:"6px"}}>{(workingText||text).length.toLocaleString()}자</span>
+        </div>
+      </div>
+      {postMeta.tags?.length>0&&<div style={{display:"flex",gap:"10px",alignItems:"flex-start"}}>
+        <span style={{color:"#484f58",fontSize:"12px",minWidth:"72px",paddingTop:"4px"}}>해시태그</span>
+        <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+          {postMeta.tags.map((t,i)=>(
+            <span key={i} style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"20px",padding:"2px 10px",fontSize:"12px"}}>#{t}</span>
+          ))}
+        </div>
+      </div>}
+    </div>}
+
+    {/* ── 텍스트 입력 영역 ── */}
     <div style={{position:"relative"}}>
       {autoLoading&&<div style={{background:"#0d2019",border:"1px solid #2ea04333",borderRadius:"10px",padding:"20px",textAlign:"center",marginBottom:"10px"}}>
         <div style={{color:"#3fb950",fontSize:"14px",fontWeight:700,marginBottom:"8px"}}>✍️ 키워드 기반 글 자동 생성 중...</div>
@@ -683,18 +787,37 @@ JSON 형식:
         <div style={{marginTop:"12px",height:"4px",background:"#21262d",borderRadius:"2px",overflow:"hidden"}}>
           <div style={{height:"100%",background:"linear-gradient(90deg,#2ea043,#3fb950)",animation:"slideBar 1.5s ease infinite",borderRadius:"2px"}}/>
         </div>
-        <style>{"@keyframes slideBar{0%{width:0%,marginLeft:0}50%{width:70%}100%{width:0%,marginLeft:100%}}"}</style>
+        <style>{"@keyframes slideBar{0%{width:0%;marginLeft:0}50%{width:70%}100%{width:0%;marginLeft:100%}}"}</style>
       </div>}
       {!autoLoading&&<Textarea value={text} onChange={t=>{setText(t);}} placeholder="분석할 블로그 글을 입력하세요..." rows={9}/>}
       <div style={{position:"absolute",bottom:"10px",right:"14px",color:text.length>9000?"#ff7b72":"#484f58",fontSize:"12px"}}>{text.length.toLocaleString()} / 10,000자</div>
     </div>
 
-    {/* 분석 버튼 */}
+    {/* ── 분석 버튼 + 완료 후 복사/다운로드 ── */}
     <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
       <Btn onClick={runAnalysis} loading={analyzing}>🔍 통합 분석 실행</Btn>
       {(text||aiResult)&&<Btn onClick={resetAll} variant="secondary">🗑️ 초기화</Btn>}
       {isDirty&&<span style={{color:"#ffa657",fontSize:"12px"}}>⚠️ 텍스트가 변경됐습니다. 재분석 필요</span>}
       {aiResult&&!aiResult.error&&!isDirty&&<span style={{color:"#3fb950",fontSize:"12px"}}>✅ 분석 완료</span>}
+      {/* 제목+본문+해시태그 복사/다운로드 — 분석 완료 후 표시 */}
+      {aiResult&&!aiResult.error&&(
+        <>
+          <button onClick={doCopyAll} style={{
+            marginLeft:"auto",padding:"8px 16px",
+            background:copiedAll?"#2ea043":"#1f6feb",
+            color:"#fff",border:"none",borderRadius:"8px",cursor:"pointer",
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700,
+            display:"flex",alignItems:"center",gap:"6px",transition:"background .2s",whiteSpace:"nowrap",
+          }}>
+            {copiedAll?"✅ 복사됨!":"📋 제목+본문+해시태그 복사"}
+          </button>
+          <button onClick={doDownload} style={{
+            padding:"8px 14px",background:"#21262d",color:"#8b949e",
+            border:"1px solid #30363d",borderRadius:"8px",cursor:"pointer",
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,whiteSpace:"nowrap",
+          }}>⬇️ TXT 다운로드</button>
+        </>
+      )}
     </div>
 
     {/* 로딩 */}
@@ -706,20 +829,25 @@ JSON 형식:
 
     {aiResult?.error&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"10px",padding:"14px",color:"#ff7b72"}}>⚠️ 분석 오류. 다시 시도해주세요.</div>}
 
-    {/* 섹션 탭 */}
+    {/* ── 섹션 탭 ── */}
     {(text||aiResult)&&<div style={{display:"flex",gap:"4px",background:"#0d1117",borderRadius:"10px",padding:"4px",border:"1px solid #21262d"}}>
-      {SECTIONS.map(sec=>(
-        <button key={sec.id} onClick={()=>setActiveSection(sec.id)} style={{
+      {SECTIONS.map(sec=>{
+        const badge=sec.id==="quality"&&(aiResult||workingText)?totalIssues:0;
+        return <button key={sec.id} onClick={()=>setActiveSection(sec.id)} style={{
           flex:1,padding:"9px 6px",borderRadius:"7px",border:"none",
           background:activeSection===sec.id?"#161b22":"none",
           color:activeSection===sec.id?"#e6edf3":"#8b949e",
           cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
           boxShadow:activeSection===sec.id?"0 1px 4px #00000066":"none",transition:"all .15s",
-        }}>{sec.icon} {sec.label}</button>
-      ))}
+          position:"relative",
+        }}>
+          {sec.icon} {sec.label}
+          {badge>0&&<span style={{marginLeft:"5px",background:"#f85149",color:"#fff",borderRadius:"10px",padding:"0 6px",fontSize:"10px",fontWeight:700}}>{badge}</span>}
+        </button>;
+      })}
     </div>}
 
-    {/* ── 섹션 1: 글자수 통계 ── */}
+    {/* ── 섹션 1: 글자수 ── */}
     {activeSection==="stats"&&<div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px"}}>
         <StatCard label="전체 글자수" value={s.total} accent="#58a6ff"/>
@@ -742,11 +870,10 @@ JSON 형식:
       </div>}
     </div>}
 
-    {/* ── 섹션 2: 형태소·SEO 분석 ── */}
+    {/* ── 섹션 2: 형태소·SEO ── */}
     {activeSection==="morpheme"&&<div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
       {!aiResult&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 <strong style={{color:"#8b949e"}}>통합 분석 실행</strong>을 눌러주세요</div>}
       {aiResult&&!aiResult.error&&<>
-        {/* SEO 스코어 */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
           <div style={{display:"flex",alignItems:"center",gap:"14px",marginBottom:"12px"}}>
             <div style={{textAlign:"center"}}>
@@ -760,15 +887,12 @@ JSON 형식:
               <div style={{color:"#c9d1d9",fontSize:"13px",lineHeight:"1.7"}}>{aiResult.morpheme.seoFeedback}</div>
             </div>
           </div>
-          {/* 핵심 키워드 */}
           <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
             {aiResult.morpheme.mainKeywords?.map(kw=>(
               <span key={kw} style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"20px",padding:"3px 12px",fontSize:"12px",fontWeight:600}}>{kw}</span>
             ))}
           </div>
         </div>
-
-        {/* 감정 분석 */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px 16px"}}>
           <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"8px",fontWeight:600}}>😊 감정 분석 · {aiResult.morpheme.summary}</div>
           <div style={{display:"flex",height:"10px",borderRadius:"5px",overflow:"hidden",gap:"2px"}}>
@@ -782,11 +906,9 @@ JSON 형식:
             <span style={{color:"#ff7b72"}}>😟 부정 {aiResult.morpheme.sentiment?.negative}%</span>
           </div>
         </div>
-
-        {/* 단어 빈도 */}
         <div>
           <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
-            <SectionTitle>🔤 형태소 단어 빈도 (검색엔진 관점)</SectionTitle>
+            <SectionTitle>🔤 형태소 단어 빈도</SectionTitle>
             <div style={{display:"flex",alignItems:"center",gap:"5px",marginLeft:"auto"}}>
               <span style={{color:"#8b949e",fontSize:"12px"}}>기준</span>
               <input type="number" value={threshold} min={1} onChange={e=>setThreshold(Number(e.target.value))}
@@ -794,7 +916,6 @@ JSON 형식:
               <span style={{color:"#8b949e",fontSize:"12px"}}>회↑</span>
             </div>
           </div>
-          {/* 품사·SEO 범례 */}
           <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginBottom:"8px"}}>
             {Object.entries(typeColor).map(([t,c])=>(
               <div key={t} style={{display:"flex",alignItems:"center",gap:"4px"}}>
@@ -812,11 +933,11 @@ JSON 형식:
                 return <div key={word} style={{display:"flex",alignItems:"center",gap:"8px",background:"#161b22",borderRadius:"8px",padding:"7px 12px",border:`1px solid ${isHigh?"#2ea04355":"#21262d"}`}}>
                   <span style={{background:tc+"22",color:tc,border:`1px solid ${tc}33`,borderRadius:"3px",padding:"1px 5px",fontSize:"10px",fontWeight:700,minWidth:"28px",textAlign:"center"}}>{type||"기타"}</span>
                   <span style={{background:seoColor[seo||"low"]+"22",color:seoColor[seo||"low"],border:`1px solid ${seoColor[seo||"low"]}33`,borderRadius:"3px",padding:"1px 5px",fontSize:"10px",fontWeight:700,minWidth:"24px",textAlign:"center"}}>{seoLabel[seo||"low"]}</span>
-                  <span style={{color:isHigh?"#3fb950":"#c9d1d9",fontSize:"14px",fontWeight:600,minWidth:"60px"}}>{word}</span>
-                  <div style={{flex:1,height:"5px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
-                    <div style={{width:`${(count/maxCount)*100}%`,height:"100%",background:isHigh?"#3fb950":tc,borderRadius:"3px"}}/>
+                  <span style={{flex:1,color:isHigh?"#3fb950":"#c9d1d9",fontSize:"13px",fontWeight:isHigh?700:400}}>{word}</span>
+                  <span style={{color:"#8b949e",fontSize:"12px",minWidth:"30px",textAlign:"right"}}>{count}회</span>
+                  <div style={{width:"80px",height:"6px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
+                    <div style={{height:"100%",background:tc,width:`${Math.round((count/maxCount)*100)}%`,borderRadius:"3px"}}/>
                   </div>
-                  <span style={{minWidth:"36px",textAlign:"right",color:"#8b949e",fontWeight:700,fontSize:"13px"}}>{count}회</span>
                 </div>;
               })}
             </div>
@@ -826,57 +947,104 @@ JSON 형식:
       </>}
     </div>}
 
-    {/* ── 섹션 3: 저품질·비속어 감지 ── */}
-    {activeSection==="quality"&&<div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-      {!aiResult&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 <strong style={{color:"#8b949e"}}>통합 분석 실행</strong>을 눌러주세요</div>}
-      {aiResult&&!aiResult.error&&<>
-        {/* 종합 판정 */}
-        {(()=>{
-          const v=aiResult.lowQuality.verdict||"양호";
-          const [vc,vbg,vi]=verdictStyle[v]||verdictStyle["양호"];
-          const sc=aiResult.lowQuality.score||0;
-          return <div style={{background:vbg,border:`1px solid ${vc}44`,borderRadius:"12px",padding:"16px",display:"flex",alignItems:"center",gap:"14px"}}>
-            <div style={{textAlign:"center",minWidth:"60px"}}>
-              <div style={{fontSize:"28px"}}>{vi}</div>
-              <div style={{color:vc,fontWeight:700,fontSize:"14px"}}>{v}</div>
-            </div>
-            <div style={{flex:1}}>
-              <div style={{color:"#c9d1d9",fontSize:"13px",marginBottom:"8px"}}>저품질 위험도 점수: <strong style={{color:vc}}>{sc}점</strong> <span style={{color:"#484f58",fontSize:"11px"}}>(낮을수록 안전)</span></div>
-              <div style={{height:"8px",background:"#21262d",borderRadius:"4px",overflow:"hidden"}}>
-                <div style={{width:`${sc}%`,height:"100%",background:sc<30?"#3fb950":sc<60?"#ffa657":"#f85149",borderRadius:"4px",transition:"width .5s"}}/>
-              </div>
-            </div>
-          </div>;
-        })()}
+    {/* ── 섹션 3: 저품질·금칙어 통합 ── */}
+    {activeSection==="quality"&&<div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
 
-        {/* 감지된 항목 */}
-        {aiResult.lowQuality.items?.length>0
-          ?<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
-            <div style={{padding:"12px 16px",borderBottom:"1px solid #30363d",display:"flex",alignItems:"center",gap:"8px"}}>
-              <span style={{color:"#ff7b72",fontWeight:700,fontSize:"13px"}}>⚠️ 감지된 저품질 요소 {aiResult.lowQuality.items.length}개</span>
-            </div>
-            <div style={{display:"flex",flexDirection:"column"}}>
-              {aiResult.lowQuality.items.map((item,i)=>{
-                const sev=item.severity;
-                const sc2=sev==="high"?"#f85149":sev==="mid"?"#ffa657":"#8b949e";
-                const sevLabel=sev==="high"?"심각":sev==="mid"?"주의":"낮음";
-                return <div key={i} style={{padding:"12px 16px",borderBottom:i<aiResult.lowQuality.items.length-1?"1px solid #21262d":"none",background:i%2===0?"#161b22":"#0d1117"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"5px"}}>
-                    <span style={{background:sc2+"22",color:sc2,border:`1px solid ${sc2}44`,borderRadius:"4px",padding:"1px 8px",fontSize:"11px",fontWeight:700}}>{item.category}</span>
-                    <span style={{background:"#21262d",color:sc2,border:`1px solid ${sc2}33`,borderRadius:"4px",padding:"1px 7px",fontSize:"10px"}}>{sevLabel}</span>
-                    <span style={{color:"#ff7b72",fontWeight:600,fontSize:"13px",marginLeft:"4px"}}>"{item.text}"</span>
-                    {item.count>1&&<span style={{color:"#484f58",fontSize:"11px"}}>({item.count}회)</span>}
-                  </div>
-                  <div style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.6"}}>💡 {item.suggestion}</div>
-                </div>;
-              })}
+      {/* 저품질 감지 결과 */}
+      {!aiResult&&!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 <strong style={{color:"#8b949e"}}>통합 분석 실행</strong>을 눌러주세요</div>}
+
+      {aiResult&&!aiResult.error&&(()=>{
+        const v=aiResult.lowQuality.verdict||"양호";
+        const [vc,vbg,vi]=verdictStyle[v]||verdictStyle["양호"];
+        const sc=aiResult.lowQuality.score||0;
+        return <div style={{background:vbg,border:`1px solid ${vc}44`,borderRadius:"12px",padding:"14px 16px",display:"flex",alignItems:"center",gap:"14px"}}>
+          <div style={{textAlign:"center",minWidth:"52px"}}>
+            <div style={{fontSize:"24px"}}>{vi}</div>
+            <div style={{color:vc,fontWeight:700,fontSize:"13px"}}>{v}</div>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{color:"#c9d1d9",fontSize:"12px",marginBottom:"6px"}}>저품질 위험도: <strong style={{color:vc}}>{sc}점</strong> <span style={{color:"#484f58",fontSize:"11px"}}>(낮을수록 안전)</span></div>
+            <div style={{height:"7px",background:"#21262d",borderRadius:"4px",overflow:"hidden"}}>
+              <div style={{width:`${sc}%`,height:"100%",background:sc<30?"#3fb950":sc<60?"#ffa657":"#f85149",borderRadius:"4px",transition:"width .5s"}}/>
             </div>
           </div>
-          :<div style={{background:"#0d2019",border:"1px solid #2ea043",borderRadius:"10px",padding:"16px",color:"#3fb950",fontSize:"14px",textAlign:"center"}}>✅ 저품질 요소가 감지되지 않았습니다!</div>
-        }
+        </div>;
+      })()}
 
-        {/* 개선 팁 */}
-        {aiResult.lowQuality.tips?.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px 16px"}}>
+      {/* ── 저품질 항목 (AI 대체어 추천 + 바로 수정) ── */}
+      {aiResult&&!aiResult.error&&aiResult.lowQuality.items?.length>0&&(
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid #30363d",background:"#0d1117",display:"flex",alignItems:"center",gap:"8px"}}>
+            <span style={{color:"#ffa657",fontWeight:700,fontSize:"13px"}}>⚠️ 저품질 요소 {aiResult.lowQuality.items.length}개</span>
+            <span style={{color:"#484f58",fontSize:"11px"}}>· AI 추천 후 바로 수정 가능</span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column"}}>
+            {aiResult.lowQuality.items.map((item,i)=>{
+              const sev=item.severity;
+              const sc2=sev==="high"?"#f85149":sev==="mid"?"#ffa657":"#8b949e";
+              const sevLabel=sev==="high"?"심각":sev==="mid"?"주의":"낮음";
+              const isLoading=qualLoading[item.text]===true;
+              const suggRaw=qualLoading[item.text+"__sugg"];
+              const suggList=suggRaw?suggRaw.split(",").map(s=>s.trim()).filter(Boolean):[];
+              return <div key={i} style={{padding:"12px 14px",borderBottom:i<aiResult.lowQuality.items.length-1?"1px solid #21262d":"none"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px",flexWrap:"wrap"}}>
+                  <span style={{background:sc2+"22",color:sc2,border:`1px solid ${sc2}44`,borderRadius:"4px",padding:"1px 8px",fontSize:"11px",fontWeight:700}}>{item.category}</span>
+                  <span style={{background:"#21262d",color:sc2,borderRadius:"4px",padding:"1px 7px",fontSize:"10px"}}>{sevLabel}</span>
+                  <span style={{color:"#ff7b72",fontWeight:700,fontSize:"13px"}}>"{item.text}"</span>
+                  {item.count>1&&<span style={{color:"#484f58",fontSize:"11px"}}>({item.count}회)</span>}
+                </div>
+                <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"8px",lineHeight:"1.5"}}>💡 {item.suggestion}</div>
+                <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
+                  <input
+                    value={qualReplacements[item.text]||""}
+                    onChange={e=>setQualReplacements(p=>({...p,[item.text]:e.target.value}))}
+                    placeholder={isLoading?"AI 추천 중...":"대체 표현 입력 또는 AI 추천 →"}
+                    onKeyDown={e=>e.key==="Enter"&&doQualReplace(item.text)}
+                    style={{flex:1,minWidth:"120px",padding:"6px 8px",background:"#0d1117",
+                      border:`1px solid ${qualReplacements[item.text]?.trim()?"#1f6feb66":"#30363d"}`,
+                      borderRadius:"6px",color:"#e6edf3",fontSize:"12px",outline:"none",
+                      fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
+                    onFocus={e=>e.target.style.borderColor="#58a6ff"}
+                    onBlur={e=>e.target.style.borderColor=qualReplacements[item.text]?.trim()?"#1f6feb66":"#30363d"}/>
+                  <button onClick={()=>aiQualRecommend(item)} disabled={isLoading} title="AI 대체어 추천"
+                    style={{padding:"6px 9px",background:isLoading?"#21262d":"#8957e522",
+                      color:isLoading?"#484f58":"#d2a8ff",border:`1px solid ${isLoading?"#30363d":"#8957e544"}`,
+                      borderRadius:"6px",cursor:isLoading?"not-allowed":"pointer",fontSize:"13px",flexShrink:0}}>
+                    {isLoading?"⏳":"✨"}
+                  </button>
+                  <button onClick={()=>doQualReplace(item.text)} disabled={!qualReplacements[item.text]?.trim()}
+                    style={{padding:"6px 12px",
+                      background:qualReplacements[item.text]?.trim()?"#1f6feb":"#21262d",
+                      color:qualReplacements[item.text]?.trim()?"#fff":"#484f58",
+                      border:"none",borderRadius:"6px",cursor:qualReplacements[item.text]?.trim()?"pointer":"not-allowed",
+                      fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px",fontWeight:600,flexShrink:0}}>
+                    바꾸기
+                  </button>
+                </div>
+                {suggList.length>0&&<div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginTop:"6px"}}>
+                  <span style={{color:"#484f58",fontSize:"10px",alignSelf:"center"}}>추천:</span>
+                  {suggList.map((sg,si)=>(
+                    <button key={si} onClick={()=>setQualReplacements(p=>({...p,[item.text]:sg}))}
+                      style={{padding:"2px 10px",background:qualReplacements[item.text]===sg?"#1f6feb22":"#21262d",
+                        color:qualReplacements[item.text]===sg?"#58a6ff":"#8b949e",
+                        border:`1px solid ${qualReplacements[item.text]===sg?"#1f6feb55":"#30363d"}`,
+                        borderRadius:"20px",cursor:"pointer",fontSize:"11px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+                      {sg}
+                    </button>
+                  ))}
+                </div>}
+              </div>;
+            })}
+          </div>
+        </div>
+      )}
+      {aiResult&&!aiResult.error&&!aiResult.lowQuality.items?.length&&(
+        <div style={{background:"#0d2019",border:"1px solid #2ea043",borderRadius:"10px",padding:"14px",color:"#3fb950",fontSize:"14px",textAlign:"center"}}>✅ 저품질 요소가 감지되지 않았습니다!</div>
+      )}
+
+      {/* 개선 팁 */}
+      {aiResult&&!aiResult.error&&aiResult.lowQuality.tips?.length>0&&(
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px 16px"}}>
           <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"10px"}}>💡 개선 팁</div>
           <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
             {aiResult.lowQuality.tips.map((tip,i)=>(
@@ -885,19 +1053,23 @@ JSON 형식:
               </div>
             ))}
           </div>
-        </div>}
-      </>}
-    </div>}
+        </div>
+      )}
 
-    {/* ── 섹션 4: 금칙어 검사 ── */}
-    {activeSection==="forbidden"&&<ForbiddenSection
-      workingText={workingText} forbidden={forbidden} hp={hp}
-      replacements={replacements} setReplacements={setReplacements}
-      doReplace={doReplace} doReplaceAll={doReplaceAll}
-    />}
+      {/* ── 금칙어 (통합) ── */}
+      {workingText&&<ForbiddenSection
+        workingText={workingText} forbidden={forbidden} hp={hp}
+        replacements={replacements} setReplacements={setReplacements}
+        doReplace={doReplace} doReplaceAll={doReplaceAll}
+      />}
+      {!workingText&&text&&aiResult&&!aiResult.error&&(
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 14px",color:"#8b949e",fontSize:"12px",textAlign:"center"}}>
+          ⚠️ 금칙어 검사는 통합 분석 실행 후 나타납니다.
+        </div>
+      )}
+    </div>}
   </div>;
 }
-
 
 // ─── TAB 3: 이미지→텍스트 OCR ────────────────────────────────────────────
 function OcrTab(){
@@ -978,7 +1150,7 @@ function OcrTab(){
     {tesseractLoading&&<div style={{color:"#ffa657",fontSize:"12px"}}>⏳ OCR 엔진 로딩중...</div>}
     {tesseractReady&&<div style={{color:"#3fb950",fontSize:"12px"}}>✅ OCR 준비됨</div>}
 
-    <div onClick={()=>fileInputRef.current?.click()}
+    <div onClick={()=>fileInputRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileInputRef.current?.click();}}
       onDrop={e=>{e.preventDefault();setDragOver(false);addFiles(e.dataTransfer.files);}}
       onDragOver={e=>{e.preventDefault();setDragOver(true);}}
       onDragLeave={()=>setDragOver(false)}
@@ -1165,7 +1337,7 @@ function ConvertTab(){
     </div>
 
     {/* 업로드 영역 */}
-    <div onClick={()=>fileInputRef.current?.click()}
+    <div onClick={()=>fileInputRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileInputRef.current?.click();}}
       onDrop={e=>{e.preventDefault();setDragOver(false);addFiles(e.dataTransfer.files);}}
       onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)}
       style={{border:`2px dashed ${dragOver?"#58a6ff":"#30363d"}`,borderRadius:"12px",padding:"32px 20px",
@@ -2200,7 +2372,7 @@ function VideoTab(){
 
     {/* 업로드 */}
     {!file&&<div
-      onClick={()=>fileInputRef.current?.click()}
+      onClick={()=>fileInputRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileInputRef.current?.click();}}
       onDrop={e=>{e.preventDefault();setDragOver(false);onFile(e.dataTransfer.files[0]);}}
       onDragOver={e=>{e.preventDefault();setDragOver(true);}}
       onDragLeave={()=>setDragOver(false)}
@@ -2564,7 +2736,7 @@ function RestoreTab(){
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
 
     {!origUrl&&<>
-      <div onClick={()=>fileRef.current?.click()}
+      <div onClick={()=>fileRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileRef.current?.click();}}
         onDrop={e=>{e.preventDefault();setDragOver(false);loadFile(e.dataTransfer.files[0]);}}
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
@@ -3020,7 +3192,7 @@ const NAVER_AUTO_CATEGORIES=[
   ]},
 ];
 
-function AutoWriteTab({setActive,setPendingAnalyzeText}){
+function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
   const [selCat,setSelCat]=useState("");
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
@@ -3102,9 +3274,14 @@ function AutoWriteTab({setActive,setPendingAnalyzeText}){
       const esc=mainKw.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
       parsed.actual_kw_count=(content.match(new RegExp(esc,"g"))||[]).length;
       setPost(parsed);
-      // 글 완성 후 글 분석·금칙어 탭으로 자동 이동
-      if(setActive && setPendingAnalyzeText){
-        setPendingAnalyzeText(content);
+      // 글 완성 후 글분석 탭으로 자동 이동 (전체 데이터 전달)
+      if(setActive && setPendingAnalyzePost){
+        setPendingAnalyzePost({
+          title: parsed.title||"",
+          main_keyword: parsed.main_keyword||postKw,
+          content: content,
+          tags: parsed.tags||[],
+        });
         setActive("analyze");
       }
     }catch(ex){setErr("글 작성 오류: "+ex.message);}
@@ -3505,7 +3682,7 @@ function ExifTab() {
       onDragOver={e => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); }}
-      onClick={() => inputRef.current?.click()}
+      onClick={() => inputRef.current?.click()} onTouchEnd={e=>{e.preventDefault();inputRef.current?.click();}}
       style={{
         border: `2px dashed ${dragging ? "#58a6ff" : "#30363d"}`,
         borderRadius: "12px", padding: "28px 20px", textAlign: "center",
@@ -3793,7 +3970,7 @@ function CropTab() {
     <canvas ref={canvasRef} style={{display:"none"}}/>
 
     {/* 업로드 */}
-    {!img && <div onClick={()=>fileRef.current?.click()}
+    {!img && <div onClick={()=>fileRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileRef.current?.click();}}
       onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();loadFile(e.dataTransfer.files[0]);}}
       style={{border:"2px dashed #30363d",borderRadius:"12px",padding:"32px",textAlign:"center",
         cursor:"pointer",background:"#0d1117"}}>
@@ -3947,7 +4124,7 @@ function ResizeTab() {
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
     <canvas ref={canvasRef} style={{display:"none"}}/>
 
-    {!img && <div onClick={()=>fileRef.current?.click()}
+    {!img && <div onClick={()=>fileRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileRef.current?.click();}}
       onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();loadFile(e.dataTransfer.files[0]);}}
       style={{border:"2px dashed #30363d",borderRadius:"12px",padding:"32px",textAlign:"center",cursor:"pointer",background:"#0d1117"}}>
       <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>loadFile(e.target.files[0])}/>
@@ -4128,7 +4305,7 @@ function ImgCompressTab() {
     <canvas ref={canvasRef} style={{display:"none"}}/>
 
     {/* 업로드 */}
-    <div onClick={()=>fileRef.current?.click()}
+    <div onClick={()=>fileRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileRef.current?.click();}}
       onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();loadFiles(e.dataTransfer.files);}}
       style={{border:"2px dashed #30363d",borderRadius:"12px",padding:"24px",textAlign:"center",
         cursor:"pointer",background:"#0d1117"}}>
@@ -4642,6 +4819,7 @@ export default function BlogTools(){
   const [pendingWriteKw,setPendingWriteKw]=useState("");
   const [kwResult,setKwResult]=useState(null);
   const [pendingAnalyzeText,setPendingAnalyzeText]=useState("");
+  const [pendingAnalyzePost,setPendingAnalyzePost]=useState(null); // {title,main_keyword,content,tags}
   // WriteTab 상태 (탭 이동해도 유지)
   const [writeKw1,setWriteKw1]=useState("");
   const [writeKw2,setWriteKw2]=useState("");
@@ -4714,7 +4892,11 @@ export default function BlogTools(){
       }
     };
     document.addEventListener("mousedown", handler);
-    return ()=>document.removeEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler);
+    return ()=>{
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
   },[]);
 
   // 이미지 서브탭 선택
@@ -4739,6 +4921,7 @@ export default function BlogTools(){
     pendingWriteKw, setPendingWriteKw,
     setActive, kwResult, setKwResult,
     pendingAnalyzeText, setPendingAnalyzeText,
+    pendingAnalyzePost, setPendingAnalyzePost,
     writeKw1, setWriteKw1, writeKw2, setWriteKw2,
     writeGoal, setWriteGoal, writeResult, setWriteResult,
     writeActiveVer, setWriteActiveVer,
@@ -4792,6 +4975,7 @@ export default function BlogTools(){
               <button
                 ref={imgBtnRef}
                 onClick={()=>imgMenuOpen?setImgMenuOpen(false):openImgMenu()}
+                onTouchStart={e=>{e.preventDefault();imgMenuOpen?setImgMenuOpen(false):openImgMenu();}}
                 style={{
                   padding:"11px 16px",border:"none",background:"none",
                   borderBottom:`2px solid ${isAct?"#1f6feb":"transparent"}`,
@@ -4824,6 +5008,7 @@ export default function BlogTools(){
                     const isSel=active===sub.id;
                     return <button key={sub.id}
                       onClick={()=>selectImageSub(sub.id)}
+                      onTouchStart={e=>{e.preventDefault();selectImageSub(sub.id);}}
                       style={{
                         width:"100%",padding:"11px 18px",border:"none",
                         background:isSel?"#1f6feb22":"transparent",
