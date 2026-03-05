@@ -283,6 +283,11 @@ const TABS=[
   {id:"restore",   icon:"✨", label:"사진 복원·향상"},
   {id:"video",     icon:"🎬", label:"동영상 압축"},
   {id:"exif",      icon:"🔒", label:"EXIF 제거"},
+  {id:"crop",      icon:"✂️",  label:"이미지 자르기"},
+  {id:"resize",    icon:"↔️",  label:"이미지 크기조절"},
+  {id:"imgcompress",icon:"🗜️", label:"이미지 압축"},
+  {id:"rewrite",   icon:"📰", label:"기사 리라이팅"},
+  {id:"emoji",     icon:"😃", label:"이모지"},
 ];
 // ─── Shared UI ────────────────────────────────────────────────────────────
 function Textarea({value,onChange,placeholder,rows=9}){
@@ -3680,7 +3685,919 @@ function ExifTab() {
   </div>;
 }
 
-const TOOL_MAP={keyword:KeywordTab,write:WriteTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,exif:ExifTab};
+// ─── TAB: 이미지 자르기 ──────────────────────────────────────────────────
+function CropTab() {
+  const [img, setImg] = useState(null);       // {src, w, h, name, type}
+  const [crop, setCrop] = useState({x:0,y:0,w:0,h:0});
+  const [dragging, setDragging] = useState(false);
+  const [dragStart, setDragStart] = useState(null);
+  const [done, setDone] = useState(null);     // 크롭 결과 blob URL
+  const [copied, setCopied] = useState(false);
+  const previewRef = useRef(null);
+  const canvasRef = useRef(null);
+  const fileRef = useRef(null);
+  const PREVIEW_MAX = 520;
+
+  const loadFile = (file) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const url = URL.createObjectURL(file);
+    const i = new Image();
+    i.onload = () => {
+      setImg({src:url, w:i.naturalWidth, h:i.naturalHeight, name:file.name, type:file.type});
+      setCrop({x:0, y:0, w:i.naturalWidth, h:i.naturalHeight});
+      setDone(null);
+    };
+    i.src = url;
+  };
+
+  const scale = img ? Math.min(1, PREVIEW_MAX / Math.max(img.w, img.h)) : 1;
+  const pw = img ? Math.round(img.w * scale) : 0;
+  const ph = img ? Math.round(img.h * scale) : 0;
+
+  // 마우스로 크롭 영역 드래그
+  const onMouseDown = (e) => {
+    const rect = previewRef.current.getBoundingClientRect();
+    const sx = (e.clientX - rect.left) / scale;
+    const sy = (e.clientY - rect.top) / scale;
+    setDragStart({sx, sy});
+    setDragging(true);
+  };
+  const onMouseMove = (e) => {
+    if (!dragging || !dragStart) return;
+    const rect = previewRef.current.getBoundingClientRect();
+    const ex = Math.min(img.w, Math.max(0, (e.clientX - rect.left) / scale));
+    const ey = Math.min(img.h, Math.max(0, (e.clientY - rect.top) / scale));
+    setCrop({
+      x: Math.round(Math.min(dragStart.sx, ex)),
+      y: Math.round(Math.min(dragStart.sy, ey)),
+      w: Math.round(Math.abs(ex - dragStart.sx)),
+      h: Math.round(Math.abs(ey - dragStart.sy)),
+    });
+  };
+  const onMouseUp = () => setDragging(false);
+
+  const doCrop = () => {
+    if (!img || crop.w < 1 || crop.h < 1) return;
+    const canvas = canvasRef.current;
+    canvas.width = crop.w; canvas.height = crop.h;
+    const ctx = canvas.getContext("2d");
+    const src = new Image(); src.src = img.src;
+    src.onload = () => {
+      ctx.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+      canvas.toBlob(blob => {
+        setDone(URL.createObjectURL(blob));
+      }, img.type || "image/png", 0.95);
+    };
+  };
+
+  const doSave = () => {
+    if (!done) return;
+    const a = document.createElement("a");
+    a.href = done; a.download = `crop_${img.name}`; a.click();
+  };
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+    <canvas ref={canvasRef} style={{display:"none"}}/>
+
+    {/* 업로드 */}
+    {!img && <div onClick={()=>fileRef.current?.click()}
+      onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();loadFile(e.dataTransfer.files[0]);}}
+      style={{border:"2px dashed #30363d",borderRadius:"12px",padding:"32px",textAlign:"center",
+        cursor:"pointer",background:"#0d1117"}}>
+      <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>loadFile(e.target.files[0])}/>
+      <div style={{fontSize:"28px",marginBottom:"8px"}}>✂️</div>
+      <div style={{color:"#e6edf3",fontWeight:700,fontSize:"14px",marginBottom:"4px"}}>이미지를 드래그하거나 클릭해서 업로드</div>
+      <div style={{color:"#484f58",fontSize:"12px"}}>JPG · PNG · WebP · GIF 지원</div>
+    </div>}
+
+    {img && <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+      {/* 수치 입력 */}
+      <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 16px"}}>
+        <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"10px"}}>✂️ 자르기 영역 설정 (px) — 이미지 위에서 드래그도 가능</div>
+        <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center"}}>
+          {[["X 위치",crop.x,"x"],["Y 위치",crop.y,"y"],["너비",crop.w,"w"],["높이",crop.h,"h"]].map(([label,val,key])=>(
+            <div key={key} style={{display:"flex",flexDirection:"column",gap:"3px"}}>
+              <span style={{color:"#484f58",fontSize:"10px"}}>{label}</span>
+              <input type="number" value={val} min={0}
+                max={key==="x"||key==="w"?img.w:img.h}
+                onChange={e=>setCrop(p=>({...p,[key]:Math.max(0,parseInt(e.target.value)||0)}))}
+                style={{width:"80px",padding:"5px 8px",background:"#0d1117",border:"1px solid #30363d",
+                  borderRadius:"6px",color:"#e6edf3",fontSize:"13px",outline:"none",
+                  fontFamily:"'Noto Sans KR',sans-serif"}}/>
+            </div>
+          ))}
+          <div style={{display:"flex",gap:"6px",marginLeft:"auto",alignItems:"flex-end",paddingTop:"13px"}}>
+            <button onClick={()=>setCrop({x:0,y:0,w:img.w,h:img.h})}
+              style={{padding:"6px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+                borderRadius:"7px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px"}}>
+              전체 선택
+            </button>
+            <button onClick={doCrop} disabled={crop.w<1||crop.h<1}
+              style={{padding:"6px 16px",background:crop.w>0&&crop.h>0?"#1f6feb":"#21262d",
+                color:crop.w>0&&crop.h>0?"#fff":"#484f58",border:"none",borderRadius:"7px",
+                cursor:crop.w>0?"pointer":"not-allowed",fontFamily:"'Noto Sans KR',sans-serif",
+                fontSize:"12px",fontWeight:700}}>
+              ✂️ 자르기 실행
+            </button>
+            {done && <button onClick={doSave}
+              style={{padding:"6px 14px",background:"#2ea043",color:"#fff",border:"none",
+                borderRadius:"7px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700}}>
+              ⬇️ 저장
+            </button>}
+            <button onClick={()=>{setImg(null);setDone(null);}}
+              style={{padding:"6px 10px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+                borderRadius:"7px",cursor:"pointer",fontSize:"12px"}}>✕</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
+        {/* 원본 프리뷰 */}
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{color:"#484f58",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>
+            원본 ({img.w}×{img.h}px) — 드래그로 영역 선택
+          </div>
+          <div ref={previewRef} style={{position:"relative",display:"inline-block",
+            cursor:"crosshair",userSelect:"none",lineHeight:0,
+            border:"1px solid #30363d",borderRadius:"8px",overflow:"hidden"}}
+            onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
+            <img src={img.src} style={{width:pw,height:ph,display:"block"}} draggable={false} alt=""/>
+            {/* 크롭 오버레이 */}
+            <div style={{position:"absolute",left:crop.x*scale,top:crop.y*scale,
+              width:crop.w*scale,height:crop.h*scale,
+              border:"2px solid #58a6ff",boxShadow:"0 0 0 9999px rgba(0,0,0,0.45)",
+              pointerEvents:"none",boxSizing:"border-box"}}/>
+          </div>
+          <div style={{color:"#484f58",fontSize:"10px",marginTop:"4px"}}>
+            선택: {crop.x},{crop.y} → {crop.w}×{crop.h}px
+          </div>
+        </div>
+
+        {/* 결과 프리뷰 */}
+        {done && <div style={{flex:1,minWidth:0}}>
+          <div style={{color:"#3fb950",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>
+            ✅ 잘라내기 결과 ({crop.w}×{crop.h}px)
+          </div>
+          <div style={{border:"1px solid #2ea04344",borderRadius:"8px",overflow:"hidden",lineHeight:0,display:"inline-block"}}>
+            <img src={done} style={{maxWidth:"100%",maxHeight:"320px",display:"block"}} alt="crop result"/>
+          </div>
+        </div>}
+      </div>
+    </div>}
+  </div>;
+}
+
+// ─── TAB: 이미지 크기조절 ────────────────────────────────────────────────
+function ResizeTab() {
+  const [img, setImg] = useState(null);
+  const [mode, setMode] = useState("px");   // "px" | "percent"
+  const [w, setW] = useState(0);
+  const [h, setH] = useState(0);
+  const [lockRatio, setLockRatio] = useState(true);
+  const [result, setResult] = useState(null);
+  const [processing, setProcessing] = useState(false);
+  const canvasRef = useRef(null);
+  const fileRef = useRef(null);
+
+  const loadFile = (file) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const url = URL.createObjectURL(file);
+    const i = new Image();
+    i.onload = () => {
+      setImg({src:url, w:i.naturalWidth, h:i.naturalHeight, name:file.name, type:file.type});
+      setW(i.naturalWidth); setH(i.naturalHeight); setResult(null);
+    };
+    i.src = url;
+  };
+
+  const ratio = img ? img.w / img.h : 1;
+
+  const handleW = (val) => {
+    const n = parseInt(val) || 0;
+    setW(n);
+    if (lockRatio && mode === "px") setH(Math.round(n / ratio));
+  };
+  const handleH = (val) => {
+    const n = parseInt(val) || 0;
+    setH(n);
+    if (lockRatio && mode === "px") setW(Math.round(n * ratio));
+  };
+  const handlePct = (val) => {
+    const p = parseFloat(val) || 0;
+    setW(p); setH(p);
+  };
+
+  const doResize = () => {
+    if (!img || w < 1 || h < 1) return;
+    setProcessing(true);
+    const tw = mode === "percent" ? Math.round(img.w * w / 100) : w;
+    const th = mode === "percent" ? Math.round(img.h * h / 100) : h;
+    const canvas = canvasRef.current;
+    canvas.width = tw; canvas.height = th;
+    const ctx = canvas.getContext("2d");
+    const src = new Image(); src.src = img.src;
+    src.onload = () => {
+      ctx.drawImage(src, 0, 0, tw, th);
+      canvas.toBlob(blob => {
+        setResult({url: URL.createObjectURL(blob), w:tw, h:th, size:blob.size, blob});
+        setProcessing(false);
+      }, img.type || "image/png", 0.92);
+    };
+  };
+
+  const doSave = () => {
+    if (!result) return;
+    const a = document.createElement("a");
+    a.href = result.url; a.download = `resize_${img.name}`; a.click();
+  };
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+    <canvas ref={canvasRef} style={{display:"none"}}/>
+
+    {!img && <div onClick={()=>fileRef.current?.click()}
+      onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();loadFile(e.dataTransfer.files[0]);}}
+      style={{border:"2px dashed #30363d",borderRadius:"12px",padding:"32px",textAlign:"center",cursor:"pointer",background:"#0d1117"}}>
+      <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>loadFile(e.target.files[0])}/>
+      <div style={{fontSize:"28px",marginBottom:"8px"}}>↔️</div>
+      <div style={{color:"#e6edf3",fontWeight:700,fontSize:"14px",marginBottom:"4px"}}>이미지를 드래그하거나 클릭해서 업로드</div>
+      <div style={{color:"#484f58",fontSize:"12px"}}>JPG · PNG · WebP · GIF 지원</div>
+    </div>}
+
+    {img && <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+      {/* 옵션 패널 */}
+      <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px 16px"}}>
+        <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"12px"}}>↔️ 크기 설정</div>
+
+        {/* 모드 선택 */}
+        <div style={{display:"flex",gap:"6px",marginBottom:"14px"}}>
+          {[["px","픽셀 (px)"],["percent","퍼센트 (%)"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setMode(v)}
+              style={{padding:"6px 14px",background:mode===v?"#1f6feb":"#21262d",
+                color:mode===v?"#fff":"#8b949e",border:`1px solid ${mode===v?"#1f6feb":"#30363d"}`,
+                borderRadius:"7px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600}}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        <div style={{display:"flex",gap:"12px",alignItems:"center",flexWrap:"wrap"}}>
+          {mode === "px" ? <>
+            <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
+              <span style={{color:"#484f58",fontSize:"10px"}}>너비 (px)</span>
+              <input type="number" value={w} min={1} onChange={e=>handleW(e.target.value)}
+                style={{width:"100px",padding:"7px 10px",background:"#0d1117",border:"1px solid #30363d",
+                  borderRadius:"7px",color:"#e6edf3",fontSize:"14px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif"}}/>
+            </div>
+            <div style={{color:"#484f58",fontSize:"18px",paddingTop:"14px"}}>×</div>
+            <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
+              <span style={{color:"#484f58",fontSize:"10px"}}>높이 (px)</span>
+              <input type="number" value={h} min={1} onChange={e=>handleH(e.target.value)}
+                style={{width:"100px",padding:"7px 10px",background:"#0d1117",border:"1px solid #30363d",
+                  borderRadius:"7px",color:"#e6edf3",fontSize:"14px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif"}}/>
+            </div>
+            <div style={{paddingTop:"14px"}}>
+              <button onClick={()=>setLockRatio(!lockRatio)}
+                style={{padding:"7px 12px",background:lockRatio?"#1f6feb22":"#21262d",
+                  color:lockRatio?"#58a6ff":"#484f58",border:`1px solid ${lockRatio?"#1f6feb44":"#30363d"}`,
+                  borderRadius:"7px",cursor:"pointer",fontSize:"13px"}}>
+                {lockRatio?"🔒 비율 고정":"🔓 비율 해제"}
+              </button>
+            </div>
+          </> : <>
+            <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
+              <span style={{color:"#484f58",fontSize:"10px"}}>비율 (%)</span>
+              <input type="number" value={w} min={1} max={300} onChange={e=>handlePct(e.target.value)}
+                style={{width:"100px",padding:"7px 10px",background:"#0d1117",border:"1px solid #30363d",
+                  borderRadius:"7px",color:"#e6edf3",fontSize:"14px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif"}}/>
+            </div>
+            <div style={{color:"#8b949e",fontSize:"13px",paddingTop:"14px"}}>
+              → {Math.round(img.w*w/100)} × {Math.round(img.h*w/100)} px
+            </div>
+          </>}
+
+          {/* 빠른 프리셋 */}
+          <div style={{display:"flex",gap:"5px",flexWrap:"wrap",paddingTop:"14px"}}>
+            {[[640,480],[800,600],[1280,720],[1920,1080]].map(([pw,ph])=>(
+              <button key={pw} onClick={()=>{setMode("px");setW(pw);setH(lockRatio?Math.round(pw/ratio):ph);}}
+                style={{padding:"4px 8px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+                  borderRadius:"5px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"10px"}}>
+                {pw}×{ph}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{display:"flex",gap:"8px",marginTop:"14px",alignItems:"center"}}>
+          <button onClick={doResize} disabled={processing||w<1||h<1}
+            style={{padding:"8px 20px",background:processing?"#21262d":"#1f6feb",color:processing?"#484f58":"#fff",
+              border:"none",borderRadius:"8px",cursor:processing?"not-allowed":"pointer",
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700}}>
+            {processing?"⏳ 처리중...":"↔️ 크기 조절"}
+          </button>
+          {result && <button onClick={doSave}
+            style={{padding:"8px 16px",background:"#2ea043",color:"#fff",border:"none",
+              borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700}}>
+            ⬇️ 저장
+          </button>}
+          <button onClick={()=>{setImg(null);setResult(null);}}
+            style={{padding:"8px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+              borderRadius:"8px",cursor:"pointer",fontSize:"13px"}}>✕ 초기화</button>
+        </div>
+      </div>
+
+      {/* 비교 프리뷰 */}
+      <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{color:"#484f58",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>
+            원본 ({img.w}×{img.h}px)
+          </div>
+          <img src={img.src} style={{maxWidth:"100%",maxHeight:"280px",borderRadius:"8px",
+            border:"1px solid #30363d",objectFit:"contain"}} alt=""/>
+        </div>
+        {result && <div style={{flex:1,minWidth:0}}>
+          <div style={{color:"#3fb950",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>
+            ✅ 결과 ({result.w}×{result.h}px · {fmtSize(result.size)})
+          </div>
+          <img src={result.url} style={{maxWidth:"100%",maxHeight:"280px",borderRadius:"8px",
+            border:"1px solid #2ea04344",objectFit:"contain"}} alt=""/>
+        </div>}
+      </div>
+    </div>}
+  </div>;
+}
+
+// ─── TAB: 이미지 압축 ────────────────────────────────────────────────────
+function ImgCompressTab() {
+  const [files, setFiles] = useState([]);
+  const [quality, setQuality] = useState(80);
+  const [processing, setProcessing] = useState(false);
+  const [allSaved, setAllSaved] = useState(false);
+  const canvasRef = useRef(null);
+  const fileRef = useRef(null);
+
+  const loadFiles = (newFiles) => {
+    const arr = Array.from(newFiles).filter(f => f.type.startsWith("image/")).slice(0, 20 - files.length);
+    const entries = arr.map(f => ({
+      file:f, name:f.name, type:f.type, origSize:f.size,
+      url:URL.createObjectURL(f), result:null, status:"idle",
+    }));
+    setFiles(prev => [...prev, ...entries]);
+  };
+
+  const compressOne = async (idx, q) => {
+    const f = files[idx];
+    return new Promise(res => {
+      const img = new Image(); img.src = f.url;
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const mime = (f.type === "image/png" || f.type === "image/gif") ? "image/png" : "image/jpeg";
+        canvas.toBlob(blob => {
+          const url = URL.createObjectURL(blob);
+          const saved = Math.round((1 - blob.size / f.origSize) * 100);
+          setFiles(prev => prev.map((ff, i) => i === idx
+            ? {...ff, result:{blob, url, size:blob.size, saved}, status:"done"}
+            : ff));
+          res();
+        }, mime, q / 100);
+      };
+    });
+  };
+
+  const compressAll = async () => {
+    setProcessing(true);
+    for (let i = 0; i < files.length; i++) {
+      setFiles(prev => prev.map((f, idx) => idx===i ? {...f, status:"processing"} : f));
+      await compressOne(i, quality);
+    }
+    setProcessing(false);
+  };
+
+  const saveOne = (f) => {
+    const blob = f.result?.blob || f.file;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `compressed_${f.name}`; a.click();
+  };
+
+  const saveAll = () => {
+    files.forEach(f => saveOne(f));
+    setAllSaved(true); setTimeout(()=>setAllSaved(false), 2000);
+  };
+
+  const totalOrig = files.reduce((s,f)=>s+f.origSize, 0);
+  const totalComp = files.reduce((s,f)=>s+(f.result?.size||f.origSize), 0);
+  const totalSaved = totalOrig > 0 ? Math.round((1-totalComp/totalOrig)*100) : 0;
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+    <canvas ref={canvasRef} style={{display:"none"}}/>
+
+    {/* 업로드 */}
+    <div onClick={()=>fileRef.current?.click()}
+      onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();loadFiles(e.dataTransfer.files);}}
+      style={{border:"2px dashed #30363d",borderRadius:"12px",padding:"24px",textAlign:"center",
+        cursor:"pointer",background:"#0d1117"}}>
+      <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>loadFiles(e.target.files)}/>
+      <div style={{fontSize:"26px",marginBottom:"6px"}}>🗜️</div>
+      <div style={{color:"#e6edf3",fontWeight:700,fontSize:"14px",marginBottom:"3px"}}>이미지를 드래그하거나 클릭해서 업로드</div>
+      <div style={{color:"#484f58",fontSize:"12px"}}>JPG · PNG · WebP · GIF · 최대 20개</div>
+    </div>
+
+    {/* 품질 슬라이더 + 액션 */}
+    {files.length > 0 && <>
+      <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:"14px",flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:"180px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
+              <span style={{color:"#8b949e",fontSize:"12px",fontWeight:700}}>압축 품질</span>
+              <span style={{color:quality>=80?"#3fb950":quality>=50?"#ffa657":"#ff7b72",fontSize:"14px",fontWeight:700}}>
+                {quality}% {quality>=80?"(고품질)":quality>=50?"(균형)":"(고압축)"}
+              </span>
+            </div>
+            <input type="range" min={10} max={100} value={quality} onChange={e=>setQuality(+e.target.value)}
+              style={{width:"100%",accentColor:"#1f6feb"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:"3px"}}>
+              <span style={{color:"#484f58",fontSize:"10px"}}>최대 압축</span>
+              <span style={{color:"#484f58",fontSize:"10px"}}>최고 품질</span>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:"8px",flexShrink:0}}>
+            <button onClick={compressAll} disabled={processing}
+              style={{padding:"9px 18px",background:processing?"#21262d":"#1f6feb",color:processing?"#484f58":"#fff",
+                border:"none",borderRadius:"8px",cursor:processing?"not-allowed":"pointer",
+                fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700}}>
+              {processing?"⏳ 압축중...":"🗜️ 일괄 압축"}
+            </button>
+            {files.some(f=>f.status==="done") && <>
+              <button onClick={saveAll}
+                style={{padding:"9px 14px",background:allSaved?"#2ea043":"#21262d",
+                  color:allSaved?"#fff":"#8b949e",border:"1px solid #30363d",borderRadius:"8px",
+                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,transition:"all .2s"}}>
+                {allSaved?"✅ 저장됨!":"⬇️ 모두 저장"}
+              </button>
+            </>}
+            <button onClick={()=>setFiles([])}
+              style={{padding:"9px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+                borderRadius:"8px",cursor:"pointer",fontSize:"13px"}}>🗑️ 초기화</button>
+          </div>
+        </div>
+
+        {/* 전체 통계 */}
+        {files.some(f=>f.status==="done") && <div style={{display:"flex",gap:"16px",marginTop:"12px",paddingTop:"12px",borderTop:"1px solid #21262d"}}>
+          {[
+            ["원본 합계", fmtSize(totalOrig), "#8b949e"],
+            ["압축 합계", fmtSize(totalComp), "#58a6ff"],
+            ["절약", `${totalSaved}%`, totalSaved>0?"#3fb950":"#484f58"],
+          ].map(([l,v,c])=>(
+            <div key={l} style={{textAlign:"center"}}>
+              <div style={{color:c,fontSize:"16px",fontWeight:700}}>{v}</div>
+              <div style={{color:"#484f58",fontSize:"10px",marginTop:"2px"}}>{l}</div>
+            </div>
+          ))}
+        </div>}
+      </div>
+
+      {/* 파일 목록 */}
+      <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+        {files.map((f, i) => (
+          <div key={i} style={{background:"#161b22",border:"1px solid #21262d",borderRadius:"10px",
+            padding:"10px 14px",display:"flex",alignItems:"center",gap:"12px"}}>
+            <img src={f.url} alt="" style={{width:"40px",height:"40px",objectFit:"cover",
+              borderRadius:"6px",flexShrink:0,border:"1px solid #30363d"}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:"#e6edf3",fontSize:"13px",fontWeight:600,
+                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</div>
+              <div style={{display:"flex",gap:"8px",marginTop:"3px",flexWrap:"wrap"}}>
+                <span style={{color:"#484f58",fontSize:"11px"}}>{fmtSize(f.origSize)}</span>
+                {f.result && <>
+                  <span style={{color:"#484f58",fontSize:"11px"}}>→</span>
+                  <span style={{color:"#58a6ff",fontSize:"11px",fontWeight:600}}>{fmtSize(f.result.size)}</span>
+                  <span style={{color:f.result.saved>0?"#3fb950":"#ffa657",fontSize:"11px",fontWeight:700}}>
+                    {f.result.saved>0?`-${f.result.saved}%`:"변화없음"}
+                  </span>
+                </>}
+              </div>
+            </div>
+            {/* 진행 상태 */}
+            <div style={{flexShrink:0,display:"flex",gap:"6px",alignItems:"center"}}>
+              {f.status==="processing"&&<span style={{color:"#ffa657",fontSize:"12px"}}>⏳</span>}
+              {f.status==="done"&&<span style={{color:"#3fb950",fontSize:"12px"}}>✅</span>}
+              {f.status==="done"&&<button onClick={()=>saveOne(f)}
+                style={{padding:"5px 10px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+                  borderRadius:"6px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px"}}>
+                ⬇️ 저장
+              </button>}
+              <button onClick={()=>setFiles(prev=>prev.filter((_,idx)=>idx!==i))}
+                style={{padding:"5px 8px",background:"#21262d",color:"#484f58",border:"1px solid #30363d",
+                  borderRadius:"6px",cursor:"pointer",fontSize:"11px"}}>✕</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>}
+  </div>;
+}
+
+// ─── TAB: 기사 리라이팅 ──────────────────────────────────────────────────
+// URL 입력 → 서버(pages/api/crawl.js)에서 기사 크롤링 → Claude로 리라이팅
+function RewriteTab() {
+  const [url, setUrl]           = useState("");
+  const [crawling, setCrawling] = useState(false);
+  const [rewriting, setRewriting] = useState(false);
+  const [crawlErr, setCrawlErr] = useState("");
+  const [original, setOriginal] = useState(null);  // {title, text, charCount}
+  const [result, setResult]     = useState(null);  // {title, text, charCount}
+  const [copied, setCopied]     = useState("");     // "title"|"all"|""
+  const urlRef = useRef(null);
+
+  // ── STEP 1: 기사 크롤링 ──
+  const doCrawl = async () => {
+    const trimUrl = url.trim();
+    if (!trimUrl) return;
+    setCrawling(true); setCrawlErr(""); setOriginal(null); setResult(null);
+    try {
+      const res = await fetch("/api/crawl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: trimUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "크롤링 실패");
+      setOriginal(data);
+    } catch (e) {
+      setCrawlErr(e.message);
+    }
+    setCrawling(false);
+  };
+
+  // ── STEP 2: Claude 리라이팅 ──
+  const doRewrite = async () => {
+    if (!original) return;
+    setRewriting(true); setResult(null);
+    try {
+      const prompt = `아래 기사를 리라이팅해줘.
+
+## 리라이팅 규칙
+1. 내용·정보량·문장 수는 원문과 동일하게 유지 (요약·축약 금지)
+2. 단어·어휘·문체·문장 구조만 바꿔서 완전히 다른 사람이 쓴 것처럼 작성
+3. 고유명사(인물명, 지명, 기관명, 수치, 날짜)는 절대 변경 금지
+4. 원문의 사실관계·논조·의미는 100% 유지
+5. 자연스러운 한국어 문어체 유지
+6. 제목도 동일 내용을 다른 어휘로 리라이팅
+7. 첫 줄에 "안녕하세요" 등 블로그 인사 절대 금지. 바로 제목부터 시작.
+
+반드시 순수 JSON만 출력. 마크다운 없이.
+{"title":"리라이팅된 제목","text":"리라이팅된 본문 전체"}
+
+## 원문 제목
+${original.title}
+
+## 원문 본문
+${original.text.slice(0, 6000)}`;
+
+      const raw = await callClaude(
+        [{ role: "user", content: prompt }],
+        "You are a professional Korean news rewriter. Rewrite the given article with different vocabulary and sentence structure while preserving all facts, meaning, and content volume. Output ONLY valid JSON.",
+        8000,
+        "claude-sonnet-4-6"
+      );
+      const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
+      const parsed = JSON.parse(s !== -1 && e !== -1 ? raw.slice(s, e + 1) : raw);
+      setResult({ title: parsed.title, text: parsed.text, charCount: parsed.text?.length || 0 });
+    } catch (err) {
+      setCrawlErr("리라이팅 오류: " + err.message);
+    }
+    setRewriting(false);
+  };
+
+  const doCopy = (type) => {
+    const txt = type === "title" ? result.title
+      : type === "all" ? `${result.title}\n\n${result.text}` : result.text;
+    navigator.clipboard.writeText(txt);
+    setCopied(type); setTimeout(() => setCopied(""), 2000);
+  };
+
+  const doReset = () => {
+    setUrl(""); setOriginal(null); setResult(null); setCrawlErr("");
+    setTimeout(() => urlRef.current?.focus(), 100);
+  };
+
+  // 유사도 체크: 원문 대비 글자수 비율
+  const volRatio = original && result
+    ? Math.round((result.charCount / original.charCount) * 100) : null;
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+
+    {/* ── STEP 1: URL 입력 ── */}
+    <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
+      <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 1</div>
+      <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"12px"}}>기사 URL 입력</div>
+      <div style={{display:"flex",gap:"8px"}}>
+        <input
+          ref={urlRef}
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && doCrawl()}
+          placeholder="https://news.naver.com/... 또는 다른 뉴스 기사 URL"
+          style={{flex:1,padding:"10px 14px",background:"#0d1117",border:"1px solid #30363d",
+            borderRadius:"8px",color:"#e6edf3",fontSize:"14px",outline:"none",
+            fontFamily:"'Noto Sans KR',sans-serif"}}
+          onFocus={e=>e.target.style.borderColor="#58a6ff"}
+          onBlur={e=>e.target.style.borderColor="#30363d"}
+        />
+        <button onClick={doCrawl} disabled={!url.trim()||crawling}
+          style={{padding:"10px 20px",background:!url.trim()||crawling?"#21262d":"#1f6feb",
+            color:!url.trim()||crawling?"#484f58":"#fff",border:"none",borderRadius:"8px",
+            cursor:!url.trim()||crawling?"not-allowed":"pointer",
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,flexShrink:0}}>
+          {crawling ? "⏳ 읽는 중..." : "📥 기사 불러오기"}
+        </button>
+        {(original||result) && <button onClick={doReset}
+          style={{padding:"10px 14px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+            borderRadius:"8px",cursor:"pointer",fontSize:"13px"}}>🗑️ 초기화</button>}
+      </div>
+      {crawlErr && <div style={{marginTop:"10px",background:"#2d1117",border:"1px solid #da363344",
+        borderRadius:"8px",padding:"10px 14px",color:"#ff7b72",fontSize:"13px"}}>
+        ⚠️ {crawlErr}
+      </div>}
+      <div style={{marginTop:"8px",color:"#484f58",fontSize:"11px"}}>
+        💡 네이버 뉴스, 연합뉴스, 조선일보, 중앙일보 등 대부분의 뉴스 사이트 지원 · 일부 구독제/JS전용 사이트는 제한될 수 있음
+      </div>
+    </div>
+
+    {/* ── STEP 2: 원문 확인 + 리라이팅 버튼 ── */}
+    {original && <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
+      <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 2</div>
+      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"12px",flexWrap:"wrap"}}>
+        <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>원문 확인</div>
+        <span style={{background:"#21262d",border:"1px solid #30363d",borderRadius:"20px",
+          padding:"2px 10px",color:"#8b949e",fontSize:"11px"}}>
+          {original.charCount.toLocaleString()}자
+        </span>
+        <button onClick={doRewrite} disabled={rewriting}
+          style={{marginLeft:"auto",padding:"8px 20px",
+            background:rewriting?"#21262d":"linear-gradient(135deg,#1f6feb,#8957e5)",
+            color:rewriting?"#484f58":"#fff",border:"none",borderRadius:"8px",
+            cursor:rewriting?"not-allowed":"pointer",
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700}}>
+          {rewriting ? "⏳ 리라이팅 중..." : "✏️ AI 리라이팅 시작"}
+        </button>
+      </div>
+
+      {/* 원문 제목 */}
+      <div style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",
+        padding:"10px 14px",marginBottom:"10px"}}>
+        <div style={{color:"#484f58",fontSize:"10px",fontWeight:700,marginBottom:"4px"}}>📌 원문 제목</div>
+        <div style={{color:"#e6edf3",fontSize:"15px",fontWeight:600,lineHeight:1.5}}>{original.title}</div>
+      </div>
+
+      {/* 원문 본문 */}
+      <div style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",
+        padding:"14px",maxHeight:"280px",overflowY:"auto"}}>
+        <div style={{color:"#8b949e",fontSize:"10px",fontWeight:700,marginBottom:"8px"}}>📄 원문 본문</div>
+        <div style={{color:"#c9d1d9",fontSize:"13px",lineHeight:"1.9",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+          {original.text}
+        </div>
+      </div>
+    </div>}
+
+    {/* 리라이팅 로딩 */}
+    {rewriting && <div style={{background:"#0d1e33",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"20px",textAlign:"center"}}>
+      <div style={{color:"#58a6ff",fontSize:"14px",fontWeight:700,marginBottom:"6px"}}>✏️ AI가 기사를 리라이팅하는 중...</div>
+      <div style={{color:"#484f58",fontSize:"12px"}}>어휘·문체·문장 구조를 바꾸되 내용·사실관계는 100% 유지합니다.</div>
+    </div>}
+
+    {/* ── STEP 3: 리라이팅 결과 ── */}
+    {result && <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px",display:"flex",flexDirection:"column",gap:"12px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+        <div style={{display:"inline-block",background:"#2ea043",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",letterSpacing:"0.05em"}}>STEP 3</div>
+        <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>리라이팅 결과</div>
+        {/* 볼륨 비율 배지 */}
+        {volRatio !== null && <div style={{
+          background: volRatio>=85&&volRatio<=115 ? "#0d2019":"#2d1e0a",
+          border:`1px solid ${volRatio>=85&&volRatio<=115?"#2ea04344":"#ffa65744"}`,
+          borderRadius:"20px",padding:"3px 10px",fontSize:"11px",
+          color:volRatio>=85&&volRatio<=115?"#3fb950":"#ffa657"}}>
+          원문 대비 {volRatio}% {volRatio>=85&&volRatio<=115?"✅ 분량 유지":"⚠️ 분량 차이"}
+        </div>}
+        <span style={{background:"#21262d",border:"1px solid #30363d",borderRadius:"20px",
+          padding:"2px 10px",color:"#8b949e",fontSize:"11px"}}>
+          {result.charCount.toLocaleString()}자
+        </span>
+        {/* 재시도 */}
+        <button onClick={doRewrite} disabled={rewriting}
+          style={{marginLeft:"auto",padding:"6px 14px",background:"#21262d",color:"#8b949e",
+            border:"1px solid #30363d",borderRadius:"7px",cursor:"pointer",
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px"}}>
+          🔄 다시 리라이팅
+        </button>
+      </div>
+
+      {/* 리라이팅 제목 */}
+      <div style={{background:"#0d2019",border:"1px solid #2ea04344",borderRadius:"8px",padding:"12px 14px"}}>
+        <div style={{color:"#3fb950",fontSize:"10px",fontWeight:700,marginBottom:"4px"}}>📌 리라이팅 제목</div>
+        <div style={{color:"#e6edf3",fontSize:"16px",fontWeight:700,lineHeight:1.5}}>{result.title}</div>
+      </div>
+
+      {/* 리라이팅 본문 */}
+      <div style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",padding:"14px",
+        maxHeight:"480px",overflowY:"auto",position:"relative"}}>
+        <div style={{position:"sticky",top:0,textAlign:"right",marginBottom:"4px"}}>
+          <span style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"4px",
+            padding:"2px 8px",color:"#484f58",fontSize:"10px"}}>{result.charCount.toLocaleString()}자</span>
+        </div>
+        <div style={{color:"#c9d1d9",fontSize:"14px",lineHeight:"2.0",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+          {result.text}
+        </div>
+      </div>
+
+      {/* 복사 버튼들 */}
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+        <button onClick={()=>doCopy("title")}
+          style={{padding:"8px 16px",background:copied==="title"?"#2ea043":"#21262d",
+            color:copied==="title"?"#fff":"#8b949e",border:"1px solid #30363d",borderRadius:"8px",
+            cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",transition:"all .2s"}}>
+          {copied==="title"?"✅ 복사됨!":"📋 제목만 복사"}
+        </button>
+        <button onClick={()=>doCopy("text")}
+          style={{padding:"8px 16px",background:copied==="text"?"#2ea043":"#21262d",
+            color:copied==="text"?"#fff":"#8b949e",border:"1px solid #30363d",borderRadius:"8px",
+            cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",transition:"all .2s"}}>
+          {copied==="text"?"✅ 복사됨!":"📋 본문만 복사"}
+        </button>
+        <button onClick={()=>doCopy("all")}
+          style={{padding:"8px 20px",background:copied==="all"?"#2ea043":"#1f6feb",
+            color:"#fff",border:"none",borderRadius:"8px",
+            cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,transition:"all .2s"}}>
+          {copied==="all"?"✅ 복사됨!":"📋 제목+본문 전체 복사"}
+        </button>
+        <button onClick={()=>{
+          const blob=new Blob([result.title+"\n\n"+result.text],{type:"text/plain"});
+          const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+          a.download=`리라이팅_${Date.now()}.txt`; a.click();
+        }} style={{padding:"8px 14px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+          borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px"}}>
+          ⬇️ TXT 저장
+        </button>
+      </div>
+
+      {/* 원문/결과 나란히 비교 */}
+      <div style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",padding:"12px 14px"}}>
+        <div style={{color:"#484f58",fontSize:"11px",fontWeight:700,marginBottom:"10px"}}>📊 원문 vs 리라이팅 비교</div>
+        <div style={{display:"flex",gap:"16px"}}>
+          {[["원문",original.charCount,"#8b949e"],["리라이팅",result.charCount,"#58a6ff"],["분량 비율",`${volRatio}%`,volRatio>=85&&volRatio<=115?"#3fb950":"#ffa657"]].map(([l,v,c])=>(
+            <div key={l} style={{textAlign:"center",flex:1}}>
+              <div style={{color:c,fontSize:"17px",fontWeight:700}}>{typeof v==="number"?v.toLocaleString():v}</div>
+              <div style={{color:"#484f58",fontSize:"10px",marginTop:"3px"}}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+// ─── TAB: 이모지 ─────────────────────────────────────────────────────────
+const EMOJI_GROUPS = [
+  { id:"face",    label:"😀 사람·표정", emojis:"😀😃😄😁😆😅🤣😂🙂😉😊😇🥰😍🤩😘😗☺️😚😙🥲😏😋😛😜🤪😝🤗🤭🫢🫣🤫🤔🫡🤤🤠🥳🥸😎🤓🧐🙃🫠🤐🤨😐😑😶🫥😶‍🌫️😒🙄😬😮‍💨🤥🫨😌😔😪😴😷🤒🤕🤢🤮🤧🥵🥶🥴😵😵‍💫🤯🥱😕🫤😟🙁☹️😮😯😲😳🥺🥹😦😧😨😰😥😢😭😱😖😣😞😓😩😫😤😡😠🤬👿😈💀☠️💩🤡👹👺👻👽👾🤖😺😸😹😻😼😽🙀😿😾🙈🙉🙊" },
+  { id:"hand",    label:"👋 손·몸", emojis:"👋🤚🖐️✋🖖🫱🫲🫳🫴🫷🫸👌🤌🤏✌️🤞🫰🤟🤘🤙👈👉👆🖕👇☝️🫵👍👎✊👊🤛🤜👏🙌🫶👐🤲🤝🙏✍️💅🤳💪🦾🦿🦵🦶👂🦻👃🧠🫀🫁🦷🦴👀👅👄🫦👣" },
+  { id:"people",  label:"👶 사람·직업", emojis:"👶🧒👦👧🧑👱👨🧔👩👱‍♀️👱‍♂️🧓👴👵🧏👮🕵️💂🥷👷🫅🤴👸🤵👰🎅🤶🧑‍🎄🦸🦹🧙🧚🧛🧜🧝🧞🧟🧌🧑‍⚕️👨‍⚕️👩‍⚕️🧑‍🎓👨‍🎓👩‍🎓🧑‍🏫👨‍🏫👩‍🏫🧑‍⚖️👨‍⚖️👩‍⚖️🧑‍🌾👨‍🌾👩‍🌾🧑‍🍳👨‍🍳👩‍🍳🧑‍🔧👨‍🔧👩‍🔧🧑‍🏭👨‍🏭👩‍🏭🧑‍💼👨‍💼👩‍💼🧑‍🔬👨‍🔬👩‍🔬🧑‍💻👨‍💻👩‍💻🧑‍🎤👨‍🎤👩‍🎤🧑‍🎨👨‍🎨👩‍🎨🧑‍✈️👨‍✈️👩‍✈️🧑‍🚀👨‍🚀👩‍🚀🧑‍🚒👨‍🚒👩‍🚒" },
+  { id:"animal",  label:"🐶 동물·자연", emojis:"🐵🐒🦍🦧🐶🐕🦮🐕‍🦺🐩🐺🦊🦝🐱🐈🐈‍⬛🦁🐯🐅🐆🐴🫎🫏🐎🦄🦓🦌🦬🐮🐂🐃🐄🐷🐖🐗🐽🐏🐑🐐🐪🐫🦙🦒🐘🦣🦏🦛🐭🐁🐀🐹🐰🐇🐿️🦫🦔🦇🐻🐻‍❄️🐨🐼🦥🦦🦨🦘🦡🐾🦃🐔🐓🐣🐤🐥🐦🐧🕊️🦅🦆🦢🦉🦤🪶🦩🦚🦜🪽🐦‍⬛🪿🐦‍🔥🐸🐊🐢🦎🐍🐲🐉🦕🦖🐳🐋🐬🦭🐟🐠🐡🦈🐙🐚🪸🪼🦀🦞🦐🦑🦪🐌🦋🐛🐜🐝🪲🐞🦗🪳🕷️🕸️🦂🦟🪰🪱🦠💐🌸💮🪷🏵️🌹🥀🌺🌻🌼🌷🪻🌱🪴🌲🌳🌴🌵🌾🌿☘️🍀🍁🍂🍃🍄🪨🪵🌑🌒🌓🌔🌕🌖🌗🌘🌙🌚🌛🌜☀️🌝🌞🪐⭐🌟🌠🌌☁️⛅⛈️🌤️🌥️🌦️🌧️🌨️🌩️🌪️🌫️🌬️🌀🌈🌂☂️☔⛱️⚡❄️☃️⛄☄️🔥💧🌊" },
+  { id:"food",    label:"🍎 음식·음료", emojis:"🍇🍈🍉🍊🍋🍌🍍🥭🍎🍏🍐🍑🍒🍓🫐🥝🍅🫒🥥🥑🍆🥔🥕🌽🌶️🫑🥒🥬🥦🧄🧅🥜🫘🌰🍞🥐🥖🫓🥨🥯🥞🧇🧀🍖🍗🥩🥓🍔🍟🍕🌭🥪🌮🌯🫔🥙🧆🥚🍳🥘🍲🫕🥣🥗🍿🧈🧂🥫🍝🍱🍘🍙🍚🍛🍜🍠🍢🍣🍤🍥🥮🍡🥟🥠🥡🍦🍧🍨🍩🍪🎂🍰🧁🥧🍫🍬🍭🍮🍯🍼🥛☕🫖🍵🍶🍾🍷🍸🍹🍺🍻🥂🥃🫗🥤🧋🧃🧉🥢🍽️🍴🥄🔪🫙🏺" },
+  { id:"travel",  label:"✈️ 여행·장소", emojis:"🌍🌎🌏🌐🗺️🗾🧭🏔️⛰️🌋🗻🏕️🏖️🏜️🏝️🏞️🏟️🏛️🏗️🧱🛖🏘️🏚️🏠🏡🏢🏣🏤🏥🏦🏨🏩🏪🏫🏬🏭🏯🏰💒🗼🗽⛪🕌🛕🕍⛩️🕋⛲⛺🌁🌃🏙️🌄🌅🌆🌇🌉♨️🎠🛝🎡🎢💈🎪🗿🚂🚃🚄🚅🚆🚇🚈🚉🚊🚝🚞🚋🚌🚍🚎🚐🚑🚒🚓🚔🚕🚖🚗🚘🚙🛻🚚🚛🚜🏎️🏍️🛵🚲🛴🛹🛼🚏🛣️🛤️⛽🛞🚨🚥🚦🛑🚧⚓🛟⛵🛶🚤🛳️⛴️🛥️🚢✈️🛩️🛫🛬🪂💺🚁🚟🚠🚡🛰️🚀🛸" },
+  { id:"object",  label:"💎 사물·물체", emojis:"🎀🎗️👓🕶️🥽🥼🦺👔👕👖🧣🧤🧥🧦👗👘🥻🩱🩲🩳👙👚👛👜👝🛍️🎒🩴👞👟🥾🥿👠👡🩰👢👑👒🎩🎓🧢💄💍💎🔇🔈🔉🔊📢📣📯🔔🔕🎼🎵🎶🎙️🎚️🎛️🎤🎧📻🎷🪗🎸🎹🎺🎻🪕🥁🪘🪇🪈📱📲☎️📞📟📠🔋🪫🔌💻🖥️🖨️⌨️🖱️🖲️💽💾💿📀🎥🎞️📽️🎬📺📷📸📹📼📔📕📖📗📘📙📚📓📒📃📜📄📰🗞️📑🔖🏷️✉️📧📨📩📤📥📦📫📪📬📭📮🗳️✏️✒️🖋️🖊️🖌️🖍️📝💼📁📂🗂️📅📆🗒️🗓️📇📈📉📊📋📌📍📎🖇️📏📐✂️🗃️🗄️🗑️⌛⏳⌚⏰⏱️⏲️🕰️💰🪙💴💵💶💷💸💳🧾💹🧳🌡️🔍🔎🕯️💡🔦🔒🔓🔏🔐🔑🗝️🔨🪓⛏️⚒️🛠️🗡️⚔️💣🪃🏹🛡️🪚🔧🪛🔩⚙️🗜️⚖️🔗⛓️🪝🧰🧲🪜⚗️🧪🧫🔬🔭📡💉🩹🩼🩺🩻🚪🪞🪟🛏️🛋️🪑🚽🪠🚿🛁🪤🪒🧴🧷🧹🧺🧻🪣🧼🫧🪥🧽🧯🛒" },
+  { id:"symbol",  label:"💯 상징·기호", emojis:"💌💘💝💖💗💓💞💕💟❣️💔❤️‍🔥❤️‍🩹❤️🩷🧡💛💚💙🩵💜🤎🖤🩶🤍💋💯💢💥💦💨🕳️💬🗨️🗯️💭💤🔴🟠🟡🟢🔵🟣🟤⚫⚪🟥🟧🟨🟩🟦🟪🟫⬛⬜🔶🔷🔸🔹🔺🔻💠🔘🔳🔲🏧🚮🚰♿🚹🚺🚻🚼🚾⚠️🚸⛔🚫🚳🚭🚯🚱🚷📵🔞☢️☣️⬆️↗️➡️↘️⬇️↙️⬅️↖️↕️↔️↩️↪️⤴️⤵️🔃🔄🔙🔚🔛🔜🔝🔀🔁🔂▶️⏩⏭️⏯️◀️⏪⏮️🔼⏫🔽⏬⏸️⏹️⏺️⏏️🎦🔅🔆📶🛜📳📴✅☑️✔️❌❎➰➿〽️✳️✴️❇️©️®️™️❓❔❕❗‼️⁉️#️⃣0️⃣1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣8️⃣9️⃣🔟🅰️🆎🅱️🆑🆒🆓🆔🆕🆖🅾️🆗🆘🆙🆚" },
+  { id:"activity",label:"⚽ 활동·스포츠", emojis:"🎃🎄🎆🎇🧨✨🎈🎉🎊🎋🎍🎎🎏🎐🎑🧧🎁🎟️🎫🏮🪔🎖️🏆🏅🥇🥈🥉⚽⚾🥎🏀🏐🏈🏉🎾🥏🎳🏏🏑🏒🥍🏓🏸🥊🥋🥅⛳⛸️🎣🤿🎽🎿🛷🥌🎯🪀🪁🎱🔮🪄🎮🕹️🎰🎲🧩🪅🪩🪆♠️♥️♦️♣️♟️🃏🀄🎴🎭🖼️🎨" },
+  { id:"flag",    label:"🚩 깃발", emojis:"🏁🚩🎌🏴🏳️🏳️‍🌈🏳️‍⚧️🏴‍☠️🇰🇷🇺🇸🇯🇵🇨🇳🇬🇧🇫🇷🇩🇪🇮🇹🇪🇸🇷🇺🇧🇷🇨🇦🇦🇺🇮🇳🇲🇽🇦🇷🇹🇷🇸🇦🇵🇭🇻🇳🇹🇭🇮🇩🇲🇾🇳🇬🇧🇩🇵🇰🇺🇦🇵🇱🇳🇱🇦🇿🇦🇫🇮🇷🇮🇶🇸🇾🇱🇧🇯🇴🇮🇱🇹🇼🇭🇰🇸🇬🇰🇵🇺🇳" },
+];
+
+function EmojiTab() {
+  const [activeGroup, setActiveGroup] = useState("face");
+  const [search, setSearch]           = useState("");
+  const [copied, setCopied]           = useState("");
+  const [recentList, setRecentList]   = useState([]);
+  const [toastEmoji, setToastEmoji]   = useState("");
+
+  // 모든 이모지 통합 (검색용)
+  const allEmojis = EMOJI_GROUPS.flatMap(g =>
+    [...g.emojis].filter(c => c.codePointAt(0) > 127)
+  );
+
+  const copyEmoji = (emoji) => {
+    navigator.clipboard.writeText(emoji);
+    setCopied(emoji); setTimeout(() => setCopied(""), 1200);
+    setToastEmoji(emoji); setTimeout(() => setToastEmoji(""), 1200);
+    setRecentList(prev => {
+      const next = [emoji, ...prev.filter(e => e !== emoji)].slice(0, 30);
+      return next;
+    });
+  };
+
+  // 현재 표시할 이모지 목록
+  const displayEmojis = (() => {
+    if (search.trim()) {
+      // 검색: 모든 그룹에서 유니코드 포인트 문자만 필터 (단순 포함 검색)
+      return allEmojis.filter(e => {
+        try { return e.trim().length > 0; } catch { return false; }
+      }).slice(0, 200);
+    }
+    if (activeGroup === "recent") return recentList;
+    return [...(EMOJI_GROUPS.find(g => g.id === activeGroup)?.emojis || "")]
+      .filter(c => c.codePointAt(0) > 127);
+  })();
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+
+    {/* 토스트 */}
+    {toastEmoji && <div style={{
+      position:"fixed",top:"20px",left:"50%",transform:"translateX(-50%)",
+      background:"#1f6feb",color:"#fff",padding:"10px 20px",borderRadius:"20px",
+      fontSize:"20px",zIndex:9999,boxShadow:"0 4px 16px #00000066",
+      animation:"fadeInOut .3s ease",pointerEvents:"none",
+    }}>
+      {toastEmoji} 복사됨!
+    </div>}
+    <style>{`@keyframes fadeInOut{0%{opacity:0;transform:translateX(-50%) translateY(-8px)}100%{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
+
+    {/* 검색창 */}
+    <div style={{position:"relative"}}>
+      <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",fontSize:"15px",pointerEvents:"none"}}>🔍</span>
+      <input
+        value={search} onChange={e=>setSearch(e.target.value)}
+        placeholder="이모지 검색..."
+        style={{width:"100%",padding:"10px 14px 10px 36px",background:"#0d1117",
+          border:"1px solid #30363d",borderRadius:"10px",color:"#e6edf3",
+          fontSize:"14px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
+        onFocus={e=>e.target.style.borderColor="#58a6ff"}
+        onBlur={e=>e.target.style.borderColor="#30363d"}
+      />
+      {search && <button onClick={()=>setSearch("")} style={{
+        position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",
+        background:"none",border:"none",color:"#484f58",cursor:"pointer",fontSize:"16px",padding:"2px 6px",
+      }}>✕</button>}
+    </div>
+
+    {/* 그룹 탭 */}
+    {!search && <div style={{display:"flex",overflowX:"auto",gap:"4px",paddingBottom:"2px"}}>
+      {recentList.length > 0 && <button onClick={()=>setActiveGroup("recent")}
+        style={{padding:"7px 12px",border:"none",borderRadius:"8px",cursor:"pointer",
+          background:activeGroup==="recent"?"#1f6feb22":"#161b22",
+          color:activeGroup==="recent"?"#58a6ff":"#8b949e",
+          fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
+          border:`1px solid ${activeGroup==="recent"?"#1f6feb44":"#30363d"}`,whiteSpace:"nowrap",flexShrink:0}}>
+        🕐 최근
+      </button>}
+      {EMOJI_GROUPS.map(g=>(
+        <button key={g.id} onClick={()=>setActiveGroup(g.id)}
+          style={{padding:"7px 12px",border:"none",borderRadius:"8px",cursor:"pointer",
+            background:activeGroup===g.id?"#1f6feb22":"#161b22",
+            color:activeGroup===g.id?"#58a6ff":"#8b949e",
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
+            border:`1px solid ${activeGroup===g.id?"#1f6feb44":"#30363d"}`,whiteSpace:"nowrap",flexShrink:0}}>
+          {g.label}
+        </button>
+      ))}
+    </div>}
+
+    {/* 이모지 그리드 */}
+    <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+      {search && <div style={{color:"#484f58",fontSize:"11px",marginBottom:"10px",fontWeight:600}}>
+        전체 이모지에서 검색 중
+      </div>}
+      {!search && activeGroup==="recent" && recentList.length===0 && (
+        <div style={{color:"#484f58",fontSize:"13px",textAlign:"center",padding:"20px"}}>
+          이모지를 클릭하면 최근 사용 목록에 추가됩니다.
+        </div>
+      )}
+      <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
+        {displayEmojis.map((emoji, i) => (
+          <button key={i} onClick={()=>copyEmoji(emoji)}
+            title="클릭해서 복사"
+            style={{
+              width:"40px",height:"40px",
+              background:copied===emoji?"#1f6feb33":"transparent",
+              border:`1px solid ${copied===emoji?"#1f6feb66":"transparent"}`,
+              borderRadius:"8px",cursor:"pointer",fontSize:"22px",
+              display:"flex",alignItems:"center",justifyContent:"center",
+              transition:"all .1s",lineHeight:1,padding:0,
+            }}
+            onMouseEnter={e=>{e.currentTarget.style.background="#21262d";e.currentTarget.style.borderColor="#30363d";}}
+            onMouseLeave={e=>{e.currentTarget.style.background=copied===emoji?"#1f6feb33":"transparent";e.currentTarget.style.borderColor=copied===emoji?"#1f6feb66":"transparent";}}>
+            {emoji}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    <div style={{color:"#484f58",fontSize:"11px",textAlign:"center"}}>
+      이모지 클릭 시 클립보드에 자동 복사됩니다 · 클릭 후 붙여넣기(Ctrl+V)로 사용하세요
+    </div>
+  </div>;
+}
+
+const TOOL_MAP={keyword:KeywordTab,write:WriteTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,exif:ExifTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,rewrite:RewriteTab,emoji:EmojiTab};
 
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
@@ -3748,8 +4665,24 @@ export default function BlogTools(){
       setPendingAnalyzeText("");
     }
   };
-  const ActiveTool=TOOL_MAP[active];
   const tab=TABS.find(t=>t.id===active);
+  // 공통 props (모든 탭에 전달 — 필요한 탭만 사용)
+  const sharedProps={
+    goWrite, goAutoWrite,
+    pendingWriteKw, setPendingWriteKw,
+    setActive, kwResult, setKwResult,
+    pendingAnalyzeText, setPendingAnalyzeText,
+    writeKw1, setWriteKw1, writeKw2, setWriteKw2,
+    writeGoal, setWriteGoal, writeResult, setWriteResult,
+    writeActiveVer, setWriteActiveVer,
+    analyzeText, setAnalyzeText,
+    analyzeAiResult, setAnalyzeAiResult,
+    analyzeLastText, setAnalyzeLastText,
+    analyzeThreshold, setAnalyzeThreshold,
+    analyzeReplacements, setAnalyzeReplacements,
+    analyzeWorkingText, setAnalyzeWorkingText,
+    analyzeActiveSection, setAnalyzeActiveSection,
+  };
   return <div style={{minHeight:"100vh",background:"#010409",fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:"#e6edf3"}}>
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap');
@@ -3758,12 +4691,12 @@ export default function BlogTools(){
       textarea::placeholder,input::placeholder{color:#484f58!important}
       input[type=range]{height:6px}
     `}</style>
+    {/* 헤더 */}
     <div style={{borderBottom:"1px solid #21262d",padding:"16px 24px",background:"#0d1117",display:"flex",alignItems:"center",gap:"12px"}}>
       <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"17px"}}>✍️</div>
-      <div>
-        <div style={{fontSize:"16px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div>
-      </div>
+      <div><div style={{fontSize:"16px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div></div>
     </div>
+    {/* 탭 네비게이션 */}
     <div style={{display:"flex",overflowX:"auto",borderBottom:"1px solid #21262d",background:"#0d1117",padding:"0 10px",gap:"2px"}}>
       {TABS.map(t=><button key={t.id} onClick={()=>setActive(t.id)} style={{
         padding:"11px 16px",border:"none",background:"none",
@@ -3772,25 +4705,16 @@ export default function BlogTools(){
         fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,
       }}>{t.icon} {t.label}</button>)}
     </div>
+    {/* 탭 콘텐츠 — display:none으로 모든 탭 마운트 유지 → 상태 보존 */}
     <div style={{padding:"22px 24px",maxWidth:"960px",margin:"0 auto"}}>
-      <h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3"}}>{tab?.icon} {tab?.label}</h2>
-      <ActiveTool goWrite={goWrite} goAutoWrite={goAutoWrite}
-      pendingWriteKw={pendingWriteKw} setPendingWriteKw={setPendingWriteKw}
-      setActive={setActive} kwResult={kwResult} setKwResult={setKwResult}
-      pendingAnalyzeText={pendingAnalyzeText} setPendingAnalyzeText={setPendingAnalyzeText}
-      writeKw1={writeKw1} setWriteKw1={setWriteKw1}
-      writeKw2={writeKw2} setWriteKw2={setWriteKw2}
-      writeGoal={writeGoal} setWriteGoal={setWriteGoal}
-      writeResult={writeResult} setWriteResult={setWriteResult}
-      writeActiveVer={writeActiveVer} setWriteActiveVer={setWriteActiveVer}
-      analyzeText={analyzeText} setAnalyzeText={setAnalyzeText}
-      analyzeAiResult={analyzeAiResult} setAnalyzeAiResult={setAnalyzeAiResult}
-      analyzeLastText={analyzeLastText} setAnalyzeLastText={setAnalyzeLastText}
-      analyzeThreshold={analyzeThreshold} setAnalyzeThreshold={setAnalyzeThreshold}
-      analyzeReplacements={analyzeReplacements} setAnalyzeReplacements={setAnalyzeReplacements}
-      analyzeWorkingText={analyzeWorkingText} setAnalyzeWorkingText={setAnalyzeWorkingText}
-      analyzeActiveSection={analyzeActiveSection} setAnalyzeActiveSection={setAnalyzeActiveSection}
-    />
+      {TABS.map(t=>{
+        const TabComp=TOOL_MAP[t.id];
+        const isActive=active===t.id;
+        return <div key={t.id} style={{display:isActive?"block":"none"}}>
+          {isActive&&<h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3"}}>{t.icon} {t.label}</h2>}
+          <TabComp {...sharedProps}/>
+        </div>;
+      })}
     </div>
   </div>;
 }
