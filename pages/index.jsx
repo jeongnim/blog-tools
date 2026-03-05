@@ -1358,18 +1358,30 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
       const aiResult = JSON.parse(cleaned);
       const relStats = [];
 
-      // 경쟁 강도: 월 블로그 발행량 / 월 검색량 (pandarank 방식)
-      const blogTotal = totalBlogPosts;
-      const monthlyBlogPosts = monthlyBlogPostsReal ?? (aiResult.monthlyBlogPosts || 0);
-      const ratio = totalMonthly && totalMonthly > 0
-        ? (monthlyBlogPosts / totalMonthly)
+      // 경쟁 강도 계산 (판다랭크 방식: 포화도 = 월발행량 ÷ 월검색량 × 100%)
+      // monthlyBlogPostsReal = 네이버 Search API 실측 월 발행량 (가장 신뢰)
+      // AI 추정값은 사용하지 않음 — 실측값만 신뢰
+      const monthlyBlogPosts = monthlyBlogPostsReal ?? null;
+
+      // 포화도(%) = 월발행량 / 월검색량 × 100
+      const saturation = (monthlyBlogPosts !== null && totalMonthly && totalMonthly > 0)
+        ? Math.round((monthlyBlogPosts / totalMonthly) * 100)
         : null;
-      const compLevel = ratio===null ? "알 수 없음"
-        : ratio < 1   ? "매우낮음"
-        : ratio < 5   ? "낮음"
-        : ratio < 15  ? "보통"
-        : ratio < 30  ? "높음" : "매우높음";
-      const compScore = ratio===null ? 50 : Math.min(Math.round(ratio/40*100), 100);
+
+      // 판다랭크 기준 5단계 (포화도 % 기반)
+      // 매우낮음 <100% / 낮음 <300% / 보통 <700% / 높음 <1500% / 매우높음 ≥1500%
+      const compLevel = saturation === null ? "알 수 없음"
+        : saturation < 100  ? "매우낮음"
+        : saturation < 300  ? "낮음"
+        : saturation < 700  ? "보통"
+        : saturation < 1500 ? "높음" : "매우높음";
+
+      // UI 게이지용 0~100 스코어 (로그 스케일: 포화도 1~3000%를 0~100으로)
+      const compScore = saturation === null ? 50
+        : Math.min(Math.round((Math.log10(Math.max(saturation, 1)) / Math.log10(3000)) * 100), 100);
+
+      // ratio는 하위 호환성 유지 (포화도를 배수로 표현)
+      const ratio = saturation !== null ? saturation / 100 : null;
 
       const kwRes = {
         _inputVal: kw,
@@ -1380,7 +1392,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
         pcAvgClick: mainStat?.monthlyAvePcClkCnt ?? null,
         mobAvgClick: mainStat?.monthlyAveMobileClkCnt ?? null,
         totalBlogPosts,
-        ratio, compLevel, compScore,
+        saturation, ratio, compLevel, compScore,
         blogTitles,
         ...aiResult,
         monthlyBlogPosts,
@@ -1497,7 +1509,8 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
               <span>월 발행량</span>
               <strong style={{color:"#ffa657"}}>
-                {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"건":"확인중"}
+                {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"건":
+                  <span style={{color:"#484f58"}}>실측불가</span>}
                 {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실측</span>}
               </strong>
             </div>
@@ -1505,15 +1518,18 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
               <span>월 검색량</span>
               <strong style={{color:"#58a6ff"}}>{result.totalMonthly!=null?fmtNum(result.totalMonthly)+"회":"-"}</strong>
             </div>
-            {result.ratio!=null&&<div style={{display:"flex",justifyContent:"space-between",paddingTop:"6px",borderTop:"1px solid #21262d",marginBottom:"6px"}}>
-              <span>포화도 (발행÷검색)</span>
-              <strong style={{color:compColor}}>{result.ratio.toFixed(1)}x</strong>
+            {result.saturation!=null&&<div style={{display:"flex",justifyContent:"space-between",paddingTop:"6px",borderTop:"1px solid #21262d",marginBottom:"6px"}}>
+              <span>포화도 (발행÷검색×100)</span>
+              <strong style={{color:compColor}}>{result.saturation.toLocaleString()}%</strong>
             </div>}
-            <div style={{marginTop:"4px",color:result.compScore<30?"#3fb950":result.compScore<60?"#ffa657":"#ff7b72",fontSize:"12px",fontWeight:700}}>
-              {result.compScore<30?"✅ 신규 블로거도 가능":result.compScore<60?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
+            {result.saturation==null&&<div style={{paddingTop:"6px",borderTop:"1px solid #21262d",marginBottom:"6px",color:"#484f58",fontSize:"10px"}}>
+              ⚠️ 월 발행량 실측 불가 — 포화도 계산 불가
+            </div>}
+            <div style={{marginTop:"4px",color:result.saturation==null?"#8b949e":result.saturation<100?"#3fb950":result.saturation<700?"#ffa657":"#ff7b72",fontSize:"12px",fontWeight:700}}>
+              {result.saturation==null?"－ 데이터 부족":result.saturation<100?"✅ 신규 블로거도 가능":result.saturation<300?"🟢 경쟁 낮음":result.saturation<700?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
             </div>
             <div style={{color:"#484f58",fontSize:"10px",marginTop:"6px",borderTop:"1px solid #21262d",paddingTop:"6px"}}>
-              · 네이버 Search API 실측 기준
+              · 판다랭크 방식: 포화도 = 월발행량 ÷ 월검색량 × 100%
             </div>
           </div>
         </div>
