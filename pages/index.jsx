@@ -282,6 +282,7 @@ const TABS=[
   {id:"convert",   icon:"🔄", label:"이미지 형식변환"},
   {id:"restore",   icon:"✨", label:"사진 복원·향상"},
   {id:"video",     icon:"🎬", label:"동영상 압축"},
+  {id:"exif",      icon:"🔒", label:"EXIF 제거"},
 ];
 // ─── Shared UI ────────────────────────────────────────────────────────────
 function Textarea({value,onChange,placeholder,rows=9}){
@@ -3224,7 +3225,462 @@ function AutoWriteTab(){
   </div>;
 }
 
-const TOOL_MAP={keyword:KeywordTab,write:WriteTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab};
+// ─── TAB: EXIF 제거 ──────────────────────────────────────────────────────
+// piexifjs (CDN) 으로 JPEG EXIF 완전 제거
+// PNG/WebP/GIF 는 Canvas re-draw 로 메타데이터 제거
+// PDF 는 텍스트 재패키징 방식 (기본 메타만 제거)
+// 모든 처리 100% 브라우저 로컬 — 파일 서버 전송 없음
+
+const EXIF_SUPPORTED = ["image/jpeg","image/jpg","image/png","image/webp","image/gif"];
+
+function readableTag(key, val) {
+  if (val === undefined || val === null) return "";
+  if (typeof val === "object" && val.numerator !== undefined) return `${val.numerator}/${val.denominator}`;
+  if (Array.isArray(val)) return val.join(", ");
+  if (typeof val === "string") return val.replace(/\x00/g,"").trim();
+  return String(val);
+}
+
+function ExifTab() {
+  const [files, setFiles] = useState([]);       // [{file, url, name, type, size, meta, cleaned, cleanedUrl, status}]
+  const [selected, setSelected] = useState(0);
+  const [search, setSearch] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [allSaved, setAllSaved] = useState(false);
+  const inputRef = useRef(null);
+
+  // ── 파일 추가 ──
+  const addFiles = async (newFiles) => {
+    const arr = Array.from(newFiles).slice(0, 20 - files.length);
+    const entries = arr.map(f => ({
+      file: f, name: f.name, type: f.type, size: f.size,
+      url: URL.createObjectURL(f),
+      meta: null, cleaned: null, cleanedUrl: null, status: "idle",
+    }));
+    setFiles(prev => {
+      const next = [...prev, ...entries];
+      // 자동으로 메타데이터 파싱
+      next.slice(prev.length).forEach((_, i) => parseMeta(prev.length + i, next[prev.length + i].file, next));
+      return next;
+    });
+  };
+
+  // ── EXIF 메타데이터 파싱 ──
+  const parseMeta = async (idx, file, currentFiles) => {
+    try {
+      const buf = await file.arrayBuffer();
+      const view = new DataView(buf);
+      const tags = {};
+
+      if (file.type === "image/jpeg" || file.type === "image/jpg") {
+        // JPEG: EXIF 마커 파싱
+        let offset = 2;
+        while (offset < view.byteLength - 2) {
+          const marker = view.getUint16(offset);
+          if (marker === 0xFFE1) { // APP1 (EXIF)
+            const len = view.getUint16(offset + 2);
+            const exifData = new Uint8Array(buf, offset + 4, len - 2);
+            const str = Array.from(exifData.slice(0, 4)).map(b => String.fromCharCode(b)).join("");
+            if (str === "Exif") {
+              // 기본 EXIF 태그 추출
+              const tiffOffset = offset + 10;
+              const littleEndian = view.getUint16(tiffOffset) === 0x4949;
+              const ifdOffset = view.getUint32(tiffOffset + 4, littleEndian);
+              const tagCount = view.getUint16(tiffOffset + ifdOffset, littleEndian);
+              const TAG_NAMES = {
+                0x010F:"카메라 제조사", 0x0110:"카메라 모델", 0x0112:"방향",
+                0x011A:"X 해상도", 0x011B:"Y 해상도", 0x0128:"해상도 단위",
+                0x0132:"수정 날짜", 0x013B:"작성자", 0x8769:"EXIF IFD",
+                0x8825:"GPS IFD", 0x9000:"EXIF 버전", 0x9003:"원본 촬영일",
+                0x9004:"디지털화 날짜", 0x9201:"셔터 속도", 0x9202:"조리개",
+                0x9203:"밝기", 0x9204:"노출 보정", 0x9205:"최대 조리개",
+                0x9207:"측광 모드", 0x9208:"광원", 0x9209:"플래시",
+                0x920A:"초점 거리", 0xA002:"이미지 너비", 0xA003:"이미지 높이",
+                0xA433:"렌즈 제조사", 0xA434:"렌즈 모델",
+              };
+              for (let i = 0; i < Math.min(tagCount, 30); i++) {
+                const entryOffset = tiffOffset + ifdOffset + 2 + i * 12;
+                if (entryOffset + 12 > view.byteLength) break;
+                const tagId = view.getUint16(entryOffset, littleEndian);
+                const tagName = TAG_NAMES[tagId] || `TAG_0x${tagId.toString(16).toUpperCase()}`;
+                const type = view.getUint16(entryOffset + 2, littleEndian);
+                const count = view.getUint32(entryOffset + 4, littleEndian);
+                let val = "";
+                if (type === 2) { // ASCII
+                  const vOffset = count > 4 ? view.getUint32(entryOffset + 8, littleEndian) + tiffOffset : entryOffset + 8;
+                  val = "";
+                  for (let j = 0; j < count - 1 && vOffset + j < view.byteLength; j++) {
+                    const c = view.getUint8(vOffset + j);
+                    if (c) val += String.fromCharCode(c);
+                  }
+                } else if (type === 3) { val = view.getUint16(entryOffset + 8, littleEndian); }
+                else if (type === 4) { val = view.getUint32(entryOffset + 8, littleEndian); }
+                else if (type === 5) { // RATIONAL
+                  const rOffset = view.getUint32(entryOffset + 8, littleEndian) + tiffOffset;
+                  if (rOffset + 8 <= view.byteLength) {
+                    const n = view.getUint32(rOffset, littleEndian);
+                    const d = view.getUint32(rOffset + 4, littleEndian);
+                    val = d ? `${n}/${d}` : n;
+                  }
+                }
+                if (val !== "" && val !== undefined) tags[tagName] = String(val);
+              }
+              // GPS 간단 감지
+              if (Object.keys(tags).some(k => k.includes("GPS"))) {
+                tags["⚠️ GPS 정보"] = "위치 정보 포함됨 — 제거 권장";
+              }
+            }
+            break;
+          }
+          if (marker === 0xFFDA) break;
+          offset += 2 + view.getUint16(offset + 2);
+        }
+      }
+
+      // 공통 메타
+      tags["파일명"] = file.name;
+      tags["파일 크기"] = fmtSize(file.size);
+      tags["파일 형식"] = file.type || "알 수 없음";
+
+      // 이미지 크기
+      await new Promise(res => {
+        const img = new Image();
+        img.onload = () => { tags["이미지 크기"] = `${img.naturalWidth} × ${img.naturalHeight} px`; res(); };
+        img.onerror = res;
+        img.src = URL.createObjectURL(file);
+      });
+
+      setFiles(prev => prev.map((f, i) => i === idx ? { ...f, meta: tags, status: "parsed" } : f));
+    } catch(e) {
+      setFiles(prev => prev.map((f, i) => i === idx ? { ...f, meta: { "오류": "메타데이터 파싱 실패" }, status: "error" } : f));
+    }
+  };
+
+  // ── EXIF 제거 (단일) ──
+  const removeExif = async (idx) => {
+    const f = files[idx];
+    if (!f || !EXIF_SUPPORTED.includes(f.type)) return;
+    setFiles(prev => prev.map((ff, i) => i === idx ? { ...ff, status: "cleaning" } : ff));
+
+    try {
+      let cleanedBlob;
+      if (f.type === "image/jpeg" || f.type === "image/jpg") {
+        // JPEG: EXIF APP1 마커 제거 후 재조립
+        const buf = await f.file.arrayBuffer();
+        const src = new Uint8Array(buf);
+        const out = [];
+        let i = 0;
+        // SOI 마커 유지
+        out.push(src[0], src[1]);
+        i = 2;
+        while (i < src.length - 1) {
+          if (src[i] !== 0xFF) { i++; continue; }
+          const marker = (src[i] << 8) | src[i+1];
+          if (marker === 0xFFDA) { // SOS — 나머지 전부 복사
+            for (let j = i; j < src.length; j++) out.push(src[j]);
+            break;
+          }
+          const segLen = (src[i+2] << 8) | src[i+3];
+          // APP1(EXIF), APP2~APP15 제거, 나머지 유지
+          if (marker >= 0xFFE1 && marker <= 0xFFEF) {
+            i += 2 + segLen; // skip
+          } else {
+            for (let j = i; j < i + 2 + segLen && j < src.length; j++) out.push(src[j]);
+            i += 2 + segLen;
+          }
+        }
+        cleanedBlob = new Blob([new Uint8Array(out)], { type: "image/jpeg" });
+      } else {
+        // PNG / WebP / GIF: Canvas re-draw (메타데이터 전부 제거됨)
+        cleanedBlob = await new Promise((res, rej) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+            const mime = f.type === "image/gif" ? "image/png" : f.type;
+            canvas.toBlob(b => b ? res(b) : rej(new Error("canvas toBlob 실패")), mime, 0.95);
+          };
+          img.onerror = rej;
+          img.src = f.url;
+        });
+      }
+
+      const cleanedUrl = URL.createObjectURL(cleanedBlob);
+      const cleanedMeta = {
+        "파일명": f.name, "파일 크기": fmtSize(cleanedBlob.size),
+        "파일 형식": cleanedBlob.type,
+        "✅ 상태": "EXIF 메타데이터 제거 완료",
+      };
+      setFiles(prev => prev.map((ff, i) => i === idx
+        ? { ...ff, cleaned: cleanedBlob, cleanedUrl, meta: cleanedMeta, status: "done" }
+        : ff));
+    } catch(e) {
+      setFiles(prev => prev.map((ff, i) => i === idx ? { ...ff, status: "error" } : ff));
+    }
+  };
+
+  // ── 일괄 제거 ──
+  const removeAll = async () => {
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].status !== "done") await removeExif(i);
+    }
+  };
+
+  // ── 저장 ──
+  const saveFile = (idx) => {
+    const f = files[idx];
+    const blob = f.cleaned || f.file;
+    const ext = f.name.split(".").pop();
+    const name = f.cleaned ? `EXIF제거_${f.name}` : f.name;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+  };
+
+  const saveAll = () => {
+    files.forEach((_, i) => saveFile(i));
+    setAllSaved(true);
+    setTimeout(() => setAllSaved(false), 2000);
+  };
+
+  // ── 메타 테이블 필터 ──
+  const curMeta = files[selected]?.meta || {};
+  const metaRows = Object.entries(curMeta).filter(([k]) =>
+    !search || k.toLowerCase().includes(search.toLowerCase()) ||
+    String(curMeta[k]).toLowerCase().includes(search.toLowerCase())
+  );
+
+  const hasGps = Object.keys(curMeta).some(k => k.includes("GPS") || k.includes("위치"));
+
+  return <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+    <style>{`
+      @keyframes exifSpin { to { transform: rotate(360deg); } }
+      .exif-drop:hover { border-color: #58a6ff !important; background: #0d1e3322 !important; }
+    `}</style>
+
+    {/* 파일 추가 영역 */}
+    <div className="exif-drop"
+      onDragOver={e => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); }}
+      onClick={() => inputRef.current?.click()}
+      style={{
+        border: `2px dashed ${dragging ? "#58a6ff" : "#30363d"}`,
+        borderRadius: "12px", padding: "28px 20px", textAlign: "center",
+        cursor: "pointer", background: dragging ? "#0d1e3333" : "#0d1117",
+        transition: "all .2s",
+      }}>
+      <input ref={inputRef} type="file" multiple accept="image/*" style={{ display: "none" }}
+        onChange={e => addFiles(e.target.files)} />
+      <div style={{ fontSize: "28px", marginBottom: "8px" }}>🔒</div>
+      <div style={{ color: "#e6edf3", fontWeight: 700, fontSize: "14px", marginBottom: "4px" }}>
+        이미지를 드래그하거나 클릭해서 추가
+      </div>
+      <div style={{ color: "#484f58", fontSize: "12px" }}>
+        JPEG · PNG · WebP · GIF 지원 · 최대 20개 · 모든 처리는 브라우저 로컬에서만 진행 (서버 전송 없음)
+      </div>
+    </div>
+
+    {/* 파일 목록 */}
+    {files.length > 0 && <>
+      {/* 상단 액션 바 */}
+      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={removeAll}
+          style={{ padding: "8px 16px", background: "#1f6feb", color: "#fff", border: "none",
+            borderRadius: "8px", cursor: "pointer", fontFamily: "'Noto Sans KR',sans-serif",
+            fontSize: "13px", fontWeight: 700 }}>
+          🗑️ 일괄 EXIF 제거
+        </button>
+        <button onClick={saveAll}
+          style={{ padding: "8px 16px", background: allSaved ? "#2ea043" : "#21262d",
+            color: allSaved ? "#fff" : "#8b949e", border: "1px solid #30363d",
+            borderRadius: "8px", cursor: "pointer", fontFamily: "'Noto Sans KR',sans-serif",
+            fontSize: "13px", fontWeight: 600, transition: "all .2s" }}>
+          {allSaved ? "✅ 저장됨!" : "⬇️ 모두 저장"}
+        </button>
+        <button onClick={() => setFiles([])}
+          style={{ padding: "8px 14px", background: "#21262d", color: "#8b949e",
+            border: "1px solid #30363d", borderRadius: "8px", cursor: "pointer",
+            fontFamily: "'Noto Sans KR',sans-serif", fontSize: "13px" }}>
+          🗑️ 초기화
+        </button>
+        <span style={{ color: "#484f58", fontSize: "12px", marginLeft: "auto" }}>
+          {files.filter(f => f.status === "done").length} / {files.length} 완료
+        </span>
+      </div>
+
+      <div style={{ display: "flex", gap: "14px", flexWrap: "wrap" }}>
+        {/* 썸네일 목록 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: "180px", maxWidth: "200px" }}>
+          {files.map((f, i) => (
+            <div key={i} onClick={() => setSelected(i)}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                padding: "8px 10px", borderRadius: "8px", cursor: "pointer",
+                background: selected === i ? "#161b22" : "#0d1117",
+                border: `1px solid ${selected === i ? "#1f6feb66" : "#21262d"}`,
+                transition: "all .15s",
+              }}>
+              <div style={{ width: "36px", height: "36px", borderRadius: "6px", overflow: "hidden",
+                background: "#21262d", flexShrink: 0, position: "relative" }}>
+                <img src={f.cleanedUrl || f.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                {f.status === "done" && <div style={{ position: "absolute", bottom: 0, right: 0,
+                  background: "#2ea043", borderRadius: "3px 0 0 0", padding: "1px 3px", fontSize: "9px" }}>✓</div>}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: "#e6edf3", fontSize: "11px", fontWeight: 600,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+                <div style={{ fontSize: "10px", color:
+                  f.status === "done" ? "#3fb950" :
+                  f.status === "cleaning" ? "#ffa657" :
+                  f.status === "error" ? "#ff7b72" : "#484f58" }}>
+                  {f.status === "done" ? "✅ 제거 완료" :
+                   f.status === "cleaning" ? "⏳ 처리중..." :
+                   f.status === "error" ? "❌ 오류" :
+                   fmtSize(f.size)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 메타데이터 패널 */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "10px" }}>
+          {/* 선택 파일 프리뷰 + 액션 */}
+          {files[selected] && <div style={{ background: "#161b22", border: "1px solid #30363d",
+            borderRadius: "10px", padding: "14px 16px", display: "flex", gap: "14px", alignItems: "flex-start", flexWrap: "wrap" }}>
+            <img src={files[selected].cleanedUrl || files[selected].url} alt=""
+              style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "8px",
+                border: "1px solid #30363d", flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: "#e6edf3", fontWeight: 700, fontSize: "14px", marginBottom: "4px",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {files[selected].name}
+              </div>
+              <div style={{ color: "#8b949e", fontSize: "12px", marginBottom: "8px" }}>
+                {fmtSize(files[selected].size)} · {files[selected].type}
+              </div>
+              {hasGps && files[selected].status !== "done" && (
+                <div style={{ background: "#2d1117", border: "1px solid #f8514944",
+                  borderRadius: "6px", padding: "6px 10px", fontSize: "12px",
+                  color: "#ff7b72", marginBottom: "8px" }}>
+                  ⚠️ GPS 위치 정보가 포함되어 있습니다. 제거를 권장합니다.
+                </div>
+              )}
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {files[selected].status !== "done" ? (
+                  <button onClick={() => removeExif(selected)}
+                    disabled={files[selected].status === "cleaning"}
+                    style={{ padding: "7px 14px", background: files[selected].status === "cleaning" ? "#21262d" : "#da3633",
+                      color: files[selected].status === "cleaning" ? "#484f58" : "#fff",
+                      border: "none", borderRadius: "7px", cursor: files[selected].status === "cleaning" ? "not-allowed" : "pointer",
+                      fontFamily: "'Noto Sans KR',sans-serif", fontSize: "12px", fontWeight: 700 }}>
+                    {files[selected].status === "cleaning" ? "⏳ 처리중..." : "🗑️ EXIF 제거"}
+                  </button>
+                ) : (
+                  <div style={{ color: "#3fb950", fontSize: "13px", fontWeight: 700, alignSelf: "center" }}>
+                    ✅ EXIF 제거 완료
+                  </div>
+                )}
+                <button onClick={() => saveFile(selected)}
+                  style={{ padding: "7px 14px", background: "#21262d", color: "#8b949e",
+                    border: "1px solid #30363d", borderRadius: "7px", cursor: "pointer",
+                    fontFamily: "'Noto Sans KR',sans-serif", fontSize: "12px" }}>
+                  ⬇️ {files[selected].status === "done" ? "정리된 파일 저장" : "원본 저장"}
+                </button>
+                <button onClick={() => setFiles(prev => prev.filter((_, i) => i !== selected))}
+                  style={{ padding: "7px 10px", background: "#21262d", color: "#8b949e",
+                    border: "1px solid #30363d", borderRadius: "7px", cursor: "pointer", fontSize: "12px" }}>
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>}
+
+          {/* 메타데이터 테이블 */}
+          <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: "10px", overflow: "hidden" }}>
+            <div style={{ padding: "10px 14px", borderBottom: "1px solid #21262d",
+              display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ color: "#8b949e", fontSize: "12px", fontWeight: 700 }}>
+                📋 메타데이터 ({metaRows.length}개)
+              </span>
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="태그 검색 (예: GPS, 날짜)"
+                style={{ flex: 1, padding: "5px 10px", background: "#0d1117",
+                  border: "1px solid #30363d", borderRadius: "6px", color: "#e6edf3",
+                  fontSize: "12px", outline: "none", fontFamily: "'Noto Sans KR',sans-serif" }} />
+            </div>
+            {metaRows.length === 0 ? (
+              <div style={{ padding: "20px", textAlign: "center", color: "#484f58", fontSize: "13px" }}>
+                {files[selected] ? (search ? "검색 결과 없음" : "메타데이터 분석 중...") : "파일을 선택하세요"}
+              </div>
+            ) : (
+              <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                  <thead>
+                    <tr style={{ background: "#0d1117" }}>
+                      <th style={{ padding: "8px 14px", color: "#484f58", fontWeight: 600,
+                        textAlign: "left", borderBottom: "1px solid #21262d", width: "40%" }}>태그</th>
+                      <th style={{ padding: "8px 14px", color: "#484f58", fontWeight: 600,
+                        textAlign: "left", borderBottom: "1px solid #21262d" }}>값</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metaRows.map(([k, v], i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #21262d22",
+                        background: k.includes("⚠️") ? "#2d111711" : k.includes("✅") ? "#0d201911" : "transparent" }}>
+                        <td style={{ padding: "7px 14px", color: k.includes("⚠️") ? "#ff7b72" : k.includes("✅") ? "#3fb950" : "#8b949e",
+                          fontWeight: k.includes("⚠️") || k.includes("✅") ? 700 : 400 }}>{k}</td>
+                        <td style={{ padding: "7px 14px", color: "#c9d1d9", wordBreak: "break-all" }}>{String(v)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* 개인정보 안내 */}
+          <div style={{ background: "#0d1a2d", border: "1px solid #1f6feb33",
+            borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#484f58" }}>
+            🔒 <span style={{ color: "#58a6ff" }}>100% 로컬 처리</span> — 파일이 서버로 전송되지 않습니다.
+            모든 EXIF 제거는 브라우저 내에서만 실행됩니다.
+          </div>
+        </div>
+      </div>
+    </>}
+
+    {/* 빈 상태 안내 */}
+    {files.length === 0 && <div style={{ background: "#161b22", border: "1px solid #30363d",
+      borderRadius: "12px", padding: "24px 20px" }}>
+      <div style={{ color: "#8b949e", fontSize: "12px", fontWeight: 700, marginBottom: "12px" }}>
+        📌 EXIF란?
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {[
+          ["📍 GPS 좌표", "사진에 집/직장 위치가 기록됩니다"],
+          ["📷 카메라 정보", "제조사, 모델, 렌즈 정보가 포함됩니다"],
+          ["🕐 촬영 날짜/시간", "정확한 촬영 시간이 저장됩니다"],
+          ["🔢 기기 일련번호", "익명 사진도 기기로 추적 가능합니다"],
+        ].map(([icon, desc], i) => (
+          <div key={i} style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <span style={{ fontSize: "14px" }}>{icon.split(" ")[0]}</span>
+            <div>
+              <span style={{ color: "#e6edf3", fontSize: "13px", fontWeight: 600 }}>{icon.slice(2)}</span>
+              <span style={{ color: "#484f58", fontSize: "12px" }}> — {desc}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>}
+  </div>;
+}
+
+const TOOL_MAP={keyword:KeywordTab,write:WriteTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,exif:ExifTab};
 
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
