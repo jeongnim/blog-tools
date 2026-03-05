@@ -276,10 +276,9 @@ async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5
 const TABS=[
   {id:"keyword",   icon:"🔍", label:"키워드 조회"},
   {id:"write",     icon:"✍️",  label:"글 작성"},
-  {id:"autowrite", icon:"🤖", label:"자동글쓰기"},
+  {id:"autowrite", icon:"🤖", label:"카테고리 글쓰기"},
   {id:"analyze",   icon:"📊", label:"글 분석 · 금칙어"},
   {id:"missing",   icon:"📡", label:"누락 확인"},
-  {id:"ocr",       icon:"🖼️", label:"이미지→텍스트"},
   {id:"image",     icon:"🖼️", label:"이미지 편집", isGroup:true}, // 드롭다운 그룹
   {id:"video",     icon:"🎬", label:"동영상 압축"},
   {id:"rewrite",   icon:"📰", label:"기사 리라이팅"},
@@ -288,12 +287,13 @@ const TABS=[
 
 // 이미지 편집 서브탭
 const IMAGE_SUBTABS=[
-  {id:"convert",     icon:"🔄", label:"형식 변환"},
+  {id:"ocr",         icon:"🖼️", label:"이미지→텍스트"},
+  {id:"convert",     icon:"🔄", label:"이미지 형식변환"},
   {id:"crop",        icon:"✂️",  label:"이미지 자르기"},
-  {id:"resize",      icon:"📐", label:"크기 조절"},
-  {id:"imgcompress", icon:"💾", label:"이미지 압축"},
+  {id:"resize",      icon:"📐", label:"이미지 크기조절"},
+  {id:"imgcompress", icon:"💾", label:"이미지 용량압축"},
   {id:"restore",     icon:"✨", label:"사진 복원·향상"},
-  {id:"exif",        icon:"🔒", label:"EXIF 제거"},
+  {id:"exif",        icon:"🔒", label:"이미지 데이터제거"},
 ];
 
 // 전체 렌더링 대상 탭 (display:none 마운트용 — 서브탭 포함)
@@ -3004,7 +3004,7 @@ const NAVER_AUTO_CATEGORIES=[
   ]},
 ];
 
-function AutoWriteTab(){
+function AutoWriteTab({setActive,setPendingAnalyzeText}){
   const [selCat,setSelCat]=useState("");
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
@@ -3086,6 +3086,11 @@ function AutoWriteTab(){
       const esc=mainKw.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
       parsed.actual_kw_count=(content.match(new RegExp(esc,"g"))||[]).length;
       setPost(parsed);
+      // 글 완성 후 글 분석·금칙어 탭으로 자동 이동
+      if(setActive && setPendingAnalyzeText){
+        setPendingAnalyzeText(content);
+        setActive("analyze");
+      }
     }catch(ex){setErr("글 작성 오류: "+ex.message);}
     setWritingIdx(null);
   };
@@ -3133,7 +3138,7 @@ function AutoWriteTab(){
     {keywords.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 2</div>
       <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"4px"}}>롱테일 키워드 선택</div>
-      <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>오른쪽 <span style={{color:"#58a6ff",fontWeight:700}}>✍️ 자동글쓰기</span> 버튼을 클릭하면 홈판 최적화 블로그 글이 생성됩니다.</div>
+      <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>오른쪽 <span style={{color:"#58a6ff",fontWeight:700}}>✍️ 자동글쓰기</span> 버튼을 클릭하면 홈판 최적화 블로그 글이 생성되고, <span style={{color:"#3fb950",fontWeight:700}}>글 분석·금칙어</span> 탭으로 자동 이동합니다.</div>
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         {keywords.map((kw,idx)=>(
           <div key={idx} style={{
