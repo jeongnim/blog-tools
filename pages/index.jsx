@@ -274,8 +274,7 @@ async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5
 
 // 메인 탭 (네비바에 표시)
 const TABS=[
-  {id:"keyword",   icon:"🔍", label:"키워드 조회"},
-  {id:"write",     icon:"✍️",  label:"글 작성"},
+  {id:"keyword",   icon:"🔍", label:"키워드 글쓰기"},
   {id:"autowrite", icon:"🤖", label:"카테고리 글쓰기"},
   {id:"analyze",   icon:"📊", label:"글분석"},
   {id:"missing",   icon:"📡", label:"누락 확인"},
@@ -2870,280 +2869,6 @@ function RestoreTab(){
   </div>;
 }
 
-// ─── TAB: 글 작성 ────────────────────────────────────────────────────────
-function WriteTab({pendingWriteKw="",setPendingWriteKw,setActive,
-  writeKw1,setWriteKw1,writeKw2,setWriteKw2,writeGoal,setWriteGoal,
-  writeResult,setWriteResult,writeActiveVer,setWriteActiveVer}){
-  const kw1=writeKw1??""; const setKw1=setWriteKw1;
-  const kw2=writeKw2??""; const setKw2=setWriteKw2;
-  const goal=writeGoal??""; const setGoal=setWriteGoal;
-  const result=writeResult??null; const setResult=setWriteResult;
-  const activeVer=writeActiveVer??0; const setActiveVer=setWriteActiveVer;
-  const [loading,setLoading]=useState(false);
-  const [copied,setCopied]=useState(-1);
-  // 초기화 함수
-  const resetAll=()=>{setWriteKw1("");setWriteKw2("");setWriteGoal("");setWriteResult(null);setWriteActiveVer(0);};
-  useEffect(()=>{
-    if(pendingWriteKw){
-      setWriteKw1(pendingWriteKw);
-      if(setPendingWriteKw) setPendingWriteKw("");
-    }
-  },[pendingWriteKw]);
-
-  const generate=async()=>{
-    if(!kw1.trim()||!goal.trim()) return;
-    setLoading(true); setResult(null);
-    const mainKw=kw2.trim()?`"${kw1.trim()}"과 "${kw2.trim()}"`:`"${kw1.trim()}"`;
-    const year = new Date().getFullYear();
-    const prompt=`다음 조건으로 네이버 블로그 글 3가지 버전을 작성해줘.
-
-메인 키워드: ${mainKw}
-주요 목표: ${goal.trim()}
-
-조건:
-0. ${year}년 기준 최신 정보를 토대로 작성.
-1. 메인 키워드 ${mainKw}를 중심으로 작성.
-2. 해당 분야 전문 블로거 관점으로 작성.
-3. 주요 목표(${goal.trim()})에 맞는 정보를 전달.
-4. Temperature 0.7, Top P 0.4 기준.
-5. 한글+공백 포함 버전당 최소 1,800자 ~ 2,500자.
-6. 1,800자 미만 버전이 있으면 SEO에 맞춰 내용 보강 후 재작성.
-7. 메인 키워드 최대 19회.
-8. 모든 형태소는 메인 키워드보다 많이 사용하면 안됨.
-9. 3개의 글은 다른 사람이 쓴 것처럼 순서, 관점, 어휘 모두 다르게.
-   - 버전1) 정보성 100%, 니다체. 소제목 포함 5~6개 문단.
-   - 버전2) 감정 10% + 정보성 90%. 니다체/요체 혼합. 소제목 없이 4~5개 문단.
-   - 버전3) 감정 40% + 정보성 60%. 요체 위주. 소제목 없이 4~5개 문단.
-10. 각 버전 모두 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 문장 절대 금지. 바로 본론부터 시작.
-11. 각 버전마다 SEO 제목 1개. 메인 키워드 반드시 포함. 특수문자 사용 금지.
-    예시: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리"
-
-응답 형식: 아래 JSON 형식으로만. 마크다운 코드블록 없이 순수 JSON만.
-{
-  "versions": [
-    {"title":"버전1 제목","label":"버전1 · 객관적 (니다체)","content":"버전1 본문 전체"},
-    {"title":"버전2 제목","label":"버전2 · 혼합 (니다+요체)","content":"버전2 본문 전체"},
-    {"title":"버전3 제목","label":"버전3 · 감성 (요체)","content":"버전3 본문 전체"}
-  ]
-}`;
-
-    try{
-      const raw=await callClaude([{role:"user",content:prompt}],
-        "You are a professional Korean blogger and SEO expert who adapts your expertise to match any topic or keyword. Output ONLY valid JSON with no markdown fences.", 8000, "claude-sonnet-4-6");
-      // JSON 추출: 첫 { 부터 마지막 } 까지만 자름
-      const start=raw.indexOf("{");
-      const end=raw.lastIndexOf("}");
-      const cleaned=start!==-1&&end!==-1?raw.slice(start,end+1):raw;
-      const parsed=JSON.parse(cleaned);
-      setResult(parsed); setActiveVer(0);
-      // 글 생성 완료 후 3초 뒤 분석 탭으로 자동 이동
-      // setTimeout(()=>setActive&&setActive("analyze"),3000);
-    }catch(e){
-      setResult({error:"글 생성 중 오류가 발생했습니다. 다시 시도해주세요."});
-    }
-    setLoading(false);
-  };
-
-  const doCopy=(idx)=>{
-    const ver=result?.versions?.[idx];
-    if(!ver) return;
-    navigator.clipboard.writeText(ver.title+"\n\n"+ver.content);
-    setCopied(idx); setTimeout(()=>setCopied(-1),1600);
-  };
-
-  const VC=["#58a6ff","#3fb950","#ffa657"];
-  const VI=["📋","🔀","💬"];
-  const VDESC=["100% 객관적 정보 · 소제목 있음 · 니다체","정보 80% + 주관 20% · 니다/요체 혼합","감성+경험 · 정보 60% + 주관 40% · 요체"];
-
-  return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
-    {/* 입력 패널 */}
-    <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"20px",display:"flex",flexDirection:"column",gap:"14px"}}>
-      <SectionTitle>📝 글 작성 조건 입력</SectionTitle>
-
-      {/* 키워드 2개 나란히 */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
-        <div>
-          <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"7px"}}>
-            <span style={{color:"#e6edf3",fontSize:"13px",fontWeight:600}}>메인 키워드 1</span>
-            <span style={{background:"#da363322",color:"#ff7b72",border:"1px solid #da363355",borderRadius:"4px",padding:"1px 7px",fontSize:"11px",fontWeight:700}}>필수</span>
-          </div>
-          <input value={kw1} onChange={e=>setKw1(e.target.value)}
-            placeholder="예: 올레TV"
-            style={{width:"100%",boxSizing:"border-box",padding:"11px 14px",background:"#0d1117",
-              border:`1px solid ${kw1.trim()?"#58a6ff":"#30363d"}`,borderRadius:"8px",color:"#e6edf3",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none"}}
-            onFocus={e=>e.target.style.borderColor="#58a6ff"}
-            onBlur={e=>e.target.style.borderColor=kw1.trim()?"#58a6ff":"#30363d"}/>
-        </div>
-        <div>
-          <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"7px"}}>
-            <span style={{color:"#e6edf3",fontSize:"13px",fontWeight:600}}>메인 키워드 2</span>
-            <span style={{background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"4px",padding:"1px 7px",fontSize:"11px",fontWeight:700}}>선택</span>
-          </div>
-          <input value={kw2} onChange={e=>setKw2(e.target.value)}
-            placeholder="예: 아이들나라 (없으면 비워두세요)"
-            style={{width:"100%",boxSizing:"border-box",padding:"11px 14px",background:"#0d1117",
-              border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none"}}
-            onFocus={e=>e.target.style.borderColor="#58a6ff"}
-            onBlur={e=>e.target.style.borderColor="#30363d"}/>
-        </div>
-      </div>
-
-      {/* 글의 주요 목표 */}
-      <div>
-        <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"7px"}}>
-          <span style={{color:"#e6edf3",fontSize:"13px",fontWeight:600}}>글의 주요 목표</span>
-          <span style={{background:"#da363322",color:"#ff7b72",border:"1px solid #da363355",borderRadius:"4px",padding:"1px 7px",fontSize:"11px",fontWeight:700}}>필수</span>
-        </div>
-        <input value={goal} onChange={e=>setGoal(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&generate()}
-          placeholder="예: 유플러스 아이들나라 vs 올레TV 중 아이 있는 집은 어디가 나을까?"
-          style={{width:"100%",boxSizing:"border-box",padding:"11px 14px",background:"#0d1117",
-            border:`1px solid ${goal.trim()?"#58a6ff":"#30363d"}`,borderRadius:"8px",color:"#e6edf3",
-            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none"}}
-          onFocus={e=>e.target.style.borderColor="#58a6ff"}
-          onBlur={e=>e.target.style.borderColor=goal.trim()?"#58a6ff":"#30363d"}/>
-      </div>
-
-      {/* 조건 미리보기 뱃지 */}
-      {kw1.trim()&&<div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
-        {[
-          ["키워드",kw2.trim()?`${kw1.trim()} + ${kw2.trim()}`:kw1.trim(),"#58a6ff"],
-          ["분량","2800~3500자","#3fb950"],
-          ["버전","3가지 (객관·혼합·감성)","#ffa657"],
-          ["키워드 최대","19회","#d2a8ff"],
-        ].map(([l,v,c])=>(
-          <div key={l} style={{background:c+"15",border:`1px solid ${c}44`,borderRadius:"20px",padding:"4px 12px",fontSize:"12px"}}>
-            <span style={{color:"#8b949e"}}>{l}: </span><span style={{color:c,fontWeight:600}}>{v}</span>
-          </div>
-        ))}
-      </div>}
-
-      <div style={{background:"#1a2332",border:"1px solid #1f6feb44",borderRadius:"8px",padding:"10px 14px",fontSize:"12px",color:"#8b949e",lineHeight:"1.7"}}>
-        💡 키워드 1 + 주요 목표 입력 후 버튼 클릭 → <strong style={{color:"#c9d1d9"}}>3가지 스타일의 SEO 블로그 글</strong>이 자동 생성됩니다.<br/>
-        ⏱️ 글 3개 생성에 <strong style={{color:"#ffa657"}}>약 40초~1분</strong> 소요됩니다.
-      </div>
-
-      <Btn onClick={generate} loading={loading} disabled={!kw1.trim()||!goal.trim()}>
-        ✍️ 블로그 글 자동 생성 (3가지 버전)
-      </Btn>
-      {(kw1||kw2||goal||result)&&<Btn onClick={resetAll} variant="secondary">🗑️ 초기화</Btn>}
-    </div>
-
-    {/* 로딩 */}
-    {loading&&<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-      <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
-      {[
-        "키워드 분석 및 SEO 전략 수립 중...",
-        "버전1 · 객관적 (니다체) 작성 중...",
-        "버전2 · 혼합체 작성 중...",
-        "버전3 · 감성 (요체) 작성 중...",
-        "키워드 빈도 최적화 및 제목 생성 중...",
-      ].map((msg,i)=>(
-        <div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",
-          padding:"12px 16px",color:"#8b949e",fontSize:"13px",
-          animation:`pulse 1.8s ease ${i*0.35}s infinite`,display:"flex",alignItems:"center",gap:"10px"}}>
-          <span>⏳</span><span>{msg}</span>
-        </div>
-      ))}
-    </div>}
-
-    {/* 오류 */}
-    {result?.error&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"10px",padding:"14px 16px",color:"#ff7b72",fontSize:"14px"}}>{result.error}</div>}
-
-    {/* 결과 */}
-    {result?.versions&&!loading&&(<div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-
-      {/* 버전 선택 탭 */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px"}}>
-        {result.versions.map((ver,i)=>(
-          <button key={i} onClick={()=>setActiveVer(i)} style={{
-            padding:"14px 10px",borderRadius:"10px",border:`2px solid ${activeVer===i?VC[i]:"#30363d"}`,
-            background:activeVer===i?VC[i]+"18":"#161b22",cursor:"pointer",
-            fontFamily:"'Noto Sans KR',sans-serif",textAlign:"center",transition:"all .15s",
-          }}>
-            <div style={{fontSize:"20px",marginBottom:"5px"}}>{VI[i]}</div>
-            <div style={{color:activeVer===i?VC[i]:"#c9d1d9",fontSize:"12px",fontWeight:700,marginBottom:"3px"}}>{ver.label}</div>
-            <div style={{color:"#484f58",fontSize:"10px",lineHeight:"1.4"}}>{VDESC[i]}</div>
-          </button>
-        ))}
-      </div>
-
-      {/* 선택된 버전 본문 */}
-      {result.versions.map((ver,i)=>activeVer===i&&(
-        <div key={i} style={{background:"#161b22",border:`1px solid ${VC[i]}55`,borderRadius:"12px",overflow:"hidden"}}>
-          {/* 제목 헤더 */}
-          <div style={{background:VC[i]+"11",borderBottom:`1px solid ${VC[i]}33`,padding:"14px 18px"}}>
-            <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"5px",fontWeight:600}}>✏️ 추천 제목</div>
-            <div style={{display:"flex",alignItems:"flex-start",gap:"10px"}}>
-              <div style={{color:VC[i],fontSize:"16px",fontWeight:700,lineHeight:"1.4",flex:1}}>{ver.title}</div>
-              <div style={{display:"flex",gap:"6px",flexShrink:0}}>
-                <button onClick={()=>navigator.clipboard.writeText(ver.title)}
-                  style={{padding:"6px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:"pointer",fontSize:"11px",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>제목만 복사</button>
-                <button onClick={()=>doCopy(i)}
-                  style={{padding:"6px 14px",background:VC[i],color:"#fff",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"11px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
-                  {copied===i?"✅ 복사됨!":"📋 전체 복사"}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 본문 */}
-          <div style={{padding:"18px 20px",position:"relative"}}>
-            <div style={{position:"absolute",top:"12px",right:"16px",color:"#484f58",fontSize:"11px",background:"#0d1117",padding:"2px 8px",borderRadius:"4px",border:"1px solid #21262d"}}>
-              {ver.content?.length?.toLocaleString()}자
-            </div>
-            <div style={{color:"#c9d1d9",fontSize:"14px",lineHeight:"2.1",whiteSpace:"pre-wrap",
-              maxHeight:"560px",overflowY:"auto",paddingRight:"6px",wordBreak:"break-word",marginTop:"8px"}}>
-              {ver.content}
-            </div>
-          </div>
-
-          {/* 하단 액션 */}
-          <div style={{borderTop:`1px solid ${VC[i]}22`,padding:"12px 18px",display:"flex",gap:"8px",background:"#0d111788",alignItems:"center"}}>
-            <span style={{color:"#484f58",fontSize:"11px",flex:1}}>※ 복사 후 네이버 블로그에 붙여넣기 하세요</span>
-            <button onClick={()=>{
-              const blob=new Blob([ver.title+"\n\n"+ver.content],{type:"text/plain"});
-              const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-              a.download=`블로그_${ver.label.replace(/ /g,"_")}.txt`; a.click();
-            }} style={{padding:"7px 14px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"7px",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-              ⬇️ TXT 다운로드
-            </button>
-            <button onClick={()=>doCopy(i)}
-              style={{padding:"7px 16px",background:copied===i?"#2ea043":VC[i],color:"#fff",border:"none",borderRadius:"7px",cursor:"pointer",fontSize:"12px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",transition:"background .2s"}}>
-              {copied===i?"✅ 복사됨!":"📋 제목+본문 복사"}
-            </button>
-          </div>
-        </div>
-      ))}
-
-      {/* 3버전 목록 */}
-      <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px 16px"}}>
-        <SectionTitle>📊 3가지 버전 한눈에 보기</SectionTitle>
-        <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-          {result.versions.map((ver,i)=>(
-            <div key={i} onClick={()=>setActiveVer(i)}
-              style={{display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px",background:"#0d1117",
-                borderRadius:"8px",border:`1px solid ${activeVer===i?VC[i]+"66":"#21262d"}`,cursor:"pointer",transition:"border .15s"}}>
-              <span style={{fontSize:"18px"}}>{VI[i]}</span>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{color:VC[i],fontSize:"12px",fontWeight:700}}>{ver.label}</div>
-                <div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ver.title}</div>
-              </div>
-              <span style={{color:"#484f58",fontSize:"11px",flexShrink:0}}>{ver.content?.length?.toLocaleString()}자</span>
-              <button onClick={e=>{e.stopPropagation();doCopy(i);}}
-                style={{padding:"4px 10px",background:VC[i]+"18",color:VC[i],border:`1px solid ${VC[i]}44`,borderRadius:"5px",cursor:"pointer",fontSize:"11px",fontFamily:"'Noto Sans KR',sans-serif",flexShrink:0}}>
-                {copied===i?"✅":"복사"}
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>)}
-  </div>;
-}
-
 // ─── TAB: 자동글쓰기 ─────────────────────────────────────────────────────
 const NAVER_AUTO_CATEGORIES=[
   {group:"🍽️ 생활/음식",items:[
@@ -3197,11 +2922,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
   const [writingIdx,setWritingIdx]=useState(null);
-  const [post,setPost]=useState(null);
-  const [postKw,setPostKw]=useState("");
-  const [copied,setCopied]=useState(false);
   const [err,setErr]=useState("");
-  const postRef=useRef(null);
 
   const year=new Date().getFullYear();
 
@@ -3235,8 +2956,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
 
   // ── 블로그 글 생성 ──
   const genPost=async(kw,idx)=>{
-    setWritingIdx(idx); setPost(null); setPostKw(kw); setErr(""); setCopied(false);
-    setTimeout(()=>postRef.current?.scrollIntoView({behavior:"smooth"}),300);
+    setWritingIdx(idx); setErr("");
     try{
       const prompt=`롱테일 키워드: "${kw}"
 카테고리: "${selCat}"
@@ -3273,7 +2993,6 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
       parsed.actual_chars=content.length;
       const esc=mainKw.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
       parsed.actual_kw_count=(content.match(new RegExp(esc,"g"))||[]).length;
-      setPost(parsed);
       // 글 완성 후 글분석 탭으로 자동 이동 (전체 데이터 전달)
       if(setActive && setPendingAnalyzePost){
         setPendingAnalyzePost({
@@ -3288,15 +3007,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
     setWritingIdx(null);
   };
 
-  const doCopy=()=>{
-    if(!post) return;
-    const txt=`${post.title}\n\n${post.content}\n\n${post.tags?.map(t=>"#"+t).join(" ")||""}`;
-    navigator.clipboard.writeText(txt);
-    setCopied(true); setTimeout(()=>setCopied(false),2000);
-  };
 
-  const charOk=post&&post.actual_chars>=1800&&post.actual_chars<=2500;
-  const kwOk=post&&post.actual_kw_count<=19;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
 
@@ -3331,7 +3042,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
     {keywords.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 2</div>
       <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"4px"}}>롱테일 키워드 선택</div>
-      <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>오른쪽 <span style={{color:"#58a6ff",fontWeight:700}}>✍️ 자동글쓰기</span> 버튼을 클릭하면 홈판 최적화 블로그 글이 생성되고, <span style={{color:"#3fb950",fontWeight:700}}>글 분석·금칙어</span> 탭으로 자동 이동합니다.</div>
+      <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>오른쪽 <span style={{color:"#58a6ff",fontWeight:700}}>✍️ 자동글쓰기</span> 버튼을 클릭하면 홈판 최적화 블로그 글이 생성되고, <span style={{color:"#3fb950",fontWeight:700}}>글분석</span> 탭으로 자동 이동하여 바로 분석·수정할 수 있습니다.</div>
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         {keywords.map((kw,idx)=>(
           <div key={idx} style={{
@@ -3358,85 +3069,13 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
                 color:writingIdx!==null?"#484f58":"#fff",
                 fontSize:"12px",fontWeight:700,cursor:writingIdx!==null?"not-allowed":"pointer",
                 flexShrink:0,fontFamily:"'Noto Sans KR',sans-serif",transition:"background .2s",minWidth:"90px"}}>
-              {writingIdx===idx?"✏️ 작성중...":"✍️ 자동글쓰기"}
+              {writingIdx===idx?"⏳ 글분석으로 이동중...":"✍️ 자동글쓰기"}
             </button>
           </div>
         ))}
       </div>
     </div>}
 
-    {/* ── STEP 3: 생성된 글 ── */}
-    <div ref={postRef}/>
-    {post&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px",display:"flex",flexDirection:"column",gap:"14px"}}>
-      <div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
-        <div style={{display:"inline-block",background:"#2ea043",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",letterSpacing:"0.05em"}}>STEP 3</div>
-        <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>생성된 블로그 글</div>
-      </div>
-
-      {/* 검증 배지 */}
-      <div style={{display:"flex",flexWrap:"wrap",gap:"8px"}}>
-        <div style={{background:charOk?"#0d2019":"#2d1117",border:`1px solid ${charOk?"#2ea04344":"#da363344"}`,borderRadius:"8px",padding:"6px 12px",display:"flex",alignItems:"center",gap:"6px",fontSize:"12px"}}>
-          <span style={{color:"#8b949e"}}>글자수</span>
-          <span style={{color:charOk?"#3fb950":"#ff7b72",fontWeight:700}}>{post.actual_chars?.toLocaleString()}자</span>
-          <span style={{color:charOk?"#3fb950":"#ff7b72",fontSize:"11px"}}>{charOk?"✅ 적정 (1,800~2,500)":"⚠️ 범위 벗어남"}</span>
-        </div>
-        <div style={{background:kwOk?"#0d2019":"#2d1117",border:`1px solid ${kwOk?"#2ea04344":"#da363344"}`,borderRadius:"8px",padding:"6px 12px",display:"flex",alignItems:"center",gap:"6px",fontSize:"12px"}}>
-          <span style={{color:"#8b949e"}}>메인키워드</span>
-          <span style={{color:"#58a6ff",fontWeight:700}}>"{post.main_keyword}"</span>
-          <span style={{color:kwOk?"#3fb950":"#ff7b72",fontWeight:700}}>{post.actual_kw_count}회</span>
-          <span style={{color:kwOk?"#3fb950":"#ff7b72",fontSize:"11px"}}>{kwOk?"✅ 적정 (19회 이하)":"⚠️ 19회 초과"}</span>
-        </div>
-      </div>
-
-      {/* SEO 제목 */}
-      <div style={{background:"#0d2019",border:"1px solid #2ea04344",borderRadius:"10px",padding:"12px 16px"}}>
-        <div style={{color:"#3fb950",fontSize:"10px",fontWeight:700,marginBottom:"4px",letterSpacing:"0.05em"}}>📌 네이버 SEO 최적화 제목</div>
-        <div style={{color:"#e6edf3",fontSize:"16px",fontWeight:700,lineHeight:1.5}}>{post.title}</div>
-      </div>
-
-      {/* 본문 */}
-      <div style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"10px",padding:"18px 20px",
-        maxHeight:"580px",overflowY:"auto",position:"relative"}}>
-        <div style={{position:"sticky",top:0,right:0,textAlign:"right",marginBottom:"6px"}}>
-          <span style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"4px",
-            padding:"2px 8px",color:"#484f58",fontSize:"11px"}}>{post.actual_chars?.toLocaleString()}자</span>
-        </div>
-        {(post.content||"").split("\n").map((line,i)=>{
-          if(line.startsWith("## ")) return <div key={i} style={{color:"#e6edf3",fontWeight:700,fontSize:"15px",marginTop:"18px",marginBottom:"6px",borderLeft:"3px solid #1f6feb",paddingLeft:"10px"}}>{line.replace("## ","")}</div>;
-          if(line.startsWith("### ")) return <div key={i} style={{color:"#c9d1d9",fontWeight:600,fontSize:"14px",marginTop:"12px",marginBottom:"4px"}}>{line.replace("### ","")}</div>;
-          return <div key={i} style={{color:"#c9d1d9",fontSize:"14px",lineHeight:"2.0",minHeight:line?"auto":"10px"}}>{line}</div>;
-        })}
-      </div>
-
-      {/* 해시태그 */}
-      {post.tags&&<div>
-        <div style={{color:"#484f58",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>해시태그</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
-          {post.tags.map((tag,i)=>(
-            <span key={i} style={{background:"#1f6feb18",color:"#58a6ff",border:"1px solid #1f6feb33",borderRadius:"20px",padding:"3px 10px",fontSize:"12px",fontWeight:500}}>#{tag}</span>
-          ))}
-        </div>
-      </div>}
-
-      {/* 복사 버튼 */}
-      <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
-        <button onClick={doCopy}
-          style={{padding:"9px 20px",background:copied?"#2ea043":"#1f6feb",color:"#fff",border:"none",
-            borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
-            fontSize:"13px",fontWeight:700,transition:"background .2s"}}>
-          {copied?"✅ 복사됨!":"📋 제목 + 본문 + 해시태그 복사"}
-        </button>
-        <button onClick={()=>{
-          const blob=new Blob([post.title+"\n\n"+post.content+"\n\n"+(post.tags?.map(t=>"#"+t).join(" ")||"")],{type:"text/plain"});
-          const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-          a.download=`자동글쓰기_${postKw.replace(/\s/g,"_")}.txt`; a.click();
-        }} style={{padding:"9px 16px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-          borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px"}}>
-          ⬇️ TXT 다운로드
-        </button>
-        <span style={{color:"#484f58",fontSize:"11px"}}>※ 복사 후 네이버 블로그에 붙여넣기 하세요</span>
-      </div>
-    </div>}
   </div>;
 }
 
@@ -4807,7 +4446,7 @@ function EmojiTab() {
   </div>;
 }
 
-const TOOL_MAP={keyword:KeywordTab,write:WriteTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,exif:ExifTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,rewrite:RewriteTab,emoji:EmojiTab};
+const TOOL_MAP={keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,exif:ExifTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,rewrite:RewriteTab,emoji:EmojiTab};
 
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
@@ -4816,16 +4455,9 @@ export default function BlogTools(){
   const [dropdownLeft, setDropdownLeft] = useState(0);
   const imgBtnRef = useRef(null);
   const imgMenuRef = useRef(null);
-  const [pendingWriteKw,setPendingWriteKw]=useState("");
   const [kwResult,setKwResult]=useState(null);
   const [pendingAnalyzeText,setPendingAnalyzeText]=useState("");
   const [pendingAnalyzePost,setPendingAnalyzePost]=useState(null); // {title,main_keyword,content,tags}
-  // WriteTab 상태 (탭 이동해도 유지)
-  const [writeKw1,setWriteKw1]=useState("");
-  const [writeKw2,setWriteKw2]=useState("");
-  const [writeGoal,setWriteGoal]=useState("");
-  const [writeResult,setWriteResult]=useState(null);
-  const [writeActiveVer,setWriteActiveVer]=useState(0);
   // AnalyzeTab 상태 (탭 이동해도 유지)
   const [analyzeText,setAnalyzeText]=useState("");
   const [analyzeAiResult,setAnalyzeAiResult]=useState(null);
@@ -4835,7 +4467,6 @@ export default function BlogTools(){
   const [analyzeWorkingText,setAnalyzeWorkingText]=useState("");
   const [analyzeActiveSection,setAnalyzeActiveSection]=useState("stats");
   // 키워드탭 글쓰기: 자동 생성 후 분석탭으로 이동
-  const goWrite=(kw)=>{setPendingWriteKw(kw);setActive("write");};
   const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy)=>{
     setPendingAnalyzeText("__loading__");
     setActive("analyze");
@@ -4917,14 +4548,10 @@ export default function BlogTools(){
 
   // 공통 props (모든 탭에 전달 — 필요한 탭만 사용)
   const sharedProps={
-    goWrite, goAutoWrite,
-    pendingWriteKw, setPendingWriteKw,
+    goAutoWrite,
     setActive, kwResult, setKwResult,
     pendingAnalyzeText, setPendingAnalyzeText,
     pendingAnalyzePost, setPendingAnalyzePost,
-    writeKw1, setWriteKw1, writeKw2, setWriteKw2,
-    writeGoal, setWriteGoal, writeResult, setWriteResult,
-    writeActiveVer, setWriteActiveVer,
     analyzeText, setAnalyzeText,
     analyzeAiResult, setAnalyzeAiResult,
     analyzeLastText, setAnalyzeLastText,
@@ -4944,7 +4571,7 @@ export default function BlogTools(){
     `}</style>
 
     {/* 헤더 */}
-    <div style={{borderBottom:"1px solid #21262d",padding:"16px 24px",background:"#0d1117",display:"flex",alignItems:"center",gap:"12px"}}>
+    <div style={{borderBottom:"1px solid #21262d",padding:"12px 16px",background:"#0d1117",display:"flex",alignItems:"center",gap:"12px"}}>
       <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"17px"}}>✍️</div>
       <div><div style={{fontSize:"16px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div></div>
     </div>
@@ -5050,7 +4677,7 @@ export default function BlogTools(){
     )}
 
     {/* 탭 콘텐츠 — ALL_TABS 전체 마운트, display:none으로 상태 보존 */}
-    <div style={{padding:"22px 24px",maxWidth:"960px",margin:"0 auto"}}>
+    <div style={{padding:"14px 12px"}}>
       {ALL_TABS.map(t=>{
         const TabComp=TOOL_MAP[t.id];
         if(!TabComp) return null;
