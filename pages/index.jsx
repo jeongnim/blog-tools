@@ -272,6 +272,7 @@ async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5
   }
 }
 
+// 메인 탭 (네비바에 표시)
 const TABS=[
   {id:"keyword",   icon:"🔍", label:"키워드 조회"},
   {id:"write",     icon:"✍️",  label:"글 작성"},
@@ -279,15 +280,26 @@ const TABS=[
   {id:"analyze",   icon:"📊", label:"글 분석 · 금칙어"},
   {id:"missing",   icon:"📡", label:"누락 확인"},
   {id:"ocr",       icon:"🖼️", label:"이미지→텍스트"},
-  {id:"convert",   icon:"🔄", label:"이미지 형식변환"},
-  {id:"restore",   icon:"✨", label:"사진 복원·향상"},
+  {id:"image",     icon:"🖼️", label:"이미지 편집", isGroup:true}, // 드롭다운 그룹
   {id:"video",     icon:"🎬", label:"동영상 압축"},
-  {id:"exif",      icon:"🔒", label:"EXIF 제거"},
-  {id:"crop",      icon:"✂️",  label:"이미지 자르기"},
-  {id:"resize",    icon:"↔️",  label:"이미지 크기조절"},
-  {id:"imgcompress",icon:"🗜️", label:"이미지 압축"},
   {id:"rewrite",   icon:"📰", label:"기사 리라이팅"},
   {id:"emoji",     icon:"😃", label:"이모지"},
+];
+
+// 이미지 편집 서브탭
+const IMAGE_SUBTABS=[
+  {id:"convert",     icon:"🔄", label:"형식 변환"},
+  {id:"crop",        icon:"✂️",  label:"이미지 자르기"},
+  {id:"resize",      icon:"📐", label:"크기 조절"},
+  {id:"imgcompress", icon:"💾", label:"이미지 압축"},
+  {id:"restore",     icon:"✨", label:"사진 복원·향상"},
+  {id:"exif",        icon:"🔒", label:"EXIF 제거"},
+];
+
+// 전체 렌더링 대상 탭 (display:none 마운트용 — 서브탭 포함)
+const ALL_TABS=[
+  ...TABS.filter(t=>!t.isGroup),
+  ...IMAGE_SUBTABS,
 ];
 // ─── Shared UI ────────────────────────────────────────────────────────────
 function Textarea({value,onChange,placeholder,rows=9}){
@@ -4665,7 +4677,9 @@ export default function BlogTools(){
       setPendingAnalyzeText("");
     }
   };
-  const tab=TABS.find(t=>t.id===active);
+  const tab = ALL_TABS.find(t=>t.id===active) || IMAGE_SUBTABS.find(t=>t.id===active);
+  const isImageSub = IMAGE_SUBTABS.some(t=>t.id===active);
+
   // 공통 props (모든 탭에 전달 — 필요한 탭만 사용)
   const sharedProps={
     goWrite, goAutoWrite,
@@ -4683,6 +4697,7 @@ export default function BlogTools(){
     analyzeWorkingText, setAnalyzeWorkingText,
     analyzeActiveSection, setAnalyzeActiveSection,
   };
+
   return <div style={{minHeight:"100vh",background:"#010409",fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:"#e6edf3"}}>
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap');
@@ -4690,28 +4705,97 @@ export default function BlogTools(){
       ::-webkit-scrollbar{width:5px} ::-webkit-scrollbar-track{background:#0d1117} ::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
       textarea::placeholder,input::placeholder{color:#484f58!important}
       input[type=range]{height:6px}
+      .img-group-btn:hover .img-dropdown{display:flex!important}
+      .img-group-btn:focus-within .img-dropdown{display:flex!important}
     `}</style>
+
     {/* 헤더 */}
     <div style={{borderBottom:"1px solid #21262d",padding:"16px 24px",background:"#0d1117",display:"flex",alignItems:"center",gap:"12px"}}>
       <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"17px"}}>✍️</div>
       <div><div style={{fontSize:"16px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div></div>
     </div>
+
     {/* 탭 네비게이션 */}
-    <div style={{display:"flex",overflowX:"auto",borderBottom:"1px solid #21262d",background:"#0d1117",padding:"0 10px",gap:"2px"}}>
-      {TABS.map(t=><button key={t.id} onClick={()=>setActive(t.id)} style={{
-        padding:"11px 16px",border:"none",background:"none",
-        borderBottom:`2px solid ${active===t.id?"#1f6feb":"transparent"}`,
-        color:active===t.id?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
-        fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,
-      }}>{t.icon} {t.label}</button>)}
+    <div style={{display:"flex",overflowX:"auto",borderBottom:"1px solid #21262d",background:"#0d1117",padding:"0 10px",gap:"2px",position:"relative",zIndex:100}}>
+      {TABS.map(t => {
+        if (!t.isGroup) {
+          // 일반 탭
+          const isAct = active === t.id;
+          return <button key={t.id} onClick={()=>setActive(t.id)} style={{
+            padding:"11px 16px",border:"none",background:"none",
+            borderBottom:`2px solid ${isAct?"#1f6feb":"transparent"}`,
+            color:isAct?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,
+          }}>{t.icon} {t.label}</button>;
+        }
+        // 이미지 그룹 드롭다운
+        const isAct = isImageSub;
+        return (
+          <div key={t.id} className="img-group-btn" style={{position:"relative",display:"inline-flex",alignItems:"stretch"}}>
+            {/* 그룹 버튼 */}
+            <button style={{
+              padding:"11px 16px",border:"none",background:"none",
+              borderBottom:`2px solid ${isAct?"#1f6feb":"transparent"}`,
+              color:isAct?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,
+              display:"flex",alignItems:"center",gap:"4px",
+            }}>
+              {t.icon} {t.label} <span style={{fontSize:"9px",opacity:.7}}>▼</span>
+            </button>
+            {/* 드롭다운 */}
+            <div className="img-dropdown" style={{
+              display:"none",flexDirection:"column",
+              position:"absolute",top:"100%",left:0,
+              background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",
+              padding:"6px",minWidth:"160px",
+              boxShadow:"0 8px 24px rgba(0,0,0,.6)",zIndex:999,gap:"2px",
+            }}>
+              {IMAGE_SUBTABS.map(sub=>(
+                <button key={sub.id} onClick={()=>setActive(sub.id)}
+                  style={{
+                    padding:"9px 14px",border:"none",borderRadius:"7px",
+                    background:active===sub.id?"#1f6feb22":"transparent",
+                    color:active===sub.id?"#58a6ff":"#c9d1d9",
+                    cursor:"pointer",textAlign:"left",whiteSpace:"nowrap",
+                    fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,
+                    display:"flex",alignItems:"center",gap:"8px",
+                    borderLeft:active===sub.id?"3px solid #1f6feb":"3px solid transparent",
+                  }}
+                  onMouseEnter={e=>{ if(active!==sub.id) e.currentTarget.style.background="#21262d"; }}
+                  onMouseLeave={e=>{ if(active!==sub.id) e.currentTarget.style.background="transparent"; }}
+                >
+                  <span style={{fontSize:"16px"}}>{sub.icon}</span> {sub.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
-    {/* 탭 콘텐츠 — display:none으로 모든 탭 마운트 유지 → 상태 보존 */}
+
+    {/* 이미지 서브탭 활성 시 서브 네비바 */}
+    {isImageSub && (
+      <div style={{background:"#0d1117",borderBottom:"1px solid #21262d",padding:"0 24px",display:"flex",gap:"4px",overflowX:"auto"}}>
+        {IMAGE_SUBTABS.map(sub=>(
+          <button key={sub.id} onClick={()=>setActive(sub.id)} style={{
+            padding:"8px 14px",border:"none",background:"none",
+            borderBottom:`2px solid ${active===sub.id?"#58a6ff":"transparent"}`,
+            color:active===sub.id?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
+          }}>{sub.icon} {sub.label}</button>
+        ))}
+      </div>
+    )}
+
+    {/* 탭 콘텐츠 — ALL_TABS 전체 마운트, display:none으로 상태 보존 */}
     <div style={{padding:"22px 24px",maxWidth:"960px",margin:"0 auto"}}>
-      {TABS.map(t=>{
-        const TabComp=TOOL_MAP[t.id];
-        const isActive=active===t.id;
+      {ALL_TABS.map(t=>{
+        const TabComp = TOOL_MAP[t.id];
+        if (!TabComp) return null;
+        const isActive = active === t.id;
+        const label = IMAGE_SUBTABS.find(s=>s.id===t.id) || t;
         return <div key={t.id} style={{display:isActive?"block":"none"}}>
-          {isActive&&<h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3"}}>{t.icon} {t.label}</h2>}
+          {isActive && <h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3"}}>{label.icon} {label.label}</h2>}
           <TabComp {...sharedProps}/>
         </div>;
       })}
