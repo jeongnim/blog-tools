@@ -1635,11 +1635,11 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
         .kw-stats{order:1}.kw-rel{order:2}.kw-trend{order:3}.kw-comp{order:4}.kw-longtail{order:5}
         @media(min-width:640px){
           .kw-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto;gap:14px}
-          .kw-stats{grid-column:1;grid-row:1}
-          .kw-comp{grid-column:1;grid-row:2}
-          .kw-trend{grid-column:1;grid-row:3}
-          .kw-rel{grid-column:2;grid-row:1}
-          .kw-longtail{grid-column:2;grid-row:2/5}
+          .kw-stats{grid-column:1/3;grid-row:1}
+          .kw-rel{grid-column:1/3;grid-row:2}
+          .kw-comp{grid-column:1;grid-row:3}
+          .kw-trend{grid-column:2;grid-row:3}
+          .kw-longtail{grid-column:1/3;grid-row:4}
         }
       `}</style>
       <div className="kw-grid">
@@ -4327,14 +4327,14 @@ export default function BlogTools(){
     `}</style>
 
     {/* 헤더 */}
-    <div style={{borderBottom:"1px solid #21262d",padding:"10px 12px",background:"#0d1117",display:"flex",alignItems:"center",gap:"10px"}}>
+    <div style={{borderBottom:"1px solid #21262d",padding:"10px 12px",background:"#0d1117"}}><div style={{maxWidth:"1000px",margin:"0 auto",display:"flex",alignItems:"center",gap:"10px"}}>
       <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"17px"}}>✍️</div>
       <div><div style={{fontSize:"16px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div></div>
-    </div>
+    </div></div>
 
     {/* 탭 네비게이션 — overflow:visible 필수 (드롭다운이 잘리지 않도록) */}
     <div style={{borderBottom:"1px solid #21262d",background:"#0d1117",position:"relative",zIndex:300}}>
-      <div style={{display:"flex",overflowX:"auto",padding:"0",gap:"2px",
+      <div style={{maxWidth:"1000px",margin:"0 auto"}}><div style={{display:"flex",overflowX:"auto",padding:"0",gap:"2px",
         /* 스크롤은 하되 드롭다운은 잘리지 않아야 함 — 스크롤 컨테이너 overflow:visible 불가하므로
            드롭다운은 position:fixed 로 뷰포트 기준 렌더 */ }}>
         {TABS.map(t=>{
@@ -4465,12 +4465,13 @@ export default function BlogTools(){
             </div>
           );
         })}
-      </div>
+      </div></div>
     </div>
 
     {/* 글쓰기 서브탭 활성 시 상단 서브 네비바 */}
     {isWriteSub && (
-      <div style={{background:"#0d1117",borderBottom:"1px solid #21262d",padding:"0",display:"flex",gap:"2px",overflowX:"auto"}}>
+      <div style={{background:"#0d1117",borderBottom:"1px solid #21262d",padding:"0"}}>
+        <div style={{maxWidth:"1000px",margin:"0 auto",display:"flex",gap:"2px",overflowX:"auto"}}>
         {WRITE_SUBTABS.map(sub=>(
           <button key={sub.id} onClick={()=>setActive(sub.id)} style={{
             padding:"8px 13px",border:"none",background:"none",
@@ -4493,11 +4494,12 @@ export default function BlogTools(){
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
           }}>{sub.icon} {sub.label}</button>
         ))}
+        </div></div>
       </div>
     )}
 
     {/* 탭 콘텐츠 — ALL_TABS 전체 마운트, display:none으로 상태 보존 */}
-    <div style={{padding:"12px 8px"}}>
+    <div style={{padding:"12px 8px",maxWidth:"1000px",margin:"0 auto",width:"100%"}}>
       {ALL_TABS.map(t=>{
         const TabComp=TOOL_MAP[t.id];
         if(!TabComp) return null;
