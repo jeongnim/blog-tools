@@ -1553,7 +1553,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
           mob: Number(i.monthlyMobileQcCnt)||0,
         }))
         .sort((a,b)=>b.total-a.total)
-        .slice(0,10);
+        .slice(0,8);
 
       const kwRes = {
         _inputVal: kw,
@@ -1631,15 +1631,22 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
 
       {/* ── PC: 2열 (검색량 | 연관검색어) / 모바일: 1열 ── */}
       <style>{`
-        @media(min-width:640px){.kw-two-col{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}}
+        @media(min-width:640px){
+          .kw-two-col{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
+          .kw-stats{order:1}.kw-comp{order:3}.kw-trend{order:5}
+          .kw-rel{order:2}.kw-longtail{order:4}
+        }
+        @media(max-width:639px){
+          .kw-two-col{display:flex;flex-direction:column;gap:14px}
+          .kw-stats{order:1}.kw-rel{order:2}.kw-trend{order:3}.kw-comp{order:4}.kw-longtail{order:5}
+        }
       `}</style>
       <div className="kw-two-col" style={{display:"flex",flexDirection:"column",gap:"14px"}}>
 
-        {/* 왼쪽: 검색량 + 경쟁도 */}
-        <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+        {/* 왼쪽 카드들 */
 
           {/* 검색량 카드 */}
-          <div style={{background:"linear-gradient(135deg,#1a2332,#0d1f35)",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"14px"}}>
+          <div className="kw-stats" style={{background:"linear-gradient(135deg,#1a2332,#0d1f35)",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"14px"}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"7px"}}>
               {[
                 ["월간 검색량", result.totalMonthly!==null?fmtNum(result.totalMonthly)+"회":"없음","#58a6ff"],
@@ -1669,7 +1676,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
           </div>
 
           {/* 경쟁 강도 카드 */}
-          <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+          <div className="kw-comp" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
             <SectionTitle>⚡ 경쟁 강도</SectionTitle>
             <div style={{position:"relative",marginBottom:"6px"}}>
               <div style={{height:"8px",background:"linear-gradient(90deg,#3fb950,#ffa657,#f85149)",borderRadius:"4px"}}/>
@@ -1702,7 +1709,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
           </div>
 
           {/* 트렌드 카드 */}
-          <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+          <div className="kw-trend" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
             <SectionTitle>📈 트렌드 분석 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추정</span></SectionTitle>
             <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
               <span style={{fontSize:"28px"}}>{result.trend==="상승"?"📈":result.trend==="하락"?"📉":"➡️"}</span>
@@ -1722,11 +1729,10 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
           </div>
         </div>
 
-        {/* 오른쪽: 연관검색어 + 롱테일 */}
-        <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+        {/* 오른쪽 카드들 */
 
           {/* 연관검색어 테이블 */}
-          <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+          <div className="kw-rel" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
             <SectionTitle>🔗 연관검색어 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 월 검색량</span></SectionTitle>
             {result.relKeywords?.length>0?(
               <div style={{display:"flex",flexDirection:"column",gap:"0px"}}>
@@ -1755,7 +1761,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
           </div>
 
           {/* 롱테일 키워드 */}
-          <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+          <div className="kw-longtail" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
             <SectionTitle>🎯 롱테일 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추출</span></SectionTitle>
             <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
               {result.longtailKeywords?.map((kw,i)=>(
