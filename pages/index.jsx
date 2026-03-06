@@ -419,7 +419,7 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
   const highCount=forbidden.filter(f=>f.severity==="high").length;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-    {!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 <strong style={{color:"#8b949e"}}>통합 분석 실행</strong>을 눌러주세요</div>}
+    {!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 잠시 기다리면 자동으로 분석됩니다</div>}
     {workingText&&<>
       {/* 요약 헤더 */}
       <div style={{background:highCount>0?"#2d0b0b":"#0d2019",border:`1px solid ${highCount>0?"#f8514944":"#2ea04344"}`,borderRadius:"12px",padding:"14px 16px",display:"flex",alignItems:"center",gap:"14px"}}>
@@ -568,6 +568,7 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
   const [qualReplacements,setQualReplacements]=useState({}); // 저품질 대체어
   const [qualLoading,setQualLoading]=useState({}); // per-item AI 로딩
   const [copiedAll,setCopiedAll]=useState(false);
+  const autoRunRef=useRef(false);
   const aiResult=analyzeAiResult; const setAiResult=setAnalyzeAiResult;
   const lastText=analyzeLastText; const setLastText=setAnalyzeLastText;
   const threshold=analyzeThreshold; const setThreshold=setAnalyzeThreshold;
@@ -576,7 +577,7 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
 
   const resetAll=()=>{
     setAnalyzeText("");setAnalyzeAiResult(null);setAnalyzeLastText("");
-    setAnalyzeWorkingText("");setAnalyzeReplacements({});setAnalyzeActiveSection("stats");
+    setAnalyzeWorkingText("");setAnalyzeReplacements({});setAnalyzeActiveSection("morpheme");
     setPostMeta(null);setQualReplacements({});setQualLoading({});
     if(setPendingAnalyzePost) setPendingAnalyzePost(null);
   };
@@ -590,6 +591,7 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
     setAnalyzeAiResult(null);
     setAnalyzeLastText("");
     setQualReplacements({});
+    autoRunRef.current=true;
     if(setPendingAnalyzePost) setPendingAnalyzePost(null);
   },[pendingAnalyzePost]);
 
@@ -605,6 +607,7 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
       setAnalyzeWorkingText("");
       setAnalyzeAiResult(null);
       setAnalyzeLastText("");
+      autoRunRef.current=true;
       if(setPendingAnalyzeText) setPendingAnalyzeText("");
     }
   },[pendingAnalyzeText]);
@@ -648,7 +651,7 @@ JSON 형식:
 }
 
 분석 기준:
-- morpheme.words: 명사/동사/형용사 어근만, 조사·어미 제거, 2글자 이상, 빈도순 상위 40개
+- morpheme.words: 명사/동사/형용사 어근만, 조사·어미 제거, 2글자 이상, 빈도순 상위 20개
 - morpheme.seo: high=SEO 핵심어(메인키워드급), mid=관련어, low=일반어
 - lowQuality.items 감지 대상:
   * 19금/성인: 성적 표현, 성행위 묘사, 음란성 단어·구문 → category="19금·성인" severity="high"
@@ -674,6 +677,14 @@ JSON 형식:
     setAnalyzing(false);
   };
 
+  // autoRun: 글이 세팅되면 자동 분석 실행
+  useEffect(()=>{
+    if(!autoRunRef.current) return;
+    if(!text.trim()) return;
+    autoRunRef.current=false;
+    runAnalysis();
+  },[text]);
+
   // 금칙어
   const forbidden=workingText?detectForbidden(workingText):[];
   const hp=workingText?highlightText(workingText,forbidden,replacements):null;
@@ -696,7 +707,10 @@ JSON 형식:
       const si=raw.indexOf("{"),ei=raw.lastIndexOf("}");
       const parsed=JSON.parse(si!==-1&&ei!==-1?raw.slice(si,ei+1):raw);
       const suggs=(parsed.suggestions||[]).join(",");
+      const firstSugg=(parsed.suggestions||[])[0]||"";
       setQualLoading(p=>({...p,[key]:false,[key+"__sugg"]:suggs}));
+      // 첫 번째 추천어를 자동으로 입력창에 채워주기
+      if(firstSugg) setQualReplacements(p=>({...p,[key]:firstSugg}));
     }catch(e){
       setQualLoading(p=>({...p,[key]:false}));
     }
@@ -706,7 +720,25 @@ JSON 형식:
   const doQualReplace=(word)=>{
     const r=qualReplacements[word];
     if(!r?.trim()) return;
-    setWorkingText(p=>p.split(word).join(r.trim()));
+    setWorkingText(prev=>{
+      // 정확히 일치하는 경우
+      if(prev.includes(word)) return prev.split(word).join(r.trim());
+      // 대소문자 무시 검색
+      const lower=prev.toLowerCase();
+      const wLower=word.toLowerCase();
+      if(lower.includes(wLower)){
+        const idx=lower.indexOf(wLower);
+        return prev.slice(0,idx)+r.trim()+prev.slice(idx+word.length);
+      }
+      // 못 찾으면 원문 그대로 (텍스트 영역에서 직접 수정 필요)
+      return prev;
+    });
+    // 교체된 항목은 aiResult items에서 제거
+    setAnalyzeAiResult(prev=>{
+      if(!prev?.lowQuality?.items) return prev;
+      return {...prev,lowQuality:{...prev.lowQuality,
+        items:prev.lowQuality.items.filter(it=>it.text!==word)}};
+    });
     setQualReplacements(p=>{const n={...p};delete n[word];return n;});
     setQualLoading(p=>{const n={...p};delete n[word];delete n[word+"__sugg"];return n;});
   };
@@ -730,7 +762,6 @@ JSON 형식:
   };
 
   const SECTIONS=[
-    {id:"stats",   icon:"📝", label:"글자수"},
     {id:"morpheme",icon:"🔤", label:"형태소·SEO"},
     {id:"quality", icon:"🛡️", label:"저품질·금칙어"},
   ];
@@ -753,34 +784,21 @@ JSON 형식:
     <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
 
     {/* ── 카테고리글쓰기에서 넘어온 경우: 메타 정보 표시 ── */}
-    {postMeta&&<div style={{background:"linear-gradient(135deg,#0d2019,#0d1f35)",border:"1px solid #2ea04333",borderRadius:"12px",padding:"16px 18px",display:"flex",flexDirection:"column",gap:"10px"}}>
-      <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"2px"}}>
-        <span style={{fontSize:"13px",fontWeight:700,color:"#3fb950"}}>📋 카테고리 글쓰기 결과</span>
-        <span style={{fontSize:"11px",color:"#484f58",marginLeft:"auto"}}>분석 후 아래에서 복사·다운로드 가능</span>
+    {postMeta&&<div style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",padding:"10px 14px",fontSize:"12px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"6px",color:"#3fb950",fontWeight:700,marginBottom:"8px"}}>
+        <span>📋 카테고리 글쓰기 결과</span>
+        <span style={{color:"#484f58",fontWeight:400,fontSize:"11px",marginLeft:"auto"}}>분석 후 아래에서 복사·다운로드 가능</span>
       </div>
-      {postMeta.main_keyword&&<div style={{display:"flex",gap:"10px",alignItems:"flex-start"}}>
-        <span style={{color:"#484f58",fontSize:"12px",minWidth:"72px",paddingTop:"2px"}}>메인키워드</span>
-        <span style={{color:"#58a6ff",fontSize:"13px",fontWeight:700}}>{postMeta.main_keyword}</span>
-      </div>}
-      <div style={{display:"flex",gap:"10px",alignItems:"flex-start"}}>
-        <span style={{color:"#484f58",fontSize:"12px",minWidth:"72px",paddingTop:"2px"}}>제목</span>
-        <span style={{color:"#e6edf3",fontSize:"13px",fontWeight:600,lineHeight:"1.5"}}>{postMeta.title||"(없음)"}</span>
+      <div style={{display:"grid",gridTemplateColumns:"56px 1fr",rowGap:"5px",alignItems:"baseline"}}>
+        <span style={{color:"#484f58"}}>메인키워드</span>
+        <span style={{color:"#58a6ff",fontWeight:700}}>{postMeta.main_keyword||"-"}</span>
+        <span style={{color:"#484f58"}}>제목</span>
+        <span style={{color:"#e6edf3",fontWeight:600,lineHeight:"1.5"}}>{postMeta.title||"(없음)"}</span>
+        <span style={{color:"#484f58"}}>본문내용</span>
+        <span style={{color:"#8b949e"}}>{(workingText||text).length.toLocaleString()}자</span>
+        {postMeta.tags?.length>0&&<><span style={{color:"#484f58"}}>해시태그</span>
+        <span style={{color:"#58a6ff",lineHeight:"1.8"}}>{postMeta.tags.map(t=>"#"+t).join(" ")}</span></>}
       </div>
-      <div style={{display:"flex",gap:"10px",alignItems:"flex-start"}}>
-        <span style={{color:"#484f58",fontSize:"12px",minWidth:"72px",paddingTop:"2px"}}>본문내용</span>
-        <div style={{flex:1,color:"#8b949e",fontSize:"12px",lineHeight:"1.6",maxHeight:"72px",overflow:"hidden",position:"relative"}}>
-          {(workingText||text).slice(0,200)}…
-          <span style={{color:"#484f58",marginLeft:"6px"}}>{(workingText||text).length.toLocaleString()}자</span>
-        </div>
-      </div>
-      {postMeta.tags?.length>0&&<div style={{display:"flex",gap:"10px",alignItems:"flex-start"}}>
-        <span style={{color:"#484f58",fontSize:"12px",minWidth:"72px",paddingTop:"4px"}}>해시태그</span>
-        <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
-          {postMeta.tags.map((t,i)=>(
-            <span key={i} style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"20px",padding:"2px 10px",fontSize:"12px"}}>#{t}</span>
-          ))}
-        </div>
-      </div>}
     </div>}
 
     {/* ── 텍스트 입력 영역 ── */}
@@ -797,11 +815,12 @@ JSON 형식:
       <div style={{position:"absolute",bottom:"10px",right:"14px",color:text.length>9000?"#ff7b72":"#484f58",fontSize:"12px"}}>{text.length.toLocaleString()} / 10,000자</div>
     </div>
 
-    {/* ── 분석 버튼 + 완료 후 복사/다운로드 ── */}
+    {/* ── 버튼 행: 재분석(변경 시) + 초기화 + 복사/다운로드 ── */}
     <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
-      <Btn onClick={runAnalysis} loading={analyzing}>🔍 통합 분석 실행</Btn>
+      {isDirty&&<Btn onClick={runAnalysis} loading={analyzing}>🔄 재분석</Btn>}
+      {analyzing&&!isDirty&&<span style={{color:"#58a6ff",fontSize:"12px"}}>⏳ 분석 중...</span>}
       {(text||aiResult)&&<Btn onClick={resetAll} variant="secondary">🗑️ 초기화</Btn>}
-      {isDirty&&<span style={{color:"#ffa657",fontSize:"12px"}}>⚠️ 텍스트가 변경됐습니다. 재분석 필요</span>}
+      {isDirty&&<span style={{color:"#ffa657",fontSize:"12px"}}>⚠️ 텍스트가 변경됐습니다.</span>}
       {aiResult&&!aiResult.error&&!isDirty&&<span style={{color:"#3fb950",fontSize:"12px"}}>✅ 분석 완료</span>}
       {/* 제목+본문+해시태그 복사/다운로드 — 분석 완료 후 표시 */}
       {aiResult&&!aiResult.error&&(
@@ -851,32 +870,9 @@ JSON 형식:
       })}
     </div>}
 
-    {/* ── 섹션 1: 글자수 ── */}
-    {activeSection==="stats"&&<div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px"}}>
-        <StatCard label="전체 글자수" value={s.total} accent="#58a6ff"/>
-        <StatCard label="공백 제외" value={s.noSpace} accent="#3fb950"/>
-        <StatCard label="바이트" value={s.bytes} accent="#d2a8ff"/>
-        <StatCard label="단어 수" value={s.words} accent="#ffa657"/>
-        <StatCard label="줄 수" value={s.lines} accent="#ff7b72"/>
-        <StatCard label="문장 수" value={s.sentences} accent="#79c0ff"/>
-      </div>
-      {text&&<div style={{background:"#161b22",borderRadius:"10px",padding:"13px 16px",border:"1px solid #30363d",display:"flex",alignItems:"center",gap:"10px"}}>
-        <span style={{fontSize:"20px"}}>{grade[1].split(" ")[0]}</span>
-        <div>
-          <div style={{color:grade[0],fontSize:"14px",fontWeight:700}}>{grade[1]}</div>
-          <div style={{color:"#8b949e",fontSize:"12px"}}>{grade[2]}</div>
-        </div>
-        <span style={{color:"#484f58",fontSize:"12px",marginLeft:"auto"}}>권장 2,000자 / 이상적 5,000자+</span>
-      </div>}
-      {!aiResult&&text&&<div style={{background:"#1a2332",border:"1px solid #1f6feb44",borderRadius:"8px",padding:"10px 14px",fontSize:"12px",color:"#8b949e"}}>
-        💡 <strong style={{color:"#c9d1d9"}}>통합 분석 실행</strong>을 누르면 형태소·SEO·저품질·금칙어를 한번에 분석합니다.
-      </div>}
-    </div>}
-
-    {/* ── 섹션 2: 형태소·SEO ── */}
+    {/* ── 섹션 1: 형태소·SEO ── */}
     {activeSection==="morpheme"&&<div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-      {!aiResult&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 <strong style={{color:"#8b949e"}}>통합 분석 실행</strong>을 눌러주세요</div>}
+      {!aiResult&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 잠시 기다리면 자동으로 분석됩니다</div>}
       {aiResult&&!aiResult.error&&<>
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
           <div style={{display:"flex",alignItems:"center",gap:"14px",marginBottom:"12px"}}>
@@ -915,7 +911,7 @@ JSON 형식:
             <SectionTitle>🔤 형태소 단어 빈도</SectionTitle>
             <div style={{display:"flex",alignItems:"center",gap:"5px",marginLeft:"auto"}}>
               <span style={{color:"#8b949e",fontSize:"12px"}}>기준</span>
-              <input type="number" value={threshold} min={1} onChange={e=>setThreshold(Number(e.target.value))}
+              <input type="number" value={threshold} min={1} max={20} onChange={e=>setThreshold(Number(e.target.value))}
                 style={{width:"46px",padding:"4px 6px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"13px",outline:"none",textAlign:"center"}}/>
               <span style={{color:"#8b949e",fontSize:"12px"}}>회↑</span>
             </div>
@@ -955,7 +951,7 @@ JSON 형식:
     {activeSection==="quality"&&<div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
 
       {/* 저품질 감지 결과 */}
-      {!aiResult&&!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 <strong style={{color:"#8b949e"}}>통합 분석 실행</strong>을 눌러주세요</div>}
+      {!aiResult&&!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 잠시 기다리면 자동으로 분석됩니다</div>}
 
       {aiResult&&!aiResult.error&&(()=>{
         const v=aiResult.lowQuality.verdict||"양호";
@@ -1046,19 +1042,7 @@ JSON 형식:
         <div style={{background:"#0d2019",border:"1px solid #2ea043",borderRadius:"10px",padding:"14px",color:"#3fb950",fontSize:"14px",textAlign:"center"}}>✅ 저품질 요소가 감지되지 않았습니다!</div>
       )}
 
-      {/* 개선 팁 */}
-      {aiResult&&!aiResult.error&&aiResult.lowQuality.tips?.length>0&&(
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px 16px"}}>
-          <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"10px"}}>💡 개선 팁</div>
-          <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-            {aiResult.lowQuality.tips.map((tip,i)=>(
-              <div key={i} style={{display:"flex",gap:"8px",fontSize:"13px",color:"#c9d1d9",lineHeight:"1.6"}}>
-                <span style={{color:"#1f6feb",fontWeight:700,flexShrink:0}}>{i+1}.</span><span>{tip}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+
 
       {/* ── 금칙어 (통합) ── */}
       {workingText&&<ForbiddenSection
@@ -2933,12 +2917,13 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
 5. Temperature 0.7, Top P 0.4 기준
 6. 한글+공백 포함 최소 1,800자 ~ 2,500자 (필수 준수)
 7. 1,800자 미만이면 SEO에 맞춰 내용 보강 후 재작성
-8. 메인 키워드 최대 19회
-9. 모든 형태소(키워드)는 메인 키워드보다 더 많이 중복 사용 금지
+8. 메인 키워드는 최대 19회까지만 사용. 반드시 준수
+9. 메인 키워드 외 모든 단어·형태소는 최대 18회 이하로 사용. 19회 이상 반복되는 단어가 있으면 글 전체를 재작성할 것
 10. 네이버 SEO에 맞는 제목 1개 (메인 키워드 포함, 특수문자 없음, 예: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리")
 11. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 절대 금지. 바로 본론 시작
 12. 소제목(##)으로 내용 구조화
 13. 해시태그 5개
+14. 문장 단위로 줄바꿈 필수: 각 문장이 끝나면 반드시 \n을 삽입해 한 줄에 한 문장씩 작성할 것. 여러 문장을 한 줄에 붙여 쓰지 말 것
 
 반드시 순수 JSON만 출력. 마크다운 없이.
 {"title":"제목","main_keyword":"메인키워드","content":"본문전체(##소제목포함)","tags":["태그1","태그2","태그3","태그4","태그5"]}`
@@ -3002,7 +2987,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
     {keywords.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 2</div>
       <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"4px"}}>롱테일 키워드 선택</div>
-      <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>오른쪽 <span style={{color:"#58a6ff",fontWeight:700}}>✍️ 자동글쓰기</span> 버튼을 클릭하면 홈판 최적화 블로그 글이 생성되고, <span style={{color:"#3fb950",fontWeight:700}}>글분석</span> 탭으로 자동 이동하여 바로 분석·수정할 수 있습니다.</div>
+      <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>오른쪽 <span style={{color:"#58a6ff",fontWeight:700}}>✍️ 자동글쓰기</span> 버튼을 클릭하면 글이 생성되고, <span style={{color:"#3fb950",fontWeight:700}}>글분석</span> 탭으로 자동 이동하여 바로 분석·수정할 수 있습니다.</div>
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         {keywords.map((kw,idx)=>(
           <div key={idx} style={{
@@ -4172,7 +4157,7 @@ export default function BlogTools(){
   const [analyzeThreshold,setAnalyzeThreshold]=useState(5);
   const [analyzeReplacements,setAnalyzeReplacements]=useState({});
   const [analyzeWorkingText,setAnalyzeWorkingText]=useState("");
-  const [analyzeActiveSection,setAnalyzeActiveSection]=useState("stats");
+  const [analyzeActiveSection,setAnalyzeActiveSection]=useState("morpheme");
   // 키워드탭 글쓰기: 자동 생성 후 분석탭으로 이동
   const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy)=>{
     setPendingAnalyzeText("__loading__");
@@ -4196,11 +4181,12 @@ export default function BlogTools(){
         '4. Temperature 0.7, Top P 0.4 기준.',
         '5. 한글+공백 포함 최소 1,800자 ~ 2,500자.',
         '6. 1,800자 미만이면 SEO에 맞춰 내용 보강 후 재작성.',
-        '7. 메인 키워드 최대 19회.',
-        '8. 모든 형태소는 메인 키워드보다 많이 사용하면 안됨.',
+        '7. 메인 키워드는 최대 19회까지만 사용. 반드시 준수.',
+        '8. 메인 키워드 외 모든 단어·형태소는 최대 18회 이하로 사용. 19회 이상 반복 단어 있으면 재작성.',
         '9. 스마트블록 인기글의 톤 참고하되, 순서/관점/어휘 완전히 바꿔서 다른 사람이 쓴 것처럼.',
         '10. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 문장 절대 금지. 바로 본론부터 시작.',
         '11. 네이버 SEO에 맞는 제목 1개. 메인 키워드 반드시 포함. 특수문자 사용 금지.',
+        '12. 문장 단위로 줄바꿈 필수: 각 문장이 끝나면 \\n을 삽입해 한 줄에 한 문장씩 작성할 것.',
         '    예시: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리"',
         '',
         '응답: 아래 JSON만. 마크다운 없이.',
