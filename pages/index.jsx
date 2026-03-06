@@ -1629,158 +1629,151 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
         </span>
       </div>
 
-      {/* ── PC: 2열 (검색량 | 연관검색어) / 모바일: 1열 ── */}
+      {/* ── PC: 2열 그리드 / 모바일: order로 순서 제어 ── */}
       <style>{`
+        .kw-grid{display:flex;flex-direction:column;gap:12px}
+        .kw-stats{order:1}.kw-rel{order:2}.kw-trend{order:3}.kw-comp{order:4}.kw-longtail{order:5}
         @media(min-width:640px){
-          .kw-two-col{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
-          .kw-stats{order:1}.kw-comp{order:3}.kw-trend{order:5}
-          .kw-rel{order:2}.kw-longtail{order:4}
-        }
-        @media(max-width:639px){
-          .kw-two-col{display:flex;flex-direction:column;gap:14px}
-          .kw-stats{order:1}.kw-rel{order:2}.kw-trend{order:3}.kw-comp{order:4}.kw-longtail{order:5}
+          .kw-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto;gap:14px}
+          .kw-stats{grid-column:1;grid-row:1}
+          .kw-comp{grid-column:1;grid-row:2}
+          .kw-trend{grid-column:1;grid-row:3}
+          .kw-rel{grid-column:2;grid-row:1}
+          .kw-longtail{grid-column:2;grid-row:2/5}
         }
       `}</style>
-      <div className="kw-two-col" style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+      <div className="kw-grid">
 
-        {/* 왼쪽 카드들 */
+        {/* 검색량 */}
+        <div className="kw-stats" style={{background:"linear-gradient(135deg,#1a2332,#0d1f35)",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"14px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"7px"}}>
+            {[
+              ["월간 검색량", result.totalMonthly!==null?fmtNum(result.totalMonthly)+"회":"없음","#58a6ff"],
+              ["모바일 검색량", result.mobMonthly!==null?fmtNum(result.mobMonthly)+"회":"-","#d2a8ff"],
+            ].map(([l,v,c])=>(
+              <div key={l} style={{background:"#0d1117aa",borderRadius:"8px",padding:"10px 8px",border:"1px solid #30363d",textAlign:"center"}}>
+                <div style={{color:c,fontSize:"16px",fontWeight:700,marginBottom:"3px"}}>{v}</div>
+                <div style={{color:"#8b949e",fontSize:"10px"}}>{l}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"7px"}}>
+            {[
+              ["PC 검색량", result.pcMonthly!==null?fmtNum(result.pcMonthly)+"회":"-","#79c0ff"],
+              ["클릭(PC)", result.pcAvgClick!==null?fmtNum(result.pcAvgClick)+"회":"-","#56d364"],
+              ["클릭(모바일)", result.mobAvgClick!==null?fmtNum(result.mobAvgClick)+"회":"-","#ffa657"],
+            ].map(([l,v,c])=>(
+              <div key={l} style={{background:"#0d1117aa",borderRadius:"8px",padding:"8px 6px",border:"1px solid #30363d",textAlign:"center"}}>
+                <div style={{color:c,fontSize:"13px",fontWeight:700,marginBottom:"3px"}}>{v}</div>
+                <div style={{color:"#8b949e",fontSize:"10px"}}>{l}</div>
+              </div>
+            ))}
+          </div>
+          {result.totalMonthly!==null&&<div style={{marginTop:"7px",fontSize:"10px",color:"#484f58",textAlign:"right"}}>
+            ※ 네이버 검색광고 API 기준 · 10 이하는 "10 이하"로 표시
+          </div>}
+        </div>
 
-          {/* 검색량 카드 */}
-          <div className="kw-stats" style={{background:"linear-gradient(135deg,#1a2332,#0d1f35)",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"14px"}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"7px"}}>
-              {[
-                ["월간 검색량", result.totalMonthly!==null?fmtNum(result.totalMonthly)+"회":"없음","#58a6ff"],
-                ["모바일 검색량", result.mobMonthly!==null?fmtNum(result.mobMonthly)+"회":"-","#d2a8ff"],
-              ].map(([l,v,c])=>(
-                <div key={l} style={{background:"#0d1117aa",borderRadius:"8px",padding:"10px 8px",border:"1px solid #30363d",textAlign:"center"}}>
-                  <div style={{color:c,fontSize:"16px",fontWeight:700,marginBottom:"3px"}}>{v}</div>
-                  <div style={{color:"#8b949e",fontSize:"10px"}}>{l}</div>
+        {/* 연관검색어 */}
+        <div className="kw-rel" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+          <SectionTitle>🔗 연관검색어 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 월 검색량</span></SectionTitle>
+          {result.relKeywords?.length>0?(
+            <div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 64px 64px",gap:"6px",padding:"5px 8px",borderBottom:"1px solid #21262d",marginBottom:"4px"}}>
+                <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>키워드</span>
+                <span style={{color:"#484f58",fontSize:"10px",fontWeight:700,textAlign:"right"}}>월검색량</span>
+                <span style={{color:"#484f58",fontSize:"10px",fontWeight:700,textAlign:"right"}}>모바일</span>
+              </div>
+              {result.relKeywords.map((rk,i)=>(
+                <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 64px 64px",gap:"6px",
+                  padding:"6px 8px",borderRadius:"6px",cursor:"pointer",transition:"background .1s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="#21262d"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+                  onClick={()=>{setInputVal(rk.keyword);analyze(rk.keyword);}}>
+                  <span style={{color:"#c9d1d9",fontSize:"12px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rk.keyword}</span>
+                  <span style={{color:"#58a6ff",fontSize:"12px",fontWeight:600,textAlign:"right"}}>{fmtNum(rk.total)}</span>
+                  <span style={{color:"#d2a8ff",fontSize:"12px",textAlign:"right"}}>{fmtNum(rk.mob)}</span>
                 </div>
               ))}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"7px"}}>
-              {[
-                ["PC 검색량", result.pcMonthly!==null?fmtNum(result.pcMonthly)+"회":"-","#79c0ff"],
-                ["클릭(PC)", result.pcAvgClick!==null?fmtNum(result.pcAvgClick)+"회":"-","#56d364"],
-                ["클릭(모바일)", result.mobAvgClick!==null?fmtNum(result.mobAvgClick)+"회":"-","#ffa657"],
-              ].map(([l,v,c])=>(
-                <div key={l} style={{background:"#0d1117aa",borderRadius:"8px",padding:"8px 6px",border:"1px solid #30363d",textAlign:"center"}}>
-                  <div style={{color:c,fontSize:"13px",fontWeight:700,marginBottom:"3px"}}>{v}</div>
-                  <div style={{color:"#8b949e",fontSize:"10px"}}>{l}</div>
-                </div>
-              ))}
-            </div>
-            {result.totalMonthly!==null&&<div style={{marginTop:"7px",fontSize:"10px",color:"#484f58",textAlign:"right"}}>
-              ※ 네이버 검색광고 API 기준 · 10 이하는 "10 이하"로 표시
-            </div>}
-          </div>
+          ):(
+            <div style={{color:"#484f58",fontSize:"12px",textAlign:"center",padding:"16px 0"}}>연관검색어 없음</div>
+          )}
+        </div>
 
-          {/* 경쟁 강도 카드 */}
-          <div className="kw-comp" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
-            <SectionTitle>⚡ 경쟁 강도</SectionTitle>
-            <div style={{position:"relative",marginBottom:"6px"}}>
-              <div style={{height:"8px",background:"linear-gradient(90deg,#3fb950,#ffa657,#f85149)",borderRadius:"4px"}}/>
-              <div style={{position:"absolute",top:"-5px",left:`calc(${result.compScore}% - 9px)`,width:"18px",height:"18px",background:"#fff",borderRadius:"50%",border:`3px solid ${compColor}`}}/>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginBottom:"8px"}}><span>낮음</span><span>높음</span></div>
-            <div style={{textAlign:"center",marginBottom:"8px"}}>
-              <span style={{color:compColor,fontSize:"20px",fontWeight:700}}>{result.compLevel}</span>
-            </div>
-            <div style={{background:"#0d1117",borderRadius:"6px",padding:"8px",fontSize:"11px",color:"#8b949e"}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-                <span>월 발행량</span>
-                <strong style={{color:"#ffa657"}}>
-                  {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"건":<span style={{color:"#484f58"}}>실측불가</span>}
-                  {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실측</span>}
-                </strong>
+        {/* 트렌드 */}
+        <div className="kw-trend" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+          <SectionTitle>📈 트렌드 분석 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추정</span></SectionTitle>
+          <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
+            <span style={{fontSize:"28px"}}>{result.trend==="상승"?"📈":result.trend==="하락"?"📉":"➡️"}</span>
+            <div>
+              <div style={{color:result.trend==="상승"?"#3fb950":result.trend==="하락"?"#ff7b72":"#8b949e",fontSize:"15px",fontWeight:700}}>
+                {result.trend==="상승"?"상승세":result.trend==="하락"?"하락세":"유지세"}
               </div>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-                <span>월 검색량</span>
-                <strong style={{color:"#58a6ff"}}>{result.totalMonthly!=null?fmtNum(result.totalMonthly)+"회":"-"}</strong>
-              </div>
-              {result.saturation!=null&&<div style={{display:"flex",justifyContent:"space-between",paddingTop:"5px",borderTop:"1px solid #21262d",marginBottom:"4px"}}>
-                <span>포화도</span>
-                <strong style={{color:compColor}}>{result.saturation.toLocaleString()}%</strong>
-              </div>}
-              <div style={{marginTop:"4px",color:result.saturation==null?"#8b949e":result.saturation<100?"#3fb950":result.saturation<700?"#ffa657":"#ff7b72",fontSize:"11px",fontWeight:700}}>
-                {result.saturation==null?"－ 데이터 부족":result.saturation<100?"✅ 신규 블로거도 가능":result.saturation<300?"🟢 경쟁 낮음":result.saturation<700?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
-              </div>
+              <div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px",lineHeight:"1.5"}}>{result.trendReason||""}</div>
             </div>
           </div>
+          {result.peakSeason&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"8px 12px",border:"1px solid #ffa65733",fontSize:"12px",color:"#ffa657",lineHeight:"1.5",marginBottom:"6px"}}>
+            🌟 <strong>성수기:</strong> {result.peakSeason}
+          </div>}
+          {result.difficultyComment&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"8px 12px",border:"1px solid #1f6feb33",fontSize:"12px",color:"#8b949e",lineHeight:"1.5"}}>
+            💡 {result.difficultyComment}
+          </div>}
+        </div>
 
-          {/* 트렌드 카드 */}
-          <div className="kw-trend" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
-            <SectionTitle>📈 트렌드 분석 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추정</span></SectionTitle>
-            <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
-              <span style={{fontSize:"28px"}}>{result.trend==="상승"?"📈":result.trend==="하락"?"📉":"➡️"}</span>
-              <div>
-                <div style={{color:result.trend==="상승"?"#3fb950":result.trend==="하락"?"#ff7b72":"#8b949e",fontSize:"15px",fontWeight:700}}>
-                  {result.trend==="상승"?"상승세":result.trend==="하락"?"하락세":"유지세"}
-                </div>
-                <div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px",lineHeight:"1.5"}}>{result.trendReason||""}</div>
-              </div>
+        {/* 경쟁 강도 */}
+        <div className="kw-comp" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+          <SectionTitle>⚡ 경쟁 강도</SectionTitle>
+          <div style={{position:"relative",marginBottom:"6px"}}>
+            <div style={{height:"8px",background:"linear-gradient(90deg,#3fb950,#ffa657,#f85149)",borderRadius:"4px"}}/>
+            <div style={{position:"absolute",top:"-5px",left:`calc(${result.compScore}% - 9px)`,width:"18px",height:"18px",background:"#fff",borderRadius:"50%",border:`3px solid ${compColor}`}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginBottom:"8px"}}><span>낮음</span><span>높음</span></div>
+          <div style={{textAlign:"center",marginBottom:"8px"}}>
+            <span style={{color:compColor,fontSize:"20px",fontWeight:700}}>{result.compLevel}</span>
+          </div>
+          <div style={{background:"#0d1117",borderRadius:"6px",padding:"8px",fontSize:"11px",color:"#8b949e"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
+              <span>월 발행량</span>
+              <strong style={{color:"#ffa657"}}>
+                {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"건":<span style={{color:"#484f58"}}>실측불가</span>}
+                {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실측</span>}
+              </strong>
             </div>
-            {result.peakSeason&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"8px 12px",border:"1px solid #ffa65733",fontSize:"12px",color:"#ffa657",lineHeight:"1.5",marginBottom:"6px"}}>
-              🌟 <strong>성수기:</strong> {result.peakSeason}
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
+              <span>월 검색량</span>
+              <strong style={{color:"#58a6ff"}}>{result.totalMonthly!=null?fmtNum(result.totalMonthly)+"회":"-"}</strong>
+            </div>
+            {result.saturation!=null&&<div style={{display:"flex",justifyContent:"space-between",paddingTop:"5px",borderTop:"1px solid #21262d",marginBottom:"4px"}}>
+              <span>포화도</span>
+              <strong style={{color:compColor}}>{result.saturation.toLocaleString()}%</strong>
             </div>}
-            {result.difficultyComment&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"8px 12px",border:"1px solid #1f6feb33",fontSize:"12px",color:"#8b949e",lineHeight:"1.5"}}>
-              💡 {result.difficultyComment}
-            </div>}
+            <div style={{marginTop:"4px",color:result.saturation==null?"#8b949e":result.saturation<100?"#3fb950":result.saturation<700?"#ffa657":"#ff7b72",fontSize:"11px",fontWeight:700}}>
+              {result.saturation==null?"－ 데이터 부족":result.saturation<100?"✅ 신규 블로거도 가능":result.saturation<300?"🟢 경쟁 낮음":result.saturation<700?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
+            </div>
           </div>
         </div>
 
-        {/* 오른쪽 카드들 */
-
-          {/* 연관검색어 테이블 */}
-          <div className="kw-rel" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
-            <SectionTitle>🔗 연관검색어 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 월 검색량</span></SectionTitle>
-            {result.relKeywords?.length>0?(
-              <div style={{display:"flex",flexDirection:"column",gap:"0px"}}>
-                {/* 헤더 */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 64px 64px",gap:"6px",padding:"5px 8px",
-                  borderBottom:"1px solid #21262d",marginBottom:"4px"}}>
-                  <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>키워드</span>
-                  <span style={{color:"#484f58",fontSize:"10px",fontWeight:700,textAlign:"right"}}>월검색량</span>
-                  <span style={{color:"#484f58",fontSize:"10px",fontWeight:700,textAlign:"right"}}>모바일</span>
-                </div>
-                {result.relKeywords.map((rk,i)=>(
-                  <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 64px 64px",gap:"6px",
-                    padding:"6px 8px",borderRadius:"6px",cursor:"pointer",transition:"background .1s"}}
-                    onMouseEnter={e=>e.currentTarget.style.background="#21262d"}
-                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}
-                    onClick={()=>{setInputVal(rk.keyword);analyze(rk.keyword);}}>
-                    <span style={{color:"#c9d1d9",fontSize:"12px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rk.keyword}</span>
-                    <span style={{color:"#58a6ff",fontSize:"12px",fontWeight:600,textAlign:"right"}}>{fmtNum(rk.total)}</span>
-                    <span style={{color:"#d2a8ff",fontSize:"12px",textAlign:"right"}}>{fmtNum(rk.mob)}</span>
-                  </div>
-                ))}
+        {/* 롱테일 키워드 */}
+        <div className="kw-longtail" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+          <SectionTitle>🎯 롱테일 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추출</span></SectionTitle>
+          <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
+            {result.longtailKeywords?.map((kw,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",background:"#0d1117",
+                borderRadius:"8px",padding:"8px 10px",border:"1px solid #21262d"}}>
+                <span style={{color:"#484f58",fontSize:"11px",minWidth:"16px"}}>{i+1}</span>
+                <span style={{flex:1,color:"#c9d1d9",fontSize:"12px",lineHeight:"1.4"}}>{kw}</span>
+                <button onClick={()=>goAutoWrite&&goAutoWrite(kw,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy)}
+                  style={{background:"linear-gradient(135deg,#1f6feb,#388bfd)",border:"none",color:"#fff",
+                    borderRadius:"6px",padding:"4px 10px",fontSize:"11px",fontWeight:700,cursor:"pointer",
+                    fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
+                  ✍️ 글쓰기
+                </button>
               </div>
-            ):(
-              <div style={{color:"#484f58",fontSize:"12px",textAlign:"center",padding:"16px 0"}}>연관검색어 없음</div>
-            )}
+            ))}
           </div>
-
-          {/* 롱테일 키워드 */}
-          <div className="kw-longtail" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
-            <SectionTitle>🎯 롱테일 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추출</span></SectionTitle>
-            <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
-              {result.longtailKeywords?.map((kw,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",background:"#0d1117",
-                  borderRadius:"8px",padding:"8px 10px",border:"1px solid #21262d"}}>
-                  <span style={{color:"#484f58",fontSize:"11px",minWidth:"16px"}}>{i+1}</span>
-                  <span style={{flex:1,color:"#c9d1d9",fontSize:"12px",lineHeight:"1.4"}}>{kw}</span>
-                  <button onClick={()=>goAutoWrite&&goAutoWrite(kw,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy)}
-                    style={{background:"linear-gradient(135deg,#1f6feb,#388bfd)",border:"none",color:"#fff",
-                      borderRadius:"6px",padding:"4px 10px",fontSize:"11px",fontWeight:700,cursor:"pointer",
-                      fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
-                    ✍️ 글쓰기
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
         </div>
+
       </div>
 
     </div>}
