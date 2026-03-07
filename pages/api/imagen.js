@@ -1,5 +1,5 @@
 // pages/api/imagen.js
-// Google Imagen 3 – 단일 프롬프트로 이미지 1장 생성
+// Google Imagen 4 – Gemini API REST (:generateImages 엔드포인트)
 export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
@@ -15,18 +15,16 @@ export default async function handler(req, res) {
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:generateImages?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          instances: [{ prompt }],
-          parameters: {
-            sampleCount: 1,
-            aspectRatio: "4:3",
-            safetyFilterLevel: "BLOCK_ONLY_HIGH",
-            personGeneration: "DONT_ALLOW",
-          },
+          prompt,
+          sampleCount: 1,
+          aspectRatio: "4:3",
+          safetyFilterLevel: "BLOCK_ONLY_HIGH",
+          personGeneration: "DONT_ALLOW",
         }),
       }
     );
@@ -39,12 +37,12 @@ export default async function handler(req, res) {
       });
     }
 
-    const pred = (data.predictions || [])[0];
+    const pred = (data.generatedImages || [])[0];
     if (!pred) return res.status(500).json({ error: "이미지 생성 결과 없음" });
 
     res.status(200).json({
-      base64: pred.bytesBase64Encoded,
-      mimeType: pred.mimeType || "image/png",
+      base64: pred.image?.imageBytes || pred.bytesBase64Encoded,
+      mimeType: "image/png",
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
