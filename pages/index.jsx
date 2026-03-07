@@ -4316,7 +4316,7 @@ export default function BlogTools(){
     analyzeActiveSection, setAnalyzeActiveSection,
   };
 
-  return <div style={{minHeight:"100vh",width:"100%",maxWidth:"100%",overflowX:"hidden",background:"#010409",fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:"#e6edf3"}}>
+  return <div style={{minHeight:"100vh",width:"100%",background:"#010409",fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:"#e6edf3",overflowX:"hidden"}}>
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap');
       html,body,#__next,#root{margin:0!important;padding:0!important;width:100%!important;max-width:100vw!important;overflow-x:hidden!important;box-sizing:border-box}
@@ -4327,14 +4327,16 @@ export default function BlogTools(){
     `}</style>
 
     {/* 헤더 */}
-    <div style={{borderBottom:"1px solid #21262d",padding:"10px 12px",background:"#0d1117"}}><div style={{maxWidth:"1000px",margin:"0 auto",display:"flex",alignItems:"center",gap:"10px"}}>
-      <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"17px"}}>✍️</div>
-      <div><div style={{fontSize:"16px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div></div>
-    </div></div>
+    <div style={{borderBottom:"1px solid #21262d",background:"#0d1117"}}>
+      <div style={{maxWidth:"1000px",margin:"0 auto",padding:"10px 12px",display:"flex",alignItems:"center",gap:"10px"}}>
+        <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"17px"}}>✍️</div>
+        <div style={{fontSize:"16px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div>
+      </div>
+    </div>
 
     {/* 탭 네비게이션 — overflow:visible 필수 (드롭다운이 잘리지 않도록) */}
     <div style={{borderBottom:"1px solid #21262d",background:"#0d1117",position:"relative",zIndex:300}}>
-      <div style={{maxWidth:"1000px",margin:"0 auto"}}><div style={{display:"flex",overflowX:"auto",padding:"0",gap:"2px",
+      <div style={{maxWidth:"1000px",margin:"0 auto",display:"flex",overflowX:"auto",gap:"2px",
         /* 스크롤은 하되 드롭다운은 잘리지 않아야 함 — 스크롤 컨테이너 overflow:visible 불가하므로
            드롭다운은 position:fixed 로 뷰포트 기준 렌더 */ }}>
         {TABS.map(t=>{
@@ -4470,7 +4472,7 @@ export default function BlogTools(){
 
     {/* 글쓰기 서브탭 활성 시 상단 서브 네비바 */}
     {isWriteSub && (
-      <div style={{background:"#0d1117",borderBottom:"1px solid #21262d",padding:"0"}}>
+      <div style={{background:"#0d1117",borderBottom:"1px solid #21262d"}}>
         <div style={{maxWidth:"1000px",margin:"0 auto",display:"flex",gap:"2px",overflowX:"auto"}}>
         {WRITE_SUBTABS.map(sub=>(
           <button key={sub.id} onClick={()=>setActive(sub.id)} style={{
