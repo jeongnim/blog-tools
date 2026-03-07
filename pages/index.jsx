@@ -4460,7 +4460,7 @@ export default function BlogTools(){
               borderBottom:`2px solid ${isAct?"#1f6feb":"transparent"}`,
               color:isAct?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
               fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,flexShrink:0,
-            }}>{t.icon} {t.label}</button>;
+            }}>{t.icon} {t.label}</button>
           }
           // ── 글쓰기 드롭다운 ──
           if(t.id==="write"){
@@ -4505,7 +4505,7 @@ export default function BlogTools(){
                         <span style={{fontSize:"17px"}}>{sub.icon}</span>
                         <span>{sub.label}</span>
                         {isSel&&<span style={{marginLeft:"auto",color:"#1f6feb"}}>✓</span>}
-                      </button>;
+                      </button>
                     })}
                   </div>
                 )}
@@ -4573,7 +4573,7 @@ export default function BlogTools(){
                       <span style={{fontSize:"17px"}}>{sub.icon}</span>
                       <span>{sub.label}</span>
                       {isSel&&<span style={{marginLeft:"auto",color:"#1f6feb"}}>✓</span>}
-                    </button>;
+                    </button>
                   })}
                 </div>
               )}
@@ -4595,6 +4595,7 @@ export default function BlogTools(){
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
           }}>{sub.icon} {sub.label}</button>
         ))}
+        </div>
       </div>
     )}
 
