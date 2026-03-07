@@ -4316,12 +4316,10 @@ export default function BlogTools(){
     analyzeActiveSection, setAnalyzeActiveSection,
   };
 
-  return <div style={{minHeight:"100vh",width:"100%",background:"#010409",fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:"#e6edf3",overflowX:"hidden"}}>
+  return <div style={{minHeight:"100vh",background:"#010409",fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:"#e6edf3",maxWidth:"1000px",marginLeft:"auto",marginRight:"auto",overflowX:"hidden"}}>
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap');
-      html{background:#010409}
-      html,body,#__next,#root{margin:0!important;padding:0!important;box-sizing:border-box;overflow-x:hidden}
-      body{background:#010409;max-width:1000px!important;margin:0 auto!important}
+      html,body,#__next,#root{margin:0!important;padding:0!important;box-sizing:border-box;background:#010409}
       *{box-sizing:border-box}
       ::-webkit-scrollbar{width:5px} ::-webkit-scrollbar-track{background:#0d1117} ::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
       textarea::placeholder,input::placeholder{color:#484f58!important}
