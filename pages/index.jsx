@@ -4609,7 +4609,6 @@ export default function BlogTools(){
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
           }}>{sub.icon} {sub.label}</button>
         ))}
-        </div></div>
       </div>
     )}
 
