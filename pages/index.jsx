@@ -313,6 +313,76 @@ function Textarea({value,onChange,placeholder,rows=9}){
       fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",lineHeight:"1.7",resize:"vertical",outline:"none"}}
     onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>;
 }
+// ─── 블로그 본문 미리보기 (네이버 블로그 형식 렌더링) ──────────────────────
+function BlogPreview({ text }) {
+  const [open, setOpen] = React.useState(false);
+
+  const renderContent = (md) => {
+    const lines = md.split("\n");
+    const result = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // ━━━ 텍스트 표 감지 (━ 또는 ─ 로 된 구분선 포함 블록)
+      if (line.includes("━━") || line.includes("───")) {
+        const tableLines = [];
+        while (i < lines.length && lines[i].trim() !== "") {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        result.push(
+          <div key={`tt${i}`} style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px",
+            padding:"10px 14px",margin:"10px 0",fontFamily:"monospace",fontSize:"12px",
+            color:"#c9d1d9",whiteSpace:"pre",overflowX:"auto"}}>
+            {tableLines.join("\n")}
+          </div>
+        );
+        continue;
+      }
+
+      // ▶ 소제목
+      if (line.startsWith("▶ ") || line.startsWith("▶")) {
+        const heading = line.replace(/^▶\s*/, "");
+        result.push(<div key={i} style={{fontSize:"15px",fontWeight:700,color:"#e6edf3",
+          margin:"16px 0 6px",borderLeft:"3px solid #1f6feb",paddingLeft:"10px"}}>{heading}</div>);
+      }
+      // ## 소제목 (하위호환)
+      else if (line.startsWith("## ")) {
+        result.push(<div key={i} style={{fontSize:"15px",fontWeight:700,color:"#e6edf3",
+          margin:"16px 0 6px",borderLeft:"3px solid #1f6feb",paddingLeft:"10px"}}>{line.slice(3)}</div>);
+      } else if (line.startsWith("# ")) {
+        result.push(<div key={i} style={{fontSize:"16px",fontWeight:700,color:"#fff",margin:"16px 0 8px"}}>{line.slice(2)}</div>);
+      } else if (line.trim() === "") {
+        result.push(<div key={i} style={{height:"6px"}}/>);
+      } else {
+        result.push(<div key={i} style={{fontSize:"13px",color:"#c9d1d9",lineHeight:"1.8",marginBottom:"2px"}}>{line}</div>);
+      }
+      i++;
+    }
+    return result;
+  };
+
+  // 표가 있는지 확인
+  const hasTable = text.includes("━━") || text.includes("───");
+
+  return <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+      padding:"10px 14px",cursor:"pointer",userSelect:"none"}}
+      onClick={()=>setOpen(o=>!o)}>
+      <span style={{fontSize:"12px",fontWeight:700,color:"#8b949e"}}>
+        📄 본문 미리보기
+        {hasTable&&<span style={{marginLeft:"8px",background:"#1f6feb33",color:"#58a6ff",
+          fontSize:"10px",padding:"2px 7px",borderRadius:"10px",border:"1px solid #1f6feb44"}}>표 포함</span>}
+      </span>
+      <span style={{color:"#484f58",fontSize:"11px"}}>{open?"▲ 접기":"▼ 펼치기"}</span>
+    </div>
+    {open&&<div style={{padding:"14px 16px",borderTop:"1px solid #21262d",maxHeight:"500px",overflowY:"auto"}}>
+      {renderContent(text)}
+    </div>}
+  </div>;
+}
+
 function Btn({onClick,children,variant="primary",loading,disabled}){
   const bg={primary:"#1f6feb",secondary:"#21262d",success:"#2ea043",danger:"#da3633"};
   return <button onClick={onClick} disabled={loading||disabled} style={{
@@ -582,9 +652,10 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
     if(setPendingAnalyzePost) setPendingAnalyzePost(null);
   };
 
-  // pendingAnalyzePost (카테고리 글쓰기에서 넘어올 때)
+  // pendingAnalyzePost (카테고리 글쓰기 & 키워드 글쓰기 둘 다)
   useEffect(()=>{
     if(!pendingAnalyzePost) return;
+    setAutoLoading(false);
     setPostMeta(pendingAnalyzePost);
     setAnalyzeText(pendingAnalyzePost.content||"");
     setAnalyzeWorkingText("");
@@ -595,22 +666,15 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
     if(setPendingAnalyzePost) setPendingAnalyzePost(null);
   },[pendingAnalyzePost]);
 
-  // pendingAnalyzeText (키워드탭 자동글쓰기에서 넘어올 때)
+  // pendingAnalyzeText: __loading__ 신호만 처리 (실제 글은 pendingAnalyzePost로)
   useEffect(()=>{
     if(!pendingAnalyzeText) return;
     if(pendingAnalyzeText==="__loading__"){
       setAutoLoading(true);
+      setPostMeta(null);
       setAnalyzeText("");
-    } else {
-      setAutoLoading(false);
-      setAnalyzeText(pendingAnalyzeText);
-      setAnalyzeWorkingText("");
-      setAnalyzeAiResult(null);
-      setAnalyzeLastText("");
-      setQualReplacements({});
-      autoRunRef.current=true;
-      if(setPendingAnalyzeText) setPendingAnalyzeText("");
     }
+    // __loading__ 외 값은 무시 (goAutoWrite는 pendingAnalyzePost 사용)
   },[pendingAnalyzeText]);
 
   const s=countChars(text);
@@ -815,6 +879,9 @@ JSON 형식:
       {!autoLoading&&<Textarea value={text} onChange={t=>{setText(t);}} placeholder="분석할 블로그 글을 입력하세요..." rows={9}/>}
       <div style={{position:"absolute",bottom:"10px",right:"14px",color:text.length>9000?"#ff7b72":"#484f58",fontSize:"12px"}}>{text.length.toLocaleString()} / 10,000자</div>
     </div>
+
+    {/* ── 본문 미리보기 (표 렌더링) ── */}
+    {text&&<BlogPreview text={text}/>}
 
     {/* ── 버튼 행: 재분석(변경 시) + 초기화 + 복사/다운로드 ── */}
     <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
@@ -2954,43 +3021,18 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
   const genPost=async(kw,idx)=>{
     setWritingIdx(idx); setPostKw(kw); setErr("");
     try{
-      const prompt=`롱테일 키워드: "${kw}"
-카테고리: "${selCat}"
-작성 기준 연도: ${year}년
-
-위 롱테일 키워드를 주제로 네이버 블로그 홈판 최적화 글을 작성해줘.
-
-작성 규칙:
-0. 최우선 목표: 네이버 홈판(스마트블록)에 노출될 수 있는 글 구조와 품질 유지
-1. ${year}년 최신 정보 기준으로 작성
-2. 롱테일 키워드에서 핵심 "메인 키워드"를 추출해서 글의 메인으로 사용
-3. ${selCat} 분야 전문 블로거 관점으로 작성
-4. 롱테일 키워드 내용이 글의 주요 목표
-5. Temperature 0.7, Top P 0.4 기준
-6. 한글+공백 포함 최소 1,800자 ~ 2,500자 (필수 준수)
-7. 1,800자 미만이면 SEO에 맞춰 내용 보강 후 재작성
-8. 메인 키워드는 최대 19회까지만 사용. 반드시 준수
-9. 메인 키워드 외 모든 단어·형태소는 최대 18회 이하로 사용. 19회 이상 반복되는 단어가 있으면 글 전체를 재작성할 것
-10. 네이버 SEO에 맞는 제목 1개 (메인 키워드 포함, 특수문자 없음, 예: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리")
-11. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 절대 금지. 바로 본론 시작
-12. 소제목(##)으로 내용 구조화
-13. 해시태그 5개
-14. 문장 단위로 줄바꿈 필수: 각 문장이 끝나면 반드시 \n을 삽입해 한 줄에 한 문장씩 작성할 것. 여러 문장을 한 줄에 붙여 쓰지 말 것
-
-반드시 순수 JSON만 출력. 마크다운 없이.
-{"title":"제목","main_keyword":"메인키워드","content":"본문전체(##소제목포함)","tags":["태그1","태그2","태그3","태그4","태그5"]}`
-
+      // 상위 3개 본문 크롤링 시도
+      const bodies = await fetchBlogBodies(kw);
+      const prompt = buildWritePrompt({ kw, year, category: selCat, bodies });
       const raw=await callClaude([{role:"user",content:prompt}],
         "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",8000,"claude-sonnet-4-6");
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
       const parsed=JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
-      // 실제 글자수 / 키워드 횟수 계산
       const content=parsed.content||"";
       const mainKw=parsed.main_keyword||"";
       parsed.actual_chars=content.length;
       const esc=mainKw.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
       parsed.actual_kw_count=(content.match(new RegExp(esc,"g"))||[]).length;
-      // 글 완성 후 글분석 탭으로 자동 이동 (전체 데이터 전달)
       if(setActive && setPendingAnalyzePost){
         setPendingAnalyzePost({
           title: parsed.title||"",
@@ -4186,6 +4228,84 @@ function EmojiTab() {
 
 const TOOL_MAP={keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,exif:ExifTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab};
 
+
+// ─── 블로그 글쓰기 공통 프롬프트 빌더 ───────────────────────────────────────
+async function fetchBlogBodies(keyword) {
+  try {
+    const r = await fetch(`/api/blog-content?keyword=${encodeURIComponent(keyword)}`);
+    const d = await r.json();
+    if (d.success && d.bodies && d.bodies.length > 0) return d.bodies;
+  } catch(e) {}
+  return [];
+}
+
+function buildWritePrompt({ kw, year, category, smartBlockType, blogStrategy, bodies }) {
+  const hasBodies = bodies && bodies.length > 0;
+
+  const styleSection = hasBodies
+    ? `
+[상위 노출 블로그 본문 분석 - 아래 ${bodies.length}개 글의 어휘 스타일·문체·구조를 분석해서 그 스타일로 작성할 것]
+${bodies.map((b,i) => `--- 상위글 ${i+1} ---\n${b}`).join("\n\n")}
+
+어휘 스타일 적용 규칙:
+- 위 상위글들에서 자주 쓰인 어미·표현·문체를 파악해서 그대로 따를 것
+- 단, 내용(사실/정보)은 절대 그대로 쓰지 말고 완전히 다르게 재구성할 것
+- 위 글들의 구조(소제목 배치, 단락 길이, 정보 밀도)를 참고해서 비슷하게 구성할 것`
+    : `
+어휘 스타일 규칙 (상위글 분석 불가 → 최적화 추측 적용):
+- 정보성 85% + 주관적 생각·감정 15% 비율로 작성
+- 문체: -니다 체와 -요 체를 자연스럽게 혼용 (딱딱하지 않게)
+- 예시: "~할 수 있습니다. 저도 처음엔 몰랐는데, 써보니까 정말 달랐어요."
+- 독자가 공감할 수 있는 경험담·감정 표현을 15% 비율로 자연스럽게 녹일 것
+- 단순 나열이 아닌 스토리텔링 흐름으로 정보 전달`;
+
+  const contextSection = category
+    ? `카테고리: "${category}"
+분야: ${category} 전문 블로거 관점으로 작성`
+    : `스마트블록 유형: ${smartBlockType||"블로그"}
+블로그 전략: ${blogStrategy||""}`;
+
+  return `롱테일 키워드: "${kw}"
+${contextSection}
+작성 기준 연도: ${year}년
+
+위 롱테일 키워드를 주제로 네이버 블로그 홈판 최적화 글을 작성해줘.
+${styleSection}
+
+작성 규칙:
+0. 최우선 목표: 네이버 홈판(스마트블록)에 노출될 수 있는 글 구조와 품질 유지
+1. ${year}년 최신 정보 기준으로 작성
+2. 롱테일 키워드에서 핵심 "메인 키워드"를 추출해서 글의 메인으로 사용
+3. 롱테일 키워드 내용이 글의 주요 목표
+4. 한글+공백 포함 최소 1,800자 ~ 2,500자 (필수 준수)
+5. 1,800자 미만이면 SEO에 맞춰 내용 보강 후 재작성
+6. 메인 키워드는 최대 19회까지만 사용. 반드시 준수
+7. 메인 키워드 외 모든 단어·형태소는 최대 18회 이하로 사용. 19회 이상 반복되는 단어가 있으면 글 전체를 재작성할 것
+8. 네이버 SEO에 맞는 제목 1개 (메인 키워드 포함, 특수문자 없음, 예: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리")
+9. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 절대 금지. 바로 본론 시작
+
+10. [소제목 형식] 네이버 블로그에 바로 붙여넣기 가능한 텍스트 형식으로 작성
+    - 소제목은 반드시 아래 형식 사용: ▶ 소제목 텍스트
+    - ##, **, <h2> 같은 마크다운·HTML 태그 절대 사용 금지
+    - 소제목 앞뒤로 빈 줄 1개씩 추가
+
+11. [표 형식] 표가 필요한 경우 아래 텍스트 표 형식만 사용. 글 전체에서 최대 2개까지만 허용. 표가 어울리지 않으면 0개도 가능.
+    텍스트 표 형식 예시 (항목이 3개인 경우):
+    ━━━━━━━━━━━━━━━━━━━━━━
+    항목 | 내용1 | 내용2
+    ───────────────────────
+    행1  | 값1   | 값2
+    행2  | 값1   | 값2
+    ━━━━━━━━━━━━━━━━━━━━━━
+    - | 마크다운 표 절대 사용 금지
+
+12. 해시태그 5개 (본문 맨 끝에 한 줄로: #태그1 #태그2 #태그3 #태그4 #태그5)
+13. 문장 단위로 줄바꿈 필수: 각 문장이 끝나면 반드시 \\n을 삽입해 한 줄에 한 문장씩 작성할 것
+
+반드시 순수 JSON만 출력. 마크다운 없이.
+{"title":"제목","main_keyword":"메인키워드","content":"본문전체(▶소제목,텍스트표,해시태그 포함)","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
+}
+
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
   const [isMobile]=useState(()=>typeof window!=="undefined"&&window.matchMedia("(pointer:coarse)").matches);
@@ -4215,51 +4335,24 @@ export default function BlogTools(){
     setPendingAnalyzeText("__loading__");
     setPendingAnalyzePost(null);
     setActive("analyze");
-    // 자동 글 생성 (버전1 하나만)
     try{
       const year = new Date().getFullYear();
-      const prompt=[
-        '다음 조건으로 네이버 블로그 글 1편을 작성해줘.',
-        '',
-        '메인 키워드: "'+kw+'"',
-        '롱테일 키워드(글의 주요 목표): "'+kw+'"',
-        '스마트블록 유형: '+(smartBlockType||"블로그"),
-        '블로그 전략: '+(blogStrategy||""),
-        '',
-        '조건:',
-        '0. '+year+'년 기준 최신 정보를 토대로 작성.',
-        '1. 메인 키워드 "'+kw+'"를 중심으로 작성.',
-        '2. 해당 분야 전문 블로거 관점으로 작성.',
-        '3. 롱테일 키워드의 주제와 의도에 맞춰 글의 목표를 설정.',
-        '4. Temperature 0.7, Top P 0.4 기준.',
-        '5. 한글+공백 포함 최소 1,800자 ~ 2,500자.',
-        '6. 1,800자 미만이면 SEO에 맞춰 내용 보강 후 재작성.',
-        '7. 메인 키워드는 최대 19회까지만 사용. 반드시 준수.',
-        '8. 메인 키워드 외 모든 단어·형태소는 최대 18회 이하로 사용. 19회 이상 반복 단어 있으면 재작성.',
-        '9. 스마트블록 인기글의 톤 참고하되, 순서/관점/어휘 완전히 바꿔서 다른 사람이 쓴 것처럼.',
-        '10. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 문장 절대 금지. 바로 본론부터 시작.',
-        '11. 네이버 SEO에 맞는 제목 1개. 메인 키워드 반드시 포함. 특수문자 사용 금지.',
-        '12. 문장 단위로 줄바꿈 필수: 각 문장이 끝나면 \\n을 삽입해 한 줄에 한 문장씩 작성할 것.',
-        '    예시: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리"',
-        '',
-        '응답: 아래 JSON만. 마크다운 없이.',
-        '{"title":"제목","content":"본문전체"}'
-      ].join("\n");
+      // 상위 3개 본문 크롤링 시도
+      const bodies = await fetchBlogBodies(kw);
+      const prompt = buildWritePrompt({ kw, year, smartBlockType, blogStrategy, bodies });
       const res = await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,
-          system:"You are a professional Korean blogger. Output ONLY valid JSON.",
+          system:"You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",
           messages:[{role:"user",content:prompt}]})});
       const data = await res.json();
       const raw = data.content?.[0]?.text||"";
       const s=raw.indexOf("{"); const e=raw.lastIndexOf("}");
       const parsed = JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
-      const tagMatches = (parsed.content||"").match(/#([^\s#]{1,20})/g)||[];
-      const tags = tagMatches.map(t=>t.replace("#","")).slice(0,10);
       setPendingAnalyzePost({
         title: parsed.title||"",
-        main_keyword: kw,
+        main_keyword: parsed.main_keyword||kw,
         content: parsed.content||"",
-        tags,
+        tags: parsed.tags||[],
       });
     }catch(err){
       setPendingAnalyzeText("");
