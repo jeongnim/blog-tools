@@ -1068,13 +1068,18 @@ JSON 형식:
     {/* ── 본문 미리보기 (표 렌더링) ── */}
     {text&&<BlogPreview text={text}/>}
 
-    {/* ── 버튼 행: 재분석(변경 시) + 초기화 + 복사/다운로드 ── */}
+    {/* ── 버튼 행 ── */}
     <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
-      {isDirty&&<Btn onClick={runAnalysis} loading={analyzing}>🔄 재분석</Btn>}
-      {analyzing&&!isDirty&&<span style={{color:"#58a6ff",fontSize:"12px"}}>⏳ 분석 중...</span>}
+      {/* 글분석하기 — 텍스트 있을 때 항상 표시 */}
+      {text&&<Btn onClick={runAnalysis} loading={analyzing}>
+        {aiResult&&!aiResult.error ? "🔄 다시 분석하기" : "🔍 글분석하기"}
+      </Btn>}
+      {/* 초기화 */}
       {(text||aiResult)&&<Btn onClick={resetAll} variant="secondary">🗑️ 초기화</Btn>}
-      {isDirty&&<span style={{color:"#ffa657",fontSize:"12px"}}>⚠️ 텍스트가 변경됐습니다.</span>}
-      {aiResult&&!aiResult.error&&!isDirty&&<span style={{color:"#3fb950",fontSize:"12px"}}>✅ 분석 완료</span>}
+      {/* 상태 메시지 */}
+      {analyzing&&<span style={{color:"#58a6ff",fontSize:"12px"}}>⏳ 분석 중...</span>}
+      {isDirty&&!analyzing&&<span style={{color:"#ffa657",fontSize:"12px"}}>⚠️ 텍스트가 변경됐습니다. 다시 분석해보세요.</span>}
+      {aiResult&&!aiResult.error&&!isDirty&&!analyzing&&<span style={{color:"#3fb950",fontSize:"12px"}}>✅ 분석 완료</span>}
       {/* 제목+본문+해시태그 복사/다운로드 — 분석 완료 후 표시 */}
       {aiResult&&!aiResult.error&&(
         <>
