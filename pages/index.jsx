@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 
 // ─── Constants ────────────────────────────────────────────────────────────
 const FORBIDDEN_CATEGORIES = [
