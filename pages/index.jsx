@@ -280,10 +280,14 @@ async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5
 
 // 메인 탭 (네비바에 표시)
 const TABS=[
-  {id:"write",  icon:"✍️",  label:"글쓰기", isGroup:true},   // 드롭다운 그룹
-  {id:"missing",icon:"📡", label:"누락 확인"},
-  {id:"image",  icon:"🖼️", label:"이미지 편집", isGroup:true}, // 드롭다운 그룹
-  {id:"video",  icon:"🎬", label:"동영상 용량조절"},
+  {id:"write",   icon:"✍️",  label:"글쓰기",     isGroup:true},
+  {id:"missing", icon:"📡",  label:"누락 확인"},
+  {id:"image",   icon:"🖼️", label:"이미지 편집", isGroup:true},
+];
+
+// 동영상 편집 서브탭
+const VIDEO_SUBTABS=[
+  {id:"video", icon:"🎬", label:"동영상 용량조절"},
 ];
 
 // 글쓰기 서브탭
@@ -310,6 +314,7 @@ const ALL_TABS=[
   ...WRITE_SUBTABS,
   ...TABS.filter(t=>!t.isGroup),
   ...IMAGE_SUBTABS,
+  ...VIDEO_SUBTABS,
 ];
 // ─── Shared UI ────────────────────────────────────────────────────────────
 function Textarea({value,onChange,placeholder,rows=9}){
@@ -4320,8 +4325,9 @@ ${styleSection}
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
   const [isMobile]=useState(()=>typeof window!=="undefined"&&window.matchMedia("(pointer:coarse)").matches);
-  const [writeMenuOpen,setWriteMenuOpen]=useState(false); // 글쓰기 드롭다운
-  const [imgMenuOpen,setImgMenuOpen]=useState(false);  // 이미지 드롭다운
+  const [writeMenuOpen,setWriteMenuOpen]=useState(false);
+  const [imgMenuOpen,setImgMenuOpen]=useState(false);
+  const [videoMenuOpen,setVideoMenuOpen]=useState(false);
   const [dropdownTop, setDropdownTop] = useState(96);
   const [dropdownLeft, setDropdownLeft] = useState(0);
   const writeBtnRef = useRef(null);
@@ -4330,6 +4336,10 @@ export default function BlogTools(){
   const [writeDropdownLeft,setWriteDropdownLeft]=useState(0);
   const imgBtnRef = useRef(null);
   const imgMenuRef = useRef(null);
+  const videoBtnRef = useRef(null);
+  const videoMenuRef = useRef(null);
+  const [videoDropdownTop,setVideoDropdownTop]=useState(0);
+  const [videoDropdownLeft,setVideoDropdownLeft]=useState(0);
   const [kwResult,setKwResult]=useState(null);
   const [pendingAnalyzeText,setPendingAnalyzeText]=useState("");
   const [pendingAnalyzePost,setPendingAnalyzePost]=useState(null); // {title,main_keyword,content,tags}
@@ -4383,12 +4393,14 @@ export default function BlogTools(){
   const tab = ALL_TABS.find(t=>t.id===active) || IMAGE_SUBTABS.find(t=>t.id===active);
   const isWriteSub = WRITE_SUBTABS.some(t=>t.id===active);
   const isImageSub = IMAGE_SUBTABS.some(t=>t.id===active);
+  const isVideoSub = VIDEO_SUBTABS.some(t=>t.id===active);
 
   // 외부 클릭 시 드롭다운 닫기
   useEffect(()=>{
     const handler=(e)=>{
       if(imgMenuRef.current && !imgMenuRef.current.contains(e.target)) setImgMenuOpen(false);
       if(writeMenuRef.current && !writeMenuRef.current.contains(e.target)) setWriteMenuOpen(false);
+      if(videoMenuRef.current && !videoMenuRef.current.contains(e.target)) setVideoMenuOpen(false);
     };
     document.addEventListener("mousedown", handler);
     document.addEventListener("touchstart", handler);
@@ -4399,10 +4411,10 @@ export default function BlogTools(){
   },[]);
 
   // 이미지 서브탭 선택
-  const selectImageSub=(id)=>{
-    setActive(id);
-    setImgMenuOpen(false);
-  };
+  const selectImageSub=(id)=>{ setActive(id); setImgMenuOpen(false); };
+
+  // 동영상 서브탭 선택
+  const selectVideoSub=(id)=>{ setActive(id); setVideoMenuOpen(false); };
 
   // 글쓰기 드롭다운 위치 계산
   const openWriteMenu=()=>{
@@ -4415,7 +4427,7 @@ export default function BlogTools(){
   };
   const selectWriteSub=(id)=>{setActive(id);setWriteMenuOpen(false);};
 
-  // 드롭다운 위치 계산
+  // 이미지 드롭다운 위치 계산
   const openImgMenu=()=>{
     if(imgBtnRef.current){
       const rect=imgBtnRef.current.getBoundingClientRect();
@@ -4423,6 +4435,16 @@ export default function BlogTools(){
       setDropdownLeft(rect.left);
     }
     setImgMenuOpen(true);
+  };
+
+  // 동영상 드롭다운 위치 계산
+  const openVideoMenu=()=>{
+    if(videoBtnRef.current){
+      const rect=videoBtnRef.current.getBoundingClientRect();
+      setVideoDropdownTop(rect.bottom);
+      setVideoDropdownLeft(rect.left);
+    }
+    setVideoMenuOpen(true);
   };
 
   // 공통 props (모든 탭에 전달 — 필요한 탭만 사용)
@@ -4592,8 +4614,78 @@ export default function BlogTools(){
             </div>
           );
         })}
+
+        {/* ── 동영상 편집 드롭다운 ── */}
+        <div
+          ref={videoMenuRef}
+          onMouseEnter={openVideoMenu}
+          onMouseLeave={()=>setVideoMenuOpen(false)}
+          style={{position:"relative",display:"inline-flex",alignItems:"stretch",flexShrink:0}}>
+          <button
+            ref={videoBtnRef}
+            onClick={()=>videoMenuOpen?setVideoMenuOpen(false):openVideoMenu()}
+            onTouchStart={e=>{e.preventDefault();setVideoMenuOpen(false);if(!isVideoSub)setActive("video");}}
+            style={{
+              padding:"11px 16px",border:"none",background:"none",
+              borderBottom:`2px solid ${isVideoSub?"#1f6feb":"transparent"}`,
+              color:isVideoSub?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,
+              display:"flex",alignItems:"center",gap:"5px",
+            }}>
+            🎬 동영상 편집
+            <span style={{fontSize:"9px",opacity:.7,display:"inline-block",
+              transform:videoMenuOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform .2s"}}>▼</span>
+          </button>
+          {videoMenuOpen&&!isMobile&&(
+            <div style={{
+              position:"fixed",top:`${videoDropdownTop}px`,left:`${videoDropdownLeft}px`,
+              background:"#161b22",border:"1px solid #444c56",borderRadius:"0 0 12px 12px",
+              minWidth:"190px",boxShadow:"0 16px 48px rgba(0,0,0,.9)",zIndex:99999,overflow:"hidden",
+            }}>
+              <div style={{padding:"8px 16px 7px",borderBottom:"1px solid #30363d",
+                color:"#58a6ff",fontSize:"11px",fontWeight:700,background:"#0d1117"}}>
+                🎬 동영상 편집 도구
+              </div>
+              {VIDEO_SUBTABS.map(sub=>{
+                const isSel=active===sub.id;
+                return <button key={sub.id}
+                  onClick={()=>selectVideoSub(sub.id)}
+                  onTouchStart={e=>{e.preventDefault();selectVideoSub(sub.id);}}
+                  style={{
+                    width:"100%",padding:"11px 18px",border:"none",
+                    background:isSel?"#1f6feb22":"transparent",
+                    color:isSel?"#58a6ff":"#c9d1d9",cursor:"pointer",textAlign:"left",
+                    fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:isSel?700:400,
+                    display:"flex",alignItems:"center",gap:"10px",
+                    borderLeft:`3px solid ${isSel?"#1f6feb":"transparent"}`,transition:"background .1s",
+                  }}
+                  onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background="#21262d";}}
+                  onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background="transparent";}}>
+                  <span style={{fontSize:"17px"}}>{sub.icon}</span>
+                  <span>{sub.label}</span>
+                  {isSel&&<span style={{marginLeft:"auto",color:"#1f6feb"}}>✓</span>}
+                </button>
+              })}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
+
+    {/* 동영상 서브탭 활성 시 상단 서브 네비바 */}
+    {isVideoSub&&(
+      <div style={{background:"#0d1117",borderBottom:"1px solid #21262d",padding:"0",display:"flex",gap:"2px",overflowX:"auto"}}>
+        {VIDEO_SUBTABS.map(sub=>(
+          <button key={sub.id} onClick={()=>setActive(sub.id)} style={{
+            padding:"8px 13px",border:"none",background:"none",
+            borderBottom:`2px solid ${active===sub.id?"#58a6ff":"transparent"}`,
+            color:active===sub.id?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
+          }}>{sub.icon} {sub.label}</button>
+        ))}
+      </div>
+    )}
 
     {/* 글쓰기 서브탭 활성 시 상단 서브 네비바 */}
     {isWriteSub && (
