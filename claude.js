@@ -1,58 +1,49 @@
 // pages/api/claude.js
-// Gemini 1.5 Flash → Claude 호환 응답 포맷으로 변환
 export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "POST만 허용" });
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(200).json({ content: [] });
-  }
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(500).json({
+    error: "API 키 없음",
+    message: "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.",
+  });
 
   try {
-    const { messages, system, max_tokens } = req.body;
-
-    const contents = messages.map(m => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: typeof m.content === "string"
-        ? [{ text: m.content }]
-        : m.content.map(c => {
-            if (c.type === "text") return { text: c.text };
-            if (c.type === "image" && c.source?.data)
-              return { inlineData: { mimeType: c.source.media_type || "image/jpeg", data: c.source.data } };
-            return { text: "" };
-          })
-    }));
-
-    const body = {
-      contents,
-      ...(system && { systemInstruction: { parts: [{ text: system }] } }),
-      generationConfig: {
-        maxOutputTokens: max_tokens || 2000,
-        temperature: 0.7,
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
       },
-    };
+      body: JSON.stringify(req.body),
+    });
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }
-    );
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({
+        error: "Anthropic API 오류",
+        message: `HTTP ${response.status}: ${errText.slice(0, 200)}`,
+      });
+    }
 
     const data = await response.json();
 
-    if (data.error) {
-      return res.status(200).json({ content: [] });
+    // Anthropic API 자체 에러 (타입 오류, 과금 한도 등)
+    if (data.type === "error") {
+      return res.status(400).json({
+        error: data.error?.type || "api_error",
+        message: data.error?.message || "AI 생성 실패",
+      });
     }
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    res.status(200).json({ content: [{ type: "text", text }] });
-
+    res.status(200).json(data);
   } catch (err) {
-    res.status(200).json({ content: [] });
+    res.status(500).json({
+      error: "AI 생성 실패",
+      message: err.message,
+    });
   }
 }
