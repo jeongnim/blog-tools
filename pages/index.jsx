@@ -287,7 +287,8 @@ const TABS=[
 
 // 동영상 편집 서브탭
 const VIDEO_SUBTABS=[
-  {id:"video", icon:"🎬", label:"동영상 용량조절"},
+  {id:"video",    icon:"🎬", label:"동영상 용량 조절"},
+  {id:"videogif", icon:"🎞️", label:"동영상 → GIF 변환"},
 ];
 
 // 글쓰기 서브탭
@@ -2644,6 +2645,361 @@ function VideoTab(){
 }
 
 
+// ─── TAB: 동영상 → GIF 변환 ─────────────────────────────────────────────────
+function VideoGifTab(){
+  const [file,setFile]=useState(null);
+  const [preview,setPreview]=useState(null);
+  const [duration,setDuration]=useState(0);
+  const [status,setStatus]=useState("idle"); // idle|loading|ready|processing|done|error
+  const [progress,setProgress]=useState(0);
+  const [log,setLog]=useState("");
+  const [resultUrl,setResultUrl]=useState(null);
+  const [resultSize,setResultSize]=useState(0);
+  const [dragOver,setDragOver]=useState(false);
+  const [opts,setOpts]=useState({
+    startTime: "0",
+    endTime:   "",
+    fps:       "10",
+    width:     "480",
+    loop:      "0",   // 0=무한
+  });
+  const ffmpegRef=useRef(null);
+  const fileInputRef=useRef(null);
+  const videoRef=useRef(null);
+
+  const loadScript=(src)=>new Promise((res,rej)=>{
+    if(document.querySelector(`script[src="${src}"]`)){res();return;}
+    const s=document.createElement("script");
+    s.crossOrigin="anonymous";
+    s.src=src; s.onload=res; s.onerror=rej;
+    document.head.appendChild(s);
+  });
+
+  const loadFFmpeg=async()=>{
+    if(ffmpegRef.current) return ffmpegRef.current;
+    setStatus("loading");
+    setLog("FFmpeg 엔진 로딩 중... (최초 1회 약 25MB)");
+    try{
+      await loadScript("https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js");
+      const {createFFmpeg,fetchFile:ff_fetchFile}=window.FFmpeg||{};
+      if(!createFFmpeg) throw new Error("FFmpeg 스크립트 로드 실패");
+      window._ffFetchFile=ff_fetchFile;
+      const ff=createFFmpeg({
+        log:false,
+        logger:({message})=>setLog(message),
+        progress:({ratio})=>setProgress(Math.round(ratio*100)),
+        corePath:"https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js",
+      });
+      await ff.load();
+      ffmpegRef.current=ff;
+      setStatus("ready");
+      setLog("");
+      return ff;
+    }catch(e){
+      setStatus("error");
+      setLog("FFmpeg 로드 실패: "+e.message);
+      return null;
+    }
+  };
+
+  const onFile=(f)=>{
+    if(!f||!f.type.startsWith("video/")) return;
+    setFile(f);
+    setResultUrl(null);
+    setResultSize(0);
+    setProgress(0);
+    setLog("");
+    setStatus("ready");
+    const url=URL.createObjectURL(f);
+    setPreview(url);
+  };
+
+  const onVideoLoaded=()=>{
+    if(videoRef.current){
+      const d=videoRef.current.duration||0;
+      setDuration(d);
+      setOpts(o=>({...o, endTime: d>0?Math.min(d,15).toFixed(1):""}));
+    }
+  };
+
+  const useCurrentTime=(field)=>{
+    if(videoRef.current){
+      const t=videoRef.current.currentTime.toFixed(2);
+      setOpts(o=>({...o,[field]:t}));
+    }
+  };
+
+  const convert=async()=>{
+    if(!file) return;
+    const ff=await loadFFmpeg();
+    if(!ff) return;
+    setStatus("processing");
+    setProgress(0);
+    setLog("파일 읽는 중...");
+    try{
+      const fetchFile=window._ffFetchFile||(async(f)=>new Uint8Array(await f.arrayBuffer()));
+      const ext=file.name.split(".").pop().toLowerCase();
+      const inputName="input."+ext;
+      ff.FS("writeFile", inputName, await fetchFile(file));
+      setLog("GIF 변환 중...");
+
+      const start=parseFloat(opts.startTime)||0;
+      const end=parseFloat(opts.endTime)||0;
+      const dur=end>start?end-start:0;
+      const fps=opts.fps||"10";
+      const width=opts.width||"480";
+      const loop=opts.loop||"0";
+
+      // 팔레트 생성 → GIF 변환 (고품질 2패스)
+      const paletteArgs=["-i",inputName];
+      if(start>0) paletteArgs.splice(0,0,"-ss",String(start));
+      if(dur>0) paletteArgs.push("-t",String(dur));
+      paletteArgs.push("-vf",`fps=${fps},scale=${width}:-1:flags=lanczos,palettegen=stats_mode=diff`);
+      paletteArgs.push("palette.png");
+      await ff.run(...paletteArgs);
+
+      const gifArgs=[];
+      if(start>0) gifArgs.push("-ss",String(start));
+      gifArgs.push("-i",inputName,"-i","palette.png");
+      if(dur>0) gifArgs.push("-t",String(dur));
+      gifArgs.push(
+        "-lavfi",`fps=${fps},scale=${width}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
+        "-loop",loop,
+        "output.gif"
+      );
+      await ff.run(...gifArgs);
+
+      const data=ff.FS("readFile","output.gif");
+      const blob=new Blob([data.buffer],{type:"image/gif"});
+      setResultUrl(URL.createObjectURL(blob));
+      setResultSize(blob.size);
+      setStatus("done");
+      setLog("변환 완료!");
+      setProgress(100);
+    }catch(e){
+      setStatus("error");
+      setLog("오류: "+e.message);
+    }
+  };
+
+  const download=()=>{
+    if(!resultUrl) return;
+    const a=document.createElement("a");
+    const base=file.name.replace(/\.[^.]+$/,"");
+    a.href=resultUrl; a.download=base+".gif"; a.click();
+  };
+
+  const isProcessing=status==="processing"||status==="loading";
+  const fmtTime=(s)=>{
+    if(!s&&s!==0) return "-";
+    const m=Math.floor(s/60), sec=(s%60).toFixed(1);
+    return `${m}:${String(sec).padStart(4,"0")}`;
+  };
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+    <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
+
+    {/* 업로드 */}
+    {!file&&<div
+      onClick={()=>fileInputRef.current?.click()}
+      onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+      onDragLeave={()=>setDragOver(false)}
+      onDrop={e=>{e.preventDefault();setDragOver(false);onFile(e.dataTransfer.files[0]);}}
+      style={{border:`2px dashed ${dragOver?"#1f6feb":"#30363d"}`,borderRadius:"12px",
+        padding:"40px 20px",textAlign:"center",cursor:"pointer",
+        background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
+      <div style={{fontSize:"40px",marginBottom:"12px"}}>🎞️</div>
+      <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:600,marginBottom:"6px"}}>동영상을 드래그하거나 클릭하여 업로드</div>
+      <div style={{color:"#484f58",fontSize:"13px"}}>MP4, WebM, AVI, MOV, MKV 등 · 브라우저 내 처리 (서버 미업로드)</div>
+      <input ref={fileInputRef} type="file" accept="video/*" style={{display:"none"}} onChange={e=>onFile(e.target.files[0])}/>
+    </div>}
+
+    {file&&<div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+      {/* 파일 정보 + 초기화 */}
+      <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 16px",
+        display:"flex",alignItems:"center",gap:"12px"}}>
+        <span style={{fontSize:"20px"}}>🎞️</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{color:"#e6edf3",fontSize:"13px",fontWeight:600,
+            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{file.name}</div>
+          <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>
+            {fmtSize(file.size)}{duration>0&&` · 총 ${fmtTime(duration)}`}
+          </div>
+        </div>
+        <button onClick={()=>{setFile(null);setPreview(null);setResultUrl(null);setStatus("idle");}}
+          style={{padding:"6px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+            borderRadius:"6px",cursor:"pointer",fontSize:"12px"}}>🗑️ 초기화</button>
+      </div>
+
+      {/* 비디오 미리보기 */}
+      <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
+        <div style={{padding:"8px 14px",borderBottom:"1px solid #21262d",
+          color:"#8b949e",fontSize:"11px",fontWeight:700}}>🎬 원본 미리보기</div>
+        <div style={{padding:"12px",display:"flex",justifyContent:"center"}}>
+          <video ref={videoRef} src={preview} controls onLoadedMetadata={onVideoLoaded}
+            style={{maxWidth:"100%",maxHeight:"260px",borderRadius:"8px",background:"#000"}}/>
+        </div>
+        <div style={{padding:"8px 14px",borderTop:"1px solid #21262d",display:"flex",gap:"8px",flexWrap:"wrap"}}>
+          <button onClick={()=>useCurrentTime("startTime")}
+            style={{padding:"5px 12px",background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",
+              borderRadius:"6px",cursor:"pointer",fontSize:"11px",fontWeight:600}}>
+            ▶ 현재 위치를 시작점으로
+          </button>
+          <button onClick={()=>useCurrentTime("endTime")}
+            style={{padding:"5px 12px",background:"#2ea04322",color:"#3fb950",border:"1px solid #2ea04344",
+              borderRadius:"6px",cursor:"pointer",fontSize:"11px",fontWeight:600}}>
+            ⏹ 현재 위치를 종료점으로
+          </button>
+        </div>
+      </div>
+
+      {/* 변환 옵션 */}
+      <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"16px"}}>
+        <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"14px"}}>⚙️ 변환 옵션</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+
+          {/* 시작 시간 */}
+          <div>
+            <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"6px"}}>시작 시간 (초)</div>
+            <input type="number" value={opts.startTime} min="0" step="0.1"
+              onChange={e=>setOpts(o=>({...o,startTime:e.target.value}))}
+              style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",background:"#0d1117",
+                border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"13px",outline:"none"}}
+              onFocus={e=>e.target.style.borderColor="#58a6ff"}
+              onBlur={e=>e.target.style.borderColor="#30363d"}/>
+          </div>
+
+          {/* 종료 시간 */}
+          <div>
+            <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"6px"}}>
+              종료 시간 (초){duration>0&&<span style={{color:"#484f58",marginLeft:"4px"}}>/ {fmtTime(duration)}</span>}
+            </div>
+            <input type="number" value={opts.endTime} min="0" step="0.1"
+              onChange={e=>setOpts(o=>({...o,endTime:e.target.value}))}
+              style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",background:"#0d1117",
+                border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"13px",outline:"none"}}
+              onFocus={e=>e.target.style.borderColor="#58a6ff"}
+              onBlur={e=>e.target.style.borderColor="#30363d"}/>
+          </div>
+
+          {/* FPS */}
+          <div>
+            <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"6px"}}>프레임 (FPS)</div>
+            <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+              {["5","10","15","20"].map(v=>(
+                <button key={v} onClick={()=>setOpts(o=>({...o,fps:v}))}
+                  style={{padding:"6px 12px",borderRadius:"6px",border:"none",cursor:"pointer",
+                    fontSize:"12px",fontWeight:600,
+                    background:opts.fps===v?"#1f6feb":"#21262d",
+                    color:opts.fps===v?"#fff":"#8b949e"}}>
+                  {v}fps
+                </button>
+              ))}
+            </div>
+            <div style={{color:"#484f58",fontSize:"10px",marginTop:"5px"}}>높을수록 부드럽지만 파일 용량 증가</div>
+          </div>
+
+          {/* 가로 크기 */}
+          <div>
+            <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"6px"}}>가로 크기 (px)</div>
+            <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+              {["320","480","640","original"].map(v=>(
+                <button key={v} onClick={()=>setOpts(o=>({...o,width:v}))}
+                  style={{padding:"6px 10px",borderRadius:"6px",border:"none",cursor:"pointer",
+                    fontSize:"12px",fontWeight:600,
+                    background:opts.width===v?"#1f6feb":"#21262d",
+                    color:opts.width===v?"#fff":"#8b949e"}}>
+                  {v==="original"?"원본":v}
+                </button>
+              ))}
+            </div>
+            <div style={{color:"#484f58",fontSize:"10px",marginTop:"5px"}}>세로는 비율 자동 유지</div>
+          </div>
+
+          {/* 루프 */}
+          <div style={{gridColumn:"1/-1"}}>
+            <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"6px"}}>반복 횟수</div>
+            <div style={{display:"flex",gap:"5px"}}>
+              {[["0","무한 반복"],["1","1회"],["2","2회"],["3","3회"]].map(([v,lbl])=>(
+                <button key={v} onClick={()=>setOpts(o=>({...o,loop:v}))}
+                  style={{padding:"6px 14px",borderRadius:"6px",border:"none",cursor:"pointer",
+                    fontSize:"12px",fontWeight:600,
+                    background:opts.loop===v?"#1f6feb":"#21262d",
+                    color:opts.loop===v?"#fff":"#8b949e"}}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 변환 버튼 */}
+      <button onClick={convert} disabled={isProcessing}
+        style={{padding:"13px",background:isProcessing?"#21262d":"linear-gradient(135deg,#1f6feb,#58a6ff)",
+          color:isProcessing?"#484f58":"#fff",border:"none",borderRadius:"10px",
+          cursor:isProcessing?"not-allowed":"pointer",fontFamily:"'Noto Sans KR',sans-serif",
+          fontSize:"15px",fontWeight:700,transition:"all .2s"}}>
+        {status==="loading"?"⏳ FFmpeg 로딩 중...":isProcessing?"⏳ GIF 변환 중...":"🎞️ GIF 변환 시작"}
+      </button>
+
+      {/* 진행률 */}
+      {isProcessing&&<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{color:"#8b949e",fontSize:"12px",animation:"pulse 1s infinite"}}>{log||"처리 중..."}</span>
+          <span style={{color:"#58a6ff",fontSize:"13px",fontWeight:700}}>{progress}%</span>
+        </div>
+        <div style={{background:"#21262d",borderRadius:"4px",height:"6px",overflow:"hidden"}}>
+          <div style={{background:"linear-gradient(90deg,#1f6feb,#58a6ff)",height:"100%",
+            width:`${progress}%`,transition:"width .3s",borderRadius:"4px"}}/>
+        </div>
+      </div>}
+
+      {/* 에러 */}
+      {status==="error"&&<div style={{background:"#2d1117",border:"1px solid #da3633",
+        borderRadius:"10px",padding:"14px",color:"#ff7b72",fontSize:"13px"}}>
+        ⚠️ {log}
+      </div>}
+
+      {/* 결과 */}
+      {status==="done"&&resultUrl&&<div style={{background:"#0d2019",border:"1px solid #2ea04344",
+        borderRadius:"10px",overflow:"hidden"}}>
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #2ea04322",
+          display:"flex",alignItems:"center",justifyContent:"space-between",gap:"10px",flexWrap:"wrap"}}>
+          <div>
+            <div style={{color:"#3fb950",fontWeight:700,fontSize:"14px"}}>✅ GIF 변환 완료!</div>
+            <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>
+              파일 크기: <span style={{color:"#58a6ff",fontWeight:600}}>{fmtSize(resultSize)}</span>
+            </div>
+          </div>
+          <button onClick={download}
+            style={{padding:"9px 20px",background:"#2ea043",color:"#fff",border:"none",
+              borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
+              fontSize:"13px",fontWeight:700}}>
+            ⬇️ GIF 다운로드
+          </button>
+        </div>
+        <div style={{padding:"16px",display:"flex",justifyContent:"center",background:"#0d1117"}}>
+          <img src={resultUrl} alt="변환된 GIF"
+            style={{maxWidth:"100%",maxHeight:"400px",borderRadius:"8px",border:"1px solid #30363d"}}/>
+        </div>
+      </div>}
+
+      {/* 안내 */}
+      <div style={{background:"#161b22",borderRadius:"8px",padding:"12px 14px",
+        border:"1px solid #30363d",fontSize:"11px",color:"#484f58",lineHeight:"1.8"}}>
+        <div style={{color:"#8b949e",fontWeight:600,marginBottom:"4px"}}>💡 사용 안내</div>
+        · 모든 처리는 <strong style={{color:"#c9d1d9"}}>브라우저 내에서만</strong> 이루어져 서버로 업로드되지 않습니다<br/>
+        · GIF는 파일 크기가 크므로 짧은 구간(5~15초)에서 사용을 권장합니다<br/>
+        · FPS가 높을수록 부드럽지만 파일 크기가 크게 증가합니다<br/>
+        · FFmpeg.wasm 첫 로드 시 약 20MB 다운로드가 필요합니다
+      </div>
+    </div>}
+  </div>;
+}
+
+
+
 // ─── TAB: 사진 복원·향상 ────────────────────────────────────────────────────
 function RestoreTab(){
   const [origUrl,setOrigUrl]=useState(null);
@@ -4240,7 +4596,7 @@ function EmojiTab() {
   </div>;
 }
 
-const TOOL_MAP={keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,exif:ExifTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab};
+const TOOL_MAP={keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab};
 
 
 // ─── 블로그 글쓰기 공통 프롬프트 빌더 ───────────────────────────────────────
