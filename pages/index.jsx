@@ -2836,7 +2836,7 @@ function VideoGifTab(){
         <div style={{padding:"8px 14px",borderBottom:"1px solid #21262d",
           color:"#8b949e",fontSize:"11px",fontWeight:700}}>🎬 원본 미리보기</div>
         <div style={{padding:"12px",display:"flex",justifyContent:"center"}}>
-          <video ref={videoRef} src={preview} controls onLoadedMetadata={onVideoLoaded}
+          <video key={preview} ref={videoRef} src={preview} controls preload="auto" playsInline onLoadedMetadata={onVideoLoaded}
             style={{maxWidth:"100%",maxHeight:"260px",borderRadius:"8px",background:"#000"}}/>
         </div>
         <div style={{padding:"8px 14px",borderTop:"1px solid #21262d",display:"flex",gap:"8px",flexWrap:"wrap"}}>
@@ -2985,15 +2985,6 @@ function VideoGifTab(){
         </div>
       </div>}
 
-      {/* 안내 */}
-      <div style={{background:"#161b22",borderRadius:"8px",padding:"12px 14px",
-        border:"1px solid #30363d",fontSize:"11px",color:"#484f58",lineHeight:"1.8"}}>
-        <div style={{color:"#8b949e",fontWeight:600,marginBottom:"4px"}}>💡 사용 안내</div>
-        · 모든 처리는 <strong style={{color:"#c9d1d9"}}>브라우저 내에서만</strong> 이루어져 서버로 업로드되지 않습니다<br/>
-        · GIF는 파일 크기가 크므로 짧은 구간(5~15초)에서 사용을 권장합니다<br/>
-        · FPS가 높을수록 부드럽지만 파일 크기가 크게 증가합니다<br/>
-        · FFmpeg.wasm 첫 로드 시 약 20MB 다운로드가 필요합니다
-      </div>
     </div>}
   </div>;
 }
