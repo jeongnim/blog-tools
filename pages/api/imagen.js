@@ -1,5 +1,5 @@
 // pages/api/imagen.js
-// Google Imagen 3 를 통해 이미지 4장 생성
+// Google Imagen 3 – 단일 프롬프트로 이미지 1장 생성
 export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "GOOGLE_API_KEY 환경변수가 설정되지 않았습니다." });
   }
 
-  const { prompt, sampleCount = 4 } = req.body;
+  const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: "prompt 필요" });
 
   try {
@@ -22,8 +22,8 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           instances: [{ prompt }],
           parameters: {
-            sampleCount,
-            aspectRatio: "1:1",
+            sampleCount: 1,
+            aspectRatio: "4:3",
             safetyFilterLevel: "BLOCK_ONLY_HIGH",
             personGeneration: "DONT_ALLOW",
           },
@@ -39,12 +39,13 @@ export default async function handler(req, res) {
       });
     }
 
-    const images = (data.predictions || []).map(p => ({
-      base64: p.bytesBase64Encoded,
-      mimeType: p.mimeType || "image/png",
-    }));
+    const pred = (data.predictions || [])[0];
+    if (!pred) return res.status(500).json({ error: "이미지 생성 결과 없음" });
 
-    res.status(200).json({ images });
+    res.status(200).json({
+      base64: pred.bytesBase64Encoded,
+      mimeType: pred.mimeType || "image/png",
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
