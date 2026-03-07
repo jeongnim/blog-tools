@@ -730,11 +730,15 @@ JSON 형식:
   };
 
   // autoRun: postMeta + text가 함께 세팅되면 자동 분석 실행
+  // text와 postMeta 둘 다 dependency에 포함 — 둘 중 어느 쪽이 늦게 세팅돼도 정상 실행
+  const autoRunRef = useRef(false);
   useEffect(()=>{
-    if(!postMeta) return;
+    if(!postMeta) { autoRunRef.current = false; return; }
     if(!text.trim()) return;
+    if(autoRunRef.current) return; // 중복 실행 방지
+    autoRunRef.current = true;
     runAnalysis();
-  },[postMeta]);
+  },[postMeta, text]);
 
   // 금칙어
   const forbidden=workingText?detectForbidden(workingText):[];
