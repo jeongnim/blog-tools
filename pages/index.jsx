@@ -1523,15 +1523,14 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
       const totalMonthly = (pcMonthly!==null&&mobMonthly!==null) ? pcMonthly+mobMonthly : null;
 
       // ② 블로그 총 게시물 수 + 월 발행량
-      // 우선순위: 네이버 광고API(monthlyBlogPostCnt) > Search API 실측
+      // 우선순위: 네이버 광고API(monthlyBlogPostCnt) > Search API fallback
       let totalBlogPosts = null;
       let monthlyBlogPostsReal = null;
       let blogCountOk = false;
 
-      // 광고API에서 월 발행량 직접 추출 (가장 정확 - pandarank 동일 방식)
+      // 광고API에서 월 발행량 직접 추출 (pandarank 동일 방식 - 가장 정확)
       if (mainStat?.monthlyBlogPostCnt != null) {
         const rawVal = mainStat.monthlyBlogPostCnt;
-        // "<10" 같은 문자열 처리
         if (typeof rawVal === "string" && rawVal.startsWith("<")) {
           monthlyBlogPostsReal = parseInt(rawVal.replace("<","")) - 1 || 1;
         } else {
@@ -1540,16 +1539,15 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         blogCountOk = true;
       }
 
-      // Search API로 total(누적) 가져오기 + 광고API 발행량 없을 때 fallback
+      // Search API: 누적 total 가져오기 + 광고API 발행량 없을 때만 fallback
       try {
         const bcRes = await fetch(`/api/blog-count?keyword=${encodeURIComponent(kw)}`);
         const bcData = await bcRes.json();
         if (!bcData.error) {
           totalBlogPosts = bcData.total ?? null;
-          // 광고API 값이 없을 때만 Search API 추정값 사용
           if (monthlyBlogPostsReal === null) {
             monthlyBlogPostsReal = bcData.monthly ?? null;
-            blogCountOk = !bcData.error;
+            blogCountOk = true;
           }
         }
       } catch(e) {}
@@ -1591,7 +1589,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
       const relStats = [];
 
       // 경쟁 강도 계산 (판다랭크 방식: 포화도 = 월발행량 ÷ 월검색량 × 100%)
-      // monthlyBlogPostsReal = 광고API monthlyBlogPostCnt 우선, fallback: Search API 추정
+      // monthlyBlogPostsReal = 네이버 Search API 실측 월 발행량 (가장 신뢰)
       // AI 추정값은 사용하지 않음 — 실측값만 신뢰
       const monthlyBlogPosts = monthlyBlogPostsReal ?? null;
 
