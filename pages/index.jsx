@@ -607,6 +607,7 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
       setAnalyzeWorkingText("");
       setAnalyzeAiResult(null);
       setAnalyzeLastText("");
+      setQualReplacements({});
       autoRunRef.current=true;
       if(setPendingAnalyzeText) setPendingAnalyzeText("");
     }
@@ -4212,6 +4213,7 @@ export default function BlogTools(){
   // 키워드탭 글쓰기: 자동 생성 후 분석탭으로 이동
   const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy)=>{
     setPendingAnalyzeText("__loading__");
+    setPendingAnalyzePost(null);
     setActive("analyze");
     // 자동 글 생성 (버전1 하나만)
     try{
@@ -4251,7 +4253,14 @@ export default function BlogTools(){
       const raw = data.content?.[0]?.text||"";
       const s=raw.indexOf("{"); const e=raw.lastIndexOf("}");
       const parsed = JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
-      setPendingAnalyzeText(parsed.content||"");
+      const tagMatches = (parsed.content||"").match(/#([^\s#]{1,20})/g)||[];
+      const tags = tagMatches.map(t=>t.replace("#","")).slice(0,10);
+      setPendingAnalyzePost({
+        title: parsed.title||"",
+        main_keyword: kw,
+        content: parsed.content||"",
+        tags,
+      });
     }catch(err){
       setPendingAnalyzeText("");
     }
