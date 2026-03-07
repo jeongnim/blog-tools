@@ -4622,8 +4622,8 @@ export default function BlogTools(){
         return <div key={t.id} style={{display:isActive?"block":"none"}}>
           <h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3",display:isActive?"block":"none"}}>{meta.icon} {meta.label}</h2>
           <TabComp {...sharedProps}/>
-        </div>;
+        </div>
       })}
     </div>
-  </div>;
+  </div>
 }
