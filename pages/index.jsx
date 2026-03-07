@@ -634,6 +634,178 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
 }
 
 
+// ─── 단락별 이미지 생성 컴포넌트 (Imagen 3) ──────────────────────────────────
+function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading,setImgLoading,imgError,setImgError,imgSections,setImgSections}){
+
+  const startGenerate=async()=>{
+    setImgLoading(true);
+    setGenImages([]);
+    setImgSections([]);
+    setImgError("");
+
+    try{
+      // ── Step 1: Claude가 본문을 4개 단락으로 분석 후 각각 다른 영문 이미지 프롬프트 생성 ──
+      const analysisReq=`You are a blog image consultant. Analyze the following Korean blog post and identify 4 distinct sections that would benefit from an accompanying image. For each section, create a vivid, photorealistic English prompt for Imagen 3.
+
+Blog Title: ${postMeta.title||""}
+Main Keyword: ${postMeta.main_keyword||""}
+Tags: ${(postMeta.tags||[]).join(", ")}
+
+Blog Content:
+${postContent.slice(0,3000)}
+
+Rules:
+- Each section must cover a DIFFERENT aspect/topic of the post
+- Prompts must be visually distinct from each other
+- No text in images, no people, no faces
+- Photorealistic, high quality, bright and clean
+- Each prompt under 180 characters
+- Korean section title for display
+
+Return ONLY valid JSON, no markdown:
+{"sections":[
+  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","prompt":"English image generation prompt for Imagen 3"},
+  {"sectionTitle":"...","sectionDesc":"...","prompt":"..."},
+  {"sectionTitle":"...","sectionDesc":"...","prompt":"..."},
+  {"sectionTitle":"...","sectionDesc":"...","prompt":"..."}
+]}`;
+
+      const raw=await callClaude([{role:"user",content:analysisReq}],
+        "You are an expert at analyzing blog posts and writing Imagen 3 prompts. Output ONLY valid JSON.",1200,"claude-haiku-4-5-20251001");
+
+      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
+      const parsed=JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
+      const sections=(parsed.sections||[]).slice(0,4);
+      if(sections.length===0) throw new Error("섹션 분석 실패");
+
+      setImgSections(sections);
+
+      // 초기 상태: 4개 슬롯 loading
+      const initial=sections.map(sec=>({...sec,status:"loading",base64:null,mimeType:null,error:null}));
+      setGenImages(initial);
+
+      // ── Step 2: 4개 이미지 순차 생성 (API 부하 방지) ──
+      for(let i=0;i<sections.length;i++){
+        const sec=sections[i];
+        try{
+          const r=await fetch("/api/imagen",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({prompt:sec.prompt}),
+          });
+          const data=await r.json();
+          if(data.error) throw new Error(data.error);
+
+          setGenImages(prev=>prev.map((item,idx)=>
+            idx===i ? {...item, status:"done", base64:data.base64, mimeType:data.mimeType} : item
+          ));
+        }catch(e2){
+          setGenImages(prev=>prev.map((item,idx)=>
+            idx===i ? {...item, status:"error", error:e2.message} : item
+          ));
+        }
+      }
+
+    }catch(e){
+      setImgError(e.message);
+    }
+    setImgLoading(false);
+  };
+
+  const doneCount=genImages.filter(g=>g.status==="done").length;
+  const isGenerating=imgLoading||genImages.some(g=>g.status==="loading");
+
+  return <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
+    <style>{"@keyframes imgSpin{to{transform:rotate(360deg)}} @keyframes shimmer{0%,100%{opacity:.4}50%{opacity:.9}}"}</style>
+
+    {/* 헤더 */}
+    <div style={{padding:"14px 18px",background:"linear-gradient(135deg,#0d1117,#161b22)",borderBottom:"1px solid #30363d",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"10px"}}>
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+          <span style={{fontSize:"18px"}}>🎨</span>
+          <span style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>단락별 블로그 이미지 생성</span>
+          <span style={{fontSize:"10px",background:"linear-gradient(135deg,#1f6feb22,#388bfd22)",color:"#58a6ff",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"2px 8px",fontWeight:700}}>Imagen 3</span>
+        </div>
+        <div style={{color:"#484f58",fontSize:"11px",marginTop:"3px"}}>
+          본문 내용을 4개 단락으로 분석하여 각 단락에 어울리는 이미지를 생성합니다
+        </div>
+      </div>
+      <button onClick={startGenerate} disabled={isGenerating}
+        style={{
+          padding:"9px 20px",
+          background:isGenerating?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",
+          color:isGenerating?"#484f58":"#fff",
+          border:"none",borderRadius:"8px",cursor:isGenerating?"not-allowed":"pointer",
+          fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
+          whiteSpace:"nowrap",boxShadow:isGenerating?"none":"0 3px 12px #1f6feb55",
+          transition:"all .2s",display:"flex",alignItems:"center",gap:"6px",
+        }}>
+        {isGenerating
+          ? <><span style={{display:"inline-block",width:"12px",height:"12px",border:"2px solid #484f58",borderTopColor:"#8b949e",borderRadius:"50%",animation:"imgSpin .8s linear infinite"}}/>
+              {doneCount>0?`이미지 생성 중 (${doneCount}/4)`:"분석 중..."}</>
+          : genImages.length>0 ? "🔄 다시 생성" : "✨ 이미지 4장 생성"
+        }
+      </button>
+    </div>
+
+    {/* 에러 */}
+    {imgError&&<div style={{margin:"12px 16px",background:"#2d1117",border:"1px solid #da363344",borderRadius:"8px",padding:"10px 14px",color:"#ff7b72",fontSize:"12px"}}>⚠️ {imgError}</div>}
+
+    {/* 초기 안내 (생성 전) */}
+    {!isGenerating&&genImages.length===0&&!imgError&&<div style={{padding:"28px 20px",textAlign:"center"}}>
+      <div style={{fontSize:"36px",marginBottom:"10px"}}>🖼️</div>
+      <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"6px"}}>글 내용을 분석해서 4개 단락에 맞는 이미지를 자동 생성합니다</div>
+      <div style={{color:"#484f58",fontSize:"11px",lineHeight:"1.7"}}>
+        · 각 단락마다 내용이 다른 이미지 1장씩 총 4장<br/>
+        · Claude가 단락 분석 → Imagen 3가 이미지 생성<br/>
+        · 생성된 이미지를 클릭하면 다운로드
+      </div>
+    </div>}
+
+    {/* 4개 이미지 그리드 */}
+    {genImages.length>0&&<div style={{padding:"14px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+      {genImages.map((item,i)=>(
+        <div key={i} style={{borderRadius:"10px",overflow:"hidden",border:`1px solid ${item.status==="error"?"#da363344":"#30363d"}`,background:"#0d1117"}}>
+          {/* 이미지 영역 */}
+          {item.status==="loading"&&<div style={{aspectRatio:"4/3",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"10px",background:"linear-gradient(135deg,#0d1117,#161b22)"}}>
+            <div style={{width:"28px",height:"28px",border:"3px solid #1f6feb44",borderTopColor:"#1f6feb",borderRadius:"50%",animation:"imgSpin .8s linear infinite"}}/>
+            <span style={{color:"#484f58",fontSize:"11px",animation:"shimmer 1.5s ease infinite"}}>생성 중...</span>
+          </div>}
+
+          {item.status==="done"&&item.base64&&<div style={{position:"relative",cursor:"pointer",overflow:"hidden"}}
+            onClick={()=>{const a=document.createElement("a");a.href=`data:${item.mimeType};base64,${item.base64}`;a.download=`section-${i+1}.png`;a.click();}}>
+            <img src={`data:${item.mimeType};base64,${item.base64}`} alt={item.sectionTitle}
+              style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",display:"block",transition:"transform .3s"}}
+              onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.04)";}}
+              onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}/>
+            <div style={{position:"absolute",top:"8px",right:"8px",background:"#000a",borderRadius:"5px",padding:"3px 7px",fontSize:"10px",color:"#fff",fontWeight:700}}>⬇️ 저장</div>
+          </div>}
+
+          {item.status==="error"&&<div style={{aspectRatio:"4/3",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"6px",padding:"12px"}}>
+            <span style={{fontSize:"24px"}}>❌</span>
+            <span style={{color:"#ff7b72",fontSize:"11px",textAlign:"center"}}>{item.error||"생성 실패"}</span>
+          </div>}
+
+          {/* 단락 정보 */}
+          <div style={{padding:"8px 10px",borderTop:"1px solid #21262d"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px"}}>
+              <span style={{background:"#1f6feb",color:"#fff",borderRadius:"4px",padding:"1px 6px",fontSize:"10px",fontWeight:700,flexShrink:0}}>{i+1}</span>
+              <span style={{color:"#c9d1d9",fontSize:"12px",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sectionTitle||`단락 ${i+1}`}</span>
+            </div>
+            {item.sectionDesc&&<div style={{color:"#484f58",fontSize:"11px",lineHeight:"1.5",overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{item.sectionDesc}</div>}
+          </div>
+        </div>
+      ))}
+    </div>}
+
+    {/* 완료 메시지 */}
+    {doneCount===4&&!isGenerating&&<div style={{padding:"8px 16px 12px",textAlign:"center",color:"#484f58",fontSize:"11px",borderTop:"1px solid #21262d"}}>
+      ✅ 4장 생성 완료 · 이미지를 클릭하면 다운로드됩니다
+    </div>}
+  </div>;
+}
+
+
 // ─── TAB 1: 글분석 ──────────────────────────────────────────────────────
 function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
   pendingAnalyzePost,setPendingAnalyzePost,
@@ -651,9 +823,10 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
   const [qualReplacements,setQualReplacements]=useState({});
   const [qualLoading,setQualLoading]=useState({});
   const [copiedAll,setCopiedAll]=useState(false);
-  const [genImages,setGenImages]=useState([]);
+  const [genImages,setGenImages]=useState([]); // [{sectionTitle, prompt, base64, mimeType, status, error}]
   const [imgLoading,setImgLoading]=useState(false);
   const [imgError,setImgError]=useState("");
+  const [imgSections,setImgSections]=useState([]); // Claude가 분석한 4개 섹션
   const aiResult=analyzeAiResult; const setAiResult=setAnalyzeAiResult;
   const lastText=analyzeLastText; const setLastText=setAnalyzeLastText;
   const threshold=analyzeThreshold; const setThreshold=setAnalyzeThreshold;
@@ -664,7 +837,7 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
     setAnalyzeText("");setAnalyzeAiResult(null);setAnalyzeLastText("");
     setAnalyzeWorkingText("");setAnalyzeReplacements({});setAnalyzeActiveSection("morpheme");
     setPostMeta(null);setQualReplacements({});setQualLoading({});
-    setGenImages([]);setImgError("");
+    setGenImages([]);setImgError("");setImgSections([]);
     if(setPendingAnalyzePost) setPendingAnalyzePost(null);
   };
 
@@ -868,85 +1041,15 @@ JSON 형식:
       </div>
     </div>}
 
-    {/* ── Imagen 3 이미지 생성 ── */}
-    {postMeta&&(()=>{
-      const genImagesFromPost=async()=>{
-        setImgLoading(true); setGenImages([]); setImgError("");
-        try{
-          // 1. Claude로 영문 이미지 프롬프트 생성
-          const promptReq=`The following is a Korean blog post title and keyword. Create a single, vivid English image generation prompt that visually represents the topic. Return ONLY the English prompt string, nothing else.
-
-Title: ${postMeta.title||""}
-Keyword: ${postMeta.main_keyword||""}
-
-Requirements:
-- Photorealistic style, bright and clean
-- No text, no people, no faces
-- Suitable for a blog thumbnail
-- Under 200 characters`;
-          const imgPrompt=await callClaude([{role:"user",content:promptReq}],
-            "You are an expert at writing Imagen prompts. Output ONLY the prompt string.",300,"claude-haiku-4-5-20251001");
-
-          // 2. Imagen 3 호출 (4장)
-          const r=await fetch("/api/imagen",{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({prompt:imgPrompt.trim(), sampleCount:4}),
-          });
-          const data=await r.json();
-          if(data.error) throw new Error(data.error);
-          setGenImages(data.images||[]);
-        }catch(e){
-          setImgError(e.message);
-        }
-        setImgLoading(false);
-      };
-
-      return <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"16px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",flexWrap:"wrap",gap:"8px"}}>
-          <div>
-            <div style={{color:"#e6edf3",fontSize:"13px",fontWeight:700}}>🎨 관련 이미지 생성 <span style={{fontSize:"10px",background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"4px",padding:"1px 6px",marginLeft:"4px"}}>Imagen 3</span></div>
-            <div style={{color:"#484f58",fontSize:"11px",marginTop:"3px"}}>글 주제에 맞는 블로그 썸네일 이미지 4장을 자동 생성합니다</div>
-          </div>
-          <button onClick={genImagesFromPost} disabled={imgLoading}
-            style={{padding:"8px 18px",background:imgLoading?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",
-              color:imgLoading?"#484f58":"#fff",border:"none",borderRadius:"8px",
-              cursor:imgLoading?"not-allowed":"pointer",fontSize:"12px",fontWeight:700,
-              fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",
-              boxShadow:imgLoading?"none":"0 2px 8px #1f6feb44",transition:"all .2s"}}>
-            {imgLoading?"⏳ 생성 중...":"✨ 이미지 4장 생성"}
-          </button>
-        </div>
-
-        {imgError&&<div style={{background:"#2d1117",border:"1px solid #da363344",borderRadius:"8px",padding:"10px 14px",color:"#ff7b72",fontSize:"12px",marginBottom:"10px"}}>⚠️ {imgError}</div>}
-
-        {imgLoading&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
-          {[0,1,2,3].map(i=><div key={i} style={{aspectRatio:"1/1",background:"#0d1117",borderRadius:"8px",border:"1px solid #21262d",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:"8px"}}>
-            <div style={{width:"32px",height:"32px",border:"3px solid #1f6feb",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
-            <span style={{color:"#484f58",fontSize:"11px"}}>생성 중...</span>
-          </div>)}
-          <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
-        </div>}
-
-        {genImages.length>0&&<>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
-            {genImages.map((img,i)=>{
-              const src=`data:${img.mimeType};base64,${img.base64}`;
-              return <div key={i} style={{position:"relative",borderRadius:"8px",overflow:"hidden",border:"1px solid #30363d",cursor:"pointer"}}
-                onClick={()=>{const a=document.createElement("a");a.href=src;a.download=`image-${i+1}.png`;a.click();}}>
-                <img src={src} alt={`생성 이미지 ${i+1}`} style={{width:"100%",display:"block",aspectRatio:"1/1",objectFit:"cover"}}/>
-                <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,#000a)",padding:"20px 10px 8px",opacity:0,transition:"opacity .2s"}}
-                  onMouseEnter={e=>e.currentTarget.style.opacity="1"}
-                  onMouseLeave={e=>e.currentTarget.style.opacity="0"}>
-                  <span style={{color:"#fff",fontSize:"11px",fontWeight:600}}>⬇️ 클릭하여 다운로드</span>
-                </div>
-              </div>;
-            })}
-          </div>
-          <div style={{marginTop:"10px",color:"#484f58",fontSize:"11px",textAlign:"center"}}>이미지를 클릭하면 다운로드됩니다 · Imagen 3 생성</div>
-        </>}
-      </div>;
-    })()}
+    {/* ── Imagen 3 단락별 이미지 생성 ── */}
+    {postMeta&&<ImageGenSection
+      postMeta={postMeta}
+      postContent={workingText||text}
+      genImages={genImages} setGenImages={setGenImages}
+      imgLoading={imgLoading} setImgLoading={setImgLoading}
+      imgError={imgError} setImgError={setImgError}
+      imgSections={imgSections} setImgSections={setImgSections}
+    />}
 
     {/* ── 텍스트 입력 영역 ── */}
     <div style={{position:"relative"}}>
