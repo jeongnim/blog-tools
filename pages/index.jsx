@@ -648,9 +648,12 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
   const [analyzing,setAnalyzing]=useState(false);
   const [autoLoading,setAutoLoading]=useState(false);
   const postMeta=analyzePostMeta; const setPostMeta=setAnalyzePostMeta;
-  const [qualReplacements,setQualReplacements]=useState({}); // 저품질 대체어
-  const [qualLoading,setQualLoading]=useState({}); // per-item AI 로딩
+  const [qualReplacements,setQualReplacements]=useState({});
+  const [qualLoading,setQualLoading]=useState({});
   const [copiedAll,setCopiedAll]=useState(false);
+  const [genImages,setGenImages]=useState([]);
+  const [imgLoading,setImgLoading]=useState(false);
+  const [imgError,setImgError]=useState("");
   const aiResult=analyzeAiResult; const setAiResult=setAnalyzeAiResult;
   const lastText=analyzeLastText; const setLastText=setAnalyzeLastText;
   const threshold=analyzeThreshold; const setThreshold=setAnalyzeThreshold;
@@ -661,6 +664,7 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
     setAnalyzeText("");setAnalyzeAiResult(null);setAnalyzeLastText("");
     setAnalyzeWorkingText("");setAnalyzeReplacements({});setAnalyzeActiveSection("morpheme");
     setPostMeta(null);setQualReplacements({});setQualLoading({});
+    setGenImages([]);setImgError("");
     if(setPendingAnalyzePost) setPendingAnalyzePost(null);
   };
 
@@ -863,6 +867,86 @@ JSON 형식:
         <span style={{color:"#58a6ff",lineHeight:"1.8"}}>{postMeta.tags.map(t=>"#"+t).join(" ")}</span></>}
       </div>
     </div>}
+
+    {/* ── Imagen 3 이미지 생성 ── */}
+    {postMeta&&(()=>{
+      const genImagesFromPost=async()=>{
+        setImgLoading(true); setGenImages([]); setImgError("");
+        try{
+          // 1. Claude로 영문 이미지 프롬프트 생성
+          const promptReq=`The following is a Korean blog post title and keyword. Create a single, vivid English image generation prompt that visually represents the topic. Return ONLY the English prompt string, nothing else.
+
+Title: ${postMeta.title||""}
+Keyword: ${postMeta.main_keyword||""}
+
+Requirements:
+- Photorealistic style, bright and clean
+- No text, no people, no faces
+- Suitable for a blog thumbnail
+- Under 200 characters`;
+          const imgPrompt=await callClaude([{role:"user",content:promptReq}],
+            "You are an expert at writing Imagen prompts. Output ONLY the prompt string.",300,"claude-haiku-4-5-20251001");
+
+          // 2. Imagen 3 호출 (4장)
+          const r=await fetch("/api/imagen",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({prompt:imgPrompt.trim(), sampleCount:4}),
+          });
+          const data=await r.json();
+          if(data.error) throw new Error(data.error);
+          setGenImages(data.images||[]);
+        }catch(e){
+          setImgError(e.message);
+        }
+        setImgLoading(false);
+      };
+
+      return <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"16px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",flexWrap:"wrap",gap:"8px"}}>
+          <div>
+            <div style={{color:"#e6edf3",fontSize:"13px",fontWeight:700}}>🎨 관련 이미지 생성 <span style={{fontSize:"10px",background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"4px",padding:"1px 6px",marginLeft:"4px"}}>Imagen 3</span></div>
+            <div style={{color:"#484f58",fontSize:"11px",marginTop:"3px"}}>글 주제에 맞는 블로그 썸네일 이미지 4장을 자동 생성합니다</div>
+          </div>
+          <button onClick={genImagesFromPost} disabled={imgLoading}
+            style={{padding:"8px 18px",background:imgLoading?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",
+              color:imgLoading?"#484f58":"#fff",border:"none",borderRadius:"8px",
+              cursor:imgLoading?"not-allowed":"pointer",fontSize:"12px",fontWeight:700,
+              fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",
+              boxShadow:imgLoading?"none":"0 2px 8px #1f6feb44",transition:"all .2s"}}>
+            {imgLoading?"⏳ 생성 중...":"✨ 이미지 4장 생성"}
+          </button>
+        </div>
+
+        {imgError&&<div style={{background:"#2d1117",border:"1px solid #da363344",borderRadius:"8px",padding:"10px 14px",color:"#ff7b72",fontSize:"12px",marginBottom:"10px"}}>⚠️ {imgError}</div>}
+
+        {imgLoading&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+          {[0,1,2,3].map(i=><div key={i} style={{aspectRatio:"1/1",background:"#0d1117",borderRadius:"8px",border:"1px solid #21262d",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:"8px"}}>
+            <div style={{width:"32px",height:"32px",border:"3px solid #1f6feb",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
+            <span style={{color:"#484f58",fontSize:"11px"}}>생성 중...</span>
+          </div>)}
+          <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
+        </div>}
+
+        {genImages.length>0&&<>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+            {genImages.map((img,i)=>{
+              const src=`data:${img.mimeType};base64,${img.base64}`;
+              return <div key={i} style={{position:"relative",borderRadius:"8px",overflow:"hidden",border:"1px solid #30363d",cursor:"pointer"}}
+                onClick={()=>{const a=document.createElement("a");a.href=src;a.download=`image-${i+1}.png`;a.click();}}>
+                <img src={src} alt={`생성 이미지 ${i+1}`} style={{width:"100%",display:"block",aspectRatio:"1/1",objectFit:"cover"}}/>
+                <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,#000a)",padding:"20px 10px 8px",opacity:0,transition:"opacity .2s"}}
+                  onMouseEnter={e=>e.currentTarget.style.opacity="1"}
+                  onMouseLeave={e=>e.currentTarget.style.opacity="0"}>
+                  <span style={{color:"#fff",fontSize:"11px",fontWeight:600}}>⬇️ 클릭하여 다운로드</span>
+                </div>
+              </div>;
+            })}
+          </div>
+          <div style={{marginTop:"10px",color:"#484f58",fontSize:"11px",textAlign:"center"}}>이미지를 클릭하면 다운로드됩니다 · Imagen 3 생성</div>
+        </>}
+      </div>;
+    })()}
 
     {/* ── 텍스트 입력 영역 ── */}
     <div style={{position:"relative"}}>
