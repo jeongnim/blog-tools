@@ -673,8 +673,10 @@ Return ONLY valid JSON, no markdown:
       const raw=await callClaude([{role:"user",content:analysisReq}],
         "You are an expert at analyzing blog posts and writing Imagen 3 prompts. Output ONLY valid JSON.",1200,"claude-haiku-4-5-20251001");
 
+      if(!raw||raw.trim()==="") throw new Error("섹션 분석 응답이 비어있습니다.");
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
-      const parsed=JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
+      if(s===-1||e===-1) throw new Error("섹션 분석 JSON 형식 오류: "+raw.slice(0,100));
+      const parsed=JSON.parse(raw.slice(s,e+1));
       const sections=(parsed.sections||[]).slice(0,4);
       if(sections.length===0) throw new Error("섹션 분석 실패");
 
@@ -684,7 +686,7 @@ Return ONLY valid JSON, no markdown:
       const initial=sections.map(sec=>({...sec,status:"loading",base64:null,mimeType:null,error:null}));
       setGenImages(initial);
 
-      // ── Step 2: 4개 이미지 순차 생성 (API 부하 방지) ──
+      // ── Step 2: 4개 이미지 순차 생성 ──
       for(let i=0;i<sections.length;i++){
         const sec=sections[i];
         try{
@@ -693,7 +695,11 @@ Return ONLY valid JSON, no markdown:
             headers:{"Content-Type":"application/json"},
             body:JSON.stringify({prompt:sec.prompt}),
           });
-          const data=await r.json();
+          const rawText=await r.text();
+          if(!rawText||rawText.trim()==="") throw new Error("이미지 API 응답이 비어있습니다.");
+          let data;
+          try{ data=JSON.parse(rawText); }
+          catch(pe){ throw new Error("이미지 API JSON 오류: "+rawText.slice(0,100)); }
           if(data.error) throw new Error(data.error);
 
           setGenImages(prev=>prev.map((item,idx)=>
@@ -1065,8 +1071,6 @@ JSON 형식:
       <div style={{position:"absolute",bottom:"10px",right:"14px",color:text.length>9000?"#ff7b72":"#484f58",fontSize:"12px"}}>{text.length.toLocaleString()} / 10,000자</div>
     </div>
 
-    {/* ── 본문 미리보기 (표 렌더링) ── */}
-    {text&&<BlogPreview text={text}/>}
 
     {/* ── 버튼 행 ── */}
     <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
@@ -4834,8 +4838,9 @@ ${styleSection}
 3. 롱테일 키워드 내용이 글의 주요 목표
 4. 한글+공백 포함 최소 1,800자 ~ 2,500자 (필수 준수)
 5. 1,800자 미만이면 SEO에 맞춰 내용 보강 후 재작성
-6. 메인 키워드는 최대 19회까지만 사용. 반드시 준수
-7. 메인 키워드 외 모든 단어·형태소는 최대 18회 이하로 사용. 19회 이상 반복되는 단어가 있으면 글 전체를 재작성할 것
+6. 메인 키워드는 글 전체에서 최대 8회까지만 사용. 이 규칙은 절대 어길 수 없음. 8회 초과 시 즉시 재작성
+7. 메인 키워드 외 모든 단어는 최대 7회 이하로 사용. 특정 단어가 7회를 넘으면 동의어·유사어로 반드시 교체
+8. 키워드 밀도: 전체 본문의 1~2% 이내 유지. 같은 단어가 한 문단에 2회 이상 나오면 즉시 다른 표현으로 바꿀 것
 8. 네이버 SEO에 맞는 제목 1개 (메인 키워드 포함, 특수문자 없음, 예: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리")
 9. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 절대 금지. 바로 본론 시작
 
