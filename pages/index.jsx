@@ -1523,12 +1523,12 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
       const totalMonthly = (pcMonthly!==null&&mobMonthly!==null) ? pcMonthly+mobMonthly : null;
 
       // ② 블로그 총 게시물 수 + 월 발행량
-      // 우선순위: 네이버 광고API(monthlyBlogPostCnt) > Search API fallback
+      // 우선순위: 광고API(monthlyBlogPostCnt) > Search API fallback
       let totalBlogPosts = null;
       let monthlyBlogPostsReal = null;
       let blogCountOk = false;
 
-      // 광고API에서 월 발행량 직접 추출 (pandarank 동일 방식 - 가장 정확)
+      // 광고API에서 월 발행량 직접 추출 (pandarank 동일 방식)
       if (mainStat?.monthlyBlogPostCnt != null) {
         const rawVal = mainStat.monthlyBlogPostCnt;
         if (typeof rawVal === "string" && rawVal.startsWith("<")) {
@@ -1539,7 +1539,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         blogCountOk = true;
       }
 
-      // Search API: 누적 total 가져오기 + 광고API 발행량 없을 때만 fallback
+      // Search API: 누적 total + 광고API 없을 때만 fallback
       try {
         const bcRes = await fetch(`/api/blog-count?keyword=${encodeURIComponent(kw)}`);
         const bcData = await bcRes.json();
@@ -1797,7 +1797,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
               <span>월 발행량</span>
               <strong style={{color:"#ffa657"}}>
                 {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"건":<span style={{color:"#484f58"}}>실측불가</span>}
-                {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓광고API</span>}
+                {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실측</span>}
               </strong>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
@@ -4580,7 +4580,7 @@ export default function BlogTools(){
             </div>
           );
         })}
-      </div>
+      </div></div>
     </div>
 
     {/* 글쓰기 서브탭 활성 시 상단 서브 네비바 */}
@@ -4609,6 +4609,7 @@ export default function BlogTools(){
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
           }}>{sub.icon} {sub.label}</button>
         ))}
+        </div></div>
       </div>
     )}
 
