@@ -4580,7 +4580,7 @@ export default function BlogTools(){
             </div>
           );
         })}
-      </div></div>
+      </div>
     </div>
 
     {/* 글쓰기 서브탭 활성 시 상단 서브 네비바 */}
