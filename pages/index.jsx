@@ -256,20 +256,26 @@ function fmtSize(bytes){
 }
 async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5-20251001"){
   // 키워드분석/짧은작업: haiku (저렴), 글작성: sonnet (고품질)
-  try {
-    const body={model,max_tokens:maxTokens,messages};
-    if(system) body.system=system;
-    const res=await fetch("/api/claude",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(body)
-    });
-    if(!res.ok) return "";
-    const data=await res.json();
-    return data.content?.[0]?.text||"";
-  } catch(e) {
-    return "";
+  const body={model,max_tokens:maxTokens,messages};
+  if(system) body.system=system;
+
+  const res=await fetch("/api/claude",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)
+  });
+
+  const data=await res.json();
+
+  if(!res.ok){
+    const msg=data?.message||data?.error||`HTTP ${res.status}`;
+    throw new Error(msg);
   }
+  if(data.error){
+    throw new Error(data.message||data.error);
+  }
+
+  return data.content?.[0]?.text||"";
 }
 
 // 메인 탭 (네비바에 표시)
@@ -724,21 +730,17 @@ JSON 형식:
       setLastText(text);
       setActiveSection("quality");
     }catch(err){
-      setAiResult({error:true});
+      setAiResult({error:true, message:err.message||"AI 분석 중 오류가 발생했습니다."});
     }
     setAnalyzing(false);
   };
 
   // autoRun: postMeta + text가 함께 세팅되면 자동 분석 실행
-  // text와 postMeta 둘 다 dependency에 포함 — 둘 중 어느 쪽이 늦게 세팅돼도 정상 실행
-  const autoRunRef = useRef(false);
   useEffect(()=>{
-    if(!postMeta) { autoRunRef.current = false; return; }
+    if(!postMeta) return;
     if(!text.trim()) return;
-    if(autoRunRef.current) return; // 중복 실행 방지
-    autoRunRef.current = true;
     runAnalysis();
-  },[postMeta, text]);
+  },[postMeta]);
 
   // 금칙어
   const forbidden=workingText?detectForbidden(workingText):[];
@@ -908,7 +910,11 @@ JSON 형식:
       ))}
     </div>}
 
-    {aiResult?.error&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"10px",padding:"14px",color:"#ff7b72"}}>⚠️ 분석 오류. 다시 시도해주세요.</div>}
+    {aiResult?.error&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"10px",padding:"16px",display:"flex",flexDirection:"column",gap:"6px"}}>
+      <div style={{color:"#ff7b72",fontWeight:700,fontSize:"14px"}}>⚠️ 오류가 발생했습니다</div>
+      <div style={{color:"#c9d1d9",fontSize:"13px"}}>{aiResult.message||"AI 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."}</div>
+      <div style={{fontSize:"11px",color:"#484f58",marginTop:"4px"}}>문제가 지속되면 API 키 또는 네트워크 상태를 확인해주세요.</div>
+    </div>}
 
     {/* ── 섹션 탭 ── */}
     {(text||aiResult)&&<div style={{display:"flex",gap:"4px",background:"#0d1117",borderRadius:"10px",padding:"4px",border:"1px solid #21262d"}}>
@@ -4370,6 +4376,8 @@ export default function BlogTools(){
       setPendingAnalyzeText("");
     }catch(err){
       setPendingAnalyzeText("");
+      setAnalyzeAiResult({error:true, message:err.message||"글 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."});
+      setActive("analyze");
     }
   };
   const tab = ALL_TABS.find(t=>t.id===active) || IMAGE_SUBTABS.find(t=>t.id===active);
