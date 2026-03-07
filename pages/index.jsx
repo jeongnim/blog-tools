@@ -4580,7 +4580,7 @@ export default function BlogTools(){
             </div>
           );
         })}
-      </div></div>
+      </div>
     </div>
 
     {/* 글쓰기 서브탭 활성 시 상단 서브 네비바 */}
@@ -4609,7 +4609,6 @@ export default function BlogTools(){
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
           }}>{sub.icon} {sub.label}</button>
         ))}
-        </div></div>
       </div>
     )}
 
