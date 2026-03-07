@@ -628,17 +628,17 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
   analyzeText,setAnalyzeText,analyzeAiResult,setAnalyzeAiResult,
   analyzeLastText,setAnalyzeLastText,analyzeThreshold,setAnalyzeThreshold,
   analyzeReplacements,setAnalyzeReplacements,analyzeWorkingText,setAnalyzeWorkingText,
-  analyzeActiveSection,setAnalyzeActiveSection}){
+  analyzeActiveSection,setAnalyzeActiveSection,
+  analyzePostMeta,setAnalyzePostMeta}){
 
   const text=analyzeText; const setText=setAnalyzeText;
   const activeSection=analyzeActiveSection; const setActiveSection=setAnalyzeActiveSection;
   const [analyzing,setAnalyzing]=useState(false);
   const [autoLoading,setAutoLoading]=useState(false);
-  const [postMeta,setPostMeta]=useState(null); // {title,main_keyword,content,tags}
+  const postMeta=analyzePostMeta; const setPostMeta=setAnalyzePostMeta;
   const [qualReplacements,setQualReplacements]=useState({}); // 저품질 대체어
   const [qualLoading,setQualLoading]=useState({}); // per-item AI 로딩
   const [copiedAll,setCopiedAll]=useState(false);
-  const autoRunRef=useRef(false);
   const aiResult=analyzeAiResult; const setAiResult=setAnalyzeAiResult;
   const lastText=analyzeLastText; const setLastText=setAnalyzeLastText;
   const threshold=analyzeThreshold; const setThreshold=setAnalyzeThreshold;
@@ -652,29 +652,16 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
     if(setPendingAnalyzePost) setPendingAnalyzePost(null);
   };
 
-  // pendingAnalyzePost (카테고리 글쓰기 & 키워드 글쓰기 둘 다)
+  // pendingAnalyzeText: 로딩 신호 처리
   useEffect(()=>{
-    if(!pendingAnalyzePost) return;
-    setAutoLoading(false);
-    setPostMeta(pendingAnalyzePost);
-    setAnalyzeText(pendingAnalyzePost.content||"");
-    setAnalyzeWorkingText("");
-    setAnalyzeAiResult(null);
-    setAnalyzeLastText("");
-    setQualReplacements({});
-    autoRunRef.current=true;
-    if(setPendingAnalyzePost) setPendingAnalyzePost(null);
-  },[pendingAnalyzePost]);
-
-  // pendingAnalyzeText: __loading__ 신호만 처리 (실제 글은 pendingAnalyzePost로)
-  useEffect(()=>{
-    if(!pendingAnalyzeText) return;
     if(pendingAnalyzeText==="__loading__"){
       setAutoLoading(true);
       setPostMeta(null);
       setAnalyzeText("");
+    } else if(pendingAnalyzeText===""){
+      // goAutoWrite 완료 or 에러 시 loading 해제
+      setAutoLoading(false);
     }
-    // __loading__ 외 값은 무시 (goAutoWrite는 pendingAnalyzePost 사용)
   },[pendingAnalyzeText]);
 
   const s=countChars(text);
@@ -742,13 +729,12 @@ JSON 형식:
     setAnalyzing(false);
   };
 
-  // autoRun: 글이 세팅되면 자동 분석 실행
+  // autoRun: postMeta + text가 함께 세팅되면 자동 분석 실행
   useEffect(()=>{
-    if(!autoRunRef.current) return;
+    if(!postMeta) return;
     if(!text.trim()) return;
-    autoRunRef.current=false;
     runAnalysis();
-  },[text]);
+  },[postMeta]);
 
   // 금칙어
   const forbidden=workingText?detectForbidden(workingText):[];
@@ -851,7 +837,7 @@ JSON 형식:
     {/* ── 카테고리글쓰기에서 넘어온 경우: 메타 정보 표시 ── */}
     {postMeta&&<div style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",padding:"10px 14px",fontSize:"12px"}}>
       <div style={{display:"flex",alignItems:"center",gap:"6px",color:"#3fb950",fontWeight:700,marginBottom:"8px"}}>
-        <span>📋 카테고리 글쓰기 결과</span>
+        <span>{postMeta._source==="keyword"?"🔍 키워드 글쓰기 결과":"📋 카테고리 글쓰기 결과"}</span>
         <span style={{color:"#484f58",fontWeight:400,fontSize:"11px",marginLeft:"auto"}}>분석 후 아래에서 복사·다운로드 가능</span>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"56px 1fr",rowGap:"5px",alignItems:"baseline"}}>
@@ -1504,7 +1490,7 @@ async function fetchNaverKeywordStats(keywords) {
   return data.keywordList || [];
 }
 
-function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
+function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
   const [inputVal,setInputVal]=useState(kwResult?._inputVal||"");
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -1697,23 +1683,13 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
         </span>
       </div>
 
-      {/* ── PC: 2열 그리드 / 모바일: order로 순서 제어 ── */}
-      <style>{`
-        .kw-grid{display:flex;flex-direction:column;gap:12px}
-        .kw-stats{order:1}.kw-rel{order:2}.kw-trend{order:3}.kw-comp{order:4}.kw-longtail{order:5}
-        @media(min-width:640px){
-          .kw-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto;gap:14px}
-          .kw-stats{grid-column:1/3;grid-row:1}
-          .kw-rel{grid-column:1/3;grid-row:2}
-          .kw-comp{grid-column:1;grid-row:3}
-          .kw-trend{grid-column:2;grid-row:3}
-          .kw-longtail{grid-column:1/3;grid-row:4}
-        }
-      `}</style>
-      <div className="kw-grid">
+      {/* ── PC: 2열 그리드 / 모바일: 단일 열 ── */}
+      <div style={isMobile
+        ? {display:"flex",flexDirection:"column",gap:"12px"}
+        : {display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px"}}>
 
         {/* 검색량 */}
-        <div className="kw-stats" style={{background:"linear-gradient(135deg,#1a2332,#0d1f35)",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"14px"}}>
+        <div style={{background:"linear-gradient(135deg,#1a2332,#0d1f35)",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"7px"}}>
             {[
               ["월간 검색량", result.totalMonthly!==null?fmtNum(result.totalMonthly)+"회":"없음","#58a6ff"],
@@ -1743,7 +1719,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
         </div>
 
         {/* 연관검색어 */}
-        <div className="kw-rel" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
           <SectionTitle>🔗 연관검색어 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 월 검색량</span></SectionTitle>
           {result.relKeywords?.length>0?(
             <div>
@@ -1770,7 +1746,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
         </div>
 
         {/* 트렌드 */}
-        <div className="kw-trend" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"2",gridRow:"3"})}}>
           <SectionTitle>📈 트렌드 분석 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추정</span></SectionTitle>
           <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
             <span style={{fontSize:"28px"}}>{result.trend==="상승"?"📈":result.trend==="하락"?"📉":"➡️"}</span>
@@ -1790,7 +1766,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
         </div>
 
         {/* 경쟁 강도 */}
-        <div className="kw-comp" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1",gridRow:"3"})}}>
           <SectionTitle>⚡ 경쟁 강도</SectionTitle>
           <div style={{position:"relative",marginBottom:"6px"}}>
             <div style={{height:"8px",background:"linear-gradient(90deg,#3fb950,#ffa657,#f85149)",borderRadius:"4px"}}/>
@@ -1823,7 +1799,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
         </div>
 
         {/* 롱테일 키워드 */}
-        <div className="kw-longtail" style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
           <SectionTitle>🎯 롱테일 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추출</span></SectionTitle>
           <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
             {result.longtailKeywords?.map((kw,i)=>(
@@ -1831,7 +1807,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult}){
                 borderRadius:"8px",padding:"8px 10px",border:"1px solid #21262d"}}>
                 <span style={{color:"#484f58",fontSize:"11px",minWidth:"16px"}}>{i+1}</span>
                 <span style={{flex:1,color:"#c9d1d9",fontSize:"12px",lineHeight:"1.4"}}>{kw}</span>
-                <button onClick={()=>goAutoWrite&&goAutoWrite(kw,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy)}
+                <button onClick={()=>goAutoWrite&&goAutoWrite(kw,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword)}
                   style={{background:"linear-gradient(135deg,#1f6feb,#388bfd)",border:"none",color:"#fff",
                     borderRadius:"6px",padding:"4px 10px",fontSize:"11px",fontWeight:700,cursor:"pointer",
                     fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
@@ -2979,7 +2955,7 @@ const NAVER_AUTO_CATEGORIES=[
   ]},
 ];
 
-function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
+function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost,setAnalyzePostMeta,setAnalyzeText,setAnalyzeAiResult,setAnalyzeLastText,setAnalyzeWorkingText,setAnalyzeReplacements}){
   const [selCat,setSelCat]=useState("");
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
@@ -3033,13 +3009,20 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost}){
       parsed.actual_chars=content.length;
       const esc=mainKw.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
       parsed.actual_kw_count=(content.match(new RegExp(esc,"g"))||[]).length;
-      if(setActive && setPendingAnalyzePost){
-        setPendingAnalyzePost({
+      if(setActive && setAnalyzePostMeta){
+        const meta = {
           title: parsed.title||"",
           main_keyword: parsed.main_keyword||postKw,
           content: content,
           tags: parsed.tags||[],
-        });
+          _source: "category",
+        };
+        setAnalyzeAiResult(null);
+        setAnalyzeLastText("");
+        setAnalyzeWorkingText("");
+        setAnalyzeReplacements({});
+        setAnalyzePostMeta(meta);
+        setAnalyzeText(content);
         setActive("analyze");
       }
     }catch(ex){setErr("글 작성 오류: "+ex.message);}
@@ -4239,7 +4222,7 @@ async function fetchBlogBodies(keyword) {
   return [];
 }
 
-function buildWritePrompt({ kw, year, category, smartBlockType, blogStrategy, bodies }) {
+function buildWritePrompt({ kw, year, category, smartBlockType, blogStrategy, bodies, mainKeyword }) {
   const hasBodies = bodies && bodies.length > 0;
 
   const styleSection = hasBodies
@@ -4259,13 +4242,15 @@ ${bodies.map((b,i) => `--- 상위글 ${i+1} ---\n${b}`).join("\n\n")}
 - 독자가 공감할 수 있는 경험담·감정 표현을 15% 비율로 자연스럽게 녹일 것
 - 단순 나열이 아닌 스토리텔링 흐름으로 정보 전달`;
 
+  const mainKw = mainKeyword || kw;
   const contextSection = category
     ? `카테고리: "${category}"
 분야: ${category} 전문 블로거 관점으로 작성`
     : `스마트블록 유형: ${smartBlockType||"블로그"}
 블로그 전략: ${blogStrategy||""}`;
 
-  return `롱테일 키워드: "${kw}"
+  return `메인 키워드 (반드시 이 단어가 글의 중심): "${mainKw}"
+롱테일 주제 (이 내용을 글의 방향으로 활용): "${kw}"
 ${contextSection}
 작성 기준 연도: ${year}년
 
@@ -4275,7 +4260,7 @@ ${styleSection}
 작성 규칙:
 0. 최우선 목표: 네이버 홈판(스마트블록)에 노출될 수 있는 글 구조와 품질 유지
 1. ${year}년 최신 정보 기준으로 작성
-2. 롱테일 키워드에서 핵심 "메인 키워드"를 추출해서 글의 메인으로 사용
+2. 메인 키워드는 반드시 위에 명시된 "{mainKw}" 사용. 롱테일 주제에서 새로 추출하지 말 것
 3. 롱테일 키워드 내용이 글의 주요 목표
 4. 한글+공백 포함 최소 1,800자 ~ 2,500자 (필수 준수)
 5. 1,800자 미만이면 SEO에 맞춰 내용 보강 후 재작성
@@ -4330,16 +4315,21 @@ export default function BlogTools(){
   const [analyzeReplacements,setAnalyzeReplacements]=useState({});
   const [analyzeWorkingText,setAnalyzeWorkingText]=useState("");
   const [analyzeActiveSection,setAnalyzeActiveSection]=useState("morpheme");
+  const [analyzePostMeta,setAnalyzePostMeta]=useState(null); // 부모로 올려서 안전하게 공유
   // 키워드탭 글쓰기: 자동 생성 후 분석탭으로 이동
-  const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy)=>{
+  const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy, mainKeyword)=>{
+    setAnalyzePostMeta(null);
+    setAnalyzeText("");
+    setAnalyzeAiResult(null);
+    setAnalyzeLastText("");
+    setAnalyzeWorkingText("");
+    setAnalyzeReplacements({});
     setPendingAnalyzeText("__loading__");
-    setPendingAnalyzePost(null);
     setActive("analyze");
     try{
       const year = new Date().getFullYear();
-      // 상위 3개 본문 크롤링 시도
       const bodies = await fetchBlogBodies(kw);
-      const prompt = buildWritePrompt({ kw, year, smartBlockType, blogStrategy, bodies });
+      const prompt = buildWritePrompt({ kw, year, smartBlockType, blogStrategy, bodies, mainKeyword: mainKeyword||kw });
       const res = await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,
           system:"You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",
@@ -4348,12 +4338,16 @@ export default function BlogTools(){
       const raw = data.content?.[0]?.text||"";
       const s=raw.indexOf("{"); const e=raw.lastIndexOf("}");
       const parsed = JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
-      setPendingAnalyzePost({
+      const meta = {
         title: parsed.title||"",
-        main_keyword: parsed.main_keyword||kw,
+        main_keyword: mainKeyword||parsed.main_keyword||kw,
         content: parsed.content||"",
         tags: parsed.tags||[],
-      });
+        _source: "keyword",
+      };
+      setAnalyzePostMeta(meta);
+      setAnalyzeText(meta.content);
+      setPendingAnalyzeText("");
     }catch(err){
       setPendingAnalyzeText("");
     }
@@ -4416,6 +4410,7 @@ export default function BlogTools(){
     analyzeReplacements, setAnalyzeReplacements,
     analyzeWorkingText, setAnalyzeWorkingText,
     analyzeActiveSection, setAnalyzeActiveSection,
+    analyzePostMeta, setAnalyzePostMeta,
   };
 
   return <div style={{minHeight:"100vh",background:"#010409",fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:"#e6edf3",maxWidth:"1000px",marginLeft:"auto",marginRight:"auto",overflowX:"hidden"}}>
