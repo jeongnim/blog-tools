@@ -2072,6 +2072,65 @@ function MissingTab(){
   const [page,setPage]=useState(1);
   const PER_PAGE=10;
 
+  // ── 스마트블록 순위 모달 ──
+  const [sbModal,setSbModal]=useState(null); // {keyword, blogId}
+  const [sbLoading,setSbLoading]=useState(false);
+  const [sbData,setSbData]=useState(null);   // {posts:[{rank,title,blogName,date,link,isMine}], analysis}
+  const [sbError,setSbError]=useState("");
+
+  const openSmartBlock=async(keyword, currentBlogId)=>{
+    setSbModal({keyword, blogId: currentBlogId||""});
+    setSbData(null); setSbError(""); setSbLoading(true);
+    try{
+      // 네이버 블로그탭 RSS 피드로 상위 글 가져오기
+      const rssUrl=`https://rss.blog.naver.com/ArticleList.nhn?blogId=&redirect=dnavigate&widgetTypeCall=true&directAccess=false`;
+      // 네이버 블로그 검색 RSS (공개 API)
+      const searchRss=`https://s.search.naver.com/p/newshome/search.naver?where=post&query=${encodeURIComponent(keyword)}&sm=tab_jum`;
+      
+      // CORS 우회: 네이버 블로그 검색은 직접 불가 → AI로 분석 + 링크 제공
+      // 대신 네이버 광고API로 경쟁 데이터 + Claude로 스마트블록 분석
+      let kwStats = null;
+      try{
+        const statsRes = await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(keyword)}`);
+        if(statsRes.ok){
+          const statsData = await statsRes.json();
+          kwStats = (statsData.keywordList||[]).find(i=>i.relKeyword?.toLowerCase()===keyword.toLowerCase()) || statsData.keywordList?.[0] || null;
+        }
+      }catch(e){}
+
+      const monthlySearch = kwStats ? (Number(kwStats.monthlyPcQcCnt)||0)+(Number(kwStats.monthlyMobileQcCnt)||0) : null;
+      const monthlyBlogPost = kwStats?.monthlyBlogPostCnt ? Number(kwStats.monthlyBlogPostCnt) : null;
+
+      // Claude AI로 스마트블록 인기글 분석
+      const prompt=`네이버에서 "${keyword}" 키워드를 검색했을 때 스마트블록(인기글) 섹션에 노출되는 블로그 글의 특성을 분석해줘.
+${monthlySearch!==null?`월간 검색량: ${monthlySearch.toLocaleString()}회`:""}
+${monthlyBlogPost!==null?`월간 블로그 발행량: ${monthlyBlogPost.toLocaleString()}개`:""}
+
+반드시 순수 JSON만 출력. 마크다운 없이.
+{
+  "smartBlockType": "블로그 인기글|VIEW탭|지식iN|쇼핑 중 이 키워드에 가장 적합한 유형",
+  "competition": "매우낮음|낮음|보통|높음|매우높음",
+  "competitionReason": "경쟁도 판단 이유 한 줄",
+  "topTitlePatterns": ["상위노출 글 제목 패턴 예시1","패턴2","패턴3"],
+  "requiredElements": ["상위노출 필수 요소1","요소2","요소3","요소4"],
+  "optimalLength": "권장 글자수 범위 (예: 1,500~2,500자)",
+  "bestTiming": "발행 최적 시간대",
+  "tips": ["추가 노출 팁1","팁2","팁3"]
+}`;
+
+      const raw=await callClaude([{role:"user",content:prompt}],"네이버 블로그 SEO 전문가. 반드시 JSON만 출력.",800);
+      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
+      const ai=JSON.parse(raw.slice(s,e+1));
+
+      setSbData({keyword, kwStats, monthlySearch, monthlyBlogPost, ai});
+    }catch(e){
+      setSbError(e.message||"분석 중 오류가 발생했습니다.");
+    }
+    setSbLoading(false);
+  };
+
+  const closeSmartBlock=()=>{ setSbModal(null); setSbData(null); setSbError(""); };
+
   // ── 방법1: RSS 직접 fetch (네이버 RSS는 CORS 허용) ──
   const fetchByBlogId=async()=>{
     const id=blogId.trim();
@@ -2399,12 +2458,26 @@ URL: ${post.link||"없음"}
                     display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                     <span style={{color:"#8b949e",fontSize:"11px",fontWeight:700}}>{kw.rank}</span>
                   </div>
-                  <div style={{flex:1,minWidth:0}}>
+                  <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+                    <button onClick={()=>openSmartBlock(kw.keyword, posts?.blogId)}
+                      style={{background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left"}}
+                    >
+                      <span style={{color:"#e6edf3",fontSize:"13px",fontWeight:700,display:"block"}}
+                        onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
+                        {kw.keyword}
+                      </span>
+                    </button>
+                    <button onClick={()=>openSmartBlock(kw.keyword, posts?.blogId)}
+                      style={{padding:"2px 8px",background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",
+                        borderRadius:"5px",cursor:"pointer",fontSize:"10px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
+                        whiteSpace:"nowrap",flexShrink:0}}>
+                      📊 스마트블록 분석
+                    </button>
                     <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw.keyword)}`}
                       target="_blank" rel="noreferrer"
-                      style={{color:"#e6edf3",fontSize:"13px",fontWeight:700,textDecoration:"none",display:"block",marginBottom:"2px"}}
-                      onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
-                      {kw.keyword} ↗
+                      style={{color:"#484f58",fontSize:"11px",textDecoration:"none",flexShrink:0}}
+                      onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#484f58"}>
+                      네이버↗
                     </a>
                   </div>
                   <div style={{background:isOut?"#21262d":rc+"22",color:isOut?"#484f58":rc,
@@ -2464,6 +2537,142 @@ URL: ${post.link||"없음"}
         ℹ️ 순위는 네이버 블로그탭 크롤링 기준이며 실시간과 차이가 있을 수 있습니다. 정확한 확인은 <a href="https://searchadvisor.naver.com/" target="_blank" rel="noreferrer" style={{color:"#58a6ff"}}>서치어드바이저</a>를 이용하세요.
       </div>
     </div>}
+
+    {/* ── 스마트블록 분석 모달 ── */}
+    {sbModal&&(
+      <div onClick={closeSmartBlock} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px"}}>
+        <div onClick={e=>e.stopPropagation()} style={{
+          background:"#161b22",border:"1px solid #30363d",borderRadius:"16px",
+          width:"100%",maxWidth:"540px",maxHeight:"85vh",overflowY:"auto",
+          display:"flex",flexDirection:"column",
+          boxShadow:"0 24px 80px rgba(0,0,0,.8)",
+        }}>
+          {/* 모달 헤더 */}
+          <div style={{padding:"18px 20px 14px",borderBottom:"1px solid #21262d",display:"flex",alignItems:"center",gap:"10px",position:"sticky",top:0,background:"#161b22",borderRadius:"16px 16px 0 0",zIndex:1}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"3px"}}>📊 스마트블록 인기글 분석</div>
+              <div style={{color:"#e6edf3",fontSize:"16px",fontWeight:800,wordBreak:"break-all"}}>{sbModal.keyword}</div>
+            </div>
+            <button onClick={closeSmartBlock} style={{background:"#21262d",border:"1px solid #30363d",borderRadius:"8px",color:"#8b949e",cursor:"pointer",width:"32px",height:"32px",fontSize:"16px",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+          </div>
+
+          <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:"14px"}}>
+            {/* 로딩 */}
+            {sbLoading&&<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+              {["🔍 키워드 데이터 수집 중...","🤖 스마트블록 패턴 분석 중...","📊 상위노출 전략 도출 중..."].map((m,i)=>(
+                <div key={i} style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",padding:"10px 14px",
+                  color:"#8b949e",fontSize:"12px",animation:`pulse 1.6s ease ${i*0.35}s infinite`,display:"flex",gap:"8px"}}>
+                  ⏳ {m}
+                </div>
+              ))}
+            </div>}
+
+            {/* 에러 */}
+            {sbError&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"8px",padding:"12px 14px",color:"#ff7b72",fontSize:"13px"}}>
+              ⚠️ {sbError}
+            </div>}
+
+            {/* 결과 */}
+            {sbData&&!sbLoading&&(()=>{
+              const {kwStats,monthlySearch,monthlyBlogPost,ai}=sbData;
+              const compColor={"매우낮음":"#3fb950","낮음":"#79c0ff","보통":"#ffa657","높음":"#ff7b72","매우높음":"#f85149"};
+              const compBg={"매우낮음":"#0d2019","낮음":"#0d1e33","보통":"#2d1e0a","높음":"#2d1117","매우높음":"#2d0b0b"};
+              const cc=compColor[ai?.competition]||"#8b949e";
+              const cb=compBg[ai?.competition]||"#21262d";
+              return <>
+                {/* 검색량 카드 */}
+                {(monthlySearch!==null||monthlyBlogPost!==null)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+                  {monthlySearch!==null&&<div style={{background:"#0d1117",border:"1px solid #1f6feb44",borderRadius:"10px",padding:"12px 14px"}}>
+                    <div style={{color:"#484f58",fontSize:"10px",fontWeight:600,marginBottom:"4px"}}>월간 검색량</div>
+                    <div style={{color:"#58a6ff",fontSize:"18px",fontWeight:800}}>{monthlySearch<=10?"10 이하":monthlySearch.toLocaleString()}</div>
+                    <div style={{color:"#484f58",fontSize:"10px",marginTop:"2px"}}>PC+모바일</div>
+                  </div>}
+                  {monthlyBlogPost!==null&&<div style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 14px"}}>
+                    <div style={{color:"#484f58",fontSize:"10px",fontWeight:600,marginBottom:"4px"}}>월간 발행량</div>
+                    <div style={{color:"#e6edf3",fontSize:"18px",fontWeight:800}}>{monthlyBlogPost<=10?"10 이하":monthlyBlogPost.toLocaleString()}</div>
+                    <div style={{color:"#484f58",fontSize:"10px",marginTop:"2px"}}>블로그 글</div>
+                  </div>}
+                </div>}
+
+                {/* 스마트블록 유형 + 경쟁도 */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+                  <div style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 14px"}}>
+                    <div style={{color:"#484f58",fontSize:"10px",fontWeight:600,marginBottom:"4px"}}>스마트블록 유형</div>
+                    <div style={{color:"#ffa657",fontSize:"14px",fontWeight:700}}>{ai?.smartBlockType||"-"}</div>
+                  </div>
+                  <div style={{background:cb,border:`1px solid ${cc}44`,borderRadius:"10px",padding:"12px 14px"}}>
+                    <div style={{color:"#484f58",fontSize:"10px",fontWeight:600,marginBottom:"4px"}}>경쟁도</div>
+                    <div style={{color:cc,fontSize:"14px",fontWeight:700}}>{ai?.competition||"-"}</div>
+                    {ai?.competitionReason&&<div style={{color:"#484f58",fontSize:"10px",marginTop:"3px",lineHeight:"1.4"}}>{ai.competitionReason}</div>}
+                  </div>
+                </div>
+
+                {/* 상위노출 제목 패턴 */}
+                {ai?.topTitlePatterns?.length>0&&<div style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",padding:"13px 14px"}}>
+                  <div style={{color:"#c9d1d9",fontSize:"12px",fontWeight:700,marginBottom:"9px"}}>🏆 상위노출 글 제목 패턴</div>
+                  {ai.topTitlePatterns.map((p,i)=>(
+                    <div key={i} style={{display:"flex",gap:"8px",alignItems:"flex-start",marginBottom:"6px"}}>
+                      <span style={{color:"#1f6feb",fontSize:"11px",fontWeight:700,minWidth:"16px",paddingTop:"1px"}}>{i+1}.</span>
+                      <span style={{color:"#e6edf3",fontSize:"12px",lineHeight:"1.5"}}>{p}</span>
+                    </div>
+                  ))}
+                </div>}
+
+                {/* 필수 요소 */}
+                {ai?.requiredElements?.length>0&&<div style={{background:"#0d1117",border:"1px solid #3fb95044",borderRadius:"10px",padding:"13px 14px"}}>
+                  <div style={{color:"#c9d1d9",fontSize:"12px",fontWeight:700,marginBottom:"9px"}}>✅ 상위노출 필수 요소</div>
+                  {ai.requiredElements.map((el,i)=>(
+                    <div key={i} style={{display:"flex",gap:"8px",alignItems:"flex-start",marginBottom:"5px"}}>
+                      <span style={{color:"#3fb950",flexShrink:0,fontSize:"11px",paddingTop:"2px"}}>✓</span>
+                      <span style={{color:"#c9d1d9",fontSize:"12px",lineHeight:"1.5"}}>{el}</span>
+                    </div>
+                  ))}
+                </div>}
+
+                {/* 글자수 + 발행 타이밍 */}
+                {(ai?.optimalLength||ai?.bestTiming)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+                  {ai?.optimalLength&&<div style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 14px"}}>
+                    <div style={{color:"#484f58",fontSize:"10px",fontWeight:600,marginBottom:"4px"}}>권장 글자수</div>
+                    <div style={{color:"#e6edf3",fontSize:"13px",fontWeight:700}}>{ai.optimalLength}</div>
+                  </div>}
+                  {ai?.bestTiming&&<div style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 14px"}}>
+                    <div style={{color:"#484f58",fontSize:"10px",fontWeight:600,marginBottom:"4px"}}>발행 최적 시간</div>
+                    <div style={{color:"#e6edf3",fontSize:"13px",fontWeight:700}}>{ai.bestTiming}</div>
+                  </div>}
+                </div>}
+
+                {/* 추가 팁 */}
+                {ai?.tips?.length>0&&<div style={{background:"#1a2332",border:"1px solid #1f6feb44",borderRadius:"10px",padding:"13px 14px"}}>
+                  <div style={{color:"#58a6ff",fontSize:"12px",fontWeight:700,marginBottom:"8px"}}>💡 추가 노출 팁</div>
+                  {ai.tips.map((tip,i)=>(
+                    <div key={i} style={{display:"flex",gap:"8px",alignItems:"flex-start",marginBottom:"5px"}}>
+                      <span style={{color:"#58a6ff",flexShrink:0,fontSize:"11px",paddingTop:"2px"}}>•</span>
+                      <span style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.5"}}>{tip}</span>
+                    </div>
+                  ))}
+                </div>}
+
+                {/* 바로가기 버튼 */}
+                <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                  {[
+                    ["🔍 블로그탭 검색",`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(sbModal.keyword)}`],
+                    ["🌐 통합검색",`https://search.naver.com/search.naver?query=${encodeURIComponent(sbModal.keyword)}`],
+                    ["📈 키워드 분석",`/?kw=${encodeURIComponent(sbModal.keyword)}`],
+                  ].map(([l,u])=>(
+                    <a key={l} href={u} target="_blank" rel="noreferrer"
+                      style={{padding:"7px 13px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"7px",fontSize:"11px",textDecoration:"none",fontWeight:600}}
+                      onMouseEnter={e=>{e.currentTarget.style.background="#1f6feb22";e.currentTarget.style.color="#58a6ff";e.currentTarget.style.borderColor="#1f6feb44";}}
+                      onMouseLeave={e=>{e.currentTarget.style.background="#21262d";e.currentTarget.style.color="#8b949e";e.currentTarget.style.borderColor="#30363d";}}>
+                      {l} ↗
+                    </a>
+                  ))}
+                </div>
+              </>;
+            })()}
+          </div>
+        </div>
+      </div>
+    )}
   </div>;
 }
 
