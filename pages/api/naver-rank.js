@@ -1,25 +1,24 @@
 // pages/api/naver-rank.js
-// 네이버 검색 Open API - 블로그탭 순위 조회
 export const config = { maxDuration: 15 };
 
 function extractBlogInfo(url) {
   if (!url) return { blogId: "", postNo: "" };
 
   // 패턴 1: blog.naver.com/아이디/포스트번호
-  let m = url.match(/blog\.naver\.com\/([^/?#&]+)\/(\d+)/i);
+  var m = url.match(/blog\.naver\.com\/([^/?#&]+)\/(\d+)/);
   if (m) return { blogId: m[1].toLowerCase(), postNo: m[2] };
 
   // 패턴 2: m.blog.naver.com/아이디/포스트번호
-  m = url.match(/m\.blog\.naver\.com\/([^/?#&]+)\/(\d+)/i);
+  m = url.match(/m\.blog\.naver\.com\/([^/?#&]+)\/(\d+)/);
   if (m) return { blogId: m[1].toLowerCase(), postNo: m[2] };
 
-  // 패턴 3: blogId=xxx&logNo=yyy (PostView URL)
-  const blogIdQ = url.match(/[?&]blogId=([^&]+)/i);
-  const logNoQ  = url.match(/[?&]logNo=(\d+)/i);
-  if (blogIdQ) return { blogId: blogIdQ[1].toLowerCase(), postNo: logNoQ?.[1] || "" };
+  // 패턴 3: blogId=xxx&logNo=yyy
+  var blogIdQ = url.match(/[?&]blogId=([^&]+)/);
+  var logNoQ  = url.match(/[?&]logNo=(\d+)/);
+  if (blogIdQ) return { blogId: blogIdQ[1].toLowerCase(), postNo: logNoQ ? logNoQ[1] : "" };
 
-  // 패턴 4: blog.naver.com/아이디 (포스트번호 없음)
-  m = url.match(/blog\.naver\.com\/([^/?#&]+)/i);
+  // 패턴 4: blog.naver.com/아이디
+  m = url.match(/blog\.naver\.com\/([^/?#&]+)/);
   if (m) return { blogId: m[1].toLowerCase(), postNo: "" };
 
   return { blogId: "", postNo: "" };
@@ -47,19 +46,23 @@ export default async function handler(req, res) {
   const normalizedPostNo = (postNo || "").trim();
 
   try {
-    const apiUrl = `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=100&start=1&sort=sim`;
+    const apiUrl = "https://openapi.naver.com/v1/search/blog.json?query=" + encodeURIComponent(keyword) + "&display=100&start=1&sort=sim";
+
+    const controller = new AbortController();
+    const timer = setTimeout(function() { controller.abort(); }, 10000);
 
     const response = await fetch(apiUrl, {
       headers: {
         "X-Naver-Client-Id": clientId,
         "X-Naver-Client-Secret": clientSecret,
       },
-      signal: AbortSignal.timeout(10000),
+      signal: controller.signal,
     });
+    clearTimeout(timer);
 
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(response.status).json({ error: `네이버 API 오류: ${response.status}`, detail: errText });
+      return res.status(response.status).json({ error: "네이버 API 오류: " + response.status, detail: errText });
     }
 
     const data = await response.json();
@@ -67,7 +70,7 @@ export default async function handler(req, res) {
 
     let myRank = null;
 
-    const results = items.map((item, index) => {
+    const results = items.map(function(item, index) {
       const rank = index + 1;
 
       const fromLink    = extractBlogInfo(item.link || "");
@@ -75,22 +78,16 @@ export default async function handler(req, res) {
 
       let isMine = false;
 
-      // postNo 우선 매칭 (가장 정확)
+      // postNo 우선 매칭
       if (normalizedPostNo) {
-        if (
-          fromLink.postNo    === normalizedPostNo ||
-          fromBlogger.postNo === normalizedPostNo
-        ) {
+        if (fromLink.postNo === normalizedPostNo || fromBlogger.postNo === normalizedPostNo) {
           isMine = true;
         }
       }
 
       // postNo 없으면 blogId로 매칭
       if (!isMine && normalizedBlogId && !normalizedPostNo) {
-        if (
-          fromLink.blogId    === normalizedBlogId ||
-          fromBlogger.blogId === normalizedBlogId
-        ) {
+        if (fromLink.blogId === normalizedBlogId || fromBlogger.blogId === normalizedBlogId) {
           isMine = true;
         }
       }
@@ -100,34 +97,38 @@ export default async function handler(req, res) {
       const cleanTitle = (item.title || "").replace(/<[^>]+>/g, "");
 
       return {
-        rank,
+        rank: rank,
         title: cleanTitle,
         link: item.link || "",
+        bloggerlink: item.bloggerlink || "",
         bloggerName: item.bloggername || "",
         postDate: item.postdate || "",
         extractedBlogId: fromLink.blogId || fromBlogger.blogId,
         extractedPostNo: fromLink.postNo || fromBlogger.postNo,
-        isMine,
+        isMine: isMine,
       };
     });
 
-    // 디버그 정보 (상위 5개 - 매칭 문제 파악용)
-    const debugTop5 = results.slice(0, 5).map(r => ({
-      rank: r.rank,
-      blogId: r.extractedBlogId,
-      postNo: r.extractedPostNo,
-      link: r.link,
-      isMine: r.isMine,
-    }));
+    // 디버그: 상위 5개 링크 정보 (매칭 확인용)
+    const debugTop5 = results.slice(0, 5).map(function(r) {
+      return {
+        rank: r.rank,
+        link: r.link,
+        bloggerlink: r.bloggerlink,
+        extractedBlogId: r.extractedBlogId,
+        extractedPostNo: r.extractedPostNo,
+        isMine: r.isMine,
+      };
+    });
 
     return res.status(200).json({
-      keyword,
+      keyword: keyword,
       total: data.total || 0,
       display: items.length,
-      myRank,
+      myRank: myRank,
       searchedBlogId: normalizedBlogId,
       searchedPostNo: normalizedPostNo,
-      debugTop5,
+      debugTop5: debugTop5,
       items: results,
     });
 
