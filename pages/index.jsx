@@ -2128,9 +2128,19 @@ function MissingTab(){
   };
 
   // ── 네이버 블로그탭 순위 조회 ──
-  const getNaverRank=async(kw,postNo)=>{
-    // 외부 프록시 크롤링은 불안정하므로 null 반환 (직접 확인 링크 제공)
-    return null;
+  const getNaverRank=async(kw, blogId, postNo)=>{
+    try{
+      const params=new URLSearchParams({keyword:kw});
+      if(blogId) params.append("blogId", blogId);
+      if(postNo) params.append("postNo", postNo);
+      const res=await fetch(`/api/naver-rank?${params.toString()}`);
+      if(!res.ok) return null;
+      const data=await res.json();
+      if(data.error) return null;
+      return data.myRank ?? null;
+    }catch(e){
+      return null;
+    }
   };
 
   // ── AI 분석 ──
@@ -2163,8 +2173,29 @@ URL: ${post.link||"없음"}
       const ai=JSON.parse(raw.slice(s,e+1));
 
       const kws=ai.keywords||[];
-      const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null}));
+
+      // 우선 rankLoading:true로 빠르게 화면에 표시
+      const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null,rankLoading:true}));
       setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kwData}}));
+
+      // blogId, postNo 추출
+      const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
+      const extractedBlogId=urlMatch?.[1]||posts?.blogId||"";
+      const extractedPostNo=urlMatch?.[2]||post.postNo||"";
+
+      // 각 키워드 실제 순위 병렬 조회
+      const rankResults=await Promise.all(
+        kws.map(kw=>getNaverRank(kw, extractedBlogId, extractedPostNo))
+      );
+
+      const kwDataWithRank=kws.map((kw,i)=>({
+        rank:i+1,
+        keyword:kw,
+        realRank:rankResults[i],
+        rankLoading:false,
+      }));
+      setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kwDataWithRank}}));
+
     }catch(e){
       setAnalysis(prev=>({...prev,[post.postNo]:{error:true}}));
     }
@@ -2351,7 +2382,7 @@ URL: ${post.link||"없음"}
                 {a.missingStatus&&<span style={{background:(SC[a.missingStatus]||"#21262d")+"22",color:SC[a.missingStatus]||"#8b949e",border:`1px solid ${SC[a.missingStatus]||"#30363d"}44`,borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>{a.missingStatus}</span>}
                 <span style={{background:"#21262d",color:a.seoScore>=70?"#3fb950":a.seoScore>=40?"#ffa657":"#ff7b72",border:"1px solid #30363d",borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>SEO {a.seoScore}</span>
                 {a.topKeywords?.[0]&&<span style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>
-                  🔑 {a.topKeywords[0].keyword} {a.topKeywords[0].realRank!==null?`${a.topKeywords[0].realRank}위`:"30위↓"}
+                  🔑 {a.topKeywords[0].keyword} {a.topKeywords[0].rankLoading?"순위조회중…":a.topKeywords[0].realRank!==null?`${a.topKeywords[0].realRank}위`:"100위↓"}
                 </span>}
               </div>}
               {/* 분석 중 */}
@@ -2390,9 +2421,10 @@ URL: ${post.link||"없음"}
               </div>
               {a.topKeywords.map((kw,i)=>{
                 const rc=rankColor(kw.realRank);
-                const isOut=kw.realRank===null;
+                const isOut=kw.realRank===null&&!kw.rankLoading;
+                const isLoading=kw.rankLoading;
                 return <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",
-                  background:"#161b22",border:`1px solid ${isOut?"#21262d":rc+"44"}`,borderRadius:"9px",marginBottom:"6px"}}>
+                  background:"#161b22",border:`1px solid ${isOut||isLoading?"#21262d":rc+"44"}`,borderRadius:"9px",marginBottom:"6px"}}>
                   <div style={{width:"24px",height:"24px",background:"#21262d",border:"1px solid #30363d",borderRadius:"6px",
                     display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                     <span style={{color:"#8b949e",fontSize:"11px",fontWeight:700}}>{kw.rank}</span>
@@ -2405,14 +2437,17 @@ URL: ${post.link||"없음"}
                       {kw.keyword} ↗
                     </a>
                   </div>
-                  <div style={{background:isOut?"#21262d":rc+"22",color:isOut?"#484f58":rc,
-                    border:`1px solid ${isOut?"#30363d":rc+"55"}`,borderRadius:"8px",
-                    padding:"5px 12px",fontSize:"15px",fontWeight:800,minWidth:"52px",textAlign:"center",flexShrink:0}}>
-                    {isOut?"30위↓":`${kw.realRank}위`}
+                  <div style={{background:isLoading?"#21262d":isOut?"#21262d":rc+"22",
+                    color:isLoading?"#8b949e":isOut?"#484f58":rc,
+                    border:`1px solid ${isLoading?"#30363d":isOut?"#30363d":rc+"55"}`,
+                    borderRadius:"8px",padding:"5px 12px",fontSize:"15px",fontWeight:800,
+                    minWidth:"52px",textAlign:"center",flexShrink:0,
+                    animation:isLoading?"pulse 1.2s ease infinite":undefined}}>
+                    {isLoading?"⏳":isOut?"100위↓":`${kw.realRank}위`}
                   </div>
                 </div>;
               })}
-              <div style={{fontSize:"11px",color:"#484f58",marginTop:"2px"}}>🔍 네이버 블로그탭 크롤링 기준 (상위 30위)</div>
+              <div style={{fontSize:"11px",color:"#484f58",marginTop:"2px"}}>🔍 네이버 검색 Open API 기준 (상위 100위) · 실시간 반영</div>
             </div>}
 
             {/* 누락 위험요인 */}
