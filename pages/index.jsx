@@ -2072,20 +2072,21 @@ function MissingTab(){
   const [page,setPage]=useState(1);
   const PER_PAGE=10;
 
-  // ── 방법1: 서버 API 통해 RSS fetch (CORS 우회) ──
+  // ── 방법1: RSS 직접 fetch (네이버 RSS는 CORS 허용) ──
   const fetchByBlogId=async()=>{
     const id=blogId.trim();
     if(!id){alert("블로그 아이디를 입력해주세요.");return;}
     setLoadingFeed(true);setFeedError("");setPosts(null);setAnalysis({});setExpanded(null);
     try{
-      const res=await fetch(`/api/blog-rss?blogId=${encodeURIComponent(id)}`);
-      if(!res.ok){
-        const err=await res.json().catch(()=>({error:`오류 (${res.status})`}));
-        throw new Error(err.error||`오류 (${res.status})`);
-      }
+      const rssUrl=`https://rss.blog.naver.com/${id}`;
+      const ctrl=new AbortController();
+      const tid=setTimeout(()=>ctrl.abort(),12000);
+      const res=await fetch(rssUrl,{signal:ctrl.signal});
+      clearTimeout(tid);
+      if(!res.ok) throw new Error(`RSS 응답 오류 (${res.status}). 아이디를 확인해주세요.`);
       const xml=await res.text();
       if(!xml.includes("<item")) throw new Error("게시글을 찾을 수 없어요. 블로그 아이디를 다시 확인해주세요.");
-      const doc=new DOMParser().parseFromString(xml,"application/xml");
+      const doc=new DOMParser().parseFromString(xml,"text/xml");
       const items=[...doc.querySelectorAll("item")];
       if(!items.length) throw new Error("최근 게시글이 없습니다.");
       const list=items.slice(0,10).map(it=>{
@@ -2101,7 +2102,8 @@ function MissingTab(){
       setPosts({all:list,current:list.slice(0,PER_PAGE),total:list.length,page:1,blogId:id});
       setPage(1);
     }catch(e){
-      setFeedError(e.message||"오류가 발생했습니다.");
+      if(e.name==="AbortError") setFeedError("요청 시간 초과. 다시 시도해주세요.");
+      else setFeedError(e.message||"오류가 발생했습니다.");
     }
     setLoadingFeed(false);
   };
@@ -2128,19 +2130,9 @@ function MissingTab(){
   };
 
   // ── 네이버 블로그탭 순위 조회 ──
-  const getNaverRank=async(kw, blogId, postNo)=>{
-    try{
-      const params=new URLSearchParams({keyword:kw});
-      if(blogId) params.append("blogId", blogId);
-      if(postNo) params.append("postNo", postNo);
-      const res=await fetch(`/api/naver-rank?${params.toString()}`);
-      if(!res.ok) return null;
-      const data=await res.json();
-      if(data.error) return null;
-      return data.myRank ?? null;
-    }catch(e){
-      return null;
-    }
+  const getNaverRank=async(kw,postNo)=>{
+    // 외부 프록시 크롤링은 불안정하므로 null 반환 (직접 확인 링크 제공)
+    return null;
   };
 
   // ── AI 분석 ──
@@ -2173,29 +2165,8 @@ URL: ${post.link||"없음"}
       const ai=JSON.parse(raw.slice(s,e+1));
 
       const kws=ai.keywords||[];
-
-      // 우선 rankLoading:true로 빠르게 화면에 표시
-      const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null,rankLoading:true}));
+      const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null}));
       setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kwData}}));
-
-      // blogId, postNo 추출
-      const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
-      const extractedBlogId=urlMatch?.[1]||posts?.blogId||"";
-      const extractedPostNo=urlMatch?.[2]||post.postNo||"";
-
-      // 각 키워드 실제 순위 병렬 조회
-      const rankResults=await Promise.all(
-        kws.map(kw=>getNaverRank(kw, extractedBlogId, extractedPostNo))
-      );
-
-      const kwDataWithRank=kws.map((kw,i)=>({
-        rank:i+1,
-        keyword:kw,
-        realRank:rankResults[i],
-        rankLoading:false,
-      }));
-      setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kwDataWithRank}}));
-
     }catch(e){
       setAnalysis(prev=>({...prev,[post.postNo]:{error:true}}));
     }
@@ -2382,7 +2353,7 @@ URL: ${post.link||"없음"}
                 {a.missingStatus&&<span style={{background:(SC[a.missingStatus]||"#21262d")+"22",color:SC[a.missingStatus]||"#8b949e",border:`1px solid ${SC[a.missingStatus]||"#30363d"}44`,borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>{a.missingStatus}</span>}
                 <span style={{background:"#21262d",color:a.seoScore>=70?"#3fb950":a.seoScore>=40?"#ffa657":"#ff7b72",border:"1px solid #30363d",borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>SEO {a.seoScore}</span>
                 {a.topKeywords?.[0]&&<span style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>
-                  🔑 {a.topKeywords[0].keyword} {a.topKeywords[0].rankLoading?"순위조회중…":a.topKeywords[0].realRank!==null?`${a.topKeywords[0].realRank}위`:"100위↓"}
+                  🔑 {a.topKeywords[0].keyword} {a.topKeywords[0].realRank!==null?`${a.topKeywords[0].realRank}위`:"30위↓"}
                 </span>}
               </div>}
               {/* 분석 중 */}
@@ -2391,7 +2362,6 @@ URL: ${post.link||"없음"}
                   <div key={i} style={{color:"#8b949e",fontSize:"11px",animation:`pulse 1.6s ease ${i*0.4}s infinite`}}>{msg}</div>
                 ))}
               </div>}
-              {a&&!a.error&&!isEx&&a.shortAdvice&&<div style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.5",marginTop:"3px"}}>{a.shortAdvice}</div>}
               {a?.error&&<div style={{color:"#ff7b72",fontSize:"12px",marginTop:"3px"}}>⚠️ 분석 실패. 재시도 버튼을 눌러주세요.</div>}
             </div>
             {/* 버튼 */}
@@ -2421,10 +2391,9 @@ URL: ${post.link||"없음"}
               </div>
               {a.topKeywords.map((kw,i)=>{
                 const rc=rankColor(kw.realRank);
-                const isOut=kw.realRank===null&&!kw.rankLoading;
-                const isLoading=kw.rankLoading;
+                const isOut=kw.realRank===null;
                 return <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",
-                  background:"#161b22",border:`1px solid ${isOut||isLoading?"#21262d":rc+"44"}`,borderRadius:"9px",marginBottom:"6px"}}>
+                  background:"#161b22",border:`1px solid ${isOut?"#21262d":rc+"44"}`,borderRadius:"9px",marginBottom:"6px"}}>
                   <div style={{width:"24px",height:"24px",background:"#21262d",border:"1px solid #30363d",borderRadius:"6px",
                     display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                     <span style={{color:"#8b949e",fontSize:"11px",fontWeight:700}}>{kw.rank}</span>
@@ -2437,46 +2406,16 @@ URL: ${post.link||"없음"}
                       {kw.keyword} ↗
                     </a>
                   </div>
-                  <div style={{background:isLoading?"#21262d":isOut?"#21262d":rc+"22",
-                    color:isLoading?"#8b949e":isOut?"#484f58":rc,
-                    border:`1px solid ${isLoading?"#30363d":isOut?"#30363d":rc+"55"}`,
-                    borderRadius:"8px",padding:"5px 12px",fontSize:"15px",fontWeight:800,
-                    minWidth:"52px",textAlign:"center",flexShrink:0,
-                    animation:isLoading?"pulse 1.2s ease infinite":undefined}}>
-                    {isLoading?"⏳":isOut?"100위↓":`${kw.realRank}위`}
+                  <div style={{background:isOut?"#21262d":rc+"22",color:isOut?"#484f58":rc,
+                    border:`1px solid ${isOut?"#30363d":rc+"55"}`,borderRadius:"8px",
+                    padding:"5px 12px",fontSize:"15px",fontWeight:800,minWidth:"52px",textAlign:"center",flexShrink:0}}>
+                    {isOut?"30위↓":`${kw.realRank}위`}
                   </div>
                 </div>;
               })}
-              <div style={{fontSize:"11px",color:"#484f58",marginTop:"2px"}}>🔍 네이버 검색 Open API 기준 (상위 100위) · 실시간 반영</div>
+              <div style={{fontSize:"11px",color:"#484f58",marginTop:"2px"}}>🔍 네이버 블로그탭 크롤링 기준 (상위 30위)</div>
             </div>}
 
-            {/* 누락 위험요인 */}
-            {a.missingReasons?.length>0&&<div>
-              <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"6px"}}>⚠️ 누락 위험 요인</div>
-              {a.missingReasons.map((r,i)=><div key={i} style={{color:"#c9d1d9",fontSize:"12px",lineHeight:"1.7",display:"flex",gap:"6px"}}>
-                <span style={{color:"#ffa657",flexShrink:0}}>•</span>{r}
-              </div>)}
-            </div>}
-
-            {a.shortAdvice&&<div style={{background:"#1a2332",border:"1px solid #1f6feb44",borderRadius:"8px",padding:"10px 14px",fontSize:"12px",color:"#8b949e"}}>
-              💡 {a.shortAdvice}
-            </div>}
-
-            <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-              {[
-                ["블로그탭 검색",`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(a.topKeywords?.[0]?.keyword||post.title)}`],
-                ["통합검색",`https://search.naver.com/search.naver?query=${encodeURIComponent(a.topKeywords?.[0]?.keyword||post.title)}`],
-                post.link?["포스트 보기",post.link]:null,
-                ["서치어드바이저","https://searchadvisor.naver.com/"],
-              ].filter(Boolean).map(([l,u])=>(
-                <a key={l} href={u} target="_blank" rel="noreferrer"
-                  style={{padding:"5px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"6px",fontSize:"11px",textDecoration:"none"}}
-                  onMouseEnter={e=>{e.target.style.background="#1f6feb22";e.target.style.color="#58a6ff";e.target.style.borderColor="#1f6feb44";}}
-                  onMouseLeave={e=>{e.target.style.background="#21262d";e.target.style.color="#8b949e";e.target.style.borderColor="#30363d";}}>
-                  {l} ↗
-                </a>
-              ))}
-            </div>
           </div>}
         </div>;
       })}
@@ -2493,9 +2432,6 @@ URL: ${post.link||"없음"}
         <button onClick={()=>goPage(totalPages)} disabled={page>=totalPages} style={{padding:"6px 10px",background:page>=totalPages?"#0d1117":"#161b22",color:page>=totalPages?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:page>=totalPages?"not-allowed":"pointer",fontSize:"12px"}}>»</button>
       </div>}
 
-      <div style={{background:"#161b22",border:"1px solid #21262d",borderRadius:"8px",padding:"9px 13px",fontSize:"11px",color:"#484f58",lineHeight:"1.6"}}>
-        ℹ️ 순위는 네이버 블로그탭 크롤링 기준이며 실시간과 차이가 있을 수 있습니다. 정확한 확인은 <a href="https://searchadvisor.naver.com/" target="_blank" rel="noreferrer" style={{color:"#58a6ff"}}>서치어드바이저</a>를 이용하세요.
-      </div>
     </div>}
   </div>;
 }
