@@ -2141,16 +2141,34 @@ function MissingTab(){
     }catch(e){return null;}
   };
 
+  // ── 본문 크롤링 ──
+  const fetchPostBody=async(post)=>{
+    if(post.bodyText) return post.bodyText;
+    if(!post.link) return post.description||"";
+    try{
+      const m=post.link.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
+      if(!m) return post.description||"";
+      const url=`https://blog.naver.com/PostView.naver?blogId=${m[1]}&logNo=${m[2]}&redirect=Dlog&widgetTypeCall=true`;
+      const res=await fetch(`/api/blog-content?url=${encodeURIComponent(url)}`);
+      if(!res.ok) return post.description||"";
+      const data=await res.json();
+      if(data.bodies?.length>0) return data.bodies[0];
+    }catch(e){}
+    return post.description||"";
+  };
+
   // ── AI 분석 ──
   const runAnalyze=async(post,idx)=>{
     if(analysis[post.postNo])return;
     setAnalyzing(idx);
     try{
-      const body=post.bodyText||post.description||"";
+      // 실제 본문 크롤링 먼저
+      const body=await fetchPostBody(post);
+
       const prompt=`아래 네이버 블로그 포스트를 분석해줘. 반드시 순수 JSON만 출력. 마크다운 없이.
 
 제목: ${post.title}
-본문: ${body.slice(0,1500)||"(없음)"}
+본문: ${body.slice(0,2000)||"(없음)"}
 URL: ${post.link||"없음"}
 
 {
@@ -2160,9 +2178,10 @@ URL: ${post.link||"없음"}
   "seoScore":0~100
 }
 
-주의사항:
-- keywords는 반드시 제목/본문 실제 내용에서 추출. 무관한 키워드 절대 금지
-- missingRisk/missingStatus는 제목 길이, 본문 품질, 키워드 적절성 종합 판단`;
+판단 기준:
+- keywords: 제목/본문 핵심 검색어 추출 (무관한 키워드 금지)
+- missingRisk: 제목 길이(20~40자 적정), 본문 분량(1500자↑ 양호), 광고성 여부, 키워드 반복 과다 여부 종합
+- seoScore: 제목 품질, 본문 충실도, 키워드 자연스러운 배치 종합`;
 
       const raw=await callClaude([{role:"user",content:prompt}],"Korean blog SEO expert. Analyze ONLY based on the given title and content. Output ONLY valid JSON.",800);
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
