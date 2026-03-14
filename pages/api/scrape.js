@@ -88,34 +88,37 @@ function extractText(html) {
   return text.slice(0, 5000); // 최대 5000자
 }
 
-// ── 이미지 URL 추출 ───────────────────────────────────────────────────────
+// ── 이미지 URL 추출 (기사 대표 이미지 1장만) ─────────────────────────────
 function extractImages(html, baseUrl) {
   const base = new URL(baseUrl);
-  const seen = new Set();
-  const results = [];
 
-  // og:image 우선
+  // og:image 우선 (기사 대표 이미지)
   const ogImg = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
               || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
   if (ogImg) {
     const src = toAbsUrl(ogImg[1], base);
-    if (src && !seen.has(src)) { seen.add(src); results.push(src); }
+    if (src) return [src];
   }
 
-  // img 태그 src / data-src
-  const imgRegex = /<img[^>]+(?:src|data-src|data-lazy-src)=["']([^"']+)["'][^>]*>/gi;
-  let m;
-  while ((m = imgRegex.exec(html)) !== null) {
-    if (results.length >= 15) break;
-    const src = toAbsUrl(m[1], base);
-    if (!src || seen.has(src)) continue;
-    // 작은 아이콘·광고 이미지 제외 (w/h 힌트가 있는 경우)
-    if (/[?&](w|width)=([1-9][0-9]|[1-9])(&|$)/i.test(src)) continue;
-    if (/\/(icon|logo|ad|banner|pixel|spacer|blank)\./i.test(src)) continue;
-    seen.add(src); results.push(src);
+  // twitter:image 차선
+  const twImg = html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)
+              || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i);
+  if (twImg) {
+    const src = toAbsUrl(twImg[1], base);
+    if (src) return [src];
   }
 
-  return results;
+  // article 본문 내 첫 번째 img
+  const articleMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i)
+    || html.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
+  const target = articleMatch ? articleMatch[1] : html;
+  const imgMatch = target.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i);
+  if (imgMatch) {
+    const src = toAbsUrl(imgMatch[1], base);
+    if (src && !src.startsWith('data:')) return [src];
+  }
+
+  return [];
 }
 
 function toAbsUrl(src, base) {
