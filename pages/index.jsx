@@ -4869,7 +4869,7 @@ function ArticleRewriteTab() {
       // 2. 이미지 처리
       setStep("rewriting");
       const imgResults = [];
-      const validImgs = images.slice(0, 10); // 최대 10장
+      const validImgs = images.slice(0, 1); // 대표 이미지 1장만
       for (let i = 0; i < validImgs.length; i++) {
         setImgProgress(Math.round(((i) / validImgs.length) * 100));
         const result = await processImage(validImgs[i]);
