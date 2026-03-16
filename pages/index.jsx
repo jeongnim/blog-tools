@@ -296,6 +296,7 @@ const WRITE_SUBTABS=[
   {id:"keyword",   icon:"🔍", label:"키워드 글쓰기"},
   {id:"autowrite", icon:"🤖", label:"카테고리 글쓰기"},
   {id:"analyze",   icon:"📊", label:"글분석"},
+  {id:"rewrite",   icon:"🔗", label:"기사 리라이팅"},
   {id:"emoji",     icon:"😃", label:"이모지"},
 ];
 
@@ -4755,7 +4756,239 @@ function EmojiTab() {
   </div>;
 }
 
-const TOOL_MAP={keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab};
+// ─── TAB: 기사 리라이팅 ───────────────────────────────────────────────────
+function ArticleRewriteTab() {
+  const [url, setUrl] = useState("");
+  const [step, setStep] = useState("idle"); // idle | scraping | rewriting | done | error
+  const [scraped, setScraped] = useState(null);
+  const [processedImages, setProcessedImages] = useState([]);
+  const [rewrittenTitle, setRewrittenTitle] = useState("");
+  const [rewrittenText, setRewrittenText] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [copiedText, setCopiedText] = useState(false);
+
+  const reset = () => {
+    setUrl(""); setStep("idle"); setScraped(null);
+    setProcessedImages([]); setRewrittenTitle(""); setRewrittenText("");
+    setErrorMsg("");
+  };
+
+  const processImage = (src) => new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width; canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      try {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          d[i]   = Math.min(255, Math.max(0, (d[i]   - 128) * 1.08 + 133));
+          d[i+1] = Math.min(255, Math.max(0, (d[i+1] - 128) * 1.08 + 133));
+          d[i+2] = Math.min(255, Math.max(0, (d[i+2] - 128) * 1.08 + 133));
+        }
+        ctx.putImageData(imageData, 0, 0);
+      } catch(e) {}
+      canvas.toBlob(blob => {
+        if (!blob) { resolve(null); return; }
+        resolve({ blob, dataUrl: canvas.toDataURL("image/jpeg", 0.92) });
+      }, "image/jpeg", 0.92);
+    };
+    img.onerror = () => resolve(null);
+    img.src = `/api/img-proxy?url=${encodeURIComponent(src)}`;
+  });
+
+  const run = async () => {
+    if (!url.trim()) return;
+    setStep("scraping"); setErrorMsg("");
+    setScraped(null); setProcessedImages([]); setRewrittenTitle(""); setRewrittenText("");
+
+    try {
+      // 1. 스크래핑
+      const scrapeRes = await fetch("/api/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const scrapeData = await scrapeRes.json();
+      if (!scrapeRes.ok || !scrapeData.success) throw new Error(scrapeData.error || "스크래핑 실패");
+      const { title, text, images } = scrapeData.data;
+      setScraped({ title, text, images });
+
+      // 2. 이미지 처리 (대표 1장)
+      setStep("rewriting");
+      const imgResults = [];
+      if (images && images.length > 0) {
+        const result = await processImage(images[0]);
+        if (result) imgResults.push({ original: images[0], processed: result.dataUrl, blob: result.blob });
+      }
+      setProcessedImages(imgResults);
+
+      // 3. AI 리라이팅
+      const rewritePrompt = `아래 기사의 제목과 본문을 리라이팅해줘.
+
+원문 제목: ${title}
+원문 본문:
+${text.slice(0, 4000)}
+
+리라이팅 규칙:
+1. 기사 형식 유지 — 원문이 뉴스 기사면 리라이팅 결과도 뉴스 기사 형식으로 유지
+2. 내용 요약·삭제 금지 — 원문에 포함된 모든 정보, 사실, 수치, 인용구를 빠짐없이 포함. 글의 길이와 정보량은 원문과 동일하게 유지
+3. 표현만 바꿔쓰기 — 단어, 어휘, 문장 구조, 말투를 자연스럽게 바꿔서 원문과 다른 사람이 쓴 것처럼 만들 것. 문장을 그대로 옮기지 말 것
+4. 뉴스 기사체 유지 — 문어체, 객관적 어투, 자연스러운 문장 흐름 유지. 블로그 말투 사용 금지
+5. 제목 새로 작성 — 원문 제목을 그대로 쓰지 말 것. 본문 핵심 내용을 담되 단어·구조를 완전히 다르게 새로 작성. 원문 제목과 단어가 겹치지 않도록 할 것
+
+반드시 순수 JSON만 출력 (마크다운 백틱 없이):
+{"title":"리라이팅된 제목","content":"리라이팅된 본문"}`;
+
+      const raw = await callClaude(
+        [{ role: "user", content: rewritePrompt }],
+        "You are a professional Korean news writer. Output ONLY valid JSON, no markdown backticks.",
+        4000,
+        "claude-sonnet-4-6"
+      );
+      const s = raw.indexOf("{"); const e = raw.lastIndexOf("}");
+      const parsed = JSON.parse(s !== -1 && e !== -1 ? raw.slice(s, e+1) : raw);
+      setRewrittenTitle(parsed.title || title);
+      setRewrittenText(parsed.content || raw);
+      setStep("done");
+
+    } catch (err) {
+      setErrorMsg(err.message || "처리 중 오류가 발생했습니다");
+      setStep("error");
+    }
+  };
+
+  const copyText = () => {
+    navigator.clipboard.writeText(`${rewrittenTitle}\n\n${rewrittenText}`);
+    setCopiedText(true);
+    setTimeout(() => setCopiedText(false), 2000);
+  };
+
+  const isRunning = step === "scraping" || step === "rewriting";
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+    {/* URL 입력 */}
+    <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px"}}>
+      <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"10px"}}>🔗 기사 URL 입력</div>
+      <div style={{display:"flex",gap:"8px"}}>
+        <input value={url} onChange={e=>setUrl(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&!isRunning&&run()}
+          placeholder="https://news.example.com/article/..."
+          disabled={isRunning}
+          style={{flex:1,padding:"10px 14px",background:"#0d1117",border:"1px solid #30363d",
+            borderRadius:"8px",color:"#e6edf3",fontSize:"13px",outline:"none",
+            fontFamily:"'Noto Sans KR',sans-serif",opacity:isRunning?0.6:1}}
+          onFocus={e=>e.target.style.borderColor="#58a6ff"}
+          onBlur={e=>e.target.style.borderColor="#30363d"}/>
+        <button onClick={run} disabled={isRunning||!url.trim()}
+          style={{padding:"10px 20px",background:isRunning||!url.trim()?"#21262d":"linear-gradient(135deg,#1f6feb,#8957e5)",
+            color:isRunning||!url.trim()?"#484f58":"#fff",border:"none",borderRadius:"8px",
+            cursor:isRunning||!url.trim()?"not-allowed":"pointer",
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,whiteSpace:"nowrap"}}>
+          {isRunning?"⏳ 처리중...":"🚀 시작"}
+        </button>
+        {step!=="idle"&&<button onClick={reset}
+          style={{padding:"10px 14px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+            borderRadius:"8px",cursor:"pointer",fontSize:"13px"}}>🗑️</button>}
+      </div>
+    </div>
+
+    {/* 진행 상태 */}
+    {isRunning&&(
+      <div style={{background:"#0d1e33",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"16px"}}>
+        {[
+          {label:"기사 스크래핑", done:step!=="scraping", active:step==="scraping"},
+          {label:"이미지 처리 (EXIF 제거 + 보정)", done:step==="done", active:step==="rewriting"&&!rewrittenText},
+          {label:"AI 리라이팅", done:step==="done", active:step==="rewriting"&&!!scraped},
+        ].map((s,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:i<2?"8px":"0"}}>
+            <span style={{fontSize:"14px"}}>{s.done?"✅":s.active?"⏳":"⬜"}</span>
+            <span style={{color:s.done?"#3fb950":s.active?"#ffa657":"#484f58",fontSize:"13px",fontWeight:s.active?700:400}}>
+              {s.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    )}
+
+    {/* 에러 */}
+    {step==="error"&&(
+      <div style={{background:"#2d0b0b",border:"1px solid #f8514944",borderRadius:"12px",padding:"14px",color:"#f85149",fontSize:"13px"}}>
+        ❌ {errorMsg}
+      </div>
+    )}
+
+    {/* 결과 */}
+    {step==="done"&&(
+      <>
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
+            <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700}}>✍️ 리라이팅 결과</div>
+            <button onClick={copyText}
+              style={{padding:"6px 14px",background:copiedText?"#2ea043":"#21262d",
+                color:copiedText?"#fff":"#8b949e",border:"1px solid #30363d",
+                borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600}}>
+              {copiedText?"✅ 복사됨!":"📋 전체 복사"}
+            </button>
+          </div>
+          <div style={{marginBottom:"10px"}}>
+            <div style={{color:"#484f58",fontSize:"11px",marginBottom:"4px"}}>제목</div>
+            <input value={rewrittenTitle} onChange={e=>setRewrittenTitle(e.target.value)}
+              style={{width:"100%",padding:"10px 12px",background:"#0d1117",border:"1px solid #30363d",
+                borderRadius:"8px",color:"#e6edf3",fontSize:"14px",fontWeight:700,outline:"none",
+                fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
+              onFocus={e=>e.target.style.borderColor="#58a6ff"}
+              onBlur={e=>e.target.style.borderColor="#30363d"}/>
+          </div>
+          <div>
+            <div style={{color:"#484f58",fontSize:"11px",marginBottom:"4px"}}>본문 ({rewrittenText.length.toLocaleString()}자)</div>
+            <textarea value={rewrittenText} onChange={e=>setRewrittenText(e.target.value)} rows={14}
+              style={{width:"100%",boxSizing:"border-box",padding:"12px 14px",background:"#0d1117",
+                border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
+                fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",lineHeight:"1.7",
+                resize:"vertical",outline:"none"}}
+              onFocus={e=>e.target.style.borderColor="#58a6ff"}
+              onBlur={e=>e.target.style.borderColor="#30363d"}/>
+          </div>
+        </div>
+
+        {processedImages.length>0&&(
+          <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
+            <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"10px"}}>
+              🖼️ 대표 이미지 — EXIF 제거 + 자동보정 완료
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+              <img src={processedImages[0].processed} alt=""
+                style={{width:"120px",height:"80px",objectFit:"cover",borderRadius:"8px",border:"1px solid #30363d"}}/>
+              <button onClick={()=>{
+                const a=document.createElement("a");
+                a.href=processedImages[0].processed;
+                a.download=`article_img_${Date.now()}.jpg`;
+                a.click();
+              }} style={{padding:"8px 16px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+                borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px"}}>
+                ⬇️ 이미지 저장
+              </button>
+            </div>
+          </div>
+        )}
+
+        {scraped&&(
+          <div style={{background:"#161b22",border:"1px solid #21262d",borderRadius:"10px",padding:"12px"}}>
+            <div style={{color:"#484f58",fontSize:"11px"}}>
+              📄 원문: {scraped.title} · {scraped.text.length.toLocaleString()}자 · 이미지 {scraped.images.length}개
+            </div>
+          </div>
+        )}
+      </>
+    )}
+  </div>;
+}
+
+const TOOL_MAP={keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab};
 
 
 // ─── 블로그 글쓰기 공통 프롬프트 빌더 ───────────────────────────────────────
