@@ -1734,21 +1734,16 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
       const mobMonthly  = mainStat?.monthlyMobileQcCnt!=null ? Number(mainStat.monthlyMobileQcCnt)||0 : null;
       const totalMonthly = (pcMonthly!==null&&mobMonthly!==null) ? pcMonthly+mobMonthly : null;
 
-      // ② 블로그 총 게시물 수 + 월 발행량
-      // blog-count API (네이버 Search API 실측값) 만 신뢰
+      // ② 블로그 총 게시물 수 + 월 발행량 (Search API 실측값만 사용)
       let totalBlogPosts = null;
       let monthlyBlogPostsReal = null;
       let blogCountOk = false;
-
       try {
         const bcRes = await fetch(`/api/blog-count?keyword=${encodeURIComponent(kw)}`);
         const bcData = await bcRes.json();
         if (!bcData.error) {
           totalBlogPosts = bcData.total ?? null;
-          if (bcData.monthly != null) {
-            monthlyBlogPostsReal = bcData.monthly;
-            blogCountOk = true;
-          }
+          if (bcData.monthly != null) { monthlyBlogPostsReal = bcData.monthly; blogCountOk = true; }
         }
       } catch(e) {}
 
@@ -1776,10 +1771,10 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         '  "smartBlockReason": "왜 이 유형의 스마트블록이 뜨는지 한 줄",',
         '  "blogStrategy": "이 스마트블록 유형에서 블로그가 노출될 수 있는 전략 한 줄",',
         '  "longtailKeywords": [',
-        '    "스마트블록 유형(smartBlockType)에 따라 아래 전략으로 문장형 키워드 10개 작성:",',
-        '    "블로그형→정보/후기/비교 문장형, 지도형→블로그 우회 구체적 경험형,",',
-        '    "쇼핑형→구매 전 탐색형, 리뷰형→상세 사용기/비교형, 비교형→vs구도/추천형.",',
-        '    "반드시 완성된 문장형으로. 단어 나열 금지. 실제 블로거가 쓸 제목처럼."',
+        '    "이 키워드로 블로그 글을 쓸 때 활용할 수 있는 구체적인 글 주제 10개.",',
+        '    "형식: 실제 블로거가 쓸 법한 완성된 제목 형태로.",',
+        '    "예: 천안맛집 → \'천안 성정동 점심 혼밥하기 좋은 국밥집 솔직 후기\' 처럼.",',
+        '    "키워드를 자연스럽게 포함하되 독자 클릭을 유도하는 제목으로."',
         '  ]',
         '}' + titlesAppend
       ].join("\n");
@@ -1798,7 +1793,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         ? Math.round((monthlyBlogPosts / totalMonthly) * 100)
         : null;
 
-      // 경쟁 강도 5단계 (포화도 기반, 직관적 표현)
+      // 경쟁 강도 5단계
       const compLevel = saturation === null ? "알 수 없음"
         : saturation < 50   ? "매우쉬움"
         : saturation < 150  ? "쉬움"
@@ -1806,7 +1801,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         : saturation < 1500 ? "어려움"
         : "매우어려움";
 
-      // 일 방문자 추천 기준 (월검색량 기반)
+      // 일 방문자 추천 기준 (월검색량 ÷ 30 × 5% CTR, 10단위 올림)
       const dailyVisitReq = totalMonthly
         ? Math.max(30, Math.round((totalMonthly / 30) * 0.05 / 10) * 10)
         : null;
@@ -1815,9 +1810,9 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
       const compComment = compLevel === "알 수 없음" ? null
         : compLevel === "매우쉬움" ? "초보 블로거도 쉽게 상위노출 가능한 키워드예요!"
         : compLevel === "쉬움"     ? "발행글이 적어 노출 기회가 많아요. 도전해보세요!"
-        : compLevel === "보통"     ? "중간 수준의 경쟁도예요. 품질 좋은 글이면 충분해요."
-        : compLevel === "어려움"   ? "고경쟁 키워드예요. 전문성 있는 글과 블로그 지수가 필요해요."
-        : "최고 난이도 키워드예요. 상위 블로거에게만 추천해요.";
+        : compLevel === "보통"     ? "품질 좋은 글이라면 충분히 노출 가능해요."
+        : compLevel === "어려움"   ? "전문성 있는 글과 어느 정도 블로그 지수가 필요해요."
+        : "상위권 블로거에게 추천하는 고경쟁 키워드예요.";
 
       // UI 게이지용 0~100 스코어 (로그 스케일: 포화도 1~3000%를 0~100으로)
       const compScore = saturation === null ? 50
@@ -1847,7 +1842,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         pcAvgClick: mainStat?.monthlyAvePcClkCnt ?? null,
         mobAvgClick: mainStat?.monthlyAveMobileClkCnt ?? null,
         totalBlogPosts,
-        saturation, ratio, compLevel, compScore, compComment, dailyVisitReq,
+        saturation, ratio, compLevel, compScore, dailyVisitReq, compComment,
         blogTitles,
         relKeywords,
         ...aiResult,
@@ -1974,63 +1969,66 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
           )}
         </div>
 
-        {/* 경쟁 강도 + 난이도 통합 카드 */}
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3",gridRow:"3"})}}>
+        {/* 경쟁 강도 (트렌드 통합, 세로 레이아웃) */}
+        <div style={{background:"#161b22",border:`1px solid ${compColor}55`,borderRadius:"12px",padding:"16px",...(!isMobile&&{gridColumn:"1/3",gridRow:"3"})}}>
           <SectionTitle>⚡ 경쟁 강도</SectionTitle>
-          <div style={{display:"flex",gap:"12px",flexWrap:"wrap"}}>
-            {/* 왼쪽: 난이도 + 멘트 */}
-            <div style={{flex:"1",minWidth:"160px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
-                <div style={{
-                  padding:"6px 16px",borderRadius:"10px",
-                  background: compColor+"22",
-                  border:`2px solid ${compColor}`,
-                }}>
-                  <span style={{color:compColor,fontSize:"18px",fontWeight:900}}>{result.compLevel}</span>
+
+          {/* 1행: 등급 크게 + 일방문자 추천 */}
+          <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}>
+            <div style={{
+              background:`${compColor}18`,border:`2px solid ${compColor}`,
+              borderRadius:"12px",padding:"8px 18px",flexShrink:0,textAlign:"center"
+            }}>
+              <div style={{color:compColor,fontSize:"20px",fontWeight:900,lineHeight:1}}>{result.compLevel}</div>
+            </div>
+            <div style={{flex:1}}>
+              {result.dailyVisitReq!=null&&<div style={{color:"#e6edf3",fontSize:"13px",fontWeight:600,marginBottom:"2px"}}>
+                일 방문자 <span style={{color:compColor}}>{fmtNum(result.dailyVisitReq)}명 이상</span> 블로거 추천
+              </div>}
+              {result.compComment&&<div style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.4"}}>{result.compComment}</div>}
+            </div>
+          </div>
+
+          {/* 2행: 게이지바 */}
+          <div style={{position:"relative",marginBottom:"4px"}}>
+            <div style={{height:"10px",background:"linear-gradient(90deg,#3fb950,#58a6ff,#ffa657,#ff7b72,#f85149)",borderRadius:"5px"}}/>
+            <div style={{
+              position:"absolute",top:"-4px",
+              left:`calc(${Math.min(Math.max(result.compScore,2),96)}% - 9px)`,
+              width:"18px",height:"18px",background:"#161b22",borderRadius:"50%",
+              border:`3px solid ${compColor}`,boxShadow:`0 0 8px ${compColor}99`
+            }}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginBottom:"14px"}}>
+            <span>매우쉬움</span><span>매우어려움</span>
+          </div>
+
+          {/* 3행: 수치 3개 */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px"}}>
+            {[
+              {label:"월 발행량", value:result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"개":"—", color:"#ffa657", badge:result.blogCountOk?"✓":null},
+              {label:"월 검색량", value:result.totalMonthly!=null?fmtNum(result.totalMonthly)+"회":"—", color:"#58a6ff"},
+              {label:"포화도",   value:result.saturation!=null?result.saturation+"%":"—", color:compColor},
+            ].map(({label,value,color,badge},i)=>(
+              <div key={i} style={{background:"#0d1117",borderRadius:"10px",padding:"10px 8px",textAlign:"center",border:"1px solid #21262d"}}>
+                <div style={{color:"#484f58",fontSize:"10px",marginBottom:"4px"}}>{label}</div>
+                <div style={{color,fontSize:"14px",fontWeight:700}}>
+                  {value}
+                  {badge&&<span style={{color:"#3fb950",fontSize:"9px",marginLeft:"2px"}}>{badge}</span>}
                 </div>
-                {result.dailyVisitReq!=null&&<div style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.5"}}>
-                  일 방문자 <strong style={{color:"#e6edf3"}}>{fmtNum(result.dailyVisitReq)}명 이상</strong><br/>블로거에게 추천
-                </div>}
               </div>
-              {result.compComment&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"8px 12px",fontSize:"12px",color:"#8b949e",lineHeight:"1.5",marginBottom:"8px"}}>
-                💡 {result.compComment}
-              </div>}
-              {/* 게이지 */}
-              <div style={{position:"relative",marginBottom:"4px"}}>
-                <div style={{height:"8px",background:"linear-gradient(90deg,#3fb950,#58a6ff,#ffa657,#ff7b72,#f85149)",borderRadius:"4px"}}/>
-                <div style={{position:"absolute",top:"-5px",left:`calc(${result.compScore}% - 9px)`,width:"18px",height:"18px",background:"#fff",borderRadius:"50%",border:`3px solid ${compColor}`}}/>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58"}}><span>매우쉬움</span><span>매우어려움</span></div>
-            </div>
-            {/* 오른쪽: 수치 */}
-            <div style={{background:"#0d1117",borderRadius:"8px",padding:"10px 12px",fontSize:"12px",color:"#8b949e",minWidth:"150px",display:"flex",flexDirection:"column",gap:"6px",alignSelf:"flex-start"}}>
-              <div style={{display:"flex",justifyContent:"space-between",gap:"12px"}}>
-                <span>월 발행량</span>
-                <strong style={{color:"#ffa657"}}>
-                  {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"개":<span style={{color:"#484f58"}}>데이터없음</span>}
-                  {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓</span>}
-                </strong>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",gap:"12px"}}>
-                <span>월 검색량</span>
-                <strong style={{color:"#58a6ff"}}>{result.totalMonthly!=null?fmtNum(result.totalMonthly)+"회":"-"}</strong>
-              </div>
-              {result.saturation!=null&&<div style={{display:"flex",justifyContent:"space-between",gap:"12px",paddingTop:"6px",borderTop:"1px solid #21262d"}}>
-                <span>포화도</span>
-                <strong style={{color:compColor}}>{result.saturation.toLocaleString()}%</strong>
-              </div>}
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* 롱테일 키워드 */}
+        {/* 추천 글 주제 */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
-          <SectionTitle>🎯 롱테일 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추출</span></SectionTitle>
+          <SectionTitle>✍️ 추천 글 주제 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추출</span></SectionTitle>
           <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
             {result.longtailKeywords?.map((kw,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",background:"#0d1117",
                 borderRadius:"8px",padding:"8px 10px",border:"1px solid #21262d"}}>
-                <span style={{color:"#484f58",fontSize:"11px",minWidth:"16px"}}>{i+1}</span>
+                <span style={{color:"#484f58",fontSize:"11px",minWidth:"16px",flexShrink:0}}>{i+1}</span>
                 <span style={{flex:1,color:"#c9d1d9",fontSize:"12px",lineHeight:"1.4"}}>{kw}</span>
                 <button onClick={()=>goAutoWrite&&goAutoWrite(kw,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword)}
                   style={{background:"linear-gradient(135deg,#1f6feb,#388bfd)",border:"none",color:"#fff",
@@ -2076,10 +2074,7 @@ function MissingTab(){
     setLoadingFeed(true);setFeedError("");setPosts(null);setAnalysis({});setExpanded(null);
     try{
       const res=await fetch(`/api/blog-rss?blogId=${encodeURIComponent(id)}`);
-      if(!res.ok){
-        const err=await res.json().catch(()=>({error:`오류 (${res.status})`}));
-        throw new Error(err.error||`오류 (${res.status})`);
-      }
+      if(!res.ok){const err=await res.json().catch(()=>({error:`오류 (${res.status})`}));throw new Error(err.error||`오류 (${res.status})`);}
       const xml=await res.text();
       if(!xml.includes("<item")) throw new Error("게시글을 찾을 수 없어요. 블로그 아이디를 다시 확인해주세요.");
       const doc=new DOMParser().parseFromString(xml,"application/xml");
@@ -2097,9 +2092,7 @@ function MissingTab(){
       });
       setPosts({all:list,current:list.slice(0,PER_PAGE),total:list.length,page:1,blogId:id});
       setPage(1);
-    }catch(e){
-      setFeedError(e.message||"오류가 발생했습니다.");
-    }
+    }catch(e){setFeedError(e.message||"오류가 발생했습니다.");}
     setLoadingFeed(false);
   };
 
@@ -2178,28 +2171,17 @@ URL: ${post.link||"없음"}
 - missingRisk: 제목 길이(20~40자 적정), 본문 분량(1500자↑ 양호), 광고성 여부, 키워드 반복 과다 여부 종합
 - seoScore: 제목 품질, 본문 충실도, 키워드 자연스러운 배치 종합`;
 
-      const raw=await callClaude([{role:"user",content:prompt}],"Korean blog SEO expert. Analyze ONLY based on the given title and content. Output ONLY valid JSON.",800);
+      const raw=await callClaude([{role:"user",content:prompt}],"Korean blog SEO expert. Output ONLY valid JSON.",800);
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
       const ai=JSON.parse(raw.slice(s,e+1));
       const kws=ai.keywords||[];
-
       const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null,rankLoading:true}));
       setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kwData}}));
-
       const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
       const extractedBlogId=urlMatch?.[1]||posts?.blogId||"";
       const extractedPostNo=urlMatch?.[2]||post.postNo||"";
-
-      const rankResults=await Promise.all(
-        kws.map(kw=>getNaverRank(kw,extractedBlogId,extractedPostNo))
-      );
-      const kwDataWithRank=kws.map((kw,i)=>({
-        rank:i+1,keyword:kw,
-        realRank:rankResults[i],
-        rankLoading:false,
-      }));
-      setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kwDataWithRank}}));
-
+      const rankResults=await Promise.all(kws.map(kw=>getNaverRank(kw,extractedBlogId,extractedPostNo)));
+      setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i],rankLoading:false}))}}));
     }catch(e){
       setAnalysis(prev=>({...prev,[post.postNo]:{error:true}}));
     }
@@ -2428,23 +2410,20 @@ URL: ${post.link||"없음"}
                 const isLoading=kw.rankLoading;
                 return <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",
                   background:"#161b22",border:`1px solid ${isOut||isLoading?"#21262d":rc+"44"}`,borderRadius:"9px",marginBottom:"6px"}}>
-                  <div style={{width:"24px",height:"24px",background:"#21262d",border:"1px solid #30363d",borderRadius:"6px",
-                    display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <div style={{width:"24px",height:"24px",background:"#21262d",border:"1px solid #30363d",borderRadius:"6px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                     <span style={{color:"#8b949e",fontSize:"11px",fontWeight:700}}>{kw.rank}</span>
                   </div>
                   <div style={{flex:1,minWidth:0}}>
                     <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw.keyword)}`}
                       target="_blank" rel="noreferrer"
-                      style={{color:"#e6edf3",fontSize:"13px",fontWeight:700,textDecoration:"none",display:"block",marginBottom:"2px"}}
+                      style={{color:"#e6edf3",fontSize:"13px",fontWeight:700,textDecoration:"none",display:"block"}}
                       onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
                       {kw.keyword} ↗
                     </a>
                   </div>
-                  <div style={{background:isLoading?"#21262d":isOut?"#21262d":rc+"22",
-                    color:isLoading?"#8b949e":isOut?"#484f58":rc,
+                  <div style={{background:isLoading?"#21262d":isOut?"#21262d":rc+"22",color:isLoading?"#8b949e":isOut?"#484f58":rc,
                     border:`1px solid ${isLoading?"#30363d":isOut?"#30363d":rc+"55"}`,
-                    borderRadius:"8px",padding:"5px 12px",fontSize:"15px",fontWeight:800,
-                    minWidth:"52px",textAlign:"center",flexShrink:0}}>
+                    borderRadius:"8px",padding:"5px 12px",fontSize:"15px",fontWeight:800,minWidth:"52px",textAlign:"center",flexShrink:0}}>
                     {isLoading?"⏳":isOut?"100위↓":`${kw.realRank}위`}
                   </div>
                 </div>;
