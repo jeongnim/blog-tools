@@ -2143,25 +2143,76 @@ function MissingTab(){
     try{
       const body=await fetchPostBody(post);
 
-      // ── Step 1: AI로 키워드 + SEO점수만 추출 (missingStatus는 AI 추측 제거) ──
+      // ── Step 1: AI로 키워드만 추출 ──
       const prompt=`아래 네이버 블로그 포스트를 분석해줘. 반드시 순수 JSON만 출력. 마크다운 없이.
 
 제목: ${post.title}
 본문: ${body.slice(0,2000)||"(없음)"}
 
-{
-  "keywords":["이 글 실제 내용 기반 키워드1","키워드2","키워드3"],
-  "seoScore":0~100
-}
+{"keywords":["이 글 실제 내용 기반 키워드1","키워드2","키워드3"]}
 
-판단 기준:
-- keywords: 제목/본문 핵심 검색어 추출 (무관한 키워드 금지)
-- seoScore: 제목 품질, 본문 충실도, 키워드 자연스러운 배치 종합`;
+- keywords: 제목/본문 핵심 검색어 추출 (무관한 키워드 금지, 정확히 3개)`;
 
-      const raw=await callClaude([{role:"user",content:prompt}],"Korean blog SEO expert. Output ONLY valid JSON.",600);
+      const raw=await callClaude([{role:"user",content:prompt}],"Korean blog SEO expert. Output ONLY valid JSON.",400);
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
       const ai=JSON.parse(raw.slice(s,e+1));
       const kws=ai.keywords||[];
+
+      // ── SEO 점수: 네이버 블로그 SEO 실측 기준으로 계산 ──────────────────
+      // 참고: 네이버 서치어드바이저 가이드, C-Rank, 다이아(D.I.A.) 모델
+      // 총 100점
+
+      const bodyNoSpace = body.replace(/\s/g, "").length;
+      const bodyLines   = body.split("\n").filter(l => l.trim().length > 0);
+
+      // 1. 본문 글자수 (30점)
+      // TBWA·네이버 가이드: 1,500자↑ 적정 / 3,000자↑ 우수
+      const lenScore =
+        bodyNoSpace >= 3000 ? 30 :
+        bodyNoSpace >= 1500 ? 22 :
+        bodyNoSpace >= 1000 ? 13 :
+        bodyNoSpace >= 500  ? 6  : 0;
+
+      // 2. 제목 길이 (20점)
+      // TBWA 가이드: 국문 기준 15~32자 적정
+      const titleLen = post.title.length;
+      const titleScore =
+        titleLen >= 15 && titleLen <= 32 ? 20 :
+        titleLen >= 10 && titleLen <= 40 ? 12 :
+        titleLen >= 6  ? 5 : 0;
+
+      // 3. 본문 구조 (20점)
+      // NNT: Heading 구조, 단락 나누기 → 줄바꿈/단락 수로 측정
+      const paraScore =
+        bodyLines.length >= 15 ? 20 :
+        bodyLines.length >= 8  ? 14 :
+        bodyLines.length >= 4  ? 7  : 0;
+
+      // 4. 키워드 밀도·집중도 (15점)
+      // C-Rank: 제목 핵심어가 본문에 자연스럽게 포함된 비율
+      const titleWords   = post.title.match(/[가-힣a-zA-Z0-9]{2,}/g) || [];
+      const bodyLower    = body.toLowerCase();
+      const matchedWords = titleWords.filter(w => bodyLower.includes(w.toLowerCase()));
+      const kwRatio      = titleWords.length > 0 ? matchedWords.length / titleWords.length : 0;
+      const kwScore =
+        kwRatio >= 0.7 ? 15 :
+        kwRatio >= 0.4 ? 10 :
+        kwRatio >= 0.2 ? 5  : 0;
+
+      // 5. 광고·스팸성 패턴 (15점)
+      // 다이아 모델: "문서의 의도", "어뷰징 척도" — 협찬·광고 표현 감지
+      const spamPatterns = ["협찬","광고비","원고료","제공받","체험단","서포터즈","뒷광고","내돈내산아님","유료광고","무료제공","클릭하세요","지금바로","한정수량","선착순","공구","당첨"];
+      const spamCount    = spamPatterns.filter(p => body.includes(p)).length;
+      const spamScore    = spamCount === 0 ? 15 : spamCount <= 1 ? 9 : spamCount <= 3 ? 3 : 0;
+
+      const seoScore = lenScore + titleScore + paraScore + kwScore + spamScore;
+      const seoDetail = {
+        lenScore,   lenMax: 30, bodyNoSpace,
+        titleScore, titleMax: 20, titleLen,
+        paraScore,  paraMax: 20, paraCount: bodyLines.length,
+        kwScore,    kwMax: 15,   kwRatio: Math.round(kwRatio * 100),
+        spamScore,  spamMax: 15, spamCount,
+      };
 
       // ── Step 2: 글 제목으로 네이버 검색 → 실제 누락 여부 확인 ──
       const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
@@ -2181,14 +2232,14 @@ function MissingTab(){
 
       const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null,rankLoading:true}));
       setAnalysis(prev=>({...prev,[post.postNo]:{
-        ...ai, missingStatus,
+        ...ai, missingStatus, seoScore, seoDetail,
         titleRank,
         topKeywords:kwData
       }}));
 
       const rankResults=await Promise.all(kws.map(kw=>getNaverRank(kw,extractedBlogId,extractedPostNo)));
       setAnalysis(prev=>({...prev,[post.postNo]:{
-        ...ai, missingStatus, titleRank,
+        ...ai, missingStatus, seoScore, seoDetail, titleRank,
         topKeywords:kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i],rankLoading:false}))
       }}));
     }catch(e){
@@ -2446,6 +2497,33 @@ function MissingTab(){
               <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"8px"}}>
                 🏆 상위 노출 키워드 <span style={{color:"#484f58",fontWeight:400}}>· 네이버 블로그탭 실제 순위</span>
               </div>
+
+            {/* SEO 점수 상세 */}
+            {a.seoDetail&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 14px",marginBottom:"10px"}}>
+              <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"10px"}}>
+                📊 SEO 점수 상세 <span style={{color:"#484f58",fontWeight:400}}>· 네이버 C-Rank·D.I.A. 기준</span>
+              </div>
+              {[
+                {label:"본문 글자수",   score:a.seoDetail.lenScore,   max:30, desc:`${a.seoDetail.bodyNoSpace.toLocaleString()}자 (1,500자↑ 적정 · 3,000자↑ 우수)`},
+                {label:"제목 길이",     score:a.seoDetail.titleScore, max:20, desc:`${a.seoDetail.titleLen}자 (15~32자 적정 — 네이버 권장)`},
+                {label:"본문 구조",     score:a.seoDetail.paraScore,  max:20, desc:`단락 ${a.seoDetail.paraCount}개 (소제목·줄바꿈 구성)`},
+                {label:"키워드 집중도", score:a.seoDetail.kwScore,    max:15, desc:`제목 핵심어 본문 포함률 ${a.seoDetail.kwRatio}% (C-Rank 기준)`},
+                {label:"광고·스팸 없음",score:a.seoDetail.spamScore,  max:15, desc:a.seoDetail.spamCount===0?"스팸성 표현 미감지 ✅":`스팸성 표현 ${a.seoDetail.spamCount}개 감지 (D.I.A. 어뷰징 척도)`},
+              ].map((item,i)=>(
+                <div key={i} style={{marginBottom:i<4?"10px":"0"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
+                    <span style={{color:"#c9d1d9",fontSize:"12px"}}>{item.label}</span>
+                    <span style={{color:item.score>=item.max*0.7?"#3fb950":item.score>=item.max*0.4?"#ffa657":"#ff7b72",fontSize:"12px",fontWeight:700}}>{item.score}/{item.max}</span>
+                  </div>
+                  <div style={{height:"5px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
+                    <div style={{width:`${(item.score/item.max)*100}%`,height:"100%",
+                      background:item.score>=item.max*0.7?"#3fb950":item.score>=item.max*0.4?"#ffa657":"#ff7b72",
+                      borderRadius:"3px",transition:"width .4s"}}/>
+                  </div>
+                  <div style={{color:"#484f58",fontSize:"10px",marginTop:"2px"}}>{item.desc}</div>
+                </div>
+              ))}
+            </div>}
               {a.topKeywords.map((kw,i)=>{
                 const rc=rankColor(kw.realRank);
                 const isOut=kw.realRank===null&&!kw.rankLoading;
