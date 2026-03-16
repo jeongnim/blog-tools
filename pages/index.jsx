@@ -2120,19 +2120,32 @@ function MissingTab(){
     }catch(e){return null;}
   };
 
-  // ── 본문 크롤링 ──
+  // ── 본문 크롤링 (강화) ──
   const fetchPostBody=async(post)=>{
     if(post.bodyText) return post.bodyText;
     if(!post.link) return post.description||"";
     try{
       const m=post.link.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
       if(!m) return post.description||"";
-      const url=`https://blog.naver.com/PostView.naver?blogId=${m[1]}&logNo=${m[2]}&redirect=Dlog&widgetTypeCall=true`;
-      const res=await fetch(`/api/blog-content?url=${encodeURIComponent(url)}`);
-      if(!res.ok) return post.description||"";
-      const data=await res.json();
-      if(data.bodies?.length>0) return data.bodies[0];
+      const blogId=m[1], logNo=m[2];
+
+      // 시도 1: PostView 직접 크롤링
+      const url1=`https://blog.naver.com/PostView.naver?blogId=${blogId}&logNo=${logNo}&redirect=Dlog&widgetTypeCall=true`;
+      const res1=await fetch(`/api/blog-content?url=${encodeURIComponent(url1)}`);
+      if(res1.ok){
+        const d1=await res1.json();
+        if(d1.bodies?.length>0 && d1.bodies[0].length>100) return d1.bodies[0];
+      }
+
+      // 시도 2: blog-content API에 keyword 없이 본문만 요청
+      const url2=`https://blog.naver.com/${blogId}/${logNo}`;
+      const res2=await fetch(`/api/blog-content?url=${encodeURIComponent(url2)}`);
+      if(res2.ok){
+        const d2=await res2.json();
+        if(d2.bodies?.length>0 && d2.bodies[0].length>100) return d2.bodies[0];
+      }
     }catch(e){}
+    // 최후: RSS description 사용 (짧더라도 반환)
     return post.description||"";
   };
 
@@ -2206,12 +2219,36 @@ function MissingTab(){
       const spamScore    = spamCount === 0 ? 15 : spamCount <= 1 ? 9 : spamCount <= 3 ? 3 : 0;
 
       const seoScore = lenScore + titleScore + paraScore + kwScore + spamScore;
+
+      // SEO 개선 조언 생성 (점수 대신 실질적인 조언)
+      const seoAdvice = [];
+      if(lenScore < 22){
+        const needed = bodyNoSpace < 1500 ? 1500 - bodyNoSpace : 3000 - bodyNoSpace;
+        seoAdvice.push(`📝 본문을 ${needed.toLocaleString()}자 더 늘리세요. 현재 ${bodyNoSpace.toLocaleString()}자 → ${bodyNoSpace<1500?"1,500자 이상":"3,000자 이상"} 권장`);
+      }
+      if(paraScore < 14){
+        seoAdvice.push(`📑 본문을 더 잘게 나눠 단락을 늘리세요. 현재 ${bodyLines.length}개 단락 → 8개 이상, ▶ 소제목을 2~3개 추가하면 좋습니다`);
+      }
+      if(titleScore < 12){
+        seoAdvice.push(`✏️ 제목 길이를 조정하세요. 현재 ${titleLen}자 → 15~32자가 네이버 권장 길이입니다`);
+      }
+      if(kwScore < 10){
+        seoAdvice.push(`🔑 제목의 핵심 키워드를 본문에 더 자연스럽게 포함시키세요. 현재 포함률 ${Math.round(kwRatio*100)}% → 70% 이상 권장 (C-Rank 기준)`);
+      }
+      if(spamScore < 9){
+        seoAdvice.push(`🚫 광고·협찬 표현 ${spamCount}개가 감지됐습니다. 해당 표현을 제거하면 D.I.A. 점수가 올라갑니다`);
+      }
+      if(seoAdvice.length === 0){
+        seoAdvice.push(`✅ SEO 최적화 상태가 양호합니다. 꾸준히 이 수준을 유지하세요`);
+      }
+
       const seoDetail = {
         lenScore,   lenMax: 30, bodyNoSpace,
         titleScore, titleMax: 20, titleLen,
         paraScore,  paraMax: 20, paraCount: bodyLines.length,
         kwScore,    kwMax: 15,   kwRatio: Math.round(kwRatio * 100),
         spamScore,  spamMax: 15, spamCount,
+        seoAdvice,
       };
 
       // ── Step 2: 글 제목으로 네이버 검색 → 실제 누락 여부 확인 ──
@@ -2407,15 +2444,15 @@ function MissingTab(){
               {(page-1)*PER_PAGE+idx+1}
             </div>
             <div style={{flex:1,minWidth:0}}>
-              {/* 제목 */}
+              {/* 제목 — 클릭 시 네이버 검색결과로 이동 */}
               <div style={{marginBottom:"5px",display:"flex",gap:"8px",alignItems:"flex-start"}}>
-                {post.link
-                  ?<a href={post.link} target="_blank" rel="noreferrer"
-                      style={{color:"#e6edf3",fontSize:"14px",fontWeight:600,textDecoration:"none",lineHeight:"1.5",flex:1,wordBreak:"break-word"}}
-                      onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
-                      {post.title}
-                    </a>
-                  :<span style={{color:"#e6edf3",fontSize:"14px",fontWeight:600,flex:1}}>{post.title}</span>}
+                <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(post.title)}`}
+                    target="_blank" rel="noreferrer"
+                    style={{color:"#e6edf3",fontSize:"14px",fontWeight:600,textDecoration:"none",lineHeight:"1.5",flex:1,wordBreak:"break-word"}}
+                    title="클릭 시 네이버에서 이 제목으로 검색한 결과를 확인합니다"
+                    onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
+                    {post.title}
+                  </a>
                 {post.date&&<span style={{color:"#484f58",fontSize:"11px",flexShrink:0,paddingTop:"2px"}}>{post.date}</span>}
               </div>
               {/* 설명 */}
@@ -2465,65 +2502,26 @@ function MissingTab(){
           {/* 상세 패널 */}
           {isEx&&a&&!a.error&&<div style={{borderTop:"1px solid #21262d",padding:"14px 16px",background:"#0d1117",display:"flex",flexDirection:"column",gap:"12px"}}>
 
-            {/* 제목 검색 누락 여부 */}
-            <div style={{background:a.missingStatus==="노출"?"#0d2019":"#2d0b0b",border:`1px solid ${a.missingStatus==="노출"?"#2ea04333":"#f8514933"}`,borderRadius:"10px",padding:"12px 14px"}}>
+            {/* SEO 개선 조언 */}
+            {a.seoDetail&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 14px"}}>
               <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"8px"}}>
-                🔍 제목 검색 누락 여부 <span style={{color:"#484f58",fontWeight:400}}>· 제목 그대로 네이버 검색한 실제 결과</span>
+                📊 SEO 개선 조언 <span style={{color:"#484f58",fontWeight:400}}>· 네이버 C-Rank·D.I.A. 기준</span>
+                <span style={{marginLeft:"8px",background:a.seoScore>=80?"#2ea04333":a.seoScore>=50?"#ffa65733":"#f8514933",color:a.seoScore>=80?"#3fb950":a.seoScore>=50?"#ffa657":"#f85149",border:`1px solid ${a.seoScore>=80?"#2ea04344":a.seoScore>=50?"#ffa65744":"#f8514944"}`,borderRadius:"20px",padding:"1px 9px",fontSize:"11px",fontWeight:700}}>{a.seoScore}점</span>
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
-                <div style={{fontSize:"28px"}}>{a.missingStatus==="노출"?"✅":"🚨"}</div>
-                <div>
-                  <div style={{color:a.missingStatus==="노출"?"#3fb950":"#f85149",fontSize:"15px",fontWeight:700}}>
-                    {a.missingStatus==="노출"?"노출 — 내 글이 검색 결과에 있음":"누락 — 내 글이 검색 결과에 없음"}
+              <div style={{display:"flex",flexDirection:"column",gap:"7px"}}>
+                {a.seoDetail.seoAdvice.map((advice,i)=>(
+                  <div key={i} style={{fontSize:"12px",color:"#c9d1d9",lineHeight:"1.6",padding:"6px 10px",background:"#0d1117",borderRadius:"7px",borderLeft:`3px solid ${advice.startsWith("✅")?"#2ea043":"#ffa657"}`}}>
+                    {advice}
                   </div>
-                  <div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px"}}>
-                    검색어: "{post.title}"
-                  </div>
-                </div>
-                <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(post.title)}`}
-                  target="_blank" rel="noreferrer"
-                  style={{marginLeft:"auto",padding:"6px 12px",background:"#21262d",color:"#8b949e",
-                    border:"1px solid #30363d",borderRadius:"7px",fontSize:"11px",
-                    textDecoration:"none",whiteSpace:"nowrap",flexShrink:0}}
-                  onMouseEnter={e=>e.target.style.color="#58a6ff"}
-                  onMouseLeave={e=>e.target.style.color="#8b949e"}>
-                  네이버에서 직접 확인 ↗
-                </a>
+                ))}
               </div>
-            </div>
+            </div>}
 
             {/* 상위노출 키워드 + 실제 순위 */}
             {a.topKeywords?.length>0&&<div>
               <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"8px"}}>
                 🏆 상위 노출 키워드 <span style={{color:"#484f58",fontWeight:400}}>· 네이버 블로그탭 실제 순위</span>
               </div>
-
-            {/* SEO 점수 상세 */}
-            {a.seoDetail&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 14px",marginBottom:"10px"}}>
-              <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"10px"}}>
-                📊 SEO 점수 상세 <span style={{color:"#484f58",fontWeight:400}}>· 네이버 C-Rank·D.I.A. 기준</span>
-              </div>
-              {[
-                {label:"본문 글자수",   score:a.seoDetail.lenScore,   max:30, desc:`${a.seoDetail.bodyNoSpace.toLocaleString()}자 (1,500자↑ 적정 · 3,000자↑ 우수)`},
-                {label:"제목 길이",     score:a.seoDetail.titleScore, max:20, desc:`${a.seoDetail.titleLen}자 (15~32자 적정 — 네이버 권장)`},
-                {label:"본문 구조",     score:a.seoDetail.paraScore,  max:20, desc:`단락 ${a.seoDetail.paraCount}개 (소제목·줄바꿈 구성)`},
-                {label:"키워드 집중도", score:a.seoDetail.kwScore,    max:15, desc:`제목 핵심어 본문 포함률 ${a.seoDetail.kwRatio}% (C-Rank 기준)`},
-                {label:"광고·스팸 없음",score:a.seoDetail.spamScore,  max:15, desc:a.seoDetail.spamCount===0?"스팸성 표현 미감지 ✅":`스팸성 표현 ${a.seoDetail.spamCount}개 감지 (D.I.A. 어뷰징 척도)`},
-              ].map((item,i)=>(
-                <div key={i} style={{marginBottom:i<4?"10px":"0"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-                    <span style={{color:"#c9d1d9",fontSize:"12px"}}>{item.label}</span>
-                    <span style={{color:item.score>=item.max*0.7?"#3fb950":item.score>=item.max*0.4?"#ffa657":"#ff7b72",fontSize:"12px",fontWeight:700}}>{item.score}/{item.max}</span>
-                  </div>
-                  <div style={{height:"5px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
-                    <div style={{width:`${(item.score/item.max)*100}%`,height:"100%",
-                      background:item.score>=item.max*0.7?"#3fb950":item.score>=item.max*0.4?"#ffa657":"#ff7b72",
-                      borderRadius:"3px",transition:"width .4s"}}/>
-                  </div>
-                  <div style={{color:"#484f58",fontSize:"10px",marginTop:"2px"}}>{item.desc}</div>
-                </div>
-              ))}
-            </div>}
               {a.topKeywords.map((kw,i)=>{
                 const rc=rankColor(kw.realRank);
                 const isOut=kw.realRank===null&&!kw.rankLoading;
@@ -5170,22 +5168,25 @@ ${styleSection}
 작성 규칙:
 0. 최우선 목표: 네이버 홈판(스마트블록)에 노출될 수 있는 글 구조와 품질 유지
 1. ${year}년 최신 정보 기준으로 작성
-2. 메인 키워드는 반드시 위에 명시된 "{mainKw}" 사용. 롱테일 주제에서 새로 추출하지 말 것
+2. 메인 키워드는 반드시 위에 명시된 "${mainKw}" 사용. 롱테일 주제에서 새로 추출하지 말 것
 3. 롱테일 키워드 내용이 글의 주요 목표
-4. 한글+공백 포함 최소 1,800자 ~ 2,500자 (필수 준수)
-5. 1,800자 미만이면 SEO에 맞춰 내용 보강 후 재작성
+4. 한글+공백 포함 최소 2,000자 ~ 3,000자 (필수 준수 — 네이버 C-Rank 기준 3,000자↑ 우수)
+5. 2,000자 미만이면 SEO에 맞춰 내용 보강 후 재작성
 6. 메인 키워드는 글 전체에서 최대 8회까지만 사용. 이 규칙은 절대 어길 수 없음. 8회 초과 시 즉시 재작성
 7. 메인 키워드 외 모든 단어는 최대 7회 이하로 사용. 특정 단어가 7회를 넘으면 동의어·유사어로 반드시 교체
 8. 키워드 밀도: 전체 본문의 1~2% 이내 유지. 같은 단어가 한 문단에 2회 이상 나오면 즉시 다른 표현으로 바꿀 것
-8. 네이버 SEO에 맞는 제목 1개 (메인 키워드 포함, 특수문자 없음, 예: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리")
-9. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 절대 금지. 바로 본론 시작
+9. 네이버 SEO에 맞는 제목 1개 (메인 키워드 포함, 특수문자 없음, 15~32자 적정, 예: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리")
+10. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 절대 금지. 바로 본론 시작
+11. 광고·협찬·체험단·무료제공·클릭하세요 같은 스팸성 표현 절대 사용 금지 (D.I.A. 어뷰징 척도 감점 요인)
 
-10. [소제목 형식] 네이버 블로그에 바로 붙여넣기 가능한 텍스트 형식으로 작성
+12. [소제목 형식 — 본문 구조화 필수] 네이버 블로그에 바로 붙여넣기 가능한 텍스트 형식으로 작성
     - 소제목은 반드시 아래 형식 사용: ▶ 소제목 텍스트
+    - 소제목은 최소 3개 이상 사용 (D.I.A. 모델 구조 점수 반영)
     - ##, **, <h2> 같은 마크다운·HTML 태그 절대 사용 금지
     - 소제목 앞뒤로 빈 줄 1개씩 추가
+    - 각 소제목 아래 최소 3~4문장 이상 작성 (단락이 너무 짧으면 C-Rank 감점)
 
-11. [표 형식] 표가 필요한 경우 아래 텍스트 표 형식만 사용. 글 전체에서 최대 2개까지만 허용. 표가 어울리지 않으면 0개도 가능.
+13. [표 형식] 표가 필요한 경우 아래 텍스트 표 형식만 사용. 글 전체에서 최대 2개까지만 허용. 표가 어울리지 않으면 0개도 가능.
     텍스트 표 형식 예시 (항목이 3개인 경우):
     ━━━━━━━━━━━━━━━━━━━━━━
     항목 | 내용1 | 내용2
@@ -5195,8 +5196,8 @@ ${styleSection}
     ━━━━━━━━━━━━━━━━━━━━━━
     - | 마크다운 표 절대 사용 금지
 
-12. 해시태그 5개 (본문 맨 끝에 한 줄로: #태그1 #태그2 #태그3 #태그4 #태그5)
-13. 문장 단위로 줄바꿈 필수: 각 문장이 끝나면 반드시 \\n을 삽입해 한 줄에 한 문장씩 작성할 것
+14. 해시태그 5개 (본문 맨 끝에 한 줄로: #태그1 #태그2 #태그3 #태그4 #태그5)
+15. 문장 단위로 줄바꿈 필수: 각 문장이 끝나면 반드시 \\n을 삽입해 한 줄에 한 문장씩 작성할 것
 
 반드시 순수 JSON만 출력. 마크다운 없이.
 {"title":"제목","main_keyword":"메인키워드","content":"본문전체(▶소제목,텍스트표,해시태그 포함)","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
