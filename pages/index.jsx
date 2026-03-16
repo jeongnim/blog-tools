@@ -1736,7 +1736,6 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
 
       // ② 블로그 총 게시물 수 + 월 발행량
       // blog-count API (네이버 Search API 실측값) 만 신뢰
-      // 광고API의 monthlyBlogPostCnt는 블로그 발행량이 아니므로 사용하지 않음
       let totalBlogPosts = null;
       let monthlyBlogPostsReal = null;
       let blogCountOk = false;
@@ -1799,53 +1798,33 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         ? Math.round((monthlyBlogPosts / totalMonthly) * 100)
         : null;
 
-      // 판다랭크 기준 5단계 (포화도 % 기반)
-      // 매우낮음 <100% / 낮음 <300% / 보통 <700% / 높음 <1500% / 매우높음 ≥1500%
+      // 경쟁 강도 5단계 (포화도 기반, 직관적 표현)
       const compLevel = saturation === null ? "알 수 없음"
-        : saturation < 100  ? "매우낮음"
-        : saturation < 300  ? "낮음"
-        : saturation < 700  ? "보통"
-        : saturation < 1500 ? "높음" : "매우높음";
+        : saturation < 50   ? "매우쉬움"
+        : saturation < 150  ? "쉬움"
+        : saturation < 500  ? "보통"
+        : saturation < 1500 ? "어려움"
+        : "매우어려움";
+
+      // 일 방문자 추천 기준 (월검색량 기반)
+      const dailyVisitReq = totalMonthly
+        ? Math.max(30, Math.round((totalMonthly / 30) * 0.05 / 10) * 10)
+        : null;
+
+      // 추천 멘트
+      const compComment = compLevel === "알 수 없음" ? null
+        : compLevel === "매우쉬움" ? "초보 블로거도 쉽게 상위노출 가능한 키워드예요!"
+        : compLevel === "쉬움"     ? "발행글이 적어 노출 기회가 많아요. 도전해보세요!"
+        : compLevel === "보통"     ? "중간 수준의 경쟁도예요. 품질 좋은 글이면 충분해요."
+        : compLevel === "어려움"   ? "고경쟁 키워드예요. 전문성 있는 글과 블로그 지수가 필요해요."
+        : "최고 난이도 키워드예요. 상위 블로거에게만 추천해요.";
 
       // UI 게이지용 0~100 스코어 (로그 스케일: 포화도 1~3000%를 0~100으로)
       const compScore = saturation === null ? 50
         : Math.min(Math.round((Math.log10(Math.max(saturation, 1)) / Math.log10(3000)) * 100), 100);
 
-      // 판다랭크 스타일 난이도 등급 (포화도 기반)
-      // S <50% / A+ <100% / A <200% / B+ <400% / B <700% / C+ <1500% / C ≥1500%
-      const diffGrade = saturation === null ? null
-        : saturation < 50   ? "S"
-        : saturation < 100  ? "A+"
-        : saturation < 200  ? "A"
-        : saturation < 400  ? "B+"
-        : saturation < 700  ? "B"
-        : saturation < 1500 ? "C+"
-        : "C";
-
-      const diffGradeLabel = diffGrade === null ? "분석중"
-        : diffGrade === "S"  ? "매우쉬움"
-        : diffGrade === "A+" ? "쉬움"
-        : diffGrade === "A"  ? "쉬움"
-        : diffGrade === "B+" ? "보통"
-        : diffGrade === "B"  ? "보통"
-        : diffGrade === "C+" ? "어려움"
-        : "매우어려움";
-
-      // 일 방문자 추천 기준: 상위노출 시 예상 일일 방문자
-      // 월검색량 ÷ 30 × CTR(10%) ÷ 상위노출 경쟁글수 보정
-      // 판다랭크 방식: 월검색량 ÷ 30 × 0.05 (약 5% CTR 가정, 소수점 올림)
-      const dailyVisitReq = totalMonthly
-        ? Math.max(30, Math.round((totalMonthly / 30) * 0.05 / 10) * 10)
-        : null;
-
-      const diffComment = diffGrade === null ? null
-        : diffGrade === "S"  ? "초보 블로거도 쉽게 상위노출 가능한 키워드예요!"
-        : diffGrade === "A+" ? "발행글이 적어 노출 기회가 많아요. 도전해보세요!"
-        : diffGrade === "A"  ? "경쟁이 낮은 편으로, 꾸준한 블로거에게 적합해요."
-        : diffGrade === "B+" ? "중간 수준의 경쟁도예요. 품질 좋은 글이면 충분해요."
-        : diffGrade === "B"  ? "경쟁이 있지만 차별화된 콘텐츠로 노출 가능해요."
-        : diffGrade === "C+" ? "고경쟁 키워드예요. 전문성 있는 글과 블로그 지수가 필요해요."
-        : "최고 난이도 키워드예요. 상위 블로거에게만 추천해요.";
+      // ratio는 하위 호환성 유지 (포화도를 배수로 표현)
+      const ratio = saturation !== null ? saturation / 100 : null;
 
       // 연관검색어: naverMain에서 메인 키워드 제외한 나머지 (월검색량 내림차순)
       const relKeywords = naverMain
@@ -1868,9 +1847,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         pcAvgClick: mainStat?.monthlyAvePcClkCnt ?? null,
         mobAvgClick: mainStat?.monthlyAveMobileClkCnt ?? null,
         totalBlogPosts,
-        saturation, ratio: saturation !== null ? saturation / 100 : null,
-        compLevel, compScore,
-        diffGrade, diffGradeLabel, diffComment, dailyVisitReq,
+        saturation, ratio, compLevel, compScore, compComment, dailyVisitReq,
         blogTitles,
         relKeywords,
         ...aiResult,
@@ -1884,7 +1861,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
     setLoading(false);
   };
 
-  const COMP_COLOR={"매우낮음":"#3fb950","낮음":"#58a6ff","보통":"#ffa657","높음":"#ff7b72","매우높음":"#f85149","알 수 없음":"#8b949e"};
+  const COMP_COLOR={"매우쉬움":"#3fb950","쉬움":"#58a6ff","보통":"#ffa657","어려움":"#ff7b72","매우어려움":"#f85149","알 수 없음":"#8b949e"};
   const compColor = COMP_COLOR[result?.compLevel||"보통"]||"#ffa657";
 
 
@@ -1997,85 +1974,51 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
           )}
         </div>
 
-        {/* 난이도 카드 (판다랭크 스타일) */}
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"2",gridRow:"3"})}}>
-          <SectionTitle>🎯 키워드 난이도</SectionTitle>
-          {result.diffGrade ? (
-            <div>
-              {/* 등급 박스 */}
-              <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px"}}>
+        {/* 경쟁 강도 + 난이도 통합 카드 */}
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3",gridRow:"3"})}}>
+          <SectionTitle>⚡ 경쟁 강도</SectionTitle>
+          <div style={{display:"flex",gap:"12px",flexWrap:"wrap"}}>
+            {/* 왼쪽: 난이도 + 멘트 */}
+            <div style={{flex:"1",minWidth:"160px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
                 <div style={{
-                  width:"64px",height:"64px",borderRadius:"14px",flexShrink:0,
-                  background: result.diffGrade==="S"?"#1a3a2a": result.diffGrade==="A+"?"#1a2f3a": result.diffGrade==="A"?"#1a2f3a": result.diffGrade==="B+"?"#2a2a1a": result.diffGrade==="B"?"#2a2a1a":"#2a1a1a",
-                  border:`2px solid ${result.diffGrade==="S"?"#3fb950": result.diffGrade==="A+"?"#58a6ff": result.diffGrade==="A"?"#58a6ff": result.diffGrade==="B+"?"#ffa657": result.diffGrade==="B"?"#ffa657":"#ff7b72"}`,
-                  display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"2px"
+                  padding:"6px 16px",borderRadius:"10px",
+                  background: compColor+"22",
+                  border:`2px solid ${compColor}`,
                 }}>
-                  <span style={{
-                    fontSize:"22px",fontWeight:900,lineHeight:1,
-                    color: result.diffGrade==="S"?"#3fb950": result.diffGrade==="A+"?"#58a6ff": result.diffGrade==="A"?"#58a6ff": result.diffGrade==="B+"?"#ffa657": result.diffGrade==="B"?"#ffa657":"#ff7b72"
-                  }}>{result.diffGrade}</span>
-                  <span style={{fontSize:"10px",color:"#8b949e",fontWeight:600}}>{result.diffGradeLabel}</span>
+                  <span style={{color:compColor,fontSize:"18px",fontWeight:900}}>{result.compLevel}</span>
                 </div>
-                <div style={{flex:1}}>
-                  <div style={{color:"#e6edf3",fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>{result.keyword}</div>
-                  <div style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.5"}}>{result.diffComment}</div>
-                </div>
-              </div>
-              {/* 수치 요약 */}
-              <div style={{background:"#0d1117",borderRadius:"8px",padding:"10px 12px",fontSize:"12px",display:"flex",flexDirection:"column",gap:"6px"}}>
-                <div style={{display:"flex",justifyContent:"space-between"}}>
-                  <span style={{color:"#8b949e"}}>월 검색량</span>
-                  <strong style={{color:"#58a6ff"}}>{result.totalMonthly!=null?fmtNum(result.totalMonthly)+"회":"-"}</strong>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between"}}>
-                  <span style={{color:"#8b949e"}}>월 발행량</span>
-                  <strong style={{color:"#ffa657"}}>
-                    {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"개":<span style={{color:"#484f58"}}>데이터없음</span>}
-                    {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실측</span>}
-                  </strong>
-                </div>
-                {result.dailyVisitReq!=null&&<div style={{display:"flex",justifyContent:"space-between",paddingTop:"6px",borderTop:"1px solid #21262d"}}>
-                  <span style={{color:"#8b949e"}}>추천 블로거</span>
-                  <strong style={{color:result.diffGrade==="S"||result.diffGrade==="A+"||result.diffGrade==="A"?"#3fb950":result.diffGrade==="B+"||result.diffGrade==="B"?"#ffa657":"#ff7b72"}}>
-                    일 방문자 {fmtNum(result.dailyVisitReq)}명 이상
-                  </strong>
+                {result.dailyVisitReq!=null&&<div style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.5"}}>
+                  일 방문자 <strong style={{color:"#e6edf3"}}>{fmtNum(result.dailyVisitReq)}명 이상</strong><br/>블로거에게 추천
                 </div>}
               </div>
+              {result.compComment&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"8px 12px",fontSize:"12px",color:"#8b949e",lineHeight:"1.5",marginBottom:"8px"}}>
+                💡 {result.compComment}
+              </div>}
+              {/* 게이지 */}
+              <div style={{position:"relative",marginBottom:"4px"}}>
+                <div style={{height:"8px",background:"linear-gradient(90deg,#3fb950,#58a6ff,#ffa657,#ff7b72,#f85149)",borderRadius:"4px"}}/>
+                <div style={{position:"absolute",top:"-5px",left:`calc(${result.compScore}% - 9px)`,width:"18px",height:"18px",background:"#fff",borderRadius:"50%",border:`3px solid ${compColor}`}}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58"}}><span>매우쉬움</span><span>매우어려움</span></div>
             </div>
-          ) : (
-            <div style={{color:"#484f58",fontSize:"12px",textAlign:"center",padding:"16px 0"}}>데이터 부족</div>
-          )}
-        </div>
-
-        {/* 경쟁 강도 */}
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1",gridRow:"3"})}}>
-          <SectionTitle>⚡ 경쟁 강도</SectionTitle>
-          <div style={{position:"relative",marginBottom:"6px"}}>
-            <div style={{height:"8px",background:"linear-gradient(90deg,#3fb950,#ffa657,#f85149)",borderRadius:"4px"}}/>
-            <div style={{position:"absolute",top:"-5px",left:`calc(${result.compScore}% - 9px)`,width:"18px",height:"18px",background:"#fff",borderRadius:"50%",border:`3px solid ${compColor}`}}/>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginBottom:"8px"}}><span>낮음</span><span>높음</span></div>
-          <div style={{textAlign:"center",marginBottom:"8px"}}>
-            <span style={{color:compColor,fontSize:"20px",fontWeight:700}}>{result.compLevel}</span>
-          </div>
-          <div style={{background:"#0d1117",borderRadius:"6px",padding:"8px",fontSize:"11px",color:"#8b949e"}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-              <span>월 발행량</span>
-              <strong style={{color:"#ffa657"}}>
-                {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"건":<span style={{color:"#484f58"}}>실측불가</span>}
-                {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실측</span>}
-              </strong>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-              <span>월 검색량</span>
-              <strong style={{color:"#58a6ff"}}>{result.totalMonthly!=null?fmtNum(result.totalMonthly)+"회":"-"}</strong>
-            </div>
-            {result.saturation!=null&&<div style={{display:"flex",justifyContent:"space-between",paddingTop:"5px",borderTop:"1px solid #21262d",marginBottom:"4px"}}>
-              <span>포화도</span>
-              <strong style={{color:compColor}}>{result.saturation.toLocaleString()}%</strong>
-            </div>}
-            <div style={{marginTop:"4px",color:result.saturation==null?"#8b949e":result.saturation<100?"#3fb950":result.saturation<700?"#ffa657":"#ff7b72",fontSize:"11px",fontWeight:700}}>
-              {result.saturation==null?"－ 데이터 부족":result.saturation<100?"✅ 신규 블로거도 가능":result.saturation<300?"🟢 경쟁 낮음":result.saturation<700?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
+            {/* 오른쪽: 수치 */}
+            <div style={{background:"#0d1117",borderRadius:"8px",padding:"10px 12px",fontSize:"12px",color:"#8b949e",minWidth:"150px",display:"flex",flexDirection:"column",gap:"6px",alignSelf:"flex-start"}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:"12px"}}>
+                <span>월 발행량</span>
+                <strong style={{color:"#ffa657"}}>
+                  {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"개":<span style={{color:"#484f58"}}>데이터없음</span>}
+                  {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓</span>}
+                </strong>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",gap:"12px"}}>
+                <span>월 검색량</span>
+                <strong style={{color:"#58a6ff"}}>{result.totalMonthly!=null?fmtNum(result.totalMonthly)+"회":"-"}</strong>
+              </div>
+              {result.saturation!=null&&<div style={{display:"flex",justifyContent:"space-between",gap:"12px",paddingTop:"6px",borderTop:"1px solid #21262d"}}>
+                <span>포화도</span>
+                <strong style={{color:compColor}}>{result.saturation.toLocaleString()}%</strong>
+              </div>}
             </div>
           </div>
         </div>
