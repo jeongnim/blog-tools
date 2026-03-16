@@ -62,16 +62,31 @@ async function fetchBlogBody(url) {
     // 최소 200자 이상이어야 유효
     if (text.length < 200) return null;
 
-    // 최대 2000자만 반환 (AI 토큰 절약)
-    return text.slice(0, 2000);
+    // 최대 5000자 반환 (SEO 글자수 계산 정확도 향상)
+    return text.slice(0, 5000);
   } catch (e) {
     return null;
   }
 }
 
 export default async function handler(req, res) {
-  const { keyword } = req.query;
-  if (!keyword) return res.status(400).json({ error: "keyword 필요" });
+  const { keyword, url } = req.query;
+
+  // ── url 파라미터: 특정 블로그 글 본문 직접 크롤링 ──
+  if (url) {
+    try {
+      const body = await fetchBlogBody(decodeURIComponent(url));
+      if (body) {
+        return res.status(200).json({ success: true, bodies: [body] });
+      } else {
+        return res.status(200).json({ success: false, bodies: [], error: "본문 추출 실패" });
+      }
+    } catch (err) {
+      return res.status(200).json({ success: false, bodies: [], error: err.message });
+    }
+  }
+
+  if (!keyword) return res.status(400).json({ error: "keyword 또는 url 필요" });
 
   const clientId     = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
