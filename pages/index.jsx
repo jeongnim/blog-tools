@@ -1771,10 +1771,10 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         '  "smartBlockReason": "왜 이 유형의 스마트블록이 뜨는지 한 줄",',
         '  "blogStrategy": "이 스마트블록 유형에서 블로그가 노출될 수 있는 전략 한 줄",',
         '  "longtailKeywords": [',
-        '    "스마트블록 유형(smartBlockType)에 따라 아래 전략으로 문장형 키워드 10개 작성:",',
-        '    "블로그형→정보/후기/비교 문장형, 지도형→블로그 우회 구체적 경험형,",',
-        '    "쇼핑형→구매 전 탐색형, 리뷰형→상세 사용기/비교형, 비교형→vs구도/추천형.",',
-        '    "반드시 완성된 문장형으로. 단어 나열 금지. 실제 블로거가 쓸 제목처럼."',
+        '    "이 키워드로 블로그 글을 쓸 때 활용할 수 있는 구체적인 글 주제 10개.",',
+        '    "형식: 실제 블로거가 쓸 법한 완성된 제목 형태로.",',
+        '    "예: 천안맛집 → \'천안 성정동 점심 혼밥하기 좋은 국밥집 솔직 후기\' 처럼.",',
+        '    "키워드를 자연스럽게 포함하되 독자 클릭을 유도하는 제목으로."',
         '  ]',
         '}' + titlesAppend
       ].join("\n");
@@ -1967,73 +1967,63 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
           )}
         </div>
 
-        {/* 트렌드 */}
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"2",gridRow:"3"})}}>
-          <SectionTitle>📈 트렌드 분석 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추정</span></SectionTitle>
-          <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
-            <span style={{fontSize:"28px"}}>{result.trend==="상승"?"📈":result.trend==="하락"?"📉":"➡️"}</span>
-            <div>
-              <div style={{color:result.trend==="상승"?"#3fb950":result.trend==="하락"?"#ff7b72":"#8b949e",fontSize:"15px",fontWeight:700}}>
-                {result.trend==="상승"?"상승세":result.trend==="하락"?"하락세":"유지세"}
-              </div>
-              <div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px",lineHeight:"1.5"}}>{result.trendReason||""}</div>
-            </div>
-          </div>
-          {result.peakSeason&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"8px 12px",border:"1px solid #ffa65733",fontSize:"12px",color:"#ffa657",lineHeight:"1.5",marginBottom:"6px"}}>
-            🌟 <strong>성수기:</strong> {result.peakSeason}
-          </div>}
-          {result.difficultyComment&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"8px 12px",border:"1px solid #1f6feb33",fontSize:"12px",color:"#8b949e",lineHeight:"1.5"}}>
-            💡 {result.difficultyComment}
-          </div>}
-        </div>
-
         {/* 경쟁 강도 */}
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1",gridRow:"3"})}}>
+        <div style={{background:"#161b22",border:`1px solid ${compColor}55`,borderRadius:"12px",padding:"16px",...(!isMobile&&{gridColumn:"1/3",gridRow:"3"})}}>
           <SectionTitle>⚡ 경쟁 강도</SectionTitle>
-          <div style={{position:"relative",marginBottom:"6px"}}>
-            <div style={{height:"8px",background:"linear-gradient(90deg,#3fb950,#ffa657,#f85149)",borderRadius:"4px"}}/>
-            <div style={{position:"absolute",top:"-5px",left:`calc(${result.compScore}% - 9px)`,width:"18px",height:"18px",background:"#fff",borderRadius:"50%",border:`3px solid ${compColor}`}}/>
+
+          {/* 등급 + 추천 */}
+          <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"10px"}}>
+            <div style={{background:`${compColor}18`,border:`2px solid ${compColor}`,borderRadius:"12px",padding:"8px 18px",flexShrink:0,textAlign:"center"}}>
+              <div style={{color:compColor,fontSize:"20px",fontWeight:900,lineHeight:1}}>{result.compLevel}</div>
+            </div>
+            <div style={{flex:1}}>
+              {result.dailyVisitReq!=null&&<div style={{color:"#e6edf3",fontSize:"13px",fontWeight:600,marginBottom:"2px"}}>
+                일 방문자 <span style={{color:compColor}}>{fmtNum(result.dailyVisitReq)}명 이상</span> 블로거 추천
+              </div>}
+              {result.compComment&&<div style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.4"}}>{result.compComment}</div>}
+            </div>
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginBottom:"8px"}}><span>낮음</span><span>높음</span></div>
-          <div style={{textAlign:"center",marginBottom:"8px"}}>
-            <span style={{color:compColor,fontSize:"20px",fontWeight:700}}>{result.compLevel}</span>
+
+          {/* 게이지 */}
+          <div style={{position:"relative",marginBottom:"4px"}}>
+            <div style={{height:"10px",background:"linear-gradient(90deg,#3fb950,#58a6ff,#ffa657,#ff7b72,#f85149)",borderRadius:"5px"}}/>
+            <div style={{position:"absolute",top:"-4px",left:`calc(${Math.min(Math.max(result.compScore,2),96)}% - 9px)`,width:"18px",height:"18px",background:"#161b22",borderRadius:"50%",border:`3px solid ${compColor}`,boxShadow:`0 0 8px ${compColor}99`}}/>
           </div>
-          <div style={{background:"#0d1117",borderRadius:"6px",padding:"8px",fontSize:"11px",color:"#8b949e"}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-              <span>월 발행량</span>
-              <strong style={{color:"#ffa657"}}>
-                {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"건":<span style={{color:"#484f58"}}>실측불가</span>}
-                {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실측</span>}
-              </strong>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-              <span>월 검색량</span>
-              <strong style={{color:"#58a6ff"}}>{result.totalMonthly!=null?fmtNum(result.totalMonthly)+"회":"-"}</strong>
-            </div>
-            {result.saturation!=null&&<div style={{display:"flex",justifyContent:"space-between",paddingTop:"5px",borderTop:"1px solid #21262d",marginBottom:"4px"}}>
-              <span>포화도</span>
-              <strong style={{color:compColor}}>{result.saturation.toLocaleString()}%</strong>
-            </div>}
-            <div style={{marginTop:"4px",color:result.saturation==null?"#8b949e":result.saturation<100?"#3fb950":result.saturation<700?"#ffa657":"#ff7b72",fontSize:"11px",fontWeight:700}}>
-              {result.saturation==null?"－ 데이터 부족":result.saturation<100?"✅ 신규 블로거도 가능":result.saturation<300?"🟢 경쟁 낮음":result.saturation<700?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
-            </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginBottom:"14px"}}>
+            <span>매우쉬움</span><span>매우어려움</span>
+          </div>
+
+          {/* 수치: 월발행량 + 포화도 (월검색량은 위에 표시됨) */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+            {[
+              {label:"월 발행량", value:result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"개":"—", color:"#ffa657", badge:result.blogCountOk?"✓":null},
+              {label:"포화도",   value:result.saturation!=null?result.saturation+"%":"—", color:compColor},
+            ].map(({label,value,color,badge},i)=>(
+              <div key={i} style={{background:"#0d1117",borderRadius:"10px",padding:"10px 8px",textAlign:"center",border:"1px solid #21262d"}}>
+                <div style={{color:"#484f58",fontSize:"10px",marginBottom:"4px"}}>{label}</div>
+                <div style={{color,fontSize:"14px",fontWeight:700}}>
+                  {value}{badge&&<span style={{color:"#3fb950",fontSize:"9px",marginLeft:"2px"}}>{badge}</span>}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* 롱테일 키워드 */}
+        {/* 추천 글 주제 */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
-          <SectionTitle>🎯 롱테일 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추출</span></SectionTitle>
+          <SectionTitle>✍️ 추천 글 주제 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추출</span></SectionTitle>
           <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
             {result.longtailKeywords?.map((kw,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",background:"#0d1117",
                 borderRadius:"8px",padding:"8px 10px",border:"1px solid #21262d"}}>
-                <span style={{color:"#484f58",fontSize:"11px",minWidth:"16px"}}>{i+1}</span>
+                <span style={{color:"#484f58",fontSize:"11px",minWidth:"16px",flexShrink:0}}>{i+1}</span>
                 <span style={{flex:1,color:"#c9d1d9",fontSize:"12px",lineHeight:"1.4"}}>{kw}</span>
                 <button onClick={()=>goAutoWrite&&goAutoWrite(kw,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword)}
                   style={{background:"linear-gradient(135deg,#1f6feb,#388bfd)",border:"none",color:"#fff",
                     borderRadius:"6px",padding:"4px 10px",fontSize:"11px",fontWeight:700,cursor:"pointer",
                     fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
-                  ✍️ 자동글쓰기                </button>
+                  ✍️ 자동글쓰기
+                </button>
               </div>
             ))}
           </div>
@@ -3521,31 +3511,31 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost,set
 
   const year=new Date().getFullYear();
 
-  // ── 롱테일 키워드 생성 ──
+  // ── 추천 글 주제 생성 ──
   const genKeywords=async()=>{
     if(!selCat) return;
     setLoadingKw(true); setKeywords([]); setPostKw(""); setErr("");
     try{
       const prompt=`카테고리: "${selCat}"
 
-이 카테고리에서 ${year}년 현재 네이버 블로그 홈판(스마트블록)에 노출되기 유리한 롱테일 키워드 10개를 선정해줘.
+이 카테고리에서 ${year}년 현재 네이버 블로그로 쓰기 좋은 글 주제 10개를 추천해줘.
 
 조건:
-- 실제 네이버에서 사람들이 검색하는 자연스러운 검색어 형태
-- 각 키워드는 3~6어절의 구체적인 롱테일 키워드
+- 실제 블로거가 쓸 법한 완성된 제목 형태로 작성
+- 구체적인 경험, 후기, 정보, 비교 등 독자가 클릭하고 싶은 제목
 - ${year}년 최신 트렌드와 시의성 반영
-- 검색량 대비 경쟁도가 낮아 홈판 노출 가능성이 높은 키워드
-- 실용적이고 정보성이 높은 주제
+- 검색량 대비 경쟁이 낮아 상위노출 가능성이 높은 주제
+- 예시: '서울 성수동 분위기 좋은 브런치 카페 혼자 가기 좋은 곳 추천' 처럼 구체적으로
 
 반드시 순수 JSON만 출력. 마크다운 없이.
-{"keywords":[{"rank":1,"keyword":"롱테일키워드","reason":"선정 이유 한 줄"},...]}`
+{"keywords":[{"rank":1,"keyword":"추천 글 주제 제목","reason":"선정 이유 한 줄"},...]}`
 
       const raw=await callClaude([{role:"user",content:prompt}],
         "You are a Naver blog SEO expert. Output ONLY valid JSON, no markdown.",1500,"claude-haiku-4-5-20251001");
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
       const parsed=JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
       setKeywords(parsed.keywords||[]);
-    }catch(ex){setErr("롱테일 키워드 생성 오류: "+ex.message);}
+    }catch(ex){setErr("추천 글 주제 생성 오류: "+ex.message);}
     setLoadingKw(false);
   };
 
@@ -3609,7 +3599,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost,set
           color:!selCat||loadingKw?"#484f58":"#fff",border:"none",borderRadius:"8px",
           cursor:!selCat||loadingKw?"not-allowed":"pointer",
           fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,transition:"background .2s"}}>
-        {loadingKw?"⏳ 롱테일 키워드 분석 중...":"🔍 롱테일 키워드 10개 추출"}
+        {loadingKw?"⏳ 추천 글 주제 분석 중...":"✍️ 추천 글 주제 10개 추출"}
       </button>
     </div>
 
@@ -3619,7 +3609,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost,set
     {/* ── STEP 2: 롱테일 키워드 목록 ── */}
     {keywords.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 2</div>
-      <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"4px"}}>롱테일 키워드 선택</div>
+      <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"4px"}}>추천 글 주제 선택</div>
       <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>오른쪽 <span style={{color:"#58a6ff",fontWeight:700}}>✍️ 자동글쓰기</span> 버튼을 클릭하면 글이 생성되고, <span style={{color:"#3fb950",fontWeight:700}}>글분석</span> 탭으로 자동 이동하여 바로 분석·수정할 수 있습니다.</div>
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         {keywords.map((kw,idx)=>(
