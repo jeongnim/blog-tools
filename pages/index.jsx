@@ -2120,7 +2120,7 @@ function MissingTab(){
     }catch(e){return null;}
   };
 
-  // ── 본문 크롤링 (강화) ──
+  // ── 본문 크롤링 ──
   const fetchPostBody=async(post)=>{
     if(post.bodyText) return post.bodyText;
     if(!post.link) return post.description||"";
@@ -2129,23 +2129,14 @@ function MissingTab(){
       if(!m) return post.description||"";
       const blogId=m[1], logNo=m[2];
 
-      // 시도 1: PostView 직접 크롤링
-      const url1=`https://blog.naver.com/PostView.naver?blogId=${blogId}&logNo=${logNo}&redirect=Dlog&widgetTypeCall=true`;
-      const res1=await fetch(`/api/blog-content?url=${encodeURIComponent(url1)}`);
-      if(res1.ok){
-        const d1=await res1.json();
-        if(d1.bodies?.length>0 && d1.bodies[0].length>100) return d1.bodies[0];
-      }
-
-      // 시도 2: blog-content API에 keyword 없이 본문만 요청
-      const url2=`https://blog.naver.com/${blogId}/${logNo}`;
-      const res2=await fetch(`/api/blog-content?url=${encodeURIComponent(url2)}`);
-      if(res2.ok){
-        const d2=await res2.json();
-        if(d2.bodies?.length>0 && d2.bodies[0].length>100) return d2.bodies[0];
+      // blog-content API에 url 파라미터로 직접 크롤링 요청
+      const postUrl=`https://blog.naver.com/${blogId}/${logNo}`;
+      const res=await fetch(`/api/blog-content?url=${encodeURIComponent(postUrl)}`);
+      if(res.ok){
+        const data=await res.json();
+        if(data.bodies?.length>0 && data.bodies[0].length>=100) return data.bodies[0];
       }
     }catch(e){}
-    // 최후: RSS description 사용 (짧더라도 반환)
     return post.description||"";
   };
 
@@ -2518,36 +2509,38 @@ function MissingTab(){
             </div>}
 
             {/* 상위노출 키워드 + 실제 순위 */}
-            {a.topKeywords?.length>0&&<div>
-              <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"8px"}}>
-                🏆 상위 노출 키워드 <span style={{color:"#484f58",fontWeight:400}}>· 네이버 블로그탭 실제 순위</span>
+            {a.topKeywords?.length>0&&(
+              <div>
+                <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"8px"}}>
+                  🏆 상위 노출 키워드 <span style={{color:"#484f58",fontWeight:400}}>· 네이버 블로그탭 실제 순위</span>
+                </div>
+                {a.topKeywords.map((kw,i)=>{
+                  const rc=rankColor(kw.realRank);
+                  const isOut=kw.realRank===null&&!kw.rankLoading;
+                  const isLoading=kw.rankLoading;
+                  return <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",
+                    background:"#161b22",border:`1px solid ${isOut||isLoading?"#21262d":rc+"44"}`,borderRadius:"9px",marginBottom:"6px"}}>
+                    <div style={{width:"24px",height:"24px",background:"#21262d",border:"1px solid #30363d",borderRadius:"6px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <span style={{color:"#8b949e",fontSize:"11px",fontWeight:700}}>{kw.rank}</span>
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw.keyword)}`}
+                        target="_blank" rel="noreferrer"
+                        style={{color:"#e6edf3",fontSize:"13px",fontWeight:700,textDecoration:"none",display:"block"}}
+                        onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
+                        {kw.keyword} ↗
+                      </a>
+                    </div>
+                    <div style={{background:isLoading?"#21262d":isOut?"#21262d":rc+"22",color:isLoading?"#8b949e":isOut?"#484f58":rc,
+                      border:`1px solid ${isLoading?"#30363d":isOut?"#30363d":rc+"55"}`,
+                      borderRadius:"8px",padding:"5px 12px",fontSize:"15px",fontWeight:800,minWidth:"52px",textAlign:"center",flexShrink:0}}>
+                      {isLoading?"⏳":isOut?"100위↓":`${kw.realRank}위`}
+                    </div>
+                  </div>;
+                })}
+                <div style={{fontSize:"11px",color:"#484f58",marginTop:"2px"}}>🔍 네이버 검색 Open API 기준 (상위 100위) · 실시간 반영</div>
               </div>
-              {a.topKeywords.map((kw,i)=>{
-                const rc=rankColor(kw.realRank);
-                const isOut=kw.realRank===null&&!kw.rankLoading;
-                const isLoading=kw.rankLoading;
-                return <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",
-                  background:"#161b22",border:`1px solid ${isOut||isLoading?"#21262d":rc+"44"}`,borderRadius:"9px",marginBottom:"6px"}}>
-                  <div style={{width:"24px",height:"24px",background:"#21262d",border:"1px solid #30363d",borderRadius:"6px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <span style={{color:"#8b949e",fontSize:"11px",fontWeight:700}}>{kw.rank}</span>
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw.keyword)}`}
-                      target="_blank" rel="noreferrer"
-                      style={{color:"#e6edf3",fontSize:"13px",fontWeight:700,textDecoration:"none",display:"block"}}
-                      onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
-                      {kw.keyword} ↗
-                    </a>
-                  </div>
-                  <div style={{background:isLoading?"#21262d":isOut?"#21262d":rc+"22",color:isLoading?"#8b949e":isOut?"#484f58":rc,
-                    border:`1px solid ${isLoading?"#30363d":isOut?"#30363d":rc+"55"}`,
-                    borderRadius:"8px",padding:"5px 12px",fontSize:"15px",fontWeight:800,minWidth:"52px",textAlign:"center",flexShrink:0}}>
-                    {isLoading?"⏳":isOut?"100위↓":`${kw.realRank}위`}
-                  </div>
-                </div>;
-              })}
-              <div style={{fontSize:"11px",color:"#484f58",marginTop:"2px"}}>🔍 네이버 검색 Open API 기준 (상위 100위) · 실시간 반영</div>
-            </div>}
+            )}
 
           </div>}
         </div>;
