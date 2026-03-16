@@ -2146,8 +2146,9 @@ function MissingTab(){
     setAnalyzing(idx);
     try{
       const body=await fetchPostBody(post);
+      const bodyLoaded = body.length > 300; // RSS description(300자) 초과면 본문 로딩 성공
 
-      // ── Step 1: AI로 키워드만 추출 ──
+      // ── Step 1: AI로 키워드 추출 (제목 + 가용 본문 기반) ──
       const prompt=`아래 네이버 블로그 포스트를 분석해줘. 반드시 순수 JSON만 출력. 마크다운 없이.
 
 제목: ${post.title}
@@ -2155,75 +2156,76 @@ function MissingTab(){
 
 {"keywords":["이 글 실제 내용 기반 키워드1","키워드2","키워드3"]}
 
-- keywords: 제목/본문 핵심 검색어 추출 (무관한 키워드 금지, 정확히 3개)`;
+- keywords: 제목/본문 핵심 검색어 추출 (무관한 키워드 금지, 정확히 3개)
+- 본문이 없거나 짧으면 제목만으로 키워드 3개 추출`;
 
       const raw=await callClaude([{role:"user",content:prompt}],"Korean blog SEO expert. Output ONLY valid JSON.",400);
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
-      const ai=JSON.parse(raw.slice(s,e+1));
-      const kws=ai.keywords||[];
+      let ai={keywords:[]};
+      try{ ai=JSON.parse(raw.slice(s,e+1)); }catch(err){}
+      // fallback: 파싱 실패 또는 키워드 없으면 제목 단어에서 추출
+      let kws=ai.keywords||[];
+      if(kws.length===0){
+        kws=(post.title.match(/[가-힣]{2,}/g)||[]).slice(0,3);
+      }
 
-      // ── SEO 점수: 네이버 블로그 SEO 실측 기준으로 계산 ──────────────────
-      // 참고: 네이버 서치어드바이저 가이드, C-Rank, 다이아(D.I.A.) 모델
-      // 총 100점
-
+      // ── SEO 점수 계산 ──────────────────────────────────────────────────────
       const bodyNoSpace = body.replace(/\s/g, "").length;
       const bodyLines   = body.split("\n").filter(l => l.trim().length > 0);
 
-      // 1. 본문 글자수 (30점)
-      // TBWA·네이버 가이드: 1,500자↑ 적정 / 3,000자↑ 우수
-      const lenScore =
+      // 1. 본문 글자수 (30점) — 본문 로딩 실패 시 0점 + 안내
+      const lenScore = !bodyLoaded ? 0 :
         bodyNoSpace >= 3000 ? 30 :
         bodyNoSpace >= 1500 ? 22 :
         bodyNoSpace >= 1000 ? 13 :
         bodyNoSpace >= 500  ? 6  : 0;
 
       // 2. 제목 길이 (20점)
-      // TBWA 가이드: 국문 기준 15~32자 적정
       const titleLen = post.title.length;
       const titleScore =
         titleLen >= 15 && titleLen <= 32 ? 20 :
         titleLen >= 10 && titleLen <= 40 ? 12 :
         titleLen >= 6  ? 5 : 0;
 
-      // 3. 본문 구조 (20점)
-      // NNT: Heading 구조, 단락 나누기 → 줄바꿈/단락 수로 측정
-      const paraScore =
+      // 3. 본문 구조 (20점) — 본문 로딩 실패 시 0점
+      const paraScore = !bodyLoaded ? 0 :
         bodyLines.length >= 15 ? 20 :
         bodyLines.length >= 8  ? 14 :
         bodyLines.length >= 4  ? 7  : 0;
 
-      // 4. 키워드 밀도·집중도 (15점)
-      // C-Rank: 제목 핵심어가 본문에 자연스럽게 포함된 비율
+      // 4. 키워드 밀도 (15점)
       const titleWords   = post.title.match(/[가-힣a-zA-Z0-9]{2,}/g) || [];
       const bodyLower    = body.toLowerCase();
       const matchedWords = titleWords.filter(w => bodyLower.includes(w.toLowerCase()));
       const kwRatio      = titleWords.length > 0 ? matchedWords.length / titleWords.length : 0;
-      const kwScore =
+      const kwScore = !bodyLoaded ? 0 :
         kwRatio >= 0.7 ? 15 :
         kwRatio >= 0.4 ? 10 :
         kwRatio >= 0.2 ? 5  : 0;
 
       // 5. 광고·스팸성 패턴 (15점)
-      // 다이아 모델: "문서의 의도", "어뷰징 척도" — 협찬·광고 표현 감지
       const spamPatterns = ["협찬","광고비","원고료","제공받","체험단","서포터즈","뒷광고","내돈내산아님","유료광고","무료제공","클릭하세요","지금바로","한정수량","선착순","공구","당첨"];
       const spamCount    = spamPatterns.filter(p => body.includes(p)).length;
       const spamScore    = spamCount === 0 ? 15 : spamCount <= 1 ? 9 : spamCount <= 3 ? 3 : 0;
 
       const seoScore = lenScore + titleScore + paraScore + kwScore + spamScore;
 
-      // SEO 개선 조언 생성 (점수 대신 실질적인 조언)
+      // SEO 개선 조언
       const seoAdvice = [];
-      if(lenScore < 22){
+      if(!bodyLoaded){
+        seoAdvice.push(`⚠️ 본문을 자동으로 읽지 못했습니다. 아래 "직접 입력" 방법으로 본문을 붙여넣으면 정확한 SEO 분석이 가능합니다`);
+      }
+      if(bodyLoaded && lenScore < 22){
         const needed = bodyNoSpace < 1500 ? 1500 - bodyNoSpace : 3000 - bodyNoSpace;
         seoAdvice.push(`📝 본문을 ${needed.toLocaleString()}자 더 늘리세요. 현재 ${bodyNoSpace.toLocaleString()}자 → ${bodyNoSpace<1500?"1,500자 이상":"3,000자 이상"} 권장`);
       }
-      if(paraScore < 14){
+      if(bodyLoaded && paraScore < 14){
         seoAdvice.push(`📑 본문을 더 잘게 나눠 단락을 늘리세요. 현재 ${bodyLines.length}개 단락 → 8개 이상, ▶ 소제목을 2~3개 추가하면 좋습니다`);
       }
       if(titleScore < 12){
         seoAdvice.push(`✏️ 제목 길이를 조정하세요. 현재 ${titleLen}자 → 15~32자가 네이버 권장 길이입니다`);
       }
-      if(kwScore < 10){
+      if(bodyLoaded && kwScore < 10){
         seoAdvice.push(`🔑 제목의 핵심 키워드를 본문에 더 자연스럽게 포함시키세요. 현재 포함률 ${Math.round(kwRatio*100)}% → 70% 이상 권장 (C-Rank 기준)`);
       }
       if(spamScore < 9){
@@ -2234,11 +2236,11 @@ function MissingTab(){
       }
 
       const seoDetail = {
-        lenScore,   lenMax: 30, bodyNoSpace,
-        titleScore, titleMax: 20, titleLen,
-        paraScore,  paraMax: 20, paraCount: bodyLines.length,
-        kwScore,    kwMax: 15,   kwRatio: Math.round(kwRatio * 100),
-        spamScore,  spamMax: 15, spamCount,
+        lenScore, titleScore, paraScore, kwScore, spamScore,
+        bodyNoSpace, titleLen,
+        paraCount: bodyLines.length,
+        kwRatio: Math.round(kwRatio * 100),
+        spamCount, bodyLoaded,
         seoAdvice,
       };
 
@@ -2509,11 +2511,16 @@ function MissingTab(){
             </div>}
 
             {/* 상위노출 키워드 + 실제 순위 */}
-            {a.topKeywords?.length>0&&(
+            {a.topKeywords&&(
               <div>
                 <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"8px"}}>
-                  🏆 상위 노출 키워드 <span style={{color:"#484f58",fontWeight:400}}>· 네이버 블로그탭 실제 순위</span>
+                  🏆 노출 키워드 순위 <span style={{color:"#484f58",fontWeight:400}}>· 네이버 블로그탭 실제 순위</span>
                 </div>
+                {a.topKeywords.length===0&&(
+                  <div style={{color:"#484f58",fontSize:"12px",padding:"10px",background:"#161b22",borderRadius:"8px"}}>
+                    키워드를 추출하지 못했습니다. 직접 입력 방법으로 본문을 넣으면 정확한 키워드 분석이 가능합니다.
+                  </div>
+                )}
                 {a.topKeywords.map((kw,i)=>{
                   const rc=rankColor(kw.realRank);
                   const isOut=kw.realRank===null&&!kw.rankLoading;
@@ -2531,14 +2538,15 @@ function MissingTab(){
                         {kw.keyword} ↗
                       </a>
                     </div>
-                    <div style={{background:isLoading?"#21262d":isOut?"#21262d":rc+"22",color:isLoading?"#8b949e":isOut?"#484f58":rc,
-                      border:`1px solid ${isLoading?"#30363d":isOut?"#30363d":rc+"55"}`,
-                      borderRadius:"8px",padding:"5px 12px",fontSize:"15px",fontWeight:800,minWidth:"52px",textAlign:"center",flexShrink:0}}>
-                      {isLoading?"⏳":isOut?"100위↓":`${kw.realRank}위`}
+                    <div style={{background:isLoading?"#21262d":isOut?"#2d0b0b":rc+"22",
+                      color:isLoading?"#8b949e":isOut?"#f85149":rc,
+                      border:`1px solid ${isLoading?"#30363d":isOut?"#f8514944":rc+"55"}`,
+                      borderRadius:"8px",padding:"5px 12px",fontSize:"13px",fontWeight:800,minWidth:"60px",textAlign:"center",flexShrink:0}}>
+                      {isLoading?"⏳":isOut?"미노출":""+kw.realRank+"위"}
                     </div>
                   </div>;
                 })}
-                <div style={{fontSize:"11px",color:"#484f58",marginTop:"2px"}}>🔍 네이버 검색 Open API 기준 (상위 100위) · 실시간 반영</div>
+                <div style={{fontSize:"11px",color:"#484f58",marginTop:"2px"}}>🔍 네이버 검색 Open API 기준 (상위 100위) · 미노출 = 100위권 밖</div>
               </div>
             )}
 
