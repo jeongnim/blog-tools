@@ -2142,35 +2142,55 @@ function MissingTab(){
     setAnalyzing(idx);
     try{
       const body=await fetchPostBody(post);
+
+      // ── Step 1: AI로 키워드 + SEO점수만 추출 (missingStatus는 AI 추측 제거) ──
       const prompt=`아래 네이버 블로그 포스트를 분석해줘. 반드시 순수 JSON만 출력. 마크다운 없이.
 
 제목: ${post.title}
 본문: ${body.slice(0,2000)||"(없음)"}
-URL: ${post.link||"없음"}
 
 {
   "keywords":["이 글 실제 내용 기반 키워드1","키워드2","키워드3"],
-  "missingRisk":"낮음|보통|높음|매우높음",
-  "missingStatus":"정상노출|누락의심|누락가능성높음|누락",
   "seoScore":0~100
 }
 
 판단 기준:
 - keywords: 제목/본문 핵심 검색어 추출 (무관한 키워드 금지)
-- missingRisk: 제목 길이(20~40자 적정), 본문 분량(1500자↑ 양호), 광고성 여부, 키워드 반복 과다 여부 종합
 - seoScore: 제목 품질, 본문 충실도, 키워드 자연스러운 배치 종합`;
 
-      const raw=await callClaude([{role:"user",content:prompt}],"Korean blog SEO expert. Output ONLY valid JSON.",800);
+      const raw=await callClaude([{role:"user",content:prompt}],"Korean blog SEO expert. Output ONLY valid JSON.",600);
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
       const ai=JSON.parse(raw.slice(s,e+1));
       const kws=ai.keywords||[];
-      const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null,rankLoading:true}));
-      setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kwData}}));
+
+      // ── Step 2: 글 제목으로 네이버 검색 → 실제 누락 여부 확인 ──
       const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
       const extractedBlogId=urlMatch?.[1]||posts?.blogId||"";
       const extractedPostNo=urlMatch?.[2]||post.postNo||"";
+
+      // 제목 전체를 검색어로 넣어서 내 글이 결과에 있는지 확인
+      const titleRank=await getNaverRank(post.title, extractedBlogId, extractedPostNo);
+
+      // 실제 검색 결과 기반 누락 판별 — 내 글이 결과에 있으면 노출, 없으면 누락
+      let missingStatus;
+      if(titleRank!==null && titleRank!==undefined){
+        missingStatus="노출";
+      } else {
+        missingStatus="누락";
+      }
+
+      const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null,rankLoading:true}));
+      setAnalysis(prev=>({...prev,[post.postNo]:{
+        ...ai, missingStatus,
+        titleRank,
+        topKeywords:kwData
+      }}));
+
       const rankResults=await Promise.all(kws.map(kw=>getNaverRank(kw,extractedBlogId,extractedPostNo)));
-      setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i],rankLoading:false}))}}));
+      setAnalysis(prev=>({...prev,[post.postNo]:{
+        ...ai, missingStatus, titleRank,
+        topKeywords:kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i],rankLoading:false}))
+      }}));
     }catch(e){
       setAnalysis(prev=>({...prev,[post.postNo]:{error:true}}));
     }
@@ -2187,7 +2207,7 @@ URL: ${post.link||"없음"}
 
   const RC={"낮음":"#3fb950","보통":"#ffa657","높음":"#ff7b72","매우높음":"#f85149"};
   const RB={"낮음":"#0d2019","보통":"#2d1e0a","높음":"#2d1117","매우높음":"#2d0b0b"};
-  const SC={"정상노출":"#3fb950","누락의심":"#ffa657","누락가능성높음":"#ff7b72","누락":"#f85149"};
+  const SC={"노출":"#3fb950","누락":"#f85149"};
   const rankColor=r=>r===null?"#484f58":r<=3?"#3fb950":r<=10?"#58a6ff":r<=20?"#ffa657":"#ff7b72";
   const totalPages=posts?Math.ceil(posts.all.length/PER_PAGE):0;
 
@@ -2351,10 +2371,15 @@ URL: ${post.link||"없음"}
               {post.description&&!a&&<div style={{color:"#484f58",fontSize:"12px",marginBottom:"5px",lineHeight:"1.5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{post.description}</div>}
               {/* 뱃지 */}
               {a&&!a.error&&<div style={{display:"flex",flexWrap:"wrap",gap:"5px",marginBottom:"5px"}}>
-                <span style={{background:RB[risk]||"#21262d",color:RC[risk]||"#8b949e",border:`1px solid ${RC[risk]||"#30363d"}44`,borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>
-                  {risk==="낮음"?"✅":risk==="보통"?"⚠️":"🚨"} 누락위험 {risk}
+                {/* 노출 / 누락 */}
+                <span style={{
+                  background:a.missingStatus==="노출"?"#2ea04322":"#f8514922",
+                  color:a.missingStatus==="노출"?"#3fb950":"#f85149",
+                  border:`1px solid ${a.missingStatus==="노출"?"#2ea04344":"#f8514944"}`,
+                  borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700
+                }}>
+                  {a.missingStatus==="노출"?"✅ 노출":"🚨 누락"}
                 </span>
-                {a.missingStatus&&<span style={{background:(SC[a.missingStatus]||"#21262d")+"22",color:SC[a.missingStatus]||"#8b949e",border:`1px solid ${SC[a.missingStatus]||"#30363d"}44`,borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>{a.missingStatus}</span>}
                 <span style={{background:"#21262d",color:a.seoScore>=70?"#3fb950":a.seoScore>=40?"#ffa657":"#ff7b72",border:"1px solid #30363d",borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>SEO {a.seoScore}</span>
                 {a.topKeywords?.[0]&&<span style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>
                   🔑 {a.topKeywords[0].keyword} {a.topKeywords[0].rankLoading?"조회중…":a.topKeywords[0].realRank!==null?`${a.topKeywords[0].realRank}위`:"100위↓"}
@@ -2362,7 +2387,7 @@ URL: ${post.link||"없음"}
               </div>}
               {/* 분석 중 */}
               {isAn&&<div style={{display:"flex",flexDirection:"column",gap:"3px",marginTop:"4px"}}>
-                {["🤖 AI 키워드 분석 중...","📊 블로그탭 실제 순위 조회 중..."].map((msg,i)=>(
+                {["🤖 AI 키워드 분석 중...","🔍 제목으로 네이버 실제 검색 중...","📊 키워드 블로그탭 순위 조회 중..."].map((msg,i)=>(
                   <div key={i} style={{color:"#8b949e",fontSize:"11px",animation:`pulse 1.6s ease ${i*0.4}s infinite`}}>{msg}</div>
                 ))}
               </div>}
@@ -2388,6 +2413,34 @@ URL: ${post.link||"없음"}
 
           {/* 상세 패널 */}
           {isEx&&a&&!a.error&&<div style={{borderTop:"1px solid #21262d",padding:"14px 16px",background:"#0d1117",display:"flex",flexDirection:"column",gap:"12px"}}>
+
+            {/* 제목 검색 누락 여부 */}
+            <div style={{background:a.missingStatus==="노출"?"#0d2019":"#2d0b0b",border:`1px solid ${a.missingStatus==="노출"?"#2ea04333":"#f8514933"}`,borderRadius:"10px",padding:"12px 14px"}}>
+              <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"8px"}}>
+                🔍 제목 검색 누락 여부 <span style={{color:"#484f58",fontWeight:400}}>· 제목 그대로 네이버 검색한 실제 결과</span>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+                <div style={{fontSize:"28px"}}>{a.missingStatus==="노출"?"✅":"🚨"}</div>
+                <div>
+                  <div style={{color:a.missingStatus==="노출"?"#3fb950":"#f85149",fontSize:"15px",fontWeight:700}}>
+                    {a.missingStatus==="노출"?"노출 — 내 글이 검색 결과에 있음":"누락 — 내 글이 검색 결과에 없음"}
+                  </div>
+                  <div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px"}}>
+                    검색어: "{post.title}"
+                  </div>
+                </div>
+                <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(post.title)}`}
+                  target="_blank" rel="noreferrer"
+                  style={{marginLeft:"auto",padding:"6px 12px",background:"#21262d",color:"#8b949e",
+                    border:"1px solid #30363d",borderRadius:"7px",fontSize:"11px",
+                    textDecoration:"none",whiteSpace:"nowrap",flexShrink:0}}
+                  onMouseEnter={e=>e.target.style.color="#58a6ff"}
+                  onMouseLeave={e=>e.target.style.color="#8b949e"}>
+                  네이버에서 직접 확인 ↗
+                </a>
+              </div>
+            </div>
+
             {/* 상위노출 키워드 + 실제 순위 */}
             {a.topKeywords?.length>0&&<div>
               <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"8px"}}>
