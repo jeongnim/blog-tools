@@ -2431,6 +2431,8 @@ function MissingTab(){
       </div>
 
       {posts.current.map((post,idx)=>{
+        const a=analysis[post.postNo];
+        const isAn=analyzing===idx;
         return <div key={post.postNo} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
           <div style={{padding:"13px 16px",display:"flex",alignItems:"flex-start",gap:"10px"}}>
             <div style={{color:"#484f58",fontSize:"11px",fontWeight:700,minWidth:"20px",paddingTop:"3px",flexShrink:0,textAlign:"right"}}>
