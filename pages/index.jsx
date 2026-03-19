@@ -2428,7 +2428,7 @@ function MissingTab(){
 
         {/* 제목 — 선택사항 */}
         <div style={{marginBottom:"8px"}}>
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>✏️ 글 제목 <span style={{color:"#484f58"}}>(선택 · 비워두면 자동 추출)</span></div>
+          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>✏️ 글 제목 <span style={{color:"#484f58"}}>(비워두면 자동 추출 · 누락 확인 불가 시 직접 입력하면 정확합니다)</span></div>
           <input value={singleTitle} onChange={e=>setSingleTitle(e.target.value)}
             onKeyDown={e=>e.key==="Enter"&&!manualLoading&&analyzeManual()}
             placeholder="비워두면 URL에서 자동으로 가져옵니다"
