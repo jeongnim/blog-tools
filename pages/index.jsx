@@ -2087,18 +2087,36 @@ function MissingTab(){
     setLoadingFeed(false);
   };
 
-  // ── 방법2: URL+제목+본문 직접 입력 → 즉시 분석 ──
-  const analyzeManual=()=>{
+  // ── 방법2: URL 입력 → 제목 자동 추출 → 분석 ──
+  const [manualLoading, setManualLoading] = useState(false);
+  const analyzeManual=async()=>{
     const url=singleUrl.trim();
-    const title=singleTitle.trim();
     if(!url){alert("URL을 입력해주세요.");return;}
-    if(!title){alert("제목을 입력해주세요.");return;}
     const m=url.match(/blog\.naver\.com\/([^/\s?#]+)\/(\d+)/);
     if(!m){alert("올바른 네이버 블로그 URL을 입력해주세요.\n예: https://blog.naver.com/아이디/포스트번호");return;}
+
+    setManualLoading(true);
+    let title = singleTitle.trim();
+
+    // 제목이 없으면 scrape API로 자동 추출
+    if(!title){
+      try{
+        const res=await fetch("/api/scrape",{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({url}),
+        });
+        const data=await res.json();
+        if(data.success && data.data?.title) title=data.data.title;
+      }catch(e){}
+    }
+
+    if(!title){alert("제목을 자동으로 가져오지 못했습니다.\n제목을 직접 입력해주세요.");setManualLoading(false);return;}
+
     const postNo=m[2];
-    const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual"};
+    const post={title,link:url,postNo,date:"",description:"",bodyText:"",source:"manual"};
     setPosts({all:[post],current:[post],total:1,page:1,blogId:m[1]});
     setPage(1);setAnalysis({});setExpanded(null);
+    setManualLoading(false);
     setTimeout(()=>runAnalyze(post,0),80);
   };
 
@@ -2371,16 +2389,17 @@ function MissingTab(){
       </div>
     </div>}
 
-    {/* ── 방법2: URL + 제목 + 본문 직접 입력 ── */}
+    {/* ── 방법2: URL 입력 ── */}
     {mode==="url"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"12px"}}>
       <div>
-        <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700,marginBottom:"4px"}}>게시글 정보 입력</div>
-        <div style={{color:"#484f58",fontSize:"11px",marginBottom:"12px"}}>최신 10개 외 과거 글도 확인 가능 · 제목+본문을 직접 붙여넣으면 정확한 분석이 됩니다</div>
+        <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700,marginBottom:"4px"}}>게시글 URL 입력</div>
+        <div style={{color:"#484f58",fontSize:"11px",marginBottom:"12px"}}>URL만 입력하면 제목을 자동으로 가져옵니다 · 제목을 직접 입력하면 더 빠릅니다</div>
 
         {/* URL */}
         <div style={{marginBottom:"8px"}}>
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>📎 게시글 URL</div>
+          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>📎 게시글 URL <span style={{color:"#ff7b72"}}>*필수</span></div>
           <input value={singleUrl} onChange={e=>setSingleUrl(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&!manualLoading&&analyzeManual()}
             placeholder="https://blog.naver.com/아이디/포스트번호"
             style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",background:"#0d1117",
               border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
@@ -2388,36 +2407,25 @@ function MissingTab(){
             onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
         </div>
 
-        {/* 제목 */}
+        {/* 제목 — 선택사항 */}
         <div style={{marginBottom:"8px"}}>
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>✏️ 글 제목 <span style={{color:"#ff7b72"}}>*필수</span></div>
+          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>✏️ 글 제목 <span style={{color:"#484f58"}}>(선택 · 비워두면 자동 추출)</span></div>
           <input value={singleTitle} onChange={e=>setSingleTitle(e.target.value)}
-            placeholder="블로그 글 제목을 그대로 붙여넣으세요"
+            onKeyDown={e=>e.key==="Enter"&&!manualLoading&&analyzeManual()}
+            placeholder="비워두면 URL에서 자동으로 가져옵니다"
             style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",background:"#0d1117",
               border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
               fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none"}}
             onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
         </div>
 
-        {/* 본문 */}
-        <div style={{marginBottom:"12px"}}>
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>📄 본문 내용 <span style={{color:"#484f58"}}>(선택 · 있으면 더 정확)</span></div>
-          <textarea value={singleBody} onChange={e=>setSingleBody(e.target.value)}
-            placeholder="본문 텍스트를 붙여넣으세요 (일부만 있어도 됩니다)"
-            rows={4}
-            style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",background:"#0d1117",
-              border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none",resize:"vertical",lineHeight:"1.6"}}
-            onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
-        </div>
-
-        <button onClick={analyzeManual} disabled={!singleUrl.trim()||!singleTitle.trim()}
+        <button onClick={analyzeManual} disabled={!singleUrl.trim()||manualLoading}
           style={{width:"100%",padding:"13px",
-            background:singleUrl.trim()&&singleTitle.trim()?"#1f6feb":"#21262d",
-            color:singleUrl.trim()&&singleTitle.trim()?"#fff":"#484f58",
-            border:"none",borderRadius:"8px",cursor:singleUrl.trim()&&singleTitle.trim()?"pointer":"not-allowed",
+            background:singleUrl.trim()&&!manualLoading?"#1f6feb":"#21262d",
+            color:singleUrl.trim()&&!manualLoading?"#fff":"#484f58",
+            border:"none",borderRadius:"8px",cursor:singleUrl.trim()&&!manualLoading?"pointer":"not-allowed",
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700}}>
-          🔍 누락 확인 · 키워드 분석 시작
+          {manualLoading?"⏳ 제목 가져오는 중...":"🔍 누락 확인 · 키워드 분석 시작"}
         </button>
       </div>
     </div>}
@@ -2476,7 +2484,6 @@ function MissingTab(){
                 }}>
                   {a.missingStatus==="노출"?"✅ 노출":"🚨 누락"}
                 </span>
-                <span style={{background:"#21262d",color:a.seoScore>=70?"#3fb950":a.seoScore>=40?"#ffa657":"#ff7b72",border:"1px solid #30363d",borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>SEO {a.seoScore}</span>
               </div>}
               {/* 분석 중 */}
               {isAn&&<div style={{display:"flex",flexDirection:"column",gap:"3px",marginTop:"4px"}}>
