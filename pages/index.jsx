@@ -2199,10 +2199,10 @@ function MissingTab(){
         bodyLines.length >= 4  ? 7  : 0;
 
       // 4. 키워드 밀도 (15점)
-      const titleWords   = post.title.match(/[가-힣a-zA-Z0-9]{2,}/g) || [];
+      const seoTitleWords = post.title.match(/[가-힣a-zA-Z0-9]{2,}/g) || [];
       const bodyLower    = body.toLowerCase();
-      const matchedWords = titleWords.filter(w => bodyLower.includes(w.toLowerCase()));
-      const kwRatio      = titleWords.length > 0 ? matchedWords.length / titleWords.length : 0;
+      const matchedWords = seoTitleWords.filter(w => bodyLower.includes(w.toLowerCase()));
+      const kwRatio      = seoTitleWords.length > 0 ? matchedWords.length / seoTitleWords.length : 0;
       const kwScore = !bodyLoaded ? 0 :
         kwRatio >= 0.7 ? 15 :
         kwRatio >= 0.4 ? 10 :
