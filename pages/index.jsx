@@ -2098,7 +2098,26 @@ function MissingTab(){
     setManualLoading(true);
     let title = singleTitle.trim();
 
-    // 제목이 없으면 scrape API로 자동 추출
+    // 제목이 없으면 RSS로 자동 추출
+    if(!title){
+      try{
+        // RSS에서 해당 포스트 제목 찾기
+        const rssRes=await fetch(`/api/blog-rss?blogId=${encodeURIComponent(m[1])}`);
+        if(rssRes.ok){
+          const xml=await rssRes.text();
+          const doc=new DOMParser().parseFromString(xml,"application/xml");
+          const items=[...doc.querySelectorAll("item")];
+          // logNo가 link에 포함된 item 찾기
+          const matched=items.find(it=>{
+            const link=(it.querySelector("link")?.textContent||it.querySelector("guid")?.textContent||"");
+            return link.includes(m[2]);
+          });
+          if(matched) title=matched.querySelector("title")?.textContent?.trim()||"";
+        }
+      }catch(e){}
+    }
+
+    // RSS도 실패하면 scrape로 시도
     if(!title){
       try{
         const res=await fetch("/api/scrape",{
