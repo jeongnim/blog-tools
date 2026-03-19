@@ -2149,15 +2149,29 @@ function MissingTab(){
     try{
       const {text: body, loaded: bodyLoaded} = await fetchPostBody(post);
 
-      // ── Step 1: 키워드 = 태그 + 제목 단어 합치기 (중복 제거, 최대 5개) ──
+      // ── Step 1: 키워드 추출 — 태그 각각 + 제목 단어 쪼개기 ──
       const tagKws = (post.tags||[]).map(t=>t.trim()).filter(Boolean);
-      const titleKws = (post.title.match(/[가-힣a-zA-Z0-9][가-힣a-zA-Z0-9\s]{1,}/g)||[])
-        .map(w=>w.trim()).filter(w=>w.length>=2);
+
+      // 제목 불용어 (검색 키워드로 의미없는 단어)
+      const stopWords=new Set(["vs","VS","전","후","및","의","이","가","을","를","은","는","와","과","도","에","서","로","으로","에서","이란","이란게","하는","하기","하기위한","방법","방법은","알아보기","알아보자","해보기","해보자","정리","총정리","완전","완벽","총","비교","비교해보기","선택","추천","후기","리뷰","구매","사용","사용법","사용기","장점","단점","특징","가격","종류","차이","차이점","꿀팁","팁","tip","tips"]);
+
+      // 1) 개별 단어 (2글자 이상, 불용어 제외)
+      const titleWords = (post.title.match(/[가-힣A-Za-z0-9]+/g)||[])
+        .filter(w=>w.length>=2 && !stopWords.has(w));
+      // 2) 붙여쓰기 조합: 인접한 두 단어 붙이기
+      const titlePairs = [];
+      for(let i=0;i<titleWords.length-1;i++){
+        titlePairs.push(titleWords[i]+titleWords[i+1]);
+      }
+
+      // 태그 우선, 제목 단어, 붙여쓰기 조합 순 / 중복 제거 / 최대 10개
       const seen=new Set();
       const kws=[];
-      for(const k of [...tagKws,...titleKws]){
+      for(const k of [...tagKws,...titleWords,...titlePairs]){
         const kNorm=k.trim();
-        if(kNorm&&!seen.has(kNorm)&&kws.length<5){seen.add(kNorm);kws.push(kNorm);}
+        if(kNorm&&kNorm.length>=2&&!seen.has(kNorm)&&kws.length<10){
+          seen.add(kNorm);kws.push(kNorm);
+        }
       }
 
       // ── SEO 점수 계산 ──────────────────────────────────────────────────────
