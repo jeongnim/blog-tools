@@ -2120,16 +2120,14 @@ function MissingTab(){
     }catch(e){return null;}
   };
 
-  // ── 본문 크롤링 — {text, loaded} 반환 ──
+  // ── 본문 크롤링 — blog-content API 통해 서버에서 모바일 URL 크롤링 ──
   const fetchPostBody=async(post)=>{
-    // 방법2 직접입력: bodyText가 있으면 무조건 로딩 성공
     if(post.bodyText) return {text: post.bodyText, loaded: true};
     if(!post.link) return {text: post.description||"", loaded: false};
     try{
       const m=post.link.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
       if(!m) return {text: post.description||"", loaded: false};
       const blogId=m[1], logNo=m[2];
-
       const postUrl=`https://blog.naver.com/${blogId}/${logNo}`;
       const res=await fetch(`/api/blog-content?url=${encodeURIComponent(postUrl)}`);
       if(res.ok){
@@ -2139,7 +2137,6 @@ function MissingTab(){
         }
       }
     }catch(e){}
-    // 크롤링 실패 → description 사용, loaded: false 명시
     return {text: post.description||"", loaded: false};
   };
 
