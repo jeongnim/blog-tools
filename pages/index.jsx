@@ -2120,24 +2120,27 @@ function MissingTab(){
     }catch(e){return null;}
   };
 
-  // ── 본문 크롤링 ──
+  // ── 본문 크롤링 — {text, loaded} 반환 ──
   const fetchPostBody=async(post)=>{
-    if(post.bodyText) return post.bodyText;
-    if(!post.link) return post.description||"";
+    // 방법2 직접입력: bodyText가 있으면 무조건 로딩 성공
+    if(post.bodyText) return {text: post.bodyText, loaded: true};
+    if(!post.link) return {text: post.description||"", loaded: false};
     try{
       const m=post.link.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
-      if(!m) return post.description||"";
+      if(!m) return {text: post.description||"", loaded: false};
       const blogId=m[1], logNo=m[2];
 
-      // blog-content API에 url 파라미터로 직접 크롤링 요청
       const postUrl=`https://blog.naver.com/${blogId}/${logNo}`;
       const res=await fetch(`/api/blog-content?url=${encodeURIComponent(postUrl)}`);
       if(res.ok){
         const data=await res.json();
-        if(data.bodies?.length>0 && data.bodies[0].length>=100) return data.bodies[0];
+        if(data.success && data.bodies?.length>0 && data.bodies[0].length>=200){
+          return {text: data.bodies[0], loaded: true};
+        }
       }
     }catch(e){}
-    return post.description||"";
+    // 크롤링 실패 → description 사용, loaded: false 명시
+    return {text: post.description||"", loaded: false};
   };
 
   // ── AI 분석 ──
@@ -2145,8 +2148,7 @@ function MissingTab(){
     if(analysis[post.postNo])return;
     setAnalyzing(idx);
     try{
-      const body=await fetchPostBody(post);
-      const bodyLoaded = body.length > 300; // RSS description(300자) 초과면 본문 로딩 성공
+      const {text: body, loaded: bodyLoaded} = await fetchPostBody(post);
 
       // ── Step 1: AI로 키워드 추출 (제목 + 가용 본문 기반) ──
       const prompt=`아래 네이버 블로그 포스트를 분석해줘. 반드시 순수 JSON만 출력. 마크다운 없이.
