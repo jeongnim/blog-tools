@@ -687,28 +687,24 @@ Return ONLY valid JSON, no markdown:
       const initial=sections.map(sec=>({...sec,status:"loading",base64:null,mimeType:null,error:null}));
       setGenImages(initial);
 
-      // ── Step 2: 4개 이미지 순차 생성 (Pollinations AI - 무료) ──
+      // ── Step 2: 4개 이미지 순차 생성 (Pollinations AI - /api/imagen 경유) ──
       for(let i=0;i<sections.length;i++){
         const sec=sections[i];
         try{
-          // Pollinations: prompt를 URL 인코딩해서 직접 fetch
-          const encodedPrompt=encodeURIComponent(sec.prompt);
-          const seed=Math.floor(Math.random()*99999);
-          const polUrl=`https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`;
-
-          const r=await fetch(polUrl);
-          if(!r.ok) throw new Error(`이미지 생성 실패 (${r.status})`);
-
-          const blob=await r.blob();
-          const base64=await new Promise((res,rej)=>{
-            const reader=new FileReader();
-            reader.onload=()=>res(reader.result.split(",")[1]);
-            reader.onerror=rej;
-            reader.readAsDataURL(blob);
+          const r=await fetch("/api/imagen",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({prompt:sec.prompt}),
           });
+          const rawText=await r.text();
+          if(!rawText||rawText.trim()==="") throw new Error("이미지 API 응답이 비어있습니다.");
+          let data;
+          try{ data=JSON.parse(rawText); }
+          catch(pe){ throw new Error("이미지 API JSON 오류: "+rawText.slice(0,100)); }
+          if(data.error) throw new Error(data.error);
 
           setGenImages(prev=>prev.map((item,idx)=>
-            idx===i ? {...item, status:"done", base64, mimeType:"image/jpeg"} : item
+            idx===i ? {...item, status:"done", base64:data.base64, mimeType:data.mimeType} : item
           ));
         }catch(e2){
           setGenImages(prev=>prev.map((item,idx)=>
