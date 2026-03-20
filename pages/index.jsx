@@ -687,24 +687,28 @@ Return ONLY valid JSON, no markdown:
       const initial=sections.map(sec=>({...sec,status:"loading",base64:null,mimeType:null,error:null}));
       setGenImages(initial);
 
-      // ── Step 2: 4개 이미지 순차 생성 ──
+      // ── Step 2: 4개 이미지 순차 생성 (Pollinations AI - 무료) ──
       for(let i=0;i<sections.length;i++){
         const sec=sections[i];
         try{
-          const r=await fetch("/api/imagen",{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({prompt:sec.prompt}),
+          // Pollinations: prompt를 URL 인코딩해서 직접 fetch
+          const encodedPrompt=encodeURIComponent(sec.prompt);
+          const seed=Math.floor(Math.random()*99999);
+          const polUrl=`https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`;
+
+          const r=await fetch(polUrl);
+          if(!r.ok) throw new Error(`이미지 생성 실패 (${r.status})`);
+
+          const blob=await r.blob();
+          const base64=await new Promise((res,rej)=>{
+            const reader=new FileReader();
+            reader.onload=()=>res(reader.result.split(",")[1]);
+            reader.onerror=rej;
+            reader.readAsDataURL(blob);
           });
-          const rawText=await r.text();
-          if(!rawText||rawText.trim()==="") throw new Error("이미지 API 응답이 비어있습니다.");
-          let data;
-          try{ data=JSON.parse(rawText); }
-          catch(pe){ throw new Error("이미지 API JSON 오류: "+rawText.slice(0,100)); }
-          if(data.error) throw new Error(data.error);
 
           setGenImages(prev=>prev.map((item,idx)=>
-            idx===i ? {...item, status:"done", base64:data.base64, mimeType:data.mimeType} : item
+            idx===i ? {...item, status:"done", base64, mimeType:"image/jpeg"} : item
           ));
         }catch(e2){
           setGenImages(prev=>prev.map((item,idx)=>
@@ -731,7 +735,7 @@ Return ONLY valid JSON, no markdown:
         <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
           <span style={{fontSize:"18px"}}>🎨</span>
           <span style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>단락별 블로그 이미지 생성</span>
-          <span style={{fontSize:"10px",background:"linear-gradient(135deg,#1f6feb22,#388bfd22)",color:"#58a6ff",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"2px 8px",fontWeight:700}}>Imagen 3</span>
+          <span style={{fontSize:"10px",background:"linear-gradient(135deg,#1f6feb22,#388bfd22)",color:"#58a6ff",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"2px 8px",fontWeight:700}}>Pollinations AI</span>
         </div>
         <div style={{color:"#484f58",fontSize:"11px",marginTop:"3px"}}>
           본문 내용을 4개 단락으로 분석하여 각 단락에 어울리는 이미지를 생성합니다
@@ -764,7 +768,7 @@ Return ONLY valid JSON, no markdown:
       <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"6px"}}>글 내용을 분석해서 4개 단락에 맞는 이미지를 자동 생성합니다</div>
       <div style={{color:"#484f58",fontSize:"11px",lineHeight:"1.7"}}>
         · 각 단락마다 내용이 다른 이미지 1장씩 총 4장<br/>
-        · Claude가 단락 분석 → Imagen 3가 이미지 생성<br/>
+        · Claude가 단락 분석 → Pollinations AI가 이미지 생성 (무료)<br/>
         · 생성된 이미지를 클릭하면 다운로드
       </div>
     </div>}
