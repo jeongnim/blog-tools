@@ -687,10 +687,13 @@ Return ONLY valid JSON, no markdown:
       const initial=sections.map(sec=>({...sec,status:"loading",base64:null,mimeType:null,error:null}));
       setGenImages(initial);
 
-      // ── Step 2: 4개 이미지 순차 생성 (Pollinations AI 직접 호출 - 무료, timeout 없음) ──
+      // ── Step 2: 4개 이미지 순차 생성 (Pollinations - 15초 rate limit 대응) ──
       for(let i=0;i<sections.length;i++){
         const sec=sections[i];
         try{
+          // rate limit: 요청 사이 16초 간격 (무료티어 15초 제한)
+          if(i>0) await new Promise(r=>setTimeout(r,16000));
+
           const seed=Math.floor(Math.random()*99999);
           const encodedPrompt=encodeURIComponent(sec.prompt);
           const polUrl=`https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`;
