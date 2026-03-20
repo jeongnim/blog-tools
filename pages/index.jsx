@@ -635,7 +635,7 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
 }
 
 
-// ─── 단락별 이미지 생성 컴포넌트 (Imagen 3) ──────────────────────────────────
+// ─── 단락별 이미지 생성 컴포넌트 (Pollinations AI) ──────────────────────────────────
 function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading,setImgLoading,imgError,setImgError,imgSections,setImgSections}){
 
   const startGenerate=async()=>{
@@ -646,7 +646,7 @@ function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading
 
     try{
       // ── Step 1: Claude가 본문을 4개 단락으로 분석 후 각각 다른 영문 이미지 프롬프트 생성 ──
-      const analysisReq=`You are a blog image consultant. Analyze the following Korean blog post and identify 4 distinct sections that would benefit from an accompanying image. For each section, create a vivid, photorealistic English prompt for Imagen 3.
+      const analysisReq=`You are a blog image consultant. Analyze the following Korean blog post and identify 4 distinct sections that would benefit from an accompanying image. For each section, create a vivid, photorealistic English prompt for Pollinations AI.
 
 Blog Title: ${postMeta.title||""}
 Main Keyword: ${postMeta.main_keyword||""}
@@ -665,14 +665,14 @@ Rules:
 
 Return ONLY valid JSON, no markdown:
 {"sections":[
-  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","prompt":"English image generation prompt for Imagen 3"},
+  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","prompt":"English image generation prompt for Pollinations AI"},
   {"sectionTitle":"...","sectionDesc":"...","prompt":"..."},
   {"sectionTitle":"...","sectionDesc":"...","prompt":"..."},
   {"sectionTitle":"...","sectionDesc":"...","prompt":"..."}
 ]}`;
 
       const raw=await callClaude([{role:"user",content:analysisReq}],
-        "You are an expert at analyzing blog posts and writing Imagen 3 prompts. Output ONLY valid JSON.",1200,"claude-haiku-4-5-20251001");
+        "You are an expert at analyzing blog posts and writing Pollinations AI prompts. Output ONLY valid JSON.",1200,"claude-haiku-4-5-20251001");
 
       if(!raw||raw.trim()==="") throw new Error("섹션 분석 응답이 비어있습니다.");
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
@@ -687,24 +687,27 @@ Return ONLY valid JSON, no markdown:
       const initial=sections.map(sec=>({...sec,status:"loading",base64:null,mimeType:null,error:null}));
       setGenImages(initial);
 
-      // ── Step 2: 4개 이미지 순차 생성 (Pollinations AI - /api/imagen 경유) ──
+      // ── Step 2: 4개 이미지 순차 생성 (Pollinations AI 직접 호출 - 무료, timeout 없음) ──
       for(let i=0;i<sections.length;i++){
         const sec=sections[i];
         try{
-          const r=await fetch("/api/imagen",{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({prompt:sec.prompt}),
+          const seed=Math.floor(Math.random()*99999);
+          const encodedPrompt=encodeURIComponent(sec.prompt);
+          const polUrl=`https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`;
+
+          const r=await fetch(polUrl);
+          if(!r.ok) throw new Error(`이미지 생성 실패 (${r.status})`);
+
+          const blob=await r.blob();
+          const base64=await new Promise((resolve,reject)=>{
+            const reader=new FileReader();
+            reader.onload=()=>resolve(reader.result.split(",")[1]);
+            reader.onerror=reject;
+            reader.readAsDataURL(blob);
           });
-          const rawText=await r.text();
-          if(!rawText||rawText.trim()==="") throw new Error("이미지 API 응답이 비어있습니다.");
-          let data;
-          try{ data=JSON.parse(rawText); }
-          catch(pe){ throw new Error("이미지 API JSON 오류: "+rawText.slice(0,100)); }
-          if(data.error) throw new Error(data.error);
 
           setGenImages(prev=>prev.map((item,idx)=>
-            idx===i ? {...item, status:"done", base64:data.base64, mimeType:data.mimeType} : item
+            idx===i ? {...item, status:"done", base64, mimeType:"image/jpeg"} : item
           ));
         }catch(e2){
           setGenImages(prev=>prev.map((item,idx)=>
@@ -764,7 +767,7 @@ Return ONLY valid JSON, no markdown:
       <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"6px"}}>글 내용을 분석해서 4개 단락에 맞는 이미지를 자동 생성합니다</div>
       <div style={{color:"#484f58",fontSize:"11px",lineHeight:"1.7"}}>
         · 각 단락마다 내용이 다른 이미지 1장씩 총 4장<br/>
-        · Claude가 단락 분석 → Pollinations AI가 이미지 생성 (무료)<br/>
+        · Claude가 단락 분석 → Pollinations AI가 이미지 생성<br/>
         · 생성된 이미지를 클릭하면 다운로드
       </div>
     </div>}
@@ -1048,7 +1051,7 @@ JSON 형식:
       </div>
     </div>}
 
-    {/* ── Imagen 3 단락별 이미지 생성 ── */}
+    {/* ── Pollinations AI 단락별 이미지 생성 ── */}
     {postMeta&&<ImageGenSection
       postMeta={postMeta}
       postContent={workingText||text}
@@ -2087,55 +2090,18 @@ function MissingTab(){
     setLoadingFeed(false);
   };
 
-  // ── 방법2: URL 입력 → 제목 자동 추출 → 분석 ──
-  const [manualLoading, setManualLoading] = useState(false);
-  const analyzeManual=async()=>{
+  // ── 방법2: URL+제목+본문 직접 입력 → 즉시 분석 ──
+  const analyzeManual=()=>{
     const url=singleUrl.trim();
+    const title=singleTitle.trim();
     if(!url){alert("URL을 입력해주세요.");return;}
+    if(!title){alert("제목을 입력해주세요.");return;}
     const m=url.match(/blog\.naver\.com\/([^/\s?#]+)\/(\d+)/);
     if(!m){alert("올바른 네이버 블로그 URL을 입력해주세요.\n예: https://blog.naver.com/아이디/포스트번호");return;}
-
-    setManualLoading(true);
-    let title = singleTitle.trim();
-
-    // 제목이 없으면 RSS로 자동 추출
-    if(!title){
-      try{
-        // RSS에서 해당 포스트 제목 찾기
-        const rssRes=await fetch(`/api/blog-rss?blogId=${encodeURIComponent(m[1])}`);
-        if(rssRes.ok){
-          const xml=await rssRes.text();
-          const doc=new DOMParser().parseFromString(xml,"application/xml");
-          const items=[...doc.querySelectorAll("item")];
-          // logNo가 link에 포함된 item 찾기
-          const matched=items.find(it=>{
-            const link=(it.querySelector("link")?.textContent||it.querySelector("guid")?.textContent||"");
-            return link.includes(m[2]);
-          });
-          if(matched) title=matched.querySelector("title")?.textContent?.trim()||"";
-        }
-      }catch(e){}
-    }
-
-    // RSS도 실패하면 scrape로 시도
-    if(!title){
-      try{
-        const res=await fetch("/api/scrape",{
-          method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({url}),
-        });
-        const data=await res.json();
-        if(data.success && data.data?.title) title=data.data.title;
-      }catch(e){}
-    }
-
-    if(!title){alert("제목을 자동으로 가져오지 못했습니다.\n제목을 직접 입력해주세요.");setManualLoading(false);return;}
-
     const postNo=m[2];
-    const post={title,link:url,postNo,date:"",description:"",bodyText:"",source:"manual"};
+    const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual"};
     setPosts({all:[post],current:[post],total:1,page:1,blogId:m[1]});
     setPage(1);setAnalysis({});setExpanded(null);
-    setManualLoading(false);
     setTimeout(()=>runAnalyze(post,0),80);
   };
 
@@ -2186,29 +2152,15 @@ function MissingTab(){
     try{
       const {text: body, loaded: bodyLoaded} = await fetchPostBody(post);
 
-      // ── Step 1: 키워드 추출 — 태그 각각 + 제목 단어 쪼개기 ──
+      // ── Step 1: 키워드 = 태그 + 제목 단어 합치기 (중복 제거, 최대 5개) ──
       const tagKws = (post.tags||[]).map(t=>t.trim()).filter(Boolean);
-
-      // 제목 불용어 (검색 키워드로 의미없는 단어)
-      const stopWords=new Set(["vs","VS","전","후","및","의","이","가","을","를","은","는","와","과","도","에","서","로","으로","에서","이란","이란게","하는","하기","하기위한","방법","방법은","알아보기","알아보자","해보기","해보자","정리","총정리","완전","완벽","총","비교","비교해보기","선택","추천","후기","리뷰","구매","사용","사용법","사용기","장점","단점","특징","가격","종류","차이","차이점","꿀팁","팁","tip","tips"]);
-
-      // 1) 개별 단어 (2글자 이상, 불용어 제외)
-      const titleWords = (post.title.match(/[가-힣A-Za-z0-9]+/g)||[])
-        .filter(w=>w.length>=2 && !stopWords.has(w));
-      // 2) 붙여쓰기 조합: 인접한 두 단어 붙이기
-      const titlePairs = [];
-      for(let i=0;i<titleWords.length-1;i++){
-        titlePairs.push(titleWords[i]+titleWords[i+1]);
-      }
-
-      // 태그 우선, 제목 단어, 붙여쓰기 조합 순 / 중복 제거 / 최대 10개
+      const titleKws = (post.title.match(/[가-힣a-zA-Z0-9][가-힣a-zA-Z0-9\s]{1,}/g)||[])
+        .map(w=>w.trim()).filter(w=>w.length>=2);
       const seen=new Set();
       const kws=[];
-      for(const k of [...tagKws,...titleWords,...titlePairs]){
+      for(const k of [...tagKws,...titleKws]){
         const kNorm=k.trim();
-        if(kNorm&&kNorm.length>=2&&!seen.has(kNorm)&&kws.length<10){
-          seen.add(kNorm);kws.push(kNorm);
-        }
+        if(kNorm&&!seen.has(kNorm)&&kws.length<5){seen.add(kNorm);kws.push(kNorm);}
       }
 
       // ── SEO 점수 계산 ──────────────────────────────────────────────────────
@@ -2236,10 +2188,10 @@ function MissingTab(){
         bodyLines.length >= 4  ? 7  : 0;
 
       // 4. 키워드 밀도 (15점)
-      const seoTitleWords = post.title.match(/[가-힣a-zA-Z0-9]{2,}/g) || [];
+      const titleWords   = post.title.match(/[가-힣a-zA-Z0-9]{2,}/g) || [];
       const bodyLower    = body.toLowerCase();
-      const matchedWords = seoTitleWords.filter(w => bodyLower.includes(w.toLowerCase()));
-      const kwRatio      = seoTitleWords.length > 0 ? matchedWords.length / seoTitleWords.length : 0;
+      const matchedWords = titleWords.filter(w => bodyLower.includes(w.toLowerCase()));
+      const kwRatio      = titleWords.length > 0 ? matchedWords.length / titleWords.length : 0;
       const kwScore = !bodyLoaded ? 0 :
         kwRatio >= 0.7 ? 15 :
         kwRatio >= 0.4 ? 10 :
@@ -2408,17 +2360,16 @@ function MissingTab(){
       </div>
     </div>}
 
-    {/* ── 방법2: URL 입력 ── */}
+    {/* ── 방법2: URL + 제목 + 본문 직접 입력 ── */}
     {mode==="url"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"12px"}}>
       <div>
-        <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700,marginBottom:"4px"}}>게시글 URL 입력</div>
-        <div style={{color:"#484f58",fontSize:"11px",marginBottom:"12px"}}>URL만 입력하면 제목을 자동으로 가져옵니다 · 제목을 직접 입력하면 더 빠릅니다</div>
+        <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700,marginBottom:"4px"}}>게시글 정보 입력</div>
+        <div style={{color:"#484f58",fontSize:"11px",marginBottom:"12px"}}>최신 10개 외 과거 글도 확인 가능 · 제목+본문을 직접 붙여넣으면 정확한 분석이 됩니다</div>
 
         {/* URL */}
         <div style={{marginBottom:"8px"}}>
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>📎 게시글 URL <span style={{color:"#ff7b72"}}>*필수</span></div>
+          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>📎 게시글 URL</div>
           <input value={singleUrl} onChange={e=>setSingleUrl(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&!manualLoading&&analyzeManual()}
             placeholder="https://blog.naver.com/아이디/포스트번호"
             style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",background:"#0d1117",
               border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
@@ -2426,25 +2377,36 @@ function MissingTab(){
             onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
         </div>
 
-        {/* 제목 — 선택사항 */}
+        {/* 제목 */}
         <div style={{marginBottom:"8px"}}>
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>✏️ 글 제목 <span style={{color:"#484f58"}}>(비워두면 자동 추출 · 누락 확인 불가 시 직접 입력하면 정확합니다)</span></div>
+          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>✏️ 글 제목 <span style={{color:"#ff7b72"}}>*필수</span></div>
           <input value={singleTitle} onChange={e=>setSingleTitle(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&!manualLoading&&analyzeManual()}
-            placeholder="비워두면 URL에서 자동으로 가져옵니다"
+            placeholder="블로그 글 제목을 그대로 붙여넣으세요"
             style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",background:"#0d1117",
               border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
               fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none"}}
             onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
         </div>
 
-        <button onClick={analyzeManual} disabled={!singleUrl.trim()||manualLoading}
+        {/* 본문 */}
+        <div style={{marginBottom:"12px"}}>
+          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>📄 본문 내용 <span style={{color:"#484f58"}}>(선택 · 있으면 더 정확)</span></div>
+          <textarea value={singleBody} onChange={e=>setSingleBody(e.target.value)}
+            placeholder="본문 텍스트를 붙여넣으세요 (일부만 있어도 됩니다)"
+            rows={4}
+            style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",background:"#0d1117",
+              border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none",resize:"vertical",lineHeight:"1.6"}}
+            onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
+        </div>
+
+        <button onClick={analyzeManual} disabled={!singleUrl.trim()||!singleTitle.trim()}
           style={{width:"100%",padding:"13px",
-            background:singleUrl.trim()&&!manualLoading?"#1f6feb":"#21262d",
-            color:singleUrl.trim()&&!manualLoading?"#fff":"#484f58",
-            border:"none",borderRadius:"8px",cursor:singleUrl.trim()&&!manualLoading?"pointer":"not-allowed",
+            background:singleUrl.trim()&&singleTitle.trim()?"#1f6feb":"#21262d",
+            color:singleUrl.trim()&&singleTitle.trim()?"#fff":"#484f58",
+            border:"none",borderRadius:"8px",cursor:singleUrl.trim()&&singleTitle.trim()?"pointer":"not-allowed",
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700}}>
-          {manualLoading?"⏳ 제목 가져오는 중...":"🔍 누락 확인 · 키워드 분석 시작"}
+          🔍 누락 확인 · 키워드 분석 시작
         </button>
       </div>
     </div>}
@@ -2472,8 +2434,6 @@ function MissingTab(){
       </div>
 
       {posts.current.map((post,idx)=>{
-        const a=analysis[post.postNo];
-        const isAn=analyzing===idx;
         return <div key={post.postNo} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
           <div style={{padding:"13px 16px",display:"flex",alignItems:"flex-start",gap:"10px"}}>
             <div style={{color:"#484f58",fontSize:"11px",fontWeight:700,minWidth:"20px",paddingTop:"3px",flexShrink:0,textAlign:"right"}}>
@@ -2503,6 +2463,7 @@ function MissingTab(){
                 }}>
                   {a.missingStatus==="노출"?"✅ 노출":"🚨 누락"}
                 </span>
+                <span style={{background:"#21262d",color:a.seoScore>=70?"#3fb950":a.seoScore>=40?"#ffa657":"#ff7b72",border:"1px solid #30363d",borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>SEO {a.seoScore}</span>
               </div>}
               {/* 분석 중 */}
               {isAn&&<div style={{display:"flex",flexDirection:"column",gap:"3px",marginTop:"4px"}}>
