@@ -1706,7 +1706,7 @@ async function fetchNaverKeywordStats(keywords) {
   if (!res.ok) throw new Error(`API 오류 ${res.status}`);
   const data = await res.json();
   if (data.error) throw new Error(data.error);
-  return data.keywordList || [];
+  return { keywordList: data.keywordList || [], autoComplete: data.autoComplete || [] };
 }
 
 function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
@@ -1729,9 +1729,12 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
     try{
       // ① 네이버 광고 API (메인 키워드)
       let naverMain = [];
+      let autoComplete = [];
       let naverOk = false;
       try{
-        naverMain = await fetchNaverKeywordStats([kw]);
+        const result = await fetchNaverKeywordStats([kw]);
+        naverMain = result.keywordList;
+        autoComplete = result.autoComplete;
         naverOk = true;
       }catch(e){ naverOk = false; }
 
@@ -1827,7 +1830,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
       const ratio = saturation !== null ? saturation / 100 : null;
 
       // 연관검색어: naverMain에서 메인 키워드 제외한 나머지 (월검색량 내림차순)
-      const relKeywords = naverMain
+      let relKeywords = naverMain
         .filter(i=>i.relKeyword?.toLowerCase()!==kw.toLowerCase())
         .map(i=>({
           keyword: i.relKeyword,
@@ -1837,6 +1840,15 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         }))
         .sort((a,b)=>b.total-a.total)
         .slice(0,8);
+
+      // 광고 API 연관검색어 부족 시 자동완성으로 보완
+      if(relKeywords.length < 3 && autoComplete.length > 0){
+        const existing = new Set(relKeywords.map(r=>r.keyword?.toLowerCase()));
+        const acKws = autoComplete
+          .filter(ac=>ac.toLowerCase()!==kw.toLowerCase()&&!existing.has(ac.toLowerCase()))
+          .map(ac=>({keyword:ac, total:null, pc:null, mob:null, fromAutoComplete:true}));
+        relKeywords = [...relKeywords, ...acKws].slice(0,8);
+      }
 
       const kwRes = {
         _inputVal: kw,
@@ -1963,9 +1975,12 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
                   onMouseEnter={e=>e.currentTarget.style.background="#21262d"}
                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}
                   onClick={()=>{setInputVal(rk.keyword);analyze(rk.keyword);}}>
-                  <span style={{color:"#c9d1d9",fontSize:"12px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rk.keyword}</span>
-                  <span style={{color:"#58a6ff",fontSize:"12px",fontWeight:600,textAlign:"right"}}>{fmtNum(rk.total)}</span>
-                  <span style={{color:"#d2a8ff",fontSize:"12px",textAlign:"right"}}>{fmtNum(rk.mob)}</span>
+                  <span style={{color:"#c9d1d9",fontSize:"12px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {rk.keyword}
+                    {rk.fromAutoComplete&&<span style={{marginLeft:"5px",fontSize:"9px",color:"#484f58",background:"#21262d",borderRadius:"4px",padding:"1px 5px"}}>자동완성</span>}
+                  </span>
+                  <span style={{color:"#58a6ff",fontSize:"12px",fontWeight:600,textAlign:"right"}}>{rk.total!==null?fmtNum(rk.total):"-"}</span>
+                  <span style={{color:"#d2a8ff",fontSize:"12px",textAlign:"right"}}>{rk.mob!==null?fmtNum(rk.mob):"-"}</span>
                 </div>
               ))}
             </div>
