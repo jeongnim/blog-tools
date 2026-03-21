@@ -1841,13 +1841,37 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         .sort((a,b)=>b.total-a.total)
         .slice(0,30);
 
-      // 광고 API 연관검색어 부족 시 자동완성으로 보완
+      // 광고 API 연관검색어 부족 시 자동완성으로 보완 + 검색량 조회
       if(relKeywords.length < 3 && autoComplete.length > 0){
         const existing = new Set(relKeywords.map(r=>r.keyword?.toLowerCase()));
-        const acKws = autoComplete
-          .filter(ac=>ac.toLowerCase()!==kw.toLowerCase()&&!existing.has(ac.toLowerCase()))
-          .map(ac=>({keyword:ac, total:null, pc:null, mob:null, fromAutoComplete:true}));
-        relKeywords = [...relKeywords, ...acKws].slice(0,30);
+        const newAcKws = autoComplete.filter(ac=>
+          ac.toLowerCase()!==kw.toLowerCase()&&!existing.has(ac.toLowerCase())
+        );
+
+        if(newAcKws.length > 0){
+          // 자동완성 키워드들 검색량 한번에 조회
+          try{
+            const acResult = await fetchNaverKeywordStats(newAcKws.slice(0,10));
+            const acStatMap = {};
+            (acResult.keywordList||[]).forEach(i=>{
+              acStatMap[i.relKeyword?.toLowerCase()]={
+                total:(Number(i.monthlyPcQcCnt)||0)+(Number(i.monthlyMobileQcCnt)||0),
+                pc:Number(i.monthlyPcQcCnt)||0,
+                mob:Number(i.monthlyMobileQcCnt)||0,
+              };
+            });
+            const acKws = newAcKws.map(ac=>({
+              keyword: ac,
+              ...(acStatMap[ac.toLowerCase()]||{total:null,pc:null,mob:null}),
+              fromAutoComplete: true,
+            })).sort((a,b)=>(b.total||0)-(a.total||0));
+            relKeywords = [...relKeywords, ...acKws].slice(0,30);
+          }catch(e){
+            // 조회 실패 시 검색량 없이 표시
+            const acKws = newAcKws.map(ac=>({keyword:ac,total:null,pc:null,mob:null,fromAutoComplete:true}));
+            relKeywords = [...relKeywords, ...acKws].slice(0,30);
+          }
+        }
       }
 
       const kwRes = {
