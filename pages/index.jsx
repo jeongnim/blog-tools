@@ -1839,7 +1839,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
           mob: Number(i.monthlyMobileQcCnt)||0,
         }))
         .sort((a,b)=>b.total-a.total)
-        .slice(0,8);
+        .slice(0,30);
 
       // 광고 API 연관검색어 부족 시 자동완성으로 보완
       if(relKeywords.length < 3 && autoComplete.length > 0){
@@ -1847,7 +1847,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         const acKws = autoComplete
           .filter(ac=>ac.toLowerCase()!==kw.toLowerCase()&&!existing.has(ac.toLowerCase()))
           .map(ac=>({keyword:ac, total:null, pc:null, mob:null, fromAutoComplete:true}));
-        relKeywords = [...relKeywords, ...acKws].slice(0,8);
+        relKeywords = [...relKeywords, ...acKws].slice(0,30);
       }
 
       const kwRes = {
@@ -1963,7 +1963,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
           <SectionTitle>🔗 연관검색어 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 월 검색량</span></SectionTitle>
           {result.relKeywords?.length>0?(
-            <div>
+            <div style={{maxHeight:"320px",overflowY:"auto"}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 64px 64px",gap:"6px",padding:"5px 8px",borderBottom:"1px solid #21262d",marginBottom:"4px"}}>
                 <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>키워드</span>
                 <span style={{color:"#484f58",fontSize:"10px",fontWeight:700,textAlign:"right"}}>월검색량</span>
