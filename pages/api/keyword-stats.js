@@ -39,8 +39,8 @@ export default async function handler(req, res) {
     const path      = "/keywordstool";
     const message   = `${timestamp}.${method}.${path}`;
     const signature = crypto.createHmac("sha256", SECRET_KEY).update(message).digest("base64");
-    const params    = keywordList.map(k => `hintKeywords=${encodeURIComponent(k)}`).join("&") + "&showDetail=1";
-    const apiUrl    = `https://api.naver.com/keywordstool?${params}`;
+    const params = keywordList.map(k => `hintKeywords=${encodeURIComponent(k)}`).join("&") + "&showDetail=1&includeHintKeywords=1";
+    const apiUrl  = `https://api.naver.com/keywordstool?${params}`;
 
     const response = await fetch(apiUrl, {
       headers: {
