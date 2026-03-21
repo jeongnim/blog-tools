@@ -3,6 +3,20 @@ import crypto from "crypto";
 
 export const config = { maxDuration: 30 };
 
+// 네이버 자동완성 API - 신조어/광고DB 없는 키워드 연관어 보완용
+async function fetchAutoComplete(keyword) {
+  try {
+    const url = `https://ac.search.naver.com/nx/ac?q=${encodeURIComponent(keyword)}&q_enc=UTF-8&st=111&frm=nv&r_format=json&r_enc=UTF-8&r_unicode=0&t_koreng=1&ans=2&run=2&rev=4&con=1`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0", "Referer": "https://search.naver.com/" }
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    // items[0] = 자동완성 목록
+    return (data?.items?.[0] || []).map(item => item[0]).filter(Boolean).slice(0, 8);
+  } catch(e) { return []; }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "GET만 허용" });
 
@@ -44,7 +58,19 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json();
-    res.status(200).json(data);
+
+    // 연관검색어가 부족할 때 자동완성으로 보완
+    const mainKw = keywordList[0];
+    const relCount = (data.keywordList || []).filter(
+      i => i.relKeyword?.toLowerCase() !== mainKw?.toLowerCase()
+    ).length;
+
+    let autoComplete = [];
+    if (relCount < 3) {
+      autoComplete = await fetchAutoComplete(mainKw);
+    }
+
+    res.status(200).json({ ...data, autoComplete });
 
   } catch (err) {
     res.status(200).json({ error: err.message, keywordList: [] });
