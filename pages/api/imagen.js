@@ -11,14 +11,25 @@ export default async function handler(req, res) {
   try {
     const seed = Math.floor(Math.random() * 99999);
     const encodedPrompt = encodeURIComponent(prompt);
-    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`;
 
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(55000),
-    });
+    // 현재 작동하는 엔드포인트 순서대로 시도
+    const candidates = [
+      `https://pollinations.ai/p/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`,
+      `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`,
+    ];
 
-    if (!response.ok) {
-      return res.status(500).json({ error: `이미지 생성 실패 (${response.status})` });
+    let response = null;
+    let lastStatus = null;
+    for (const url of candidates) {
+      try {
+        const r = await fetch(url, { signal: AbortSignal.timeout(55000) });
+        if (r.ok) { response = r; break; }
+        lastStatus = r.status;
+      } catch (_) { continue; }
+    }
+
+    if (!response) {
+      return res.status(500).json({ error: `이미지 생성 실패 (${lastStatus ?? "네트워크 오류"})` });
     }
 
     const arrayBuffer = await response.arrayBuffer();
