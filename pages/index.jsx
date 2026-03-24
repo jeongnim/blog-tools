@@ -687,23 +687,30 @@ Return ONLY valid JSON, no markdown:
       const initial=sections.map(sec=>({...sec,status:"loading",base64:null,mimeType:null,error:null}));
       setGenImages(initial);
 
-      // ── Step 2: 4개 이미지 순차 생성 (/api/imagen 서버 라우트 경유 - CORS 우회) ──
+      // ── Step 2: 4개 이미지 순차 생성 (Pollinations - 15초 rate limit 대응) ──
       for(let i=0;i<sections.length;i++){
         const sec=sections[i];
         try{
           // rate limit: 요청 사이 16초 간격 (무료티어 15초 제한)
           if(i>0) await new Promise(r=>setTimeout(r,16000));
 
-          const r=await fetch("/api/imagen",{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({prompt:sec.prompt}),
+          const seed=Math.floor(Math.random()*99999);
+          const encodedPrompt=encodeURIComponent(sec.prompt);
+          const polUrl=`https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`;
+
+          const r=await fetch(polUrl);
+          if(!r.ok) throw new Error(`이미지 생성 실패 (${r.status})`);
+
+          const blob=await r.blob();
+          const base64=await new Promise((resolve,reject)=>{
+            const reader=new FileReader();
+            reader.onload=()=>resolve(reader.result.split(",")[1]);
+            reader.onerror=reject;
+            reader.readAsDataURL(blob);
           });
-          const data=await r.json();
-          if(!r.ok||data.error) throw new Error(data.error||`이미지 생성 실패 (${r.status})`);
 
           setGenImages(prev=>prev.map((item,idx)=>
-            idx===i ? {...item, status:"done", base64:data.base64, mimeType:data.mimeType||"image/jpeg"} : item
+            idx===i ? {...item, status:"done", base64, mimeType:"image/jpeg"} : item
           ));
         }catch(e2){
           setGenImages(prev=>prev.map((item,idx)=>
@@ -3681,7 +3688,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost,set
       const bodies = await fetchBlogBodies(kw);
       const prompt = buildWritePrompt({ kw, year, category: selCat, bodies });
       const raw=await callClaude([{role:"user",content:prompt}],
-        "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",8000,"claude-sonnet-4-6");
+        "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",8000,"claude-sonnet-4-5-20250514");
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
       const parsed=JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
       const content=parsed.content||"";
@@ -4980,7 +4987,7 @@ ${text.slice(0, 4000)}
         [{ role: "user", content: rewritePrompt }],
         "You are a professional Korean news writer. Output ONLY valid JSON, no markdown backticks.",
         4000,
-        "claude-sonnet-4-6"
+        "claude-sonnet-4-5-20250514"
       );
       const s = raw.indexOf("{"); const e = raw.lastIndexOf("}");
       const parsed = JSON.parse(s !== -1 && e !== -1 ? raw.slice(s, e+1) : raw);
@@ -5252,7 +5259,7 @@ export default function BlogTools(){
       const bodies = await fetchBlogBodies(kw);
       const prompt = buildWritePrompt({ kw, year, smartBlockType, blogStrategy, bodies, mainKeyword: mainKeyword||kw });
       const res = await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,
+        body:JSON.stringify({model:"claude-sonnet-4-5-20250514",max_tokens:8000,
           system:"You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",
           messages:[{role:"user",content:prompt}]})});
       const data = await res.json();
