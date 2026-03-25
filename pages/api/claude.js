@@ -17,9 +17,18 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify(req.body),
     });
-    const data = await response.json();
+
+    // Anthropic이 에러 시 텍스트로 응답하는 경우 대비
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (_) {
+      return res.status(200).json({ error: { type: "parse_error", message: text } });
+    }
+
     res.status(200).json(data);
   } catch (err) {
-    res.status(200).json({ content: [] });
+    res.status(200).json({ error: { type: "server_error", message: err.message } });
   }
 }
