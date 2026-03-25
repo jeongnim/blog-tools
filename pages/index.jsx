@@ -272,7 +272,10 @@ async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5
     throw new Error(msg);
   }
   if(data.error){
-    throw new Error(data.message||data.error);
+    const errMsg = typeof data.error === "object"
+      ? (data.error.message || JSON.stringify(data.error))
+      : (data.message || data.error);
+    throw new Error(errMsg);
   }
 
   return data.content?.[0]?.text||"";
@@ -3688,7 +3691,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost,set
       const bodies = await fetchBlogBodies(kw);
       const prompt = buildWritePrompt({ kw, year, category: selCat, bodies });
       const raw=await callClaude([{role:"user",content:prompt}],
-        "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",8000,"claude-sonnet-4-5-20250514");
+        "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",8000,"claude-sonnet-4-5-20250929");
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
       const parsed=JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
       const content=parsed.content||"";
@@ -3712,7 +3715,7 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost,set
         setAnalyzeText(content);
         setActive("analyze");
       }
-    }catch(ex){setErr("글 작성 오류: "+ex.message);}
+    }catch(ex){setErr("글 작성 오류: "+(ex?.message||String(ex)||"알 수 없는 오류"));}
     setWritingIdx(null);
   };
 
@@ -4987,7 +4990,7 @@ ${text.slice(0, 4000)}
         [{ role: "user", content: rewritePrompt }],
         "You are a professional Korean news writer. Output ONLY valid JSON, no markdown backticks.",
         4000,
-        "claude-sonnet-4-5-20250514"
+        "claude-sonnet-4-5-20250929"
       );
       const s = raw.indexOf("{"); const e = raw.lastIndexOf("}");
       const parsed = JSON.parse(s !== -1 && e !== -1 ? raw.slice(s, e+1) : raw);
@@ -5259,7 +5262,7 @@ export default function BlogTools(){
       const bodies = await fetchBlogBodies(kw);
       const prompt = buildWritePrompt({ kw, year, smartBlockType, blogStrategy, bodies, mainKeyword: mainKeyword||kw });
       const res = await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-5-20250514",max_tokens:8000,
+        body:JSON.stringify({model:"claude-sonnet-4-5-20250929",max_tokens:8000,
           system:"You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",
           messages:[{role:"user",content:prompt}]})});
       const data = await res.json();
