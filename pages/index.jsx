@@ -265,11 +265,15 @@ async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5
     body:JSON.stringify(body)
   });
 
-  const data=await res.json();
+  // res.json() 대신 text()로 먼저 받아 파싱 실패를 방어
+  const rawText=await res.text();
+  let data;
+  try{ data=JSON.parse(rawText); }
+  catch(_){ throw new Error("API 응답 파싱 실패: "+rawText.slice(0,120)); }
 
   if(!res.ok){
-    const msg=data?.message||data?.error||`HTTP ${res.status}`;
-    throw new Error(msg);
+    const msg=data?.message||data?.error||("HTTP "+res.status);
+    throw new Error(typeof msg==="object"?(msg.message||JSON.stringify(msg)):msg);
   }
   if(data.error){
     const errMsg = typeof data.error === "object"
