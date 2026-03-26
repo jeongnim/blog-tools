@@ -1789,7 +1789,39 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         blogTitles = btData.titles || [];
       } catch(e) {}
 
-      // ④ AI 분석 (트렌드 + 인기글 기반 롱테일)
+      // ④ 상위 블로그 정보 수집 (발행일 기반 평균 발행일자 + 상위 블로거 파악)
+      let top10Blogs = [];
+      let avgPostAgeDays = null;   // 상위 10개 글의 평균 발행일자 (오늘 - 발행일)
+      let highIndexRatio = 0;      // 상위 블로그 중 고지수 추정 비율 (0~1)
+      try {
+        const rankRes = await fetch(`/api/naver-rank?keyword=${encodeURIComponent(kw)}&blogId=__none__`);
+        const rankData = await rankRes.json();
+        const items = (rankData.items || []).slice(0, 10);
+        top10Blogs = items;
+
+        // 평균 발행일자 계산
+        const now = Date.now();
+        const ages = items
+          .map(i => i.postDate)
+          .filter(Boolean)
+          .map(d => {
+            // postDate 형식: "20240101" 또는 "2024-01-01"
+            const s = String(d).replace(/-/g,'');
+            const y = s.slice(0,4), m = s.slice(4,6), dd = s.slice(6,8);
+            return (now - new Date(`${y}-${m}-${dd}`).getTime()) / (1000*60*60*24);
+          })
+          .filter(n => !isNaN(n) && n >= 0);
+        if (ages.length > 0) avgPostAgeDays = Math.round(ages.reduce((a,b)=>a+b,0)/ages.length);
+
+        // 고지수 블로거 추정: 블로거명이 숫자/랜덤 패턴이 아닌 경우 (실명/브랜드명) 고지수로 추정
+        const highIdx = items.filter(i => {
+          const name = i.bloggerName || '';
+          // 숫자만이거나 너무 짧으면 신규/저지수
+          return name.length >= 3 && !/^\d+$/.test(name);
+        });
+        highIndexRatio = items.length > 0 ? highIdx.length / items.length : 0;
+      } catch(e) {}
+
       // ④ AI 분석 (트렌드 + 인기글 기반 롱테일)
       const titlesAppend = blogTitles.length > 0
         ? ["", "", "실제 네이버 블로그 인기글 제목 (참고용):"].concat(blogTitles.slice(0,15).map((t,i)=>(i+1)+". "+t)).join("\n")
@@ -1836,9 +1868,22 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         : saturation < 1000 ? "어려움"     // 발행량이 검색량의 3~10배
         : "매우어려움";                     // 발행량이 검색량의 10배 초과
 
-      const dailyVisitReq = totalMonthly
-        ? Math.max(30, Math.round((totalMonthly / 30) * 0.05 / 10) * 10)
-        : null;
+      // 일 방문자 추천 기준: 포화도 + 상위블로그 고지수 비율 + 평균발행일 종합
+      // 판다랭크 방식: 상위 블로그의 실제 경쟁 강도를 반영
+      let dailyVisitReq = null;
+      if (totalMonthly) {
+        // 기본값: 월검색량 기반 (상위 10위 내 진입에 필요한 일 방문자 추정)
+        const base = Math.round(totalMonthly / 30 * 0.03);
+        // 고지수 블로거 비율이 높을수록 필요 방문자 상향
+        const highIdxMultiplier = 1 + (highIndexRatio * 2); // 0~3배
+        // 포화도가 높을수록 상향
+        const satMultiplier = saturation !== null
+          ? (saturation < 100 ? 1 : saturation < 300 ? 1.5 : saturation < 1000 ? 2.5 : 4)
+          : 1;
+        const raw = Math.round(base * highIdxMultiplier * satMultiplier);
+        // 10단위 반올림, 최소 30명
+        dailyVisitReq = Math.max(30, Math.round(raw / 10) * 10);
+      }
 
       const compComment = compLevel === "알 수 없음" ? null
         : compLevel === "매우쉬움" ? "초보 블로거도 쉽게 상위노출 가능한 키워드예요!"
@@ -1913,6 +1958,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         relKeywords,
         ...aiResult,
         monthlyBlogPosts,
+        top10Blogs, avgPostAgeDays, highIndexRatio,
       };
       KW_CACHE[kw] = kwRes;
       setKwResult(kwRes);
@@ -2064,8 +2110,8 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
             <span>매우쉬움</span><span>매우어려움</span>
           </div>
 
-          {/* 수치: 월발행량 + 포화도 (월검색량은 위에 표시됨) */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+          {/* 수치: 월발행량 + 포화도 + 평균발행일 + 고지수비율 */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"8px"}}>
             {[
               {label:"월 발행량", value:result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"개":"—", color:"#ffa657", badge:result.blogCountOk?"✓":null},
               {label:"포화도",   value:result.saturation!=null?result.saturation+"%":"—", color:compColor},
@@ -2077,6 +2123,23 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
                 </div>
               </div>
             ))}
+          </div>
+          {/* 상위 블로그 통계 */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+            <div style={{background:"#0d1117",borderRadius:"10px",padding:"10px 8px",textAlign:"center",border:"1px solid #21262d"}}>
+              <div style={{color:"#484f58",fontSize:"10px",marginBottom:"4px"}}>평균 발행일자</div>
+              <div style={{color:"#79c0ff",fontSize:"14px",fontWeight:700}}>
+                {result.avgPostAgeDays!=null ? result.avgPostAgeDays+"일 전" : "—"}
+              </div>
+              <div style={{color:"#484f58",fontSize:"9px",marginTop:"2px"}}>상위 10개 글 기준</div>
+            </div>
+            <div style={{background:"#0d1117",borderRadius:"10px",padding:"10px 8px",textAlign:"center",border:"1px solid #21262d"}}>
+              <div style={{color:"#484f58",fontSize:"10px",marginBottom:"4px"}}>상위 블로그 비율</div>
+              <div style={{color: result.highIndexRatio>=0.7?"#f85149":result.highIndexRatio>=0.4?"#ffa657":"#3fb950",fontSize:"14px",fontWeight:700}}>
+                {result.highIndexRatio!=null ? Math.round(result.highIndexRatio*100)+"%" : "—"}
+              </div>
+              <div style={{color:"#484f58",fontSize:"9px",marginTop:"2px"}}>고지수 블로거 추정</div>
+            </div>
           </div>
         </div>
 
