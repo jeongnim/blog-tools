@@ -1827,13 +1827,14 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         ? Math.round((monthlyBlogPosts / totalMonthly) * 100)
         : null;
 
-      // 경쟁 강도 5단계
+      // 경쟁 강도 5단계 (판다랭크 기준: 포화도 = 월발행량/월검색량×100%)
+      // 포화도 100% 미만 = 검색량보다 발행량이 적어 노출 기회 있음
       const compLevel = saturation === null ? "알 수 없음"
-        : saturation < 50   ? "매우쉬움"
-        : saturation < 150  ? "쉬움"
-        : saturation < 500  ? "보통"
-        : saturation < 1500 ? "어려움"
-        : "매우어려움";
+        : saturation < 30   ? "매우쉬움"   // 발행량이 검색량의 30% 미만
+        : saturation < 100  ? "쉬움"       // 발행량이 검색량보다 적음
+        : saturation < 300  ? "보통"       // 발행량이 검색량의 1~3배
+        : saturation < 1000 ? "어려움"     // 발행량이 검색량의 3~10배
+        : "매우어려움";                     // 발행량이 검색량의 10배 초과
 
       const dailyVisitReq = totalMonthly
         ? Math.max(30, Math.round((totalMonthly / 30) * 0.05 / 10) * 10)
@@ -1848,7 +1849,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
 
       // UI 게이지용 0~100 스코어 (로그 스케일: 포화도 1~3000%를 0~100으로)
       const compScore = saturation === null ? 50
-        : Math.min(Math.round((Math.log10(Math.max(saturation, 1)) / Math.log10(3000)) * 100), 100);
+        : Math.min(Math.round((Math.log10(Math.max(saturation, 1)) / Math.log10(1000)) * 100), 100);
 
       // ratio는 하위 호환성 유지 (포화도를 배수로 표현)
       const ratio = saturation !== null ? saturation / 100 : null;
