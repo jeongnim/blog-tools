@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   };
 
   try {
-    // ── 1. 전체 누적 게시물 수 ──────────────────────────────────────
+    // ── 1. 전체 누적 게시물 수 ──
     const r1 = await fetch(
       `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=1&sort=sim`,
       { headers }
@@ -29,13 +29,38 @@ export default async function handler(req, res) {
     }
     const total = d1.total ?? null;
 
-    // ── 2. 최신순 100개 → 날짜 범위로 일평균 → 월발행량 추정 ──────
+    // ── 2. 최신순 100개 조회 ──
     const r2 = await fetch(
       `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=100&start=1&sort=date`,
       { headers }
     );
     const d2 = await r2.json();
     const items = d2.items || [];
+
+    // 디버그: 첫 번째 아이템 원본 확인
+    const firstItem = items[0] || null;
+    const debugInfo = {
+      itemCount: items.length,
+      firstPubDate: firstItem?.pubDate || null,
+      firstPostdate: firstItem?.postdate || null,
+      d2error: d2.errorCode || null,
+    };
+
+    // 날짜 파싱: pubDate(RFC2822) 또는 postdate(YYYYMMDD) 둘 다 지원
+    function parseItemDate(item) {
+      if (item.pubDate) {
+        const d = new Date(item.pubDate);
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (item.postdate) {
+        const s = String(item.postdate);
+        if (s.length === 8) {
+          const d = new Date(`${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`);
+          if (!isNaN(d.getTime())) return d;
+        }
+      }
+      return null;
+    }
 
     const now = new Date();
     const oneMonthAgo = new Date(now);
@@ -44,43 +69,44 @@ export default async function handler(req, res) {
     let monthly = null;
 
     if (items.length > 0) {
-      // pubDate: RFC2822 "Mon, 27 Jan 2025 10:00:00 +0900" → new Date()로 파싱
       const dates = items
-        .map(i => new Date(i.pubDate))
-        .filter(d => !isNaN(d.getTime()))
-        .sort((a, b) => b - a); // 최신순 정렬
+        .map(parseItemDate)
+        .filter(d => d !== null)
+        .sort((a, b) => b - a);
+
+      debugInfo.parsedCount = dates.length;
+      debugInfo.newestDate = dates[0]?.toISOString() || null;
+      debugInfo.oldestDate = dates[dates.length-1]?.toISOString() || null;
 
       if (dates.length >= 2) {
         const newest = dates[0];
         const oldest = dates[dates.length - 1];
-
-        // 30일 이내 직접 카운트
         const recentCount = dates.filter(d => d >= oneMonthAgo).length;
 
+        debugInfo.recentCount = recentCount;
+
         if (recentCount > 0 && recentCount < dates.length) {
-          // 일부만 30일 이내 → 직접 카운트가 가장 정확
           monthly = recentCount;
-
         } else if (recentCount === dates.length) {
-          // 전부 30일 이내 → 날짜 범위로 일평균 계산 (시간 단위 정밀)
-          // 예: 100개가 2시간 범위 → 하루 1,200개 → 월 36,000개
-          const spanMs = Math.max(newest - oldest, 30 * 60 * 1000); // 최소 30분
+          const spanMs = Math.max(newest - oldest, 30 * 60 * 1000);
           const spanDays = spanMs / (1000 * 60 * 60 * 24);
+          debugInfo.spanDays = spanDays;
           monthly = Math.round((dates.length / spanDays) * 30);
-
         } else {
-          // 전부 30일 이전 → 드문 키워드
           const spanMs = Math.max(newest - oldest, 24 * 60 * 60 * 1000);
           const spanDays = spanMs / (1000 * 60 * 60 * 24);
           monthly = Math.round((dates.length / spanDays) * 30);
         }
       } else if (dates.length === 1) {
-        // 게시글 1개 → total 기반 추정
         monthly = total ? Math.round(total / 12) : 1;
+      } else {
+        // 날짜 파싱 전부 실패
+        monthly = total ? Math.round(total / 12) : null;
+        debugInfo.parseFailReason = "all dates failed to parse";
       }
     }
 
-    res.status(200).json({ total, monthly });
+    res.status(200).json({ total, monthly, _debug: debugInfo });
 
   } catch (err) {
     res.status(200).json({ total: null, monthly: null, error: err.message });
