@@ -1782,6 +1782,9 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         if (!bcData.error) {
           totalBlogPosts = bcData.total ?? null;
           if (bcData.monthly != null) { monthlyBlogPostsReal = bcData.monthly; blogCountOk = true; }
+          // 디버그 정보 표시
+          const dbg = bcData._debug || {};
+          blogCountDebug = `items:${dbg.itemCount} parsed:${dbg.parsedCount} recent:${dbg.recentCount} spanDays:${dbg.spanDays?.toFixed(3)} newest:${dbg.newestDate} oldest:${dbg.oldestDate} pubDate:${dbg.firstPubDate} postdate:${dbg.firstPostdate} fail:${dbg.parseFailReason||"-"}`;
         } else {
           blogCountDebug = "API에러: " + bcData.error;
         }
