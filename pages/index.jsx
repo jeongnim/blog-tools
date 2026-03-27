@@ -1868,21 +1868,18 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         : saturation < 1000 ? "어려움"     // 발행량이 검색량의 3~10배
         : "매우어려움";                     // 발행량이 검색량의 10배 초과
 
-      // 일 방문자 추천 기준: 포화도 + 상위블로그 고지수 비율 + 평균발행일 종합
-      // 판다랭크 방식: 상위 블로그의 실제 경쟁 강도를 반영
+      // 일 방문자 추천 기준: 포화도 구간 기반 (판다랭크 역산)
       let dailyVisitReq = null;
-      if (totalMonthly) {
-        // 기본값: 월검색량 기반 (상위 10위 내 진입에 필요한 일 방문자 추정)
-        const base = Math.round(totalMonthly / 30 * 0.03);
-        // 고지수 블로거 비율이 높을수록 필요 방문자 상향
-        const highIdxMultiplier = 1 + (highIndexRatio * 2); // 0~3배
-        // 포화도가 높을수록 상향
-        const satMultiplier = saturation !== null
-          ? (saturation < 100 ? 1 : saturation < 300 ? 1.5 : saturation < 1000 ? 2.5 : 4)
-          : 1;
-        const raw = Math.round(base * highIdxMultiplier * satMultiplier);
-        // 10단위 반올림, 최소 30명
-        dailyVisitReq = Math.max(30, Math.round(raw / 10) * 10);
+      if (saturation !== null) {
+        dailyVisitReq = saturation < 30   ?   30
+          : saturation < 100  ?   50
+          : saturation < 300  ?  100
+          : saturation < 1000 ?  300
+          : saturation < 3000 ?  500
+          : saturation < 5000 ?  700
+          : 1000;
+      } else if (totalMonthly) {
+        dailyVisitReq = Math.max(30, Math.round(totalMonthly / 30 * 0.03 / 10) * 10);
       }
 
       const compComment = compLevel === "알 수 없음" ? null
