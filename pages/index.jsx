@@ -1855,9 +1855,21 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
       const monthlyBlogPosts = monthlyBlogPostsReal ?? null;
 
       // 포화도(%) = 월발행량 / 월검색량 × 100
-      const saturation = (monthlyBlogPosts !== null && totalMonthly && totalMonthly > 0)
-        ? Math.round((monthlyBlogPosts / totalMonthly) * 100)
-        : null;
+      // totalMonthly(검색량) 없을 때: 월발행량 자체 규모로 추정 포화도 계산
+      let saturation = null;
+      if (monthlyBlogPosts !== null && totalMonthly && totalMonthly > 0) {
+        saturation = Math.round((monthlyBlogPosts / totalMonthly) * 100);
+      } else if (monthlyBlogPosts !== null && monthlyBlogPosts > 0) {
+        // 검색량 없는 경우: 월발행량 규모로 경험적 포화도 추정
+        // 판다랭크 데이터 역산: 월발행량 36,000 = 포화도 9,462% (검색량 380)
+        // → 월발행량이 많을수록 경쟁 심함. 발행량 기반 상대적 추정
+        saturation = monthlyBlogPosts < 100    ?   10   // 매우 드문
+          : monthlyBlogPosts < 500    ?   50
+          : monthlyBlogPosts < 2000   ?  200
+          : monthlyBlogPosts < 10000  ?  800
+          : monthlyBlogPosts < 30000  ? 3000
+          : 9000;
+      }
 
       // 경쟁 강도 5단계 (판다랭크 기준: 포화도 = 월발행량/월검색량×100%)
       // 포화도 100% 미만 = 검색량보다 발행량이 적어 노출 기회 있음
