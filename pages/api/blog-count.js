@@ -27,59 +27,52 @@ export default async function handler(req, res) {
     const d1 = await r1.json();
     const total = (!d1.errorCode && d1.total) ? d1.total : null;
 
-    // ── 2. 월 발행량: 최신순 3페이지(300개) 가져와서 30일 이내 카운트 ──
+    // ── 2. 최신순 100개 가져와서 날짜 범위로 일평균 → 월발행량 추정 ──
+    // 핵심: spanDays를 시간 단위로 계산해 인기 키워드도 정확히 추정
+    const r2 = await fetch(
+      `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=100&start=1&sort=date`,
+      { headers }
+    );
+    const d2 = await r2.json();
+    const items = d2.items || [];
+
     const now = new Date();
     const oneMonthAgo = new Date(now);
     oneMonthAgo.setDate(now.getDate() - 30);
 
-    // 최신순 최대 300개 (3회 요청, 각 100개) 병렬 조회
-    const pages = await Promise.all([1, 101, 201].map(start =>
-      fetch(
-        `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=100&start=${start}&sort=date`,
-        { headers }
-      ).then(r => r.json()).catch(() => ({ items: [] }))
-    ));
-
-    const allItems = pages.flatMap(d => d.items || []);
-
     let monthly = null;
 
-    if (allItems.length > 0) {
-      // 30일 이내 직접 카운트
-      const recentItems = allItems.filter(item => {
-        const d = new Date(item.pubDate);
-        return !isNaN(d) && d >= oneMonthAgo;
-      });
+    if (items.length > 0) {
+      // pubDate: RFC2822 형식 "Mon, 27 Jan 2025 10:00:00 +0900"
+      const dates = items
+        .map(i => new Date(i.pubDate))
+        .filter(d => !isNaN(d.getTime()))
+        .sort((a, b) => b - a); // 최신순
 
-      if (recentItems.length > 0 && recentItems.length < allItems.length) {
-        // 300개 중 일부만 30일 이내 → 가장 정확한 직접 카운트
-        monthly = recentItems.length;
-      } else if (recentItems.length === allItems.length) {
-        // 300개 전부 30일 이내 → 여전히 더 많음. total 기반 추정
-        // 전체 누적 수 대비 최근 30일 비율을 최신 300개 날짜 범위로 추정
-        const dates = recentItems.map(i => new Date(i.pubDate)).sort((a, b) => a - b);
-        const oldest = dates[0];
-        const newest = dates[dates.length - 1];
-        const spanDays = Math.max(1, (newest - oldest) / (1000 * 60 * 60 * 24));
+      if (dates.length > 0) {
+        const newest = dates[0];
+        const oldest = dates[dates.length - 1];
 
-        if (spanDays >= 5) {
-          // 날짜 범위가 5일 이상이면 선형 추정
-          const dailyAvg = recentItems.length / spanDays;
+        // 30일 이내 직접 카운트
+        const recentCount = dates.filter(d => d >= oneMonthAgo).length;
+
+        if (recentCount > 0 && recentCount < dates.length) {
+          // 100개 중 일부만 30일 이내 → 30일 이내 직접 카운트가 가장 정확
+          monthly = recentCount;
+
+        } else if (recentCount === dates.length) {
+          // 100개 전부 30일 이내 → 날짜 범위로 일평균 계산 (시간 단위 정밀)
+          // ex: 100개가 2시간치 → 하루 1200개 → 월 36,000개
+          const spanMs = Math.max(newest - oldest, 60 * 60 * 1000); // 최소 1시간
+          const spanDays = spanMs / (1000 * 60 * 60 * 24);
+          const dailyAvg = dates.length / spanDays;
           monthly = Math.round(dailyAvg * 30);
+
         } else {
-          // 날짜 범위가 너무 좁으면 total 기반 추정 (전체의 1/12 가정)
-          monthly = total ? Math.round(total / 12) : null;
-        }
-      } else {
-        // allItems가 모두 30일 이전 → 매우 드문 키워드
-        const dates = allItems.map(i => new Date(i.pubDate)).filter(d => !isNaN(d)).sort((a, b) => b - a);
-        if (dates.length >= 2) {
-          const newest = dates[0];
-          const oldest = dates[dates.length - 1];
-          const daysDiff = Math.max(1, (newest - oldest) / (1000 * 60 * 60 * 24));
-          monthly = Math.round((allItems.length / daysDiff) * 30);
-        } else {
-          monthly = 0;
+          // 100개가 모두 30일 이전 → 매우 드문 키워드
+          const spanMs = Math.max(newest - oldest, 24 * 60 * 60 * 1000); // 최소 1일
+          const spanDays = spanMs / (1000 * 60 * 60 * 24);
+          monthly = Math.round((dates.length / spanDays) * 30);
         }
       }
     }
