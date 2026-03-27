@@ -1772,14 +1772,20 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
       let totalBlogPosts = null;
       let monthlyBlogPostsReal = null;
       let blogCountOk = false;
+      let blogCountDebug = "";
       try {
         const bcRes = await fetch(`/api/blog-count?keyword=${encodeURIComponent(kw)}`);
-        const bcData = await bcRes.json();
+        const bcText = await bcRes.text();
+        blogCountDebug = bcText.slice(0, 200);
+        let bcData = {};
+        try { bcData = JSON.parse(bcText); } catch(pe) { blogCountDebug = "JSON파싱실패: "+bcText.slice(0,100); }
         if (!bcData.error) {
           totalBlogPosts = bcData.total ?? null;
           if (bcData.monthly != null) { monthlyBlogPostsReal = bcData.monthly; blogCountOk = true; }
+        } else {
+          blogCountDebug = "API에러: " + bcData.error;
         }
-      } catch(e) {}
+      } catch(e) { blogCountDebug = "fetch실패: "+e.message; }
 
       // ③ 네이버 인기 블로그 글 제목 가져오기 (롱테일 기반)
       let blogTitles = [];
@@ -1967,7 +1973,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         relKeywords,
         ...aiResult,
         monthlyBlogPosts,
-        top10Blogs, avgPostAgeDays, highIndexRatio,
+        top10Blogs, avgPostAgeDays, highIndexRatio, blogCountDebug,
       };
       KW_CACHE[kw] = kwRes;
       setKwResult(kwRes);
@@ -2133,6 +2139,10 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
               </div>
             ))}
           </div>
+          {/* 디버그: blog-count API 응답 */}
+          {result.blogCountDebug&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"8px 12px",border:"1px solid #30363d",fontSize:"10px",color:"#ffa657",wordBreak:"break-all",marginBottom:"8px"}}>
+            📡 blog-count: {result.blogCountDebug}
+          </div>}
           {/* 상위 블로그 통계 */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
             <div style={{background:"#0d1117",borderRadius:"10px",padding:"10px 8px",textAlign:"center",border:"1px solid #21262d"}}>
