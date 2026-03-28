@@ -17,6 +17,22 @@ export default async function handler(req, res) {
     "X-Naver-Client-Secret": clientSecret,
   };
 
+  // postdate "YYYYMMDD" → YYYYMMDD 정수 반환 (비교용)
+  function parsePostdateInt(item) {
+    const s = String(item.postdate || "");
+    if (s.length === 8 && /^\d{8}$/.test(s)) return parseInt(s, 10);
+    return null;
+  }
+
+  // 오늘 날짜 YYYYMMDD 정수 (KST)
+  function todayInt() {
+    const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    const y = kst.getFullYear();
+    const m = String(kst.getMonth()+1).padStart(2,"0");
+    const d = String(kst.getDate()).padStart(2,"0");
+    return parseInt(`${y}${m}${d}`, 10);
+  }
+
   try {
     // ── 1. 전체 누적 게시물 수 ──
     const r1 = await fetch(
@@ -29,84 +45,87 @@ export default async function handler(req, res) {
     }
     const total = d1.total ?? null;
 
-    // ── 2. 최신순 100개 조회 ──
-    const r2 = await fetch(
-      `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=100&start=1&sort=date`,
-      { headers }
+    // ── 2. 최신순 3페이지(300개) 병렬 조회 ──
+    const pages = await Promise.all(
+      [1, 101, 201].map(start =>
+        fetch(
+          `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=100&start=${start}&sort=date`,
+          { headers }
+        ).then(r => r.json()).catch(() => ({ items: [] }))
+      )
     );
-    const d2 = await r2.json();
-    const items = d2.items || [];
-
-    // 디버그: 첫 번째 아이템 원본 확인
-    const firstItem = items[0] || null;
-    const debugInfo = {
-      itemCount: items.length,
-      firstPubDate: firstItem?.pubDate || null,
-      firstPostdate: firstItem?.postdate || null,
-      d2error: d2.errorCode || null,
-    };
-
-    // 날짜 파싱: pubDate(RFC2822) 또는 postdate(YYYYMMDD) 둘 다 지원
-    function parseItemDate(item) {
-      if (item.pubDate) {
-        const d = new Date(item.pubDate);
-        if (!isNaN(d.getTime())) return d;
-      }
-      if (item.postdate) {
-        const s = String(item.postdate);
-        if (s.length === 8) {
-          const d = new Date(`${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`);
-          if (!isNaN(d.getTime())) return d;
-        }
-      }
-      return null;
-    }
-
-    const now = new Date();
-    const oneMonthAgo = new Date(now);
-    oneMonthAgo.setDate(now.getDate() - 30);
+    const items = pages.flatMap(d => d.items || []);
 
     let monthly = null;
 
     if (items.length > 0) {
-      const dates = items
-        .map(parseItemDate)
-        .filter(d => d !== null)
-        .sort((a, b) => b - a);
+      const today = todayInt();
+      const yesterday = today - 1; // 간이 계산 (월말 등 예외 무시)
+      const thirtyDaysAgo = (() => {
+        const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+        kst.setDate(kst.getDate() - 30);
+        const y = kst.getFullYear();
+        const m = String(kst.getMonth()+1).padStart(2,"0");
+        const d = String(kst.getDate()).padStart(2,"0");
+        return parseInt(`${y}${m}${d}`, 10);
+      })();
 
-      debugInfo.parsedCount = dates.length;
-      debugInfo.newestDate = dates[0]?.toISOString() || null;
-      debugInfo.oldestDate = dates[dates.length-1]?.toISOString() || null;
+      const dates = items.map(parsePostdateInt).filter(d => d !== null).sort((a,b) => b-a);
 
       if (dates.length >= 2) {
         const newest = dates[0];
         const oldest = dates[dates.length - 1];
-        const recentCount = dates.filter(d => d >= oneMonthAgo).length;
 
-        debugInfo.recentCount = recentCount;
+        // 날짜별 카운트
+        const dateCount = {};
+        dates.forEach(d => { dateCount[d] = (dateCount[d]||0) + 1; });
+        const uniqueDays = Object.keys(dateCount).map(Number).sort((a,b)=>b-a);
 
-        if (recentCount > 0 && recentCount < dates.length) {
-          monthly = recentCount;
-        } else if (recentCount === dates.length) {
-          const spanMs = Math.max(newest - oldest, 30 * 60 * 1000);
-          const spanDays = spanMs / (1000 * 60 * 60 * 24);
-          debugInfo.spanDays = spanDays;
-          monthly = Math.round((dates.length / spanDays) * 30);
+        // 30일 이내 직접 카운트
+        const recentDates = dates.filter(d => d >= thirtyDaysAgo);
+
+        if (recentDates.length > 0 && recentDates.length < dates.length) {
+          // 일부만 30일 이내 → 직접 카운트
+          monthly = recentDates.length;
+
+        } else if (recentDates.length === dates.length) {
+          // 전부 30일 이내 (인기 키워드: 300개가 며칠치)
+          const spanDays = Math.max(newest - oldest, 1); // YYYYMMDD 단순 차이 (일 단위)
+
+          if (spanDays >= 2) {
+            // 며칠에 걸쳐 있음 → 일평균 × 30
+            // 오늘이 아직 끝나지 않았으면 오늘 카운트 보정 (현재시간/24)
+            const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+            const hourProgress = (kst.getHours() * 60 + kst.getMinutes()) / (24 * 60); // 0~1
+            const todayCount = dateCount[today] || 0;
+            const adjustedTodayCount = hourProgress > 0.1 ? Math.round(todayCount / hourProgress) : todayCount;
+            const totalAdjusted = dates.length - todayCount + adjustedTodayCount;
+            const dailyAvg = totalAdjusted / (spanDays + 1);
+            monthly = Math.round(dailyAvg * 30);
+          } else {
+            // 전부 오늘 날짜 (spanDays=0) → 오늘 진행률로 보정
+            const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+            const hourProgress = Math.max((kst.getHours() * 60 + kst.getMinutes()) / (24 * 60), 0.01);
+            const todayCount = dateCount[today] || dates.length;
+            // 오늘 하루 추정치: 현재까지 N개면 하루 N/progress개
+            const estimatedDaily = Math.round(todayCount / hourProgress);
+            monthly = estimatedDaily * 30;
+          }
+
         } else {
-          const spanMs = Math.max(newest - oldest, 24 * 60 * 60 * 1000);
-          const spanDays = spanMs / (1000 * 60 * 60 * 24);
+          // 전부 30일 이전 → 드문 키워드
+          const spanDays = Math.max(newest - oldest, 1);
           monthly = Math.round((dates.length / spanDays) * 30);
         }
+
       } else if (dates.length === 1) {
         monthly = total ? Math.round(total / 12) : 1;
       } else {
-        // 날짜 파싱 전부 실패
         monthly = total ? Math.round(total / 12) : null;
-        debugInfo.parseFailReason = "all dates failed to parse";
       }
     }
 
-    res.status(200).json({ total, monthly, _debug: debugInfo });
+    res.status(200).json({ total, monthly });
 
   } catch (err) {
     res.status(200).json({ total: null, monthly: null, error: err.message });
