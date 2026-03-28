@@ -1855,41 +1855,54 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
       const monthlyBlogPosts = monthlyBlogPostsReal ?? null;
 
       // 포화도(%) = 월발행량 / 월검색량 × 100
-      // totalMonthly(검색량) 없을 때: 월발행량 자체 규모로 추정 포화도 계산
+      // + total(누적게시글) 기반 보정: API 한계로 월발행량이 과소추정되므로 보정
       let saturation = null;
       if (monthlyBlogPosts !== null && totalMonthly && totalMonthly > 0) {
-        saturation = Math.round((monthlyBlogPosts / totalMonthly) * 100);
+        const rawSat = (monthlyBlogPosts / totalMonthly) * 100;
+        // total이 클수록 실제 발행량이 더 많음 → 보정 계수 적용
+        // log10(total)/4: total=1,000 → 0.75, total=100,000 → 1.25, total=1,000,000 → 1.50
+        const totalFactor = totalBlogPosts
+          ? 1 + Math.log10(Math.max(totalBlogPosts, 1)) / 4
+          : 1;
+        saturation = Math.round(rawSat * totalFactor);
       } else if (monthlyBlogPosts !== null && monthlyBlogPosts > 0) {
-        // 검색량 없는 경우: 월발행량 규모로 경험적 포화도 추정
-        // 판다랭크 데이터 역산: 월발행량 36,000 = 포화도 9,462% (검색량 380)
-        // → 월발행량이 많을수록 경쟁 심함. 발행량 기반 상대적 추정
-        saturation = monthlyBlogPosts < 100    ?   10   // 매우 드문
-          : monthlyBlogPosts < 500    ?   50
-          : monthlyBlogPosts < 2000   ?  200
-          : monthlyBlogPosts < 10000  ?  800
-          : monthlyBlogPosts < 30000  ? 3000
+        saturation = monthlyBlogPosts < 100   ?   10
+          : monthlyBlogPosts < 500   ?   50
+          : monthlyBlogPosts < 2000  ?  200
+          : monthlyBlogPosts < 10000 ?  800
+          : monthlyBlogPosts < 30000 ? 3000
           : 9000;
       }
 
-      // 경쟁 강도 5단계 (판다랭크 기준: 포화도 = 월발행량/월검색량×100%)
-      // 포화도 100% 미만 = 검색량보다 발행량이 적어 노출 기회 있음
-      const compLevel = saturation === null ? "알 수 없음"
-        : saturation < 30   ? "매우쉬움"   // 발행량이 검색량의 30% 미만
-        : saturation < 100  ? "쉬움"       // 발행량이 검색량보다 적음
-        : saturation < 300  ? "보통"       // 발행량이 검색량의 1~3배
-        : saturation < 1000 ? "어려움"     // 발행량이 검색량의 3~10배
-        : "매우어려움";                     // 발행량이 검색량의 10배 초과
+      // 경쟁 강도 5단계 (포화도 60% + 월검색량 40% 조합 지수)
+      // 판다랭크 검증: 현관수납(sat9462%,검색380) → 어려움, 갤럭시S26(sat2.89%,검색136만) → 보통
+      let compLevel = "알 수 없음";
+      let compScore_raw = 50; // 게이지용
+      if (saturation !== null) {
+        const satFactor  = Math.log10(Math.max(saturation, 0.1)) / Math.log10(10000);  // 0~1
+        const srchFactor = totalMonthly
+          ? Math.min(Math.log10(Math.max(totalMonthly, 1)) / Math.log10(1000000), 1)
+          : 0.3; // 검색량 모를 때 중간값
+        const combined = satFactor * 0.6 + srchFactor * 0.4; // 0~1
+        compScore_raw = Math.round(combined * 100);
+        compLevel = combined < 0.2 ? "매우쉬움"
+          : combined < 0.4 ? "쉬움"
+          : combined < 0.6 ? "보통"
+          : combined < 0.8 ? "어려움"
+          : "매우어려움";
+      }
 
-      // 일 방문자 추천 기준: 포화도 구간 기반 (판다랭크 역산)
+      // 일 방문자 추천 기준: 조합 지수(compScore_raw) 기반
+      // 판다랭크 검증: 현관수납 → 700명, 갤럭시S26 → 550명
       let dailyVisitReq = null;
       if (saturation !== null) {
-        dailyVisitReq = saturation < 30   ?   30
-          : saturation < 100  ?   50
-          : saturation < 300  ?  100
-          : saturation < 1000 ?  300
-          : saturation < 3000 ?  500
-          : saturation < 5000 ?  700
-          : 1000;
+        dailyVisitReq = compScore_raw < 20 ?   30
+          : compScore_raw < 40 ?   50
+          : compScore_raw < 50 ?  200
+          : compScore_raw < 60 ?  550
+          : compScore_raw < 70 ?  700
+          : compScore_raw < 80 ? 1000
+          : 2000;
       } else if (totalMonthly) {
         dailyVisitReq = Math.max(30, Math.round(totalMonthly / 30 * 0.03 / 10) * 10);
       }
@@ -1901,9 +1914,8 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         : compLevel === "어려움"   ? "전문성 있는 글과 어느 정도 블로그 지수가 필요해요."
         : "상위권 블로거에게 추천하는 고경쟁 키워드예요.";
 
-      // UI 게이지용 0~100 스코어 (로그 스케일: 포화도 1~3000%를 0~100으로)
-      const compScore = saturation === null ? 50
-        : Math.min(Math.round((Math.log10(Math.max(saturation, 1)) / Math.log10(1000)) * 100), 100);
+      // UI 게이지용 0~100 스코어
+      const compScore = compScore_raw;
 
       // ratio는 하위 호환성 유지 (포화도를 배수로 표현)
       const ratio = saturation !== null ? saturation / 100 : null;
