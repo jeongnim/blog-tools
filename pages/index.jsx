@@ -5361,12 +5361,11 @@ export default function BlogTools(){
       const year = new Date().getFullYear();
       const bodies = await fetchBlogBodies(kw);
       const prompt = buildWritePrompt({ kw, year, smartBlockType, blogStrategy, bodies, mainKeyword: mainKeyword||kw });
-      const res = await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-5-20250929",max_tokens:8000,
-          system:"You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",
-          messages:[{role:"user",content:prompt}]})});
-      const data = await res.json();
-      const raw = data.content?.[0]?.text||"";
+      const raw = await callClaude(
+        [{role:"user",content:prompt}],
+        "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",
+        8000, "claude-sonnet-4-5-20250929"
+      );
       const s=raw.indexOf("{"); const e=raw.lastIndexOf("}");
       const parsed = JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
       const meta = {
