@@ -7,7 +7,6 @@ export default async function handler(req, res) {
 
   const clientId     = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
-
   if (!clientId || !clientSecret) {
     return res.status(200).json({ total: null, monthly: null, error: "API 키 없음" });
   }
@@ -17,20 +16,19 @@ export default async function handler(req, res) {
     "X-Naver-Client-Secret": clientSecret,
   };
 
-  // postdate "YYYYMMDD" → YYYYMMDD 정수 반환 (비교용)
-  function parsePostdateInt(item) {
-    const s = String(item.postdate || "");
-    if (s.length === 8 && /^\d{8}$/.test(s)) return parseInt(s, 10);
-    return null;
-  }
-
-  // 오늘 날짜 YYYYMMDD 정수 (KST)
-  function todayInt() {
+  function getKSTDateInt(offsetDays = 0) {
     const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    kst.setDate(kst.getDate() + offsetDays);
     const y = kst.getFullYear();
     const m = String(kst.getMonth()+1).padStart(2,"0");
     const d = String(kst.getDate()).padStart(2,"0");
     return parseInt(`${y}${m}${d}`, 10);
+  }
+
+  function toDateInt(item) {
+    const s = String(item.postdate || "");
+    if (s.length === 8 && /^\d{8}$/.test(s)) return parseInt(s, 10);
+    return null;
   }
 
   try {
@@ -45,7 +43,7 @@ export default async function handler(req, res) {
     }
     const total = d1.total ?? null;
 
-    // ── 2. 최신순 3페이지(300개) 병렬 조회 ──
+    // ── 2. 최신순 3페이지(300개) 조회 ──
     const pages = await Promise.all(
       [1, 101, 201].map(start =>
         fetch(
@@ -54,75 +52,66 @@ export default async function handler(req, res) {
         ).then(r => r.json()).catch(() => ({ items: [] }))
       )
     );
-    const items = pages.flatMap(d => d.items || []);
+    const allDates = pages
+      .flatMap(d => (d.items || []).map(toDateInt).filter(n => n !== null))
+      .sort((a, b) => b - a);
+
+    const today = getKSTDateInt(0);
+    const thirtyDaysAgo = getKSTDateInt(-30);
 
     let monthly = null;
 
-    if (items.length > 0) {
-      const today = todayInt();
-      const yesterday = today - 1; // 간이 계산 (월말 등 예외 무시)
-      const thirtyDaysAgo = (() => {
-        const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-        kst.setDate(kst.getDate() - 30);
-        const y = kst.getFullYear();
-        const m = String(kst.getMonth()+1).padStart(2,"0");
-        const d = String(kst.getDate()).padStart(2,"0");
-        return parseInt(`${y}${m}${d}`, 10);
-      })();
+    if (allDates.length >= 2) {
+      const dateCount = {};
+      allDates.forEach(d => { dateCount[d] = (dateCount[d]||0)+1; });
 
-      const dates = items.map(parsePostdateInt).filter(d => d !== null).sort((a,b) => b-a);
+      const todayCount     = dateCount[today] || 0;
+      const recentCount    = allDates.filter(d => d >= thirtyDaysAgo).length;
 
-      if (dates.length >= 2) {
-        const newest = dates[0];
-        const oldest = dates[dates.length - 1];
+      if (recentCount > 0 && recentCount < allDates.length) {
+        // 30일 경계가 샘플 안에 있음 → 직접 카운트
+        monthly = recentCount;
 
-        // 날짜별 카운트
-        const dateCount = {};
-        dates.forEach(d => { dateCount[d] = (dateCount[d]||0) + 1; });
-        const uniqueDays = Object.keys(dateCount).map(Number).sort((a,b)=>b-a);
+      } else if (recentCount === allDates.length) {
+        // 300개 전부 30일 이내
+        const nonTodayDates = allDates.filter(d => d < today);
 
-        // 30일 이내 직접 카운트
-        const recentDates = dates.filter(d => d >= thirtyDaysAgo);
-
-        if (recentDates.length > 0 && recentDates.length < dates.length) {
-          // 일부만 30일 이내 → 직접 카운트
-          monthly = recentDates.length;
-
-        } else if (recentDates.length === dates.length) {
-          // 전부 30일 이내 (인기 키워드: 300개가 며칠치)
-          const spanDays = Math.max(newest - oldest, 1); // YYYYMMDD 단순 차이 (일 단위)
-
-          if (spanDays >= 2) {
-            // 며칠에 걸쳐 있음 → 일평균 × 30
-            // 오늘이 아직 끝나지 않았으면 오늘 카운트 보정 (현재시간/24)
-            const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-            const hourProgress = (kst.getHours() * 60 + kst.getMinutes()) / (24 * 60); // 0~1
-            const todayCount = dateCount[today] || 0;
-            const adjustedTodayCount = hourProgress > 0.1 ? Math.round(todayCount / hourProgress) : todayCount;
-            const totalAdjusted = dates.length - todayCount + adjustedTodayCount;
-            const dailyAvg = totalAdjusted / (spanDays + 1);
-            monthly = Math.round(dailyAvg * 30);
-          } else {
-            // 전부 오늘 날짜 (spanDays=0) → 오늘 진행률로 보정
-            const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-            const hourProgress = Math.max((kst.getHours() * 60 + kst.getMinutes()) / (24 * 60), 0.01);
-            const todayCount = dateCount[today] || dates.length;
-            // 오늘 하루 추정치: 현재까지 N개면 하루 N/progress개
-            const estimatedDaily = Math.round(todayCount / hourProgress);
-            monthly = estimatedDaily * 30;
-          }
+        if (nonTodayDates.length >= 10) {
+          // 어제치 데이터 충분 → 어제치 기반 일평균
+          const oldest = nonTodayDates[nonTodayDates.length - 1];
+          const oldestStr = String(oldest);
+          const oldestDate = new Date(`${oldestStr.slice(0,4)}-${oldestStr.slice(4,6)}-${oldestStr.slice(6,8)}T00:00:00+09:00`);
+          const yesterdayDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+          yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+          yesterdayDate.setHours(0,0,0,0);
+          const spanDays = Math.max(
+            Math.round((yesterdayDate - oldestDate) / 86400000) + 1,
+            1
+          );
+          monthly = Math.round((nonTodayDates.length / spanDays) * 30);
 
         } else {
-          // 전부 30일 이전 → 드문 키워드
-          const spanDays = Math.max(newest - oldest, 1);
-          monthly = Math.round((dates.length / spanDays) * 30);
+          // 어제치 없음 → 오늘 진행률로 하루 추정
+          const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+          const progress = Math.max((kst.getHours() * 60 + kst.getMinutes()) / 1440, 1/96);
+          monthly = Math.round((todayCount / progress) * 30);
         }
 
-      } else if (dates.length === 1) {
-        monthly = total ? Math.round(total / 12) : 1;
       } else {
-        monthly = total ? Math.round(total / 12) : null;
+        // 전부 30일 이전 (드문 키워드)
+        const newest = allDates[0];
+        const oldest = allDates[allDates.length - 1];
+        const newestStr = String(newest), oldestStr = String(oldest);
+        const spanMs = new Date(`${newestStr.slice(0,4)}-${newestStr.slice(4,6)}-${newestStr.slice(6,8)}`) -
+                       new Date(`${oldestStr.slice(0,4)}-${oldestStr.slice(4,6)}-${oldestStr.slice(6,8)}`);
+        const spanDays = Math.max(spanMs / 86400000, 1);
+        monthly = Math.round((allDates.length / spanDays) * 30);
       }
+
+    } else if (allDates.length === 1) {
+      monthly = total ? Math.round(total / 12) : 1;
+    } else {
+      monthly = total ? Math.round(total / 12) : null;
     }
 
     res.status(200).json({ total, monthly });
