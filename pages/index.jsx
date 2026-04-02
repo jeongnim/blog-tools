@@ -285,6 +285,46 @@ async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5
   return data.content?.[0]?.text||"";
 }
 
+// 스트리밍으로 Claude 호출 (긴 글 생성용 - 타임아웃 방지)
+async function callClaudeStream(messages, system, maxTokens=3500, model="claude-sonnet-4-5-20250929", onChunk) {
+  const body = { model, max_tokens: maxTokens, messages, _stream: true };
+  if (system) body.system = system;
+
+  const res = await fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split("
+");
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        try {
+          const json = JSON.parse(line.slice(6));
+          if (json.text) {
+            fullText += json.text;
+            if (onChunk) onChunk(fullText);
+          }
+          if (json.done && json.full) fullText = json.full;
+        } catch (_) {}
+      }
+    }
+  }
+  if (!fullText) throw new Error("스트리밍 응답이 비어있습니다.");
+  return fullText;
+}
+
 // 메인 탭 (네비바에 표시)
 const TABS=[
   {id:"write",   icon:"✍️",  label:"글쓰기",     isGroup:true},
@@ -5085,10 +5125,10 @@ ${text.slice(0, 4000)}
 반드시 순수 JSON만 출력 (마크다운 백틱 없이):
 {"title":"리라이팅된 제목","content":"리라이팅된 본문"}`;
 
-      const raw = await callClaude(
+      const raw = await callClaudeStream(
         [{ role: "user", content: rewritePrompt }],
         "You are a professional Korean news writer. Output ONLY valid JSON, no markdown backticks.",
-        4000,
+        3500,
         "claude-sonnet-4-5-20250929"
       );
       const s = raw.indexOf("{"); const e = raw.lastIndexOf("}");
@@ -5361,10 +5401,10 @@ export default function BlogTools(){
       const year = new Date().getFullYear();
       const bodies = await fetchBlogBodies(kw);
       const prompt = buildWritePrompt({ kw, year, smartBlockType, blogStrategy, bodies, mainKeyword: mainKeyword||kw });
-      const raw = await callClaude(
+      const raw = await callClaudeStream(
         [{role:"user",content:prompt}],
         "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",
-        8000, "claude-sonnet-4-5-20250929"
+        3500, "claude-sonnet-4-5-20250929"
       );
       const s=raw.indexOf("{"); const e=raw.lastIndexOf("}");
       const parsed = JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
