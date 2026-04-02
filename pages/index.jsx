@@ -306,8 +306,7 @@ async function callClaudeStream(messages, system, maxTokens=3500, model="claude-
     const { done, value } = await reader.read();
     if (done) break;
     const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split("
-");
+    const lines = chunk.split("\n");
     for (const line of lines) {
       if (line.startsWith("data: ")) {
         try {
