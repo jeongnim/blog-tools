@@ -321,7 +321,13 @@ async function callClaudeStream(messages, system, maxTokens=3500, model="claude-
     }
   }
   if (!fullText) throw new Error("스트리밍 응답이 비어있습니다.");
-  return fullText;
+  // 마크다운 코드블록 제거 후 반환
+  const cleaned = fullText
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  return cleaned;
 }
 
 // 메인 탭 (네비바에 표시)
