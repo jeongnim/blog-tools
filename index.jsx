@@ -255,7 +255,6 @@ function fmtSize(bytes){
   return (bytes/1024/1024).toFixed(2)+"MB";
 }
 async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5-20251001"){
-  // 키워드분석/짧은작업: haiku (저렴), 글작성: sonnet (고품질)
   const body={model,max_tokens:maxTokens,messages};
   if(system) body.system=system;
 
@@ -265,17 +264,59 @@ async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5
     body:JSON.stringify(body)
   });
 
-  const data=await res.json();
+  const rawText=await res.text();
+  let data;
+  try{ data=JSON.parse(rawText); }
+  catch(_){ throw new Error("API 응답 파싱 실패: "+rawText.slice(0,120)); }
 
   if(!res.ok){
-    const msg=data?.message||data?.error||`HTTP ${res.status}`;
-    throw new Error(msg);
+    const msg=data?.message||data?.error||("HTTP "+res.status);
+    throw new Error(typeof msg==="object"?(msg.message||JSON.stringify(msg)):msg);
   }
   if(data.error){
-    throw new Error(data.message||data.error);
+    const errMsg = typeof data.error === "object"
+      ? (data.error.message || JSON.stringify(data.error))
+      : (data.message || data.error);
+    throw new Error(errMsg);
   }
 
   return data.content?.[0]?.text||"";
+}
+
+async function callClaudeStream(messages, system, maxTokens=3500, model="claude-sonnet-4-5-20250929", onChunk) {
+  const body = { model, max_tokens: maxTokens, messages };
+  if (system) body.system = system;
+
+  const res = await fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const rawText = await res.text();
+  let data;
+  try { data = JSON.parse(rawText); }
+  catch(_) { throw new Error("API 응답 파싱 실패: " + rawText.slice(0, 120)); }
+
+  if (data.error) {
+    const msg = typeof data.error === "object"
+      ? (data.error.message || JSON.stringify(data.error))
+      : (data.message || data.error);
+    throw new Error(msg);
+  }
+
+  const text = data.content?.[0]?.text || "";
+  if (!text) throw new Error("응답이 비어있습니다.");
+  if (onChunk) onChunk(text);
+
+  return text
+    .replace(/^```json[
+]*/i, "")
+    .replace(/^```[
+]*/i, "")
+    .replace(/[
+]*```$/i, "")
+    .trim();
 }
 
 // 메인 탭 (네비바에 표시)
@@ -293,8 +334,8 @@ const VIDEO_SUBTABS=[
 
 // 글쓰기 서브탭
 const WRITE_SUBTABS=[
+  {id:"autowrite", icon:"🏷️", label:"카테고리별 키워드추출"},
   {id:"keyword",   icon:"🔍", label:"키워드 글쓰기"},
-  {id:"autowrite", icon:"🤖", label:"카테고리 글쓰기"},
   {id:"analyze",   icon:"📊", label:"글분석"},
   {id:"rewrite",   icon:"🔗", label:"기사 리라이팅"},
   {id:"emoji",     icon:"😃", label:"이모지"},
@@ -635,7 +676,7 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
 }
 
 
-// ─── 단락별 이미지 생성 컴포넌트 (Imagen 3) ──────────────────────────────────
+// ─── 단락별 이미지 생성 컴포넌트 (Pollinations AI) ──────────────────────────────────
 function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading,setImgLoading,imgError,setImgError,imgSections,setImgSections}){
 
   const startGenerate=async()=>{
@@ -646,7 +687,7 @@ function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading
 
     try{
       // ── Step 1: Claude가 본문을 4개 단락으로 분석 후 각각 다른 영문 이미지 프롬프트 생성 ──
-      const analysisReq=`You are a blog image consultant. Analyze the following Korean blog post and identify 4 distinct sections that would benefit from an accompanying image. For each section, create a vivid, photorealistic English prompt for Imagen 3.
+      const analysisReq=`You are a blog image consultant. Analyze the following Korean blog post and identify 4 distinct sections that would benefit from an accompanying image. For each section, create a vivid, photorealistic English prompt for Pollinations AI.
 
 Blog Title: ${postMeta.title||""}
 Main Keyword: ${postMeta.main_keyword||""}
@@ -665,14 +706,14 @@ Rules:
 
 Return ONLY valid JSON, no markdown:
 {"sections":[
-  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","prompt":"English image generation prompt for Imagen 3"},
+  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","prompt":"English image generation prompt for Pollinations AI"},
   {"sectionTitle":"...","sectionDesc":"...","prompt":"..."},
   {"sectionTitle":"...","sectionDesc":"...","prompt":"..."},
   {"sectionTitle":"...","sectionDesc":"...","prompt":"..."}
 ]}`;
 
       const raw=await callClaude([{role:"user",content:analysisReq}],
-        "You are an expert at analyzing blog posts and writing Imagen 3 prompts. Output ONLY valid JSON.",1200,"claude-haiku-4-5-20251001");
+        "You are an expert at analyzing blog posts and writing Pollinations AI prompts. Output ONLY valid JSON.",1200,"claude-haiku-4-5-20251001");
 
       if(!raw||raw.trim()==="") throw new Error("섹션 분석 응답이 비어있습니다.");
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
@@ -687,24 +728,30 @@ Return ONLY valid JSON, no markdown:
       const initial=sections.map(sec=>({...sec,status:"loading",base64:null,mimeType:null,error:null}));
       setGenImages(initial);
 
-      // ── Step 2: 4개 이미지 순차 생성 ──
+      // ── Step 2: 4개 이미지 순차 생성 (Pollinations - 15초 rate limit 대응) ──
       for(let i=0;i<sections.length;i++){
         const sec=sections[i];
         try{
-          const r=await fetch("/api/imagen",{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({prompt:sec.prompt}),
+          // rate limit: 요청 사이 16초 간격 (무료티어 15초 제한)
+          if(i>0) await new Promise(r=>setTimeout(r,16000));
+
+          const seed=Math.floor(Math.random()*99999);
+          const encodedPrompt=encodeURIComponent(sec.prompt);
+          const polUrl=`https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`;
+
+          const r=await fetch(polUrl);
+          if(!r.ok) throw new Error(`이미지 생성 실패 (${r.status})`);
+
+          const blob=await r.blob();
+          const base64=await new Promise((resolve,reject)=>{
+            const reader=new FileReader();
+            reader.onload=()=>resolve(reader.result.split(",")[1]);
+            reader.onerror=reject;
+            reader.readAsDataURL(blob);
           });
-          const rawText=await r.text();
-          if(!rawText||rawText.trim()==="") throw new Error("이미지 API 응답이 비어있습니다.");
-          let data;
-          try{ data=JSON.parse(rawText); }
-          catch(pe){ throw new Error("이미지 API JSON 오류: "+rawText.slice(0,100)); }
-          if(data.error) throw new Error(data.error);
 
           setGenImages(prev=>prev.map((item,idx)=>
-            idx===i ? {...item, status:"done", base64:data.base64, mimeType:data.mimeType} : item
+            idx===i ? {...item, status:"done", base64, mimeType:"image/jpeg"} : item
           ));
         }catch(e2){
           setGenImages(prev=>prev.map((item,idx)=>
@@ -731,7 +778,7 @@ Return ONLY valid JSON, no markdown:
         <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
           <span style={{fontSize:"18px"}}>🎨</span>
           <span style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>단락별 블로그 이미지 생성</span>
-          <span style={{fontSize:"10px",background:"linear-gradient(135deg,#1f6feb22,#388bfd22)",color:"#58a6ff",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"2px 8px",fontWeight:700}}>Imagen 3</span>
+          <span style={{fontSize:"10px",background:"linear-gradient(135deg,#1f6feb22,#388bfd22)",color:"#58a6ff",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"2px 8px",fontWeight:700}}>Pollinations AI</span>
         </div>
         <div style={{color:"#484f58",fontSize:"11px",marginTop:"3px"}}>
           본문 내용을 4개 단락으로 분석하여 각 단락에 어울리는 이미지를 생성합니다
@@ -764,7 +811,7 @@ Return ONLY valid JSON, no markdown:
       <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"6px"}}>글 내용을 분석해서 4개 단락에 맞는 이미지를 자동 생성합니다</div>
       <div style={{color:"#484f58",fontSize:"11px",lineHeight:"1.7"}}>
         · 각 단락마다 내용이 다른 이미지 1장씩 총 4장<br/>
-        · Claude가 단락 분석 → Imagen 3가 이미지 생성<br/>
+        · Claude가 단락 분석 → Pollinations AI가 이미지 생성<br/>
         · 생성된 이미지를 클릭하면 다운로드
       </div>
     </div>}
@@ -1048,7 +1095,7 @@ JSON 형식:
       </div>
     </div>}
 
-    {/* ── Imagen 3 단락별 이미지 생성 ── */}
+    {/* ── Pollinations AI 단락별 이미지 생성 ── */}
     {postMeta&&<ImageGenSection
       postMeta={postMeta}
       postContent={workingText||text}
@@ -1700,11 +1747,27 @@ async function fetchNaverKeywordStats(keywords) {
   if (!res.ok) throw new Error(`API 오류 ${res.status}`);
   const data = await res.json();
   if (data.error) throw new Error(data.error);
-  return data.keywordList || [];
+  return { keywordList: data.keywordList || [], autoComplete: data.autoComplete || [] };
 }
 
-function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
+function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pendingKeywordSearch, setPendingKeywordSearch}){
   const [inputVal,setInputVal]=useState(kwResult?._inputVal||"");
+
+  const pendingKwRef = useRef(null);
+  useEffect(()=>{
+    if(pendingKeywordSearch){
+      pendingKwRef.current = pendingKeywordSearch;
+      setInputVal(pendingKeywordSearch);
+      setPendingKeywordSearch("");
+    }
+  },[pendingKeywordSearch]);
+  useEffect(()=>{
+    if(pendingKwRef.current){
+      const kw = pendingKwRef.current;
+      pendingKwRef.current = null;
+      analyze(kw);
+    }
+  },[inputVal]);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
 
@@ -1723,9 +1786,12 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
     try{
       // ① 네이버 광고 API (메인 키워드)
       let naverMain = [];
+      let autoComplete = [];
       let naverOk = false;
       try{
-        naverMain = await fetchNaverKeywordStats([kw]);
+        const result = await fetchNaverKeywordStats([kw]);
+        naverMain = result.keywordList;
+        autoComplete = result.autoComplete;
         naverOk = true;
       }catch(e){ naverOk = false; }
 
@@ -1735,33 +1801,16 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
       const mobMonthly  = mainStat?.monthlyMobileQcCnt!=null ? Number(mainStat.monthlyMobileQcCnt)||0 : null;
       const totalMonthly = (pcMonthly!==null&&mobMonthly!==null) ? pcMonthly+mobMonthly : null;
 
-      // ② 블로그 총 게시물 수 + 월 발행량
-      // 우선순위: 광고API(monthlyBlogPostCnt) > Search API fallback
+      // ② 블로그 총 게시물 수 + 월 발행량 (Search API 실측값만 사용)
       let totalBlogPosts = null;
       let monthlyBlogPostsReal = null;
       let blogCountOk = false;
-
-      // 광고API에서 월 발행량 직접 추출 (pandarank 동일 방식)
-      if (mainStat?.monthlyBlogPostCnt != null) {
-        const rawVal = mainStat.monthlyBlogPostCnt;
-        if (typeof rawVal === "string" && rawVal.startsWith("<")) {
-          monthlyBlogPostsReal = parseInt(rawVal.replace("<","")) - 1 || 1;
-        } else {
-          monthlyBlogPostsReal = Number(rawVal) || 0;
-        }
-        blogCountOk = true;
-      }
-
-      // Search API: 누적 total + 광고API 없을 때만 fallback
       try {
         const bcRes = await fetch(`/api/blog-count?keyword=${encodeURIComponent(kw)}`);
         const bcData = await bcRes.json();
         if (!bcData.error) {
           totalBlogPosts = bcData.total ?? null;
-          if (monthlyBlogPostsReal === null) {
-            monthlyBlogPostsReal = bcData.monthly ?? null;
-            blogCountOk = true;
-          }
+          if (bcData.monthly != null) { monthlyBlogPostsReal = bcData.monthly; blogCountOk = true; }
         }
       } catch(e) {}
 
@@ -1773,7 +1822,26 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         blogTitles = btData.titles || [];
       } catch(e) {}
 
-      // ④ AI 분석 (트렌드 + 인기글 기반 롱테일)
+      // ④ 상위 블로그 정보 (평균 발행일자, 고지수 비율)
+      let top10Blogs = [];
+      let avgPostAgeDays = null;
+      let highIndexRatio = 0;
+      try {
+        const rankRes = await fetch(`/api/naver-rank?keyword=${encodeURIComponent(kw)}&blogId=__none__`);
+        const rankData = await rankRes.json();
+        const items = (rankData.items || []).slice(0, 10);
+        top10Blogs = items;
+        const now = Date.now();
+        const ages = items.map(i=>i.postDate).filter(Boolean).map(d=>{
+          const s=String(d).replace(/-/g,"");
+          return (now-new Date(`${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`).getTime())/(1000*60*60*24);
+        }).filter(n=>!isNaN(n)&&n>=0);
+        if(ages.length>0) avgPostAgeDays=Math.round(ages.reduce((a,b)=>a+b,0)/ages.length);
+        const highIdx=items.filter(i=>{const n=i.bloggerName||"";return n.length>=3&&!/^\d+$/.test(n);});
+        highIndexRatio=items.length>0?highIdx.length/items.length:0;
+      } catch(e) {}
+
+      // ⑤ AI 분석 (트렌드 + 인기글 기반 롱테일)
       // ④ AI 분석 (트렌드 + 인기글 기반 롱테일)
       const titlesAppend = blogTitles.length > 0
         ? ["", "", "실제 네이버 블로그 인기글 제목 (참고용):"].concat(blogTitles.slice(0,15).map((t,i)=>(i+1)+". "+t)).join("\n")
@@ -1789,10 +1857,10 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         '  "smartBlockReason": "왜 이 유형의 스마트블록이 뜨는지 한 줄",',
         '  "blogStrategy": "이 스마트블록 유형에서 블로그가 노출될 수 있는 전략 한 줄",',
         '  "longtailKeywords": [',
-        '    "스마트블록 유형(smartBlockType)에 따라 아래 전략으로 문장형 키워드 10개 작성:",',
-        '    "블로그형→정보/후기/비교 문장형, 지도형→블로그 우회 구체적 경험형,",',
-        '    "쇼핑형→구매 전 탐색형, 리뷰형→상세 사용기/비교형, 비교형→vs구도/추천형.",',
-        '    "반드시 완성된 문장형으로. 단어 나열 금지. 실제 블로거가 쓸 제목처럼."',
+        '    "이 키워드로 블로그 글을 쓸 때 활용할 수 있는 구체적인 글 주제 10개.",',
+        '    "형식: 실제 블로거가 쓸 법한 완성된 제목 형태로.",',
+        '    "예: 천안맛집 → \'천안 성정동 점심 혼밥하기 좋은 국밥집 솔직 후기\' 처럼.",',
+        '    "키워드를 자연스럽게 포함하되 독자 클릭을 유도하는 제목으로."',
         '  ]',
         '}' + titlesAppend
       ].join("\n");
@@ -1806,28 +1874,61 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
       // AI 추정값은 사용하지 않음 — 실측값만 신뢰
       const monthlyBlogPosts = monthlyBlogPostsReal ?? null;
 
-      // 포화도(%) = 월발행량 / 월검색량 × 100
-      const saturation = (monthlyBlogPosts !== null && totalMonthly && totalMonthly > 0)
-        ? Math.round((monthlyBlogPosts / totalMonthly) * 100)
-        : null;
+      // 포화도(%) = 월발행량 / 월검색량 × 100 + total 보정
+      let saturation = null;
+      if (monthlyBlogPosts !== null && totalMonthly && totalMonthly > 0) {
+        const rawSat = (monthlyBlogPosts / totalMonthly) * 100;
+        const totalFactor = totalBlogPosts
+          ? 1 + Math.log10(Math.max(totalBlogPosts, 1)) / 4
+          : 1;
+        saturation = Math.round(rawSat * totalFactor);
+      } else if (monthlyBlogPosts !== null && monthlyBlogPosts > 0) {
+        saturation = monthlyBlogPosts < 100 ? 10 : monthlyBlogPosts < 500 ? 50
+          : monthlyBlogPosts < 2000 ? 200 : monthlyBlogPosts < 10000 ? 800
+          : monthlyBlogPosts < 30000 ? 3000 : 9000;
+      }
 
-      // 판다랭크 기준 5단계 (포화도 % 기반)
-      // 매우낮음 <100% / 낮음 <300% / 보통 <700% / 높음 <1500% / 매우높음 ≥1500%
-      const compLevel = saturation === null ? "알 수 없음"
-        : saturation < 100  ? "매우낮음"
-        : saturation < 300  ? "낮음"
-        : saturation < 700  ? "보통"
-        : saturation < 1500 ? "높음" : "매우높음";
+      // 경쟁 강도 5단계
+      let compLevel = "알 수 없음";
+      let compScore_raw = 50;
+      if (saturation !== null) {
+        const satFactor  = Math.log10(Math.max(saturation, 0.1)) / Math.log10(10000);
+        const srchFactor = totalMonthly
+          ? Math.min(Math.log10(Math.max(totalMonthly, 1)) / Math.log10(1000000), 1)
+          : 0.3;
+        const combined = satFactor * 0.6 + srchFactor * 0.4;
+        compScore_raw = Math.round(combined * 100);
+        compLevel = combined < 0.2 ? "매우쉬움"
+          : combined < 0.4 ? "쉬움"
+          : combined < 0.6 ? "보통"
+          : combined < 0.8 ? "어려움"
+          : "매우어려움";
+      }
+
+      let dailyVisitReq = null;
+      if (saturation !== null) {
+        dailyVisitReq = compScore_raw < 20 ? 30 : compScore_raw < 40 ? 50
+          : compScore_raw < 50 ? 200 : compScore_raw < 60 ? 550
+          : compScore_raw < 70 ? 700 : compScore_raw < 80 ? 1000 : 2000;
+      } else if (totalMonthly) {
+        dailyVisitReq = Math.max(30, Math.round(totalMonthly / 30 * 0.03 / 10) * 10);
+      }
+
+      const compComment = compLevel === "알 수 없음" ? null
+        : compLevel === "매우쉬움" ? "초보 블로거도 쉽게 상위노출 가능한 키워드예요!"
+        : compLevel === "쉬움"     ? "발행글이 적어 노출 기회가 많아요. 도전해보세요!"
+        : compLevel === "보통"     ? "품질 좋은 글이라면 충분히 노출 가능해요."
+        : compLevel === "어려움"   ? "전문성 있는 글과 어느 정도 블로그 지수가 필요해요."
+        : "상위권 블로거에게 추천하는 고경쟁 키워드예요.";
 
       // UI 게이지용 0~100 스코어 (로그 스케일: 포화도 1~3000%를 0~100으로)
-      const compScore = saturation === null ? 50
-        : Math.min(Math.round((Math.log10(Math.max(saturation, 1)) / Math.log10(3000)) * 100), 100);
+      const compScore = compScore_raw;
 
       // ratio는 하위 호환성 유지 (포화도를 배수로 표현)
       const ratio = saturation !== null ? saturation / 100 : null;
 
       // 연관검색어: naverMain에서 메인 키워드 제외한 나머지 (월검색량 내림차순)
-      const relKeywords = naverMain
+      let relKeywords = naverMain
         .filter(i=>i.relKeyword?.toLowerCase()!==kw.toLowerCase())
         .map(i=>({
           keyword: i.relKeyword,
@@ -1836,7 +1937,40 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
           mob: Number(i.monthlyMobileQcCnt)||0,
         }))
         .sort((a,b)=>b.total-a.total)
-        .slice(0,8);
+        .slice(0,30);
+
+      // 광고 API 연관검색어 부족 시 자동완성으로 보완 + 검색량 조회
+      if(relKeywords.length < 3 && autoComplete.length > 0){
+        const existing = new Set(relKeywords.map(r=>r.keyword?.toLowerCase()));
+        const newAcKws = autoComplete.filter(ac=>
+          ac.toLowerCase()!==kw.toLowerCase()&&!existing.has(ac.toLowerCase())
+        );
+
+        if(newAcKws.length > 0){
+          // 자동완성 키워드들 검색량 한번에 조회
+          try{
+            const acResult = await fetchNaverKeywordStats(newAcKws.slice(0,10));
+            const acStatMap = {};
+            (acResult.keywordList||[]).forEach(i=>{
+              acStatMap[i.relKeyword?.toLowerCase()]={
+                total:(Number(i.monthlyPcQcCnt)||0)+(Number(i.monthlyMobileQcCnt)||0),
+                pc:Number(i.monthlyPcQcCnt)||0,
+                mob:Number(i.monthlyMobileQcCnt)||0,
+              };
+            });
+            const acKws = newAcKws.map(ac=>({
+              keyword: ac,
+              ...(acStatMap[ac.toLowerCase()]||{total:null,pc:null,mob:null}),
+              fromAutoComplete: true,
+            })).sort((a,b)=>(b.total||0)-(a.total||0));
+            relKeywords = [...relKeywords, ...acKws].slice(0,30);
+          }catch(e){
+            // 조회 실패 시 검색량 없이 표시
+            const acKws = newAcKws.map(ac=>({keyword:ac,total:null,pc:null,mob:null,fromAutoComplete:true}));
+            relKeywords = [...relKeywords, ...acKws].slice(0,30);
+          }
+        }
+      }
 
       const kwRes = {
         _inputVal: kw,
@@ -1847,11 +1981,12 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         pcAvgClick: mainStat?.monthlyAvePcClkCnt ?? null,
         mobAvgClick: mainStat?.monthlyAveMobileClkCnt ?? null,
         totalBlogPosts,
-        saturation, ratio, compLevel, compScore,
+        saturation, ratio, compLevel, compScore, dailyVisitReq, compComment,
         blogTitles,
         relKeywords,
         ...aiResult,
         monthlyBlogPosts,
+        top10Blogs, avgPostAgeDays, highIndexRatio,
       };
       KW_CACHE[kw] = kwRes;
       setKwResult(kwRes);
@@ -1861,7 +1996,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
     setLoading(false);
   };
 
-  const COMP_COLOR={"매우낮음":"#3fb950","낮음":"#58a6ff","보통":"#ffa657","높음":"#ff7b72","매우높음":"#f85149","알 수 없음":"#8b949e"};
+  const COMP_COLOR={"매우쉬움":"#3fb950","쉬움":"#58a6ff","보통":"#ffa657","어려움":"#ff7b72","매우어려움":"#f85149","알 수 없음":"#8b949e"};
   const compColor = COMP_COLOR[result?.compLevel||"보통"]||"#ffa657";
 
 
@@ -1951,7 +2086,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
           <SectionTitle>🔗 연관검색어 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 월 검색량</span></SectionTitle>
           {result.relKeywords?.length>0?(
-            <div>
+            <div style={{maxHeight:"320px",overflowY:"auto"}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 64px 64px",gap:"6px",padding:"5px 8px",borderBottom:"1px solid #21262d",marginBottom:"4px"}}>
                 <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>키워드</span>
                 <span style={{color:"#484f58",fontSize:"10px",fontWeight:700,textAlign:"right"}}>월검색량</span>
@@ -1963,9 +2098,12 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
                   onMouseEnter={e=>e.currentTarget.style.background="#21262d"}
                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}
                   onClick={()=>{setInputVal(rk.keyword);analyze(rk.keyword);}}>
-                  <span style={{color:"#c9d1d9",fontSize:"12px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rk.keyword}</span>
-                  <span style={{color:"#58a6ff",fontSize:"12px",fontWeight:600,textAlign:"right"}}>{fmtNum(rk.total)}</span>
-                  <span style={{color:"#d2a8ff",fontSize:"12px",textAlign:"right"}}>{fmtNum(rk.mob)}</span>
+                  <span style={{color:"#c9d1d9",fontSize:"12px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {rk.keyword}
+                    {rk.fromAutoComplete&&<span style={{marginLeft:"5px",fontSize:"9px",color:"#484f58",background:"#21262d",borderRadius:"4px",padding:"1px 5px"}}>자동완성</span>}
+                  </span>
+                  <span style={{color:"#58a6ff",fontSize:"12px",fontWeight:600,textAlign:"right"}}>{rk.total!==null?fmtNum(rk.total):"-"}</span>
+                  <span style={{color:"#d2a8ff",fontSize:"12px",textAlign:"right"}}>{rk.mob!==null?fmtNum(rk.mob):"-"}</span>
                 </div>
               ))}
             </div>
@@ -1974,73 +2112,76 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile}){
           )}
         </div>
 
-        {/* 트렌드 */}
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"2",gridRow:"3"})}}>
-          <SectionTitle>📈 트렌드 분석 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추정</span></SectionTitle>
-          <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
-            <span style={{fontSize:"28px"}}>{result.trend==="상승"?"📈":result.trend==="하락"?"📉":"➡️"}</span>
-            <div>
-              <div style={{color:result.trend==="상승"?"#3fb950":result.trend==="하락"?"#ff7b72":"#8b949e",fontSize:"15px",fontWeight:700}}>
-                {result.trend==="상승"?"상승세":result.trend==="하락"?"하락세":"유지세"}
-              </div>
-              <div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px",lineHeight:"1.5"}}>{result.trendReason||""}</div>
-            </div>
-          </div>
-          {result.peakSeason&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"8px 12px",border:"1px solid #ffa65733",fontSize:"12px",color:"#ffa657",lineHeight:"1.5",marginBottom:"6px"}}>
-            🌟 <strong>성수기:</strong> {result.peakSeason}
-          </div>}
-          {result.difficultyComment&&<div style={{background:"#0d1117",borderRadius:"8px",padding:"8px 12px",border:"1px solid #1f6feb33",fontSize:"12px",color:"#8b949e",lineHeight:"1.5"}}>
-            💡 {result.difficultyComment}
-          </div>}
-        </div>
-
         {/* 경쟁 강도 */}
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1",gridRow:"3"})}}>
+        <div style={{background:"#161b22",border:`1px solid ${compColor}55`,borderRadius:"12px",padding:"16px",...(!isMobile&&{gridColumn:"1/3",gridRow:"3"})}}>
           <SectionTitle>⚡ 경쟁 강도</SectionTitle>
-          <div style={{position:"relative",marginBottom:"6px"}}>
-            <div style={{height:"8px",background:"linear-gradient(90deg,#3fb950,#ffa657,#f85149)",borderRadius:"4px"}}/>
-            <div style={{position:"absolute",top:"-5px",left:`calc(${result.compScore}% - 9px)`,width:"18px",height:"18px",background:"#fff",borderRadius:"50%",border:`3px solid ${compColor}`}}/>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginBottom:"8px"}}><span>낮음</span><span>높음</span></div>
-          <div style={{textAlign:"center",marginBottom:"8px"}}>
-            <span style={{color:compColor,fontSize:"20px",fontWeight:700}}>{result.compLevel}</span>
-          </div>
-          <div style={{background:"#0d1117",borderRadius:"6px",padding:"8px",fontSize:"11px",color:"#8b949e"}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-              <span>월 발행량</span>
-              <strong style={{color:"#ffa657"}}>
-                {result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"건":<span style={{color:"#484f58"}}>실측불가</span>}
-                {result.blogCountOk&&<span style={{color:"#3fb950",fontSize:"10px",marginLeft:"4px"}}>✓실측</span>}
-              </strong>
+
+          {/* 등급 + 추천 */}
+          <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"10px"}}>
+            <div style={{background:`${compColor}18`,border:`2px solid ${compColor}`,borderRadius:"12px",padding:"8px 18px",flexShrink:0,textAlign:"center"}}>
+              <div style={{color:compColor,fontSize:"20px",fontWeight:900,lineHeight:1}}>{result.compLevel}</div>
             </div>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-              <span>월 검색량</span>
-              <strong style={{color:"#58a6ff"}}>{result.totalMonthly!=null?fmtNum(result.totalMonthly)+"회":"-"}</strong>
+            <div style={{flex:1}}>
+              {result.dailyVisitReq!=null&&<div style={{color:"#e6edf3",fontSize:"13px",fontWeight:600,marginBottom:"2px"}}>
+                일 방문자 <span style={{color:compColor}}>{fmtNum(result.dailyVisitReq)}명 이상</span> 블로거 추천
+              </div>}
+              {result.compComment&&<div style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.4"}}>{result.compComment}</div>}
             </div>
-            {result.saturation!=null&&<div style={{display:"flex",justifyContent:"space-between",paddingTop:"5px",borderTop:"1px solid #21262d",marginBottom:"4px"}}>
-              <span>포화도</span>
-              <strong style={{color:compColor}}>{result.saturation.toLocaleString()}%</strong>
-            </div>}
-            <div style={{marginTop:"4px",color:result.saturation==null?"#8b949e":result.saturation<100?"#3fb950":result.saturation<700?"#ffa657":"#ff7b72",fontSize:"11px",fontWeight:700}}>
-              {result.saturation==null?"－ 데이터 부족":result.saturation<100?"✅ 신규 블로거도 가능":result.saturation<300?"🟢 경쟁 낮음":result.saturation<700?"🟡 중급 이상 적합":"⚠️ 고경쟁, 차별화 필요"}
+          </div>
+
+          {/* 게이지 */}
+          <div style={{position:"relative",marginBottom:"4px"}}>
+            <div style={{height:"10px",background:"linear-gradient(90deg,#3fb950,#58a6ff,#ffa657,#ff7b72,#f85149)",borderRadius:"5px"}}/>
+            <div style={{position:"absolute",top:"-4px",left:`calc(${Math.min(Math.max(result.compScore,2),96)}% - 9px)`,width:"18px",height:"18px",background:"#161b22",borderRadius:"50%",border:`3px solid ${compColor}`,boxShadow:`0 0 8px ${compColor}99`}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginBottom:"14px"}}>
+            <span>매우쉬움</span><span>매우어려움</span>
+          </div>
+
+          {/* 수치: 월발행량 + 포화도 + 평균발행일 + 고지수비율 */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"8px"}}>
+            {[
+              {label:"월 발행량", value:result.monthlyBlogPosts!=null?fmtNum(result.monthlyBlogPosts)+"개":"—", color:"#ffa657", badge:result.blogCountOk?"✓":null},
+              {label:"포화도",   value:result.saturation!=null?result.saturation+"%":"—", color:compColor},
+            ].map(({label,value,color,badge},i)=>(
+              <div key={i} style={{background:"#0d1117",borderRadius:"10px",padding:"10px 8px",textAlign:"center",border:"1px solid #21262d"}}>
+                <div style={{color:"#484f58",fontSize:"10px",marginBottom:"4px"}}>{label}</div>
+                <div style={{color,fontSize:"14px",fontWeight:700}}>
+                  {value}{badge&&<span style={{color:"#3fb950",fontSize:"9px",marginLeft:"2px"}}>{badge}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+            <div style={{background:"#0d1117",borderRadius:"10px",padding:"10px 8px",textAlign:"center",border:"1px solid #21262d"}}>
+              <div style={{color:"#484f58",fontSize:"10px",marginBottom:"4px"}}>평균 발행일자</div>
+              <div style={{color:"#79c0ff",fontSize:"14px",fontWeight:700}}>{result.avgPostAgeDays!=null?result.avgPostAgeDays+"일 전":"—"}</div>
+              <div style={{color:"#484f58",fontSize:"9px",marginTop:"2px"}}>상위 10개 글 기준</div>
+            </div>
+            <div style={{background:"#0d1117",borderRadius:"10px",padding:"10px 8px",textAlign:"center",border:"1px solid #21262d"}}>
+              <div style={{color:"#484f58",fontSize:"10px",marginBottom:"4px"}}>상위 블로그 비율</div>
+              <div style={{color:result.highIndexRatio>=0.7?"#f85149":result.highIndexRatio>=0.4?"#ffa657":"#3fb950",fontSize:"14px",fontWeight:700}}>
+                {result.highIndexRatio!=null?Math.round(result.highIndexRatio*100)+"%":"—"}
+              </div>
+              <div style={{color:"#484f58",fontSize:"9px",marginTop:"2px"}}>고지수 블로거 추정</div>
             </div>
           </div>
         </div>
 
-        {/* 롱테일 키워드 */}
+        {/* 추천 글 주제 */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
-          <SectionTitle>🎯 롱테일 키워드 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추출</span></SectionTitle>
+          <SectionTitle>✍️ 추천 글 주제 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추출</span></SectionTitle>
           <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
             {result.longtailKeywords?.map((kw,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",background:"#0d1117",
                 borderRadius:"8px",padding:"8px 10px",border:"1px solid #21262d"}}>
-                <span style={{color:"#484f58",fontSize:"11px",minWidth:"16px"}}>{i+1}</span>
+                <span style={{color:"#484f58",fontSize:"11px",minWidth:"16px",flexShrink:0}}>{i+1}</span>
                 <span style={{flex:1,color:"#c9d1d9",fontSize:"12px",lineHeight:"1.4"}}>{kw}</span>
                 <button onClick={()=>goAutoWrite&&goAutoWrite(kw,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword)}
                   style={{background:"linear-gradient(135deg,#1f6feb,#388bfd)",border:"none",color:"#fff",
                     borderRadius:"6px",padding:"4px 10px",fontSize:"11px",fontWeight:700,cursor:"pointer",
                     fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
-                  ✍️ 글쓰기
+                  ✍️ 자동글쓰기
                 </button>
               </div>
             ))}
@@ -2080,10 +2221,7 @@ function MissingTab(){
     setLoadingFeed(true);setFeedError("");setPosts(null);setAnalysis({});setExpanded(null);
     try{
       const res=await fetch(`/api/blog-rss?blogId=${encodeURIComponent(id)}`);
-      if(!res.ok){
-        const err=await res.json().catch(()=>({error:`오류 (${res.status})`}));
-        throw new Error(err.error||`오류 (${res.status})`);
-      }
+      if(!res.ok){const err=await res.json().catch(()=>({error:`오류 (${res.status})`}));throw new Error(err.error||`오류 (${res.status})`);}
       const xml=await res.text();
       if(!xml.includes("<item")) throw new Error("게시글을 찾을 수 없어요. 블로그 아이디를 다시 확인해주세요.");
       const doc=new DOMParser().parseFromString(xml,"application/xml");
@@ -2095,15 +2233,15 @@ function MissingTab(){
         const pub=it.querySelector("pubDate")?.textContent||"";
         const desc=(it.querySelector("description")?.textContent||"").replace(/<[^>]+>/g,"").trim().slice(0,300);
         const postNo=link.match(/\/(\d+)$/)?.[1]||Math.random().toString().slice(2,10);
+        // category 태그에서 블로그 태그(#태그) 추출
+        const categories=[...it.querySelectorAll("category")].map(c=>c.textContent?.trim()).filter(Boolean);
         let date="";
         try{if(pub){const d=new Date(pub);date=`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`;}}catch(e){}
-        return{title,link,postNo,date,description:desc,source:"rss"};
+        return{title,link,postNo,date,description:desc,tags:categories,source:"rss"};
       });
       setPosts({all:list,current:list.slice(0,PER_PAGE),total:list.length,page:1,blogId:id});
       setPage(1);
-    }catch(e){
-      setFeedError(e.message||"오류가 발생했습니다.");
-    }
+    }catch(e){setFeedError(e.message||"오류가 발생했습니다.");}
     setLoadingFeed(false);
   };
 
@@ -2142,20 +2280,24 @@ function MissingTab(){
     }catch(e){return null;}
   };
 
-  // ── 본문 크롤링 ──
+  // ── 본문 크롤링 — blog-content API 통해 서버에서 모바일 URL 크롤링 ──
   const fetchPostBody=async(post)=>{
-    if(post.bodyText) return post.bodyText;
-    if(!post.link) return post.description||"";
+    if(post.bodyText) return {text: post.bodyText, loaded: true};
+    if(!post.link) return {text: post.description||"", loaded: false};
     try{
       const m=post.link.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
-      if(!m) return post.description||"";
-      const url=`https://blog.naver.com/PostView.naver?blogId=${m[1]}&logNo=${m[2]}&redirect=Dlog&widgetTypeCall=true`;
-      const res=await fetch(`/api/blog-content?url=${encodeURIComponent(url)}`);
-      if(!res.ok) return post.description||"";
-      const data=await res.json();
-      if(data.bodies?.length>0) return data.bodies[0];
+      if(!m) return {text: post.description||"", loaded: false};
+      const blogId=m[1], logNo=m[2];
+      const postUrl=`https://blog.naver.com/${blogId}/${logNo}`;
+      const res=await fetch(`/api/blog-content?url=${encodeURIComponent(postUrl)}`);
+      if(res.ok){
+        const data=await res.json();
+        if(data.success && data.bodies?.length>0 && data.bodies[0].length>=200){
+          return {text: data.bodies[0], loaded: true};
+        }
+      }
     }catch(e){}
-    return post.description||"";
+    return {text: post.description||"", loaded: false};
   };
 
   // ── AI 분석 ──
@@ -2163,52 +2305,135 @@ function MissingTab(){
     if(analysis[post.postNo])return;
     setAnalyzing(idx);
     try{
-      // 실제 본문 크롤링 먼저
-      const body=await fetchPostBody(post);
+      const {text: body, loaded: bodyLoaded} = await fetchPostBody(post);
 
-      const prompt=`아래 네이버 블로그 포스트를 분석해줘. 반드시 순수 JSON만 출력. 마크다운 없이.
+      // ── Step 1: 키워드 = 태그 + 제목 단어 합치기 (중복 제거, 최대 5개) ──
+      const tagKws = (post.tags||[]).map(t=>t.trim()).filter(Boolean);
+      const titleKws = (post.title.match(/[가-힣a-zA-Z0-9][가-힣a-zA-Z0-9\s]{1,}/g)||[])
+        .map(w=>w.trim()).filter(w=>w.length>=2);
+      const seen=new Set();
+      const kws=[];
+      for(const k of [...tagKws,...titleKws]){
+        const kNorm=k.trim();
+        if(kNorm&&!seen.has(kNorm)&&kws.length<5){seen.add(kNorm);kws.push(kNorm);}
+      }
 
-제목: ${post.title}
-본문: ${body.slice(0,2000)||"(없음)"}
-URL: ${post.link||"없음"}
+      // ── SEO 점수 계산 ──────────────────────────────────────────────────────
+      const bodyNoSpace = body.replace(/\s/g, "").length;
+      const bodyLines   = body.split("\n").filter(l => l.trim().length > 0);
 
-{
-  "keywords":["이 글 실제 내용 기반 키워드1","키워드2","키워드3"],
-  "missingRisk":"낮음|보통|높음|매우높음",
-  "missingStatus":"정상노출|누락의심|누락가능성높음|누락",
-  "seoScore":0~100
-}
+      // 1. 본문 글자수 (30점) — 본문 로딩 실패 시 0점 + 안내
+      const lenScore = !bodyLoaded ? 0 :
+        bodyNoSpace >= 3000 ? 30 :
+        bodyNoSpace >= 1500 ? 22 :
+        bodyNoSpace >= 1000 ? 13 :
+        bodyNoSpace >= 500  ? 6  : 0;
 
-판단 기준:
-- keywords: 제목/본문 핵심 검색어 추출 (무관한 키워드 금지)
-- missingRisk: 제목 길이(20~40자 적정), 본문 분량(1500자↑ 양호), 광고성 여부, 키워드 반복 과다 여부 종합
-- seoScore: 제목 품질, 본문 충실도, 키워드 자연스러운 배치 종합`;
+      // 2. 제목 길이 (20점)
+      const titleLen = post.title.length;
+      const titleScore =
+        titleLen >= 15 && titleLen <= 32 ? 20 :
+        titleLen >= 10 && titleLen <= 40 ? 12 :
+        titleLen >= 6  ? 5 : 0;
 
-      const raw=await callClaude([{role:"user",content:prompt}],"Korean blog SEO expert. Analyze ONLY based on the given title and content. Output ONLY valid JSON.",800);
-      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
-      const ai=JSON.parse(raw.slice(s,e+1));
-      const kws=ai.keywords||[];
+      // 3. 본문 구조 (20점) — 본문 로딩 실패 시 0점
+      const paraScore = !bodyLoaded ? 0 :
+        bodyLines.length >= 15 ? 20 :
+        bodyLines.length >= 8  ? 14 :
+        bodyLines.length >= 4  ? 7  : 0;
 
-      // 우선 rankLoading:true로 화면 표시
-      const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null,rankLoading:true}));
-      setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kwData}}));
+      // 4. 키워드 밀도 (15점)
+      const titleWords   = post.title.match(/[가-힣a-zA-Z0-9]{2,}/g) || [];
+      const bodyLower    = body.toLowerCase();
+      const matchedWords = titleWords.filter(w => bodyLower.includes(w.toLowerCase()));
+      const kwRatio      = titleWords.length > 0 ? matchedWords.length / titleWords.length : 0;
+      const kwScore = !bodyLoaded ? 0 :
+        kwRatio >= 0.7 ? 15 :
+        kwRatio >= 0.4 ? 10 :
+        kwRatio >= 0.2 ? 5  : 0;
 
-      // blogId, postNo 추출
+      // 5. 광고·스팸성 패턴 (15점)
+      const spamPatterns = ["협찬","광고비","원고료","제공받","체험단","서포터즈","뒷광고","내돈내산아님","유료광고","무료제공","클릭하세요","지금바로","한정수량","선착순","공구","당첨"];
+      const spamCount    = spamPatterns.filter(p => body.includes(p)).length;
+      const spamScore    = spamCount === 0 ? 15 : spamCount <= 1 ? 9 : spamCount <= 3 ? 3 : 0;
+
+      const seoScore = lenScore + titleScore + paraScore + kwScore + spamScore;
+
+      // SEO 개선 조언
+      const seoAdvice = [];
+      if(!bodyLoaded){
+        seoAdvice.push(`__BODY_NOT_LOADED__`); // 렌더링에서 특별 처리
+      }
+      if(bodyLoaded && lenScore < 22){
+        const needed = bodyNoSpace < 1500 ? 1500 - bodyNoSpace : 3000 - bodyNoSpace;
+        seoAdvice.push(`📝 본문을 ${needed.toLocaleString()}자 더 늘리세요. 현재 ${bodyNoSpace.toLocaleString()}자 → ${bodyNoSpace<1500?"1,500자 이상":"3,000자 이상"} 권장`);
+      }
+      if(bodyLoaded && paraScore < 14){
+        seoAdvice.push(`📑 본문을 더 잘게 나눠 단락을 늘리세요. 현재 ${bodyLines.length}개 단락 → 8개 이상, ▶ 소제목을 2~3개 추가하면 좋습니다`);
+      }
+      if(titleScore < 12){
+        seoAdvice.push(`✏️ 제목 길이를 조정하세요. 현재 ${titleLen}자 → 15~32자가 네이버 권장 길이입니다`);
+      }
+      if(bodyLoaded && kwScore < 10){
+        seoAdvice.push(`🔑 제목의 핵심 키워드를 본문에 더 자연스럽게 포함시키세요. 현재 포함률 ${Math.round(kwRatio*100)}% → 70% 이상 권장 (C-Rank 기준)`);
+      }
+      if(spamScore < 9){
+        seoAdvice.push(`🚫 광고·협찬 표현 ${spamCount}개가 감지됐습니다. 해당 표현을 제거하면 D.I.A. 점수가 올라갑니다`);
+      }
+      if(seoAdvice.length === 0){
+        seoAdvice.push(`✅ SEO 최적화 상태가 양호합니다. 꾸준히 이 수준을 유지하세요`);
+      }
+
+      const seoDetail = {
+        lenScore, titleScore, paraScore, kwScore, spamScore,
+        bodyNoSpace, titleLen,
+        paraCount: bodyLines.length,
+        kwRatio: Math.round(kwRatio * 100),
+        spamCount, bodyLoaded,
+        seoAdvice,
+      };
+
+      // ── Step 2: 글 제목으로 네이버 검색 → 실제 누락 여부 확인 ──
       const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
       const extractedBlogId=urlMatch?.[1]||posts?.blogId||"";
       const extractedPostNo=urlMatch?.[2]||post.postNo||"";
 
-      // 각 키워드 실제 순위 병렬 조회
-      const rankResults=await Promise.all(
-        kws.map(kw=>getNaverRank(kw,extractedBlogId,extractedPostNo))
-      );
-      const kwDataWithRank=kws.map((kw,i)=>({
-        rank:i+1,keyword:kw,
-        realRank:rankResults[i],
-        rankLoading:false,
-      }));
-      setAnalysis(prev=>({...prev,[post.postNo]:{...ai,topKeywords:kwDataWithRank}}));
+      // 제목 전체를 검색어로 넣어서 내 글이 결과에 있는지 확인
+      const titleRank=await getNaverRank(post.title, extractedBlogId, extractedPostNo);
 
+      // 실제 검색 결과 기반 누락 판별 — 내 글이 결과에 있으면 노출, 없으면 누락
+      let missingStatus;
+      if(titleRank!==null && titleRank!==undefined){
+        missingStatus="노출";
+      } else {
+        missingStatus="누락";
+      }
+
+      const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null,rankLoading:true}));
+      setAnalysis(prev=>({...prev,[post.postNo]:{
+        missingStatus, seoScore, seoDetail,
+        titleRank,
+        topKeywords:kwData
+      }}));
+
+      // 키워드 순위 순차 조회 (200ms 간격 — rate limit 방지)
+      const rankResults=[];
+      for(const kw of kws){
+        const r=await getNaverRank(kw,extractedBlogId,extractedPostNo);
+        rankResults.push(r);
+        await new Promise(res=>setTimeout(res,200));
+      }
+
+      // 미노출(null) 제외 — 노출된 키워드만 저장
+      const exposedKeywords=kws
+        .map((kw,i)=>({keyword:kw,realRank:rankResults[i]}))
+        .filter(kw=>kw.realRank!==null)
+        .map((kw,i)=>({rank:i+1,keyword:kw.keyword,realRank:kw.realRank,rankLoading:false}));
+
+      setAnalysis(prev=>({...prev,[post.postNo]:{
+        missingStatus, seoScore, seoDetail, titleRank,
+        topKeywords:exposedKeywords
+      }}));
     }catch(e){
       setAnalysis(prev=>({...prev,[post.postNo]:{error:true}}));
     }
@@ -2225,7 +2450,7 @@ URL: ${post.link||"없음"}
 
   const RC={"낮음":"#3fb950","보통":"#ffa657","높음":"#ff7b72","매우높음":"#f85149"};
   const RB={"낮음":"#0d2019","보통":"#2d1e0a","높음":"#2d1117","매우높음":"#2d0b0b"};
-  const SC={"정상노출":"#3fb950","누락의심":"#ffa657","누락가능성높음":"#ff7b72","누락":"#f85149"};
+  const SC={"노출":"#3fb950","누락":"#f85149"};
   const rankColor=r=>r===null?"#484f58":r<=3?"#3fb950":r<=10?"#58a6ff":r<=20?"#ffa657":"#ff7b72";
   const totalPages=posts?Math.ceil(posts.all.length/PER_PAGE):0;
 
@@ -2235,7 +2460,7 @@ URL: ${post.link||"없음"}
     {/* ── 모드 탭 ── */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",background:"#0d1117",borderRadius:"10px",border:"1px solid #21262d",overflow:"hidden"}}>
       {[["blogId","📋 방법1 · 블로그 ID로 최근글"],["url","🔗 방법2 · URL 직접 입력"]].map(([id,lbl])=>(
-        <button key={id} onClick={()=>{setMode(id);setPosts(null);setAnalysis({});setExpanded(null);setFeedError("");}} style={{
+        <button key={id} data-mode-url={id==="url"?"true":undefined} onClick={()=>{setMode(id);setPosts(null);setAnalysis({});setExpanded(null);setFeedError("");}} style={{
           padding:"13px 8px",border:"none",background:mode===id?"#161b22":"transparent",
           color:mode===id?"#e6edf3":"#8b949e",cursor:"pointer",
           fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:mode===id?700:400,
@@ -2364,49 +2589,80 @@ URL: ${post.link||"없음"}
       </div>
 
       {posts.current.map((post,idx)=>{
-        const a=analysis[post.postNo];
-        const isAn=analyzing===idx;
-        const isEx=expanded===post.postNo;
-        const risk=a?.missingRisk;
-        return <div key={post.postNo} style={{background:"#161b22",border:`1px solid ${risk?RC[risk]+"55":"#30363d"}`,borderRadius:"12px",overflow:"hidden",transition:"border .2s"}}>
+        return <div key={post.postNo} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
           <div style={{padding:"13px 16px",display:"flex",alignItems:"flex-start",gap:"10px"}}>
             <div style={{color:"#484f58",fontSize:"11px",fontWeight:700,minWidth:"20px",paddingTop:"3px",flexShrink:0,textAlign:"right"}}>
               {(page-1)*PER_PAGE+idx+1}
             </div>
             <div style={{flex:1,minWidth:0}}>
-              {/* 제목 */}
+              {/* 제목 — 클릭 시 네이버 검색결과로 이동 */}
               <div style={{marginBottom:"5px",display:"flex",gap:"8px",alignItems:"flex-start"}}>
-                {post.link
-                  ?<a href={post.link} target="_blank" rel="noreferrer"
-                      style={{color:"#e6edf3",fontSize:"14px",fontWeight:600,textDecoration:"none",lineHeight:"1.5",flex:1,wordBreak:"break-word"}}
-                      onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
-                      {post.title}
-                    </a>
-                  :<span style={{color:"#e6edf3",fontSize:"14px",fontWeight:600,flex:1}}>{post.title}</span>}
+                <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(post.title)}`}
+                    target="_blank" rel="noreferrer"
+                    style={{color:"#e6edf3",fontSize:"14px",fontWeight:600,textDecoration:"none",lineHeight:"1.5",flex:1,wordBreak:"break-word"}}
+                    title="클릭 시 네이버에서 이 제목으로 검색한 결과를 확인합니다"
+                    onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
+                    {post.title}
+                  </a>
                 {post.date&&<span style={{color:"#484f58",fontSize:"11px",flexShrink:0,paddingTop:"2px"}}>{post.date}</span>}
               </div>
               {/* 설명 */}
               {post.description&&!a&&<div style={{color:"#484f58",fontSize:"12px",marginBottom:"5px",lineHeight:"1.5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{post.description}</div>}
               {/* 뱃지 */}
-              {a&&!a.error&&<div style={{display:"flex",flexWrap:"wrap",gap:"5px",marginBottom:"5px"}}>
-                <span style={{background:RB[risk]||"#21262d",color:RC[risk]||"#8b949e",border:`1px solid ${RC[risk]||"#30363d"}44`,borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>
-                  {risk==="낮음"?"✅":risk==="보통"?"⚠️":"🚨"} 누락위험 {risk}
+              {a&&!a.error&&<div style={{display:"flex",flexWrap:"wrap",gap:"5px",marginBottom:"8px"}}>
+                <span style={{
+                  background:a.missingStatus==="노출"?"#2ea04322":"#f8514922",
+                  color:a.missingStatus==="노출"?"#3fb950":"#f85149",
+                  border:`1px solid ${a.missingStatus==="노출"?"#2ea04344":"#f8514944"}`,
+                  borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700
+                }}>
+                  {a.missingStatus==="노출"?"✅ 노출":"🚨 누락"}
                 </span>
-                {a.missingStatus&&<span style={{background:(SC[a.missingStatus]||"#21262d")+"22",color:SC[a.missingStatus]||"#8b949e",border:`1px solid ${SC[a.missingStatus]||"#30363d"}44`,borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>{a.missingStatus}</span>}
                 <span style={{background:"#21262d",color:a.seoScore>=70?"#3fb950":a.seoScore>=40?"#ffa657":"#ff7b72",border:"1px solid #30363d",borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>SEO {a.seoScore}</span>
-                {a.topKeywords?.[0]&&<span style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700}}>
-                  🔑 {a.topKeywords[0].keyword} {a.topKeywords[0].rankLoading?"조회중…":a.topKeywords[0].realRank!==null?`${a.topKeywords[0].realRank}위`:"100위↓"}
-                </span>}
               </div>}
               {/* 분석 중 */}
               {isAn&&<div style={{display:"flex",flexDirection:"column",gap:"3px",marginTop:"4px"}}>
-                {["🤖 AI 키워드 분석 중...","📊 블로그탭 실제 순위 조회 중..."].map((msg,i)=>(
+                {["🤖 AI 키워드 분석 중...","🔍 제목으로 네이버 실제 검색 중...","📊 키워드 블로그탭 순위 조회 중..."].map((msg,i)=>(
                   <div key={i} style={{color:"#8b949e",fontSize:"11px",animation:`pulse 1.6s ease ${i*0.4}s infinite`}}>{msg}</div>
                 ))}
               </div>}
               {a?.error&&<div style={{color:"#ff7b72",fontSize:"12px",marginTop:"3px"}}>⚠️ 분석 실패. 재시도 버튼을 눌러주세요.</div>}
+
+              {/* 키워드 순위 — 분석 완료 시 바로 표시 */}
+              {a&&!a.error&&a.topKeywords&&(
+                <div style={{marginTop:"4px"}}>
+                  {/* 로딩 중 */}
+                  {a.topKeywords.some(kw=>kw.rankLoading)&&(
+                    <div style={{color:"#8b949e",fontSize:"11px",padding:"4px 0"}}>⏳ 키워드 순위 조회 중...</div>
+                  )}
+                  {/* 완료 후 — 노출된 것만 표시 */}
+                  {!a.topKeywords.some(kw=>kw.rankLoading)&&a.topKeywords.length===0&&(
+                    <div style={{color:"#484f58",fontSize:"11px",padding:"4px 0"}}>노출 키워드 없음 (모두 100위권 밖)</div>
+                  )}
+                  {!a.topKeywords.some(kw=>kw.rankLoading)&&a.topKeywords.map((kw,i)=>{
+                    const rc=rankColor(kw.realRank);
+                    return <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",
+                      background:"#0d1117",border:`1px solid ${rc+"44"}`,
+                      borderRadius:"8px",marginBottom:"5px"}}>
+                      <div style={{width:"18px",height:"18px",background:"#21262d",borderRadius:"4px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                        <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>{i+1}</span>
+                      </div>
+                      <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw.keyword)}`}
+                        target="_blank" rel="noreferrer"
+                        style={{flex:1,color:"#c9d1d9",fontSize:"12px",fontWeight:600,textDecoration:"none"}}
+                        onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#c9d1d9"}>
+                        {kw.keyword} ↗
+                      </a>
+                      <div style={{background:rc+"22",color:rc,border:`1px solid ${rc+"55"}`,
+                        borderRadius:"6px",padding:"3px 10px",fontSize:"12px",fontWeight:800,minWidth:"40px",textAlign:"center",flexShrink:0}}>
+                        {kw.realRank}위
+                      </div>
+                    </div>;
+                  })}
+                </div>
+              )}
             </div>
-            {/* 버튼 */}
+            {/* 버튼 — 분석/재시도만 */}
             <div style={{display:"flex",flexDirection:"column",gap:"5px",flexShrink:0}}>
               {!a&&!isAn&&<button onClick={()=>runAnalyze(post,idx)}
                 style={{padding:"6px 12px",background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",
@@ -2416,52 +2672,8 @@ URL: ${post.link||"없음"}
                 style={{padding:"6px 12px",background:"#da363322",color:"#ff7b72",border:"1px solid #da363344",
                   borderRadius:"7px",cursor:"pointer",fontSize:"11px",fontWeight:600,
                   fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>🔄 재시도</button>}
-              {a&&!a.error&&<button onClick={()=>setExpanded(isEx?null:post.postNo)}
-                style={{padding:"6px 12px",background:isEx?"#21262d":"#1f6feb22",color:isEx?"#8b949e":"#58a6ff",
-                  border:`1px solid ${isEx?"#30363d":"#1f6feb44"}`,borderRadius:"7px",cursor:"pointer",
-                  fontSize:"11px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
-                {isEx?"▲ 닫기":"▼ 상세"}</button>}
             </div>
           </div>
-
-          {/* 상세 패널 */}
-          {isEx&&a&&!a.error&&<div style={{borderTop:"1px solid #21262d",padding:"14px 16px",background:"#0d1117",display:"flex",flexDirection:"column",gap:"12px"}}>
-            {/* 상위노출 키워드 + 실제 순위 */}
-            {a.topKeywords?.length>0&&<div>
-              <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"8px"}}>
-                🏆 상위 노출 키워드 <span style={{color:"#484f58",fontWeight:400}}>· 네이버 블로그탭 실제 순위</span>
-              </div>
-              {a.topKeywords.map((kw,i)=>{
-                const rc=rankColor(kw.realRank);
-                const isOut=kw.realRank===null&&!kw.rankLoading;
-                const isLoading=kw.rankLoading;
-                return <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",
-                  background:"#161b22",border:`1px solid ${isOut||isLoading?"#21262d":rc+"44"}`,borderRadius:"9px",marginBottom:"6px"}}>
-                  <div style={{width:"24px",height:"24px",background:"#21262d",border:"1px solid #30363d",borderRadius:"6px",
-                    display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <span style={{color:"#8b949e",fontSize:"11px",fontWeight:700}}>{kw.rank}</span>
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw.keyword)}`}
-                      target="_blank" rel="noreferrer"
-                      style={{color:"#e6edf3",fontSize:"13px",fontWeight:700,textDecoration:"none",display:"block",marginBottom:"2px"}}
-                      onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
-                      {kw.keyword} ↗
-                    </a>
-                  </div>
-                  <div style={{background:isLoading?"#21262d":isOut?"#21262d":rc+"22",
-                    color:isLoading?"#8b949e":isOut?"#484f58":rc,
-                    border:`1px solid ${isLoading?"#30363d":isOut?"#30363d":rc+"55"}`,
-                    borderRadius:"8px",padding:"5px 12px",fontSize:"15px",fontWeight:800,
-                    minWidth:"52px",textAlign:"center",flexShrink:0}}>
-                    {isLoading?"⏳":isOut?"100위↓":`${kw.realRank}위`}
-                  </div>
-                </div>;
-              })}
-              <div style={{fontSize:"11px",color:"#484f58",marginTop:"2px"}}>🔍 네이버 검색 Open API 기준 (상위 100위) · 실시간 반영</div>
-            </div>}
-
-          </div>}
         </div>;
       })}
 
@@ -3496,6 +3708,20 @@ function RestoreTab(){
 }
 
 // ─── TAB: 자동글쓰기 ─────────────────────────────────────────────────────
+const NAVER_DIR_MAP = {
+  "요리·레시피": 13, "맛집·카페": 10, "다이어트·건강식": 13, "카페·디저트": 10,
+  "패션·코디": 17, "뷰티·메이크업": 18, "스킨케어·화장품": 18, "헤어·네일": 18,
+  "인테리어·DIY": 26, "살림·생활꿀팁": 26, "청소·정리정돈": 26, "원예·식물": 26,
+  "국내여행": 14, "해외여행": 15, "캠핑·아웃도어": 14, "호텔·숙소": 14,
+  "재테크·투자": 11, "부동산": 11, "주식·ETF": 11, "보험·연금": 11,
+  "IT·가전": 25, "스마트폰·앱": 25, "게임": 25, "AI·기술트렌드": 25,
+  "운동·피트니스": 31, "건강·의학정보": 31, "멘탈케어·심리": 31, "한방·영양제": 31,
+  "육아·아이": 28, "교육·학습": 27, "임신·출산": 28, "유아교육·장난감": 28,
+  "자동차": 24, "중고차·신차": 24, "전기차·하이브리드": 24,
+  "반려견": 29, "반려묘": 29, "반려동물 건강": 29,
+  "영화·드라마": 20, "음악·공연": 21, "책·독서": 22, "웹툰·만화": 20,
+};
+
 const NAVER_AUTO_CATEGORIES=[
   {group:"🍽️ 생활/음식",items:[
     {value:"요리·레시피",label:"요리·레시피"},{value:"맛집·카페",label:"맛집·카페"},
@@ -3543,89 +3769,53 @@ const NAVER_AUTO_CATEGORIES=[
   ]},
 ];
 
-function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost,setAnalyzePostMeta,setAnalyzeText,setAnalyzeAiResult,setAnalyzeLastText,setAnalyzeWorkingText,setAnalyzeReplacements}){
+function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   const [selCat,setSelCat]=useState("");
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
-  const [writingIdx,setWritingIdx]=useState(null);
-  const [postKw,setPostKw]=useState("");
   const [err,setErr]=useState("");
-
   const year=new Date().getFullYear();
 
-  // ── 롱테일 키워드 생성 ──
   const genKeywords=async()=>{
     if(!selCat) return;
-    setLoadingKw(true); setKeywords([]); setPostKw(""); setErr("");
+    setLoadingKw(true); setKeywords([]); setErr("");
     try{
+      const dirNo = NAVER_DIR_MAP[selCat] || 0;
+      const themeUrl = `https://section.blog.naver.com/ThemePost.naver?directoryNo=${dirNo}&activeDirectorySeq=${dirNo}&currentPage=1`;
       const prompt=`카테고리: "${selCat}"
+네이버 블로그 주제별 페이지(${themeUrl})의 ${selCat} 카테고리 상위 노출 트렌드를 반영하여,
+${year}년 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각각의 메인 키워드를 추천해줘.
 
-이 카테고리에서 ${year}년 현재 네이버 블로그 홈판(스마트블록)에 노출되기 유리한 롱테일 키워드 10개를 선정해줘.
-
-조건:
-- 실제 네이버에서 사람들이 검색하는 자연스러운 검색어 형태
-- 각 키워드는 3~6어절의 구체적인 롱테일 키워드
-- ${year}년 최신 트렌드와 시의성 반영
-- 검색량 대비 경쟁도가 낮아 홈판 노출 가능성이 높은 키워드
-- 실용적이고 정보성이 높은 주제
+선정 기준 5가지:
+1. 실제 블로거가 쓸 법한 완성된 제목 형태 (경험·후기·정보·비교 등 독자가 클릭하고 싶은 구체적 제목)
+2. ${year}년 최신 트렌드와 시의성 반영
+3. 검색량 대비 경쟁이 낮아 상위노출 가능성이 높은 주제
+4. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. 네이버에서 실제로 많이 검색되는 단어
+5. 현재 네이버 블로그 주제별 상위에 노출 중인 실제 유행 소재 반영
 
 반드시 순수 JSON만 출력. 마크다운 없이.
-{"keywords":[{"rank":1,"keyword":"롱테일키워드","reason":"선정 이유 한 줄"},...]}`
+{"keywords":[{"rank":1,"title":"추천 글 주제 제목","mainKeyword":"메인 키워드 (1~2형태소, 예:옷장정리)","reason":"선정 이유 한 줄 (유행성 포함)"},...]}`
 
       const raw=await callClaude([{role:"user",content:prompt}],
         "You are a Naver blog SEO expert. Output ONLY valid JSON, no markdown.",1500,"claude-haiku-4-5-20251001");
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
       const parsed=JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
       setKeywords(parsed.keywords||[]);
-    }catch(ex){setErr("롱테일 키워드 생성 오류: "+ex.message);}
+    }catch(ex){setErr("추천 글 주제 생성 오류: "+(ex?.message||String(ex)));}
     setLoadingKw(false);
   };
 
-  // ── 블로그 글 생성 ──
-  const genPost=async(kw,idx)=>{
-    setWritingIdx(idx); setPostKw(kw); setErr("");
-    try{
-      // 상위 3개 본문 크롤링 시도
-      const bodies = await fetchBlogBodies(kw);
-      const prompt = buildWritePrompt({ kw, year, category: selCat, bodies });
-      const raw=await callClaude([{role:"user",content:prompt}],
-        "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",8000,"claude-sonnet-4-6");
-      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
-      const parsed=JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
-      const content=parsed.content||"";
-      const mainKw=parsed.main_keyword||"";
-      parsed.actual_chars=content.length;
-      const esc=mainKw.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
-      parsed.actual_kw_count=(content.match(new RegExp(esc,"g"))||[]).length;
-      if(setActive && setAnalyzePostMeta){
-        const meta = {
-          title: parsed.title||"",
-          main_keyword: parsed.main_keyword||postKw,
-          content: content,
-          tags: parsed.tags||[],
-          _source: "category",
-        };
-        setAnalyzeAiResult(null);
-        setAnalyzeLastText("");
-        setAnalyzeWorkingText("");
-        setAnalyzeReplacements({});
-        setAnalyzePostMeta(meta);
-        setAnalyzeText(content);
-        setActive("analyze");
-      }
-    }catch(ex){setErr("글 작성 오류: "+ex.message);}
-    setWritingIdx(null);
+  const goKeywordSearch=(mainKeyword)=>{
+    if(!mainKeyword) return;
+    setPendingKeywordSearch(mainKeyword);
+    setActive("keyword");
   };
 
-
-
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
-
-    {/* ── STEP 1: 카테고리 ── */}
     <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 1</div>
       <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"12px"}}>카테고리 선택</div>
-      <select value={selCat} onChange={e=>{setSelCat(e.target.value);setKeywords([]);setPostKw("");setErr("");}}
+      <select value={selCat} onChange={e=>{setSelCat(e.target.value);setKeywords([]);setErr("");}}
         style={{width:"100%",padding:"10px 14px",background:"#0d1117",border:"1px solid #30363d",
           borderRadius:"8px",color:selCat?"#e6edf3":"#484f58",fontSize:"14px",outline:"none",cursor:"pointer",
           fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}>
@@ -3641,51 +3831,51 @@ function AutoWriteTab({setActive,setPendingAnalyzeText,setPendingAnalyzePost,set
           color:!selCat||loadingKw?"#484f58":"#fff",border:"none",borderRadius:"8px",
           cursor:!selCat||loadingKw?"not-allowed":"pointer",
           fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,transition:"background .2s"}}>
-        {loadingKw?"⏳ 롱테일 키워드 분석 중...":"🔍 롱테일 키워드 10개 추출"}
+        {loadingKw?"⏳ 분석 중...":"🏷️ 추천 글 주제 10개 추출"}
       </button>
     </div>
 
-    {/* 에러 */}
     {err&&<div style={{background:"#2d1117",border:"1px solid #da363344",borderRadius:"10px",padding:"12px 16px",color:"#ff7b72",fontSize:"13px"}}>⚠️ {err}</div>}
 
-    {/* ── STEP 2: 롱테일 키워드 목록 ── */}
     {keywords.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 2</div>
-      <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"4px"}}>롱테일 키워드 선택</div>
-      <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>오른쪽 <span style={{color:"#58a6ff",fontWeight:700}}>✍️ 자동글쓰기</span> 버튼을 클릭하면 글이 생성되고, <span style={{color:"#3fb950",fontWeight:700}}>글분석</span> 탭으로 자동 이동하여 바로 분석·수정할 수 있습니다.</div>
+      <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"4px"}}>추천 글 주제 & 메인 키워드</div>
+      <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>
+        <span style={{color:"#58a6ff",fontWeight:700}}>🔍 키워드 조회</span> 버튼을 클릭하면 키워드 글쓰기에서 자동으로 검색됩니다
+      </div>
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         {keywords.map((kw,idx)=>(
-          <div key={idx} style={{
-            display:"flex",alignItems:"center",gap:"12px",
-            background:postKw===kw.keyword?"#0d2019":"#0d1117",
-            border:`1px solid ${postKw===kw.keyword?"#2ea04366":"#21262d"}`,
-            borderRadius:"10px",padding:"12px 14px",transition:"all .2s",
-          }}>
-            {/* 순위 */}
-            <span style={{minWidth:"26px",height:"26px",borderRadius:"50%",background:"#1f6feb22",
-              color:"#58a6ff",border:"1px solid #1f6feb44",display:"flex",alignItems:"center",
-              justifyContent:"center",fontSize:"11px",fontWeight:700,flexShrink:0}}>
-              {kw.rank}
-            </span>
-            {/* 키워드 + 이유 */}
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{color:"#e6edf3",fontWeight:600,fontSize:"14px",marginBottom:"2px"}}>{kw.keyword}</div>
-              <div style={{color:"#484f58",fontSize:"11px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{kw.reason}</div>
+          <div key={idx} style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"10px",padding:"12px 14px"}}>
+            <div style={{display:"flex",alignItems:"flex-start",gap:"10px",marginBottom:"8px"}}>
+              <span style={{minWidth:"24px",height:"24px",borderRadius:"50%",background:"#1f6feb22",
+                color:"#58a6ff",border:"1px solid #1f6feb44",display:"flex",alignItems:"center",
+                justifyContent:"center",fontSize:"11px",fontWeight:700,flexShrink:0,marginTop:"1px"}}>
+                {kw.rank}
+              </span>
+              <div style={{flex:1}}>
+                <div style={{color:"#e6edf3",fontWeight:600,fontSize:"14px",lineHeight:"1.5"}}>{kw.title||kw.keyword}</div>
+                <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>{kw.reason}</div>
+              </div>
             </div>
-            {/* 자동글쓰기 버튼 */}
-            <button onClick={()=>genPost(kw.keyword,idx)} disabled={writingIdx!==null}
-              style={{padding:"7px 14px",borderRadius:"7px",border:"none",
-                background:writingIdx===idx?"#30363d":writingIdx!==null?"#21262d":"#2ea043",
-                color:writingIdx!==null?"#484f58":"#fff",
-                fontSize:"12px",fontWeight:700,cursor:writingIdx!==null?"not-allowed":"pointer",
-                flexShrink:0,fontFamily:"'Noto Sans KR',sans-serif",transition:"background .2s",minWidth:"90px"}}>
-              {writingIdx===idx?"⏳ 글분석으로 이동중...":"✍️ 자동글쓰기"}
-            </button>
+            <div style={{display:"flex",alignItems:"center",gap:"8px",paddingLeft:"34px"}}>
+              <span style={{fontSize:"11px",color:"#8b949e",flexShrink:0}}>메인 키워드</span>
+              <span style={{background:"#1f6feb15",border:"1px solid #1f6feb44",borderRadius:"6px",
+                padding:"3px 10px",color:"#79c0ff",fontSize:"12px",fontWeight:700,flex:1}}>
+                {kw.mainKeyword||kw.keyword}
+              </span>
+              <button onClick={()=>goKeywordSearch(kw.mainKeyword||kw.keyword)}
+                style={{padding:"5px 12px",borderRadius:"6px",border:"none",background:"#1f6feb",color:"#fff",
+                  fontSize:"11px",fontWeight:700,cursor:"pointer",flexShrink:0,
+                  fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}
+                onMouseEnter={e=>e.currentTarget.style.background="#388bfd"}
+                onMouseLeave={e=>e.currentTarget.style.background="#1f6feb"}>
+                🔍 키워드 조회
+              </button>
+            </div>
           </div>
         ))}
       </div>
     </div>}
-
   </div>;
 }
 
@@ -4801,40 +4991,34 @@ function EmojiTab() {
 function ArticleRewriteTab() {
   const [url, setUrl] = useState("");
   const [step, setStep] = useState("idle"); // idle | scraping | rewriting | done | error
-  const [scraped, setScraped] = useState(null); // {title, text, images:[]}
-  const [processedImages, setProcessedImages] = useState([]); // [{original, processed, name}]
+  const [scraped, setScraped] = useState(null);
+  const [processedImages, setProcessedImages] = useState([]);
   const [rewrittenTitle, setRewrittenTitle] = useState("");
   const [rewrittenText, setRewrittenText] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-  const [imgProgress, setImgProgress] = useState(0);
   const [copiedText, setCopiedText] = useState(false);
 
   const reset = () => {
     setUrl(""); setStep("idle"); setScraped(null);
     setProcessedImages([]); setRewrittenTitle(""); setRewrittenText("");
-    setErrorMsg(""); setImgProgress(0);
+    setErrorMsg("");
   };
 
-  // ── 이미지 처리 (EXIF 제거 + 약간의 밝기·대비 보정) ──────────────────
   const processImage = (src) => new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = img.width; canvas.height = img.height;
       const ctx = canvas.getContext("2d");
-      // 기본 그리기 (EXIF 자동 제거)
       ctx.drawImage(img, 0, 0);
-      // 약한 밝기·대비 보정 (픽셀 처리)
       try {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const d = imageData.data;
         for (let i = 0; i < d.length; i += 4) {
-          // 대비 +10, 밝기 +5
-          d[i]   = Math.min(255, Math.max(0, (d[i]   - 128) * 1.08 + 128 + 5));
-          d[i+1] = Math.min(255, Math.max(0, (d[i+1] - 128) * 1.08 + 128 + 5));
-          d[i+2] = Math.min(255, Math.max(0, (d[i+2] - 128) * 1.08 + 128 + 5));
+          d[i]   = Math.min(255, Math.max(0, (d[i]   - 128) * 1.08 + 133));
+          d[i+1] = Math.min(255, Math.max(0, (d[i+1] - 128) * 1.08 + 133));
+          d[i+2] = Math.min(255, Math.max(0, (d[i+2] - 128) * 1.08 + 133));
         }
         ctx.putImageData(imageData, 0, 0);
       } catch(e) {}
@@ -4844,11 +5028,9 @@ function ArticleRewriteTab() {
       }, "image/jpeg", 0.92);
     };
     img.onerror = () => resolve(null);
-    // CORS 프록시를 통해 이미지 로드
     img.src = `/api/img-proxy?url=${encodeURIComponent(src)}`;
   });
 
-  // ── 메인 파이프라인 ───────────────────────────────────────────────────
   const run = async () => {
     if (!url.trim()) return;
     setStep("scraping"); setErrorMsg("");
@@ -4866,16 +5048,13 @@ function ArticleRewriteTab() {
       const { title, text, images } = scrapeData.data;
       setScraped({ title, text, images });
 
-      // 2. 이미지 처리
+      // 2. 이미지 처리 (대표 1장)
       setStep("rewriting");
       const imgResults = [];
-      const validImgs = images.slice(0, 10); // 최대 10장
-      for (let i = 0; i < validImgs.length; i++) {
-        setImgProgress(Math.round(((i) / validImgs.length) * 100));
-        const result = await processImage(validImgs[i]);
-        if (result) imgResults.push({ original: validImgs[i], processed: result.dataUrl, blob: result.blob });
+      if (images && images.length > 0) {
+        const result = await processImage(images[0]);
+        if (result) imgResults.push({ original: images[0], processed: result.dataUrl, blob: result.blob });
       }
-      setImgProgress(100);
       setProcessedImages(imgResults);
 
       // 3. AI 리라이팅
@@ -4889,17 +5068,17 @@ ${text.slice(0, 4000)}
 1. 기사 형식 유지 — 원문이 뉴스 기사면 리라이팅 결과도 뉴스 기사 형식으로 유지
 2. 내용 요약·삭제 금지 — 원문에 포함된 모든 정보, 사실, 수치, 인용구를 빠짐없이 포함. 글의 길이와 정보량은 원문과 동일하게 유지
 3. 표현만 바꿔쓰기 — 단어, 어휘, 문장 구조, 말투를 자연스럽게 바꿔서 원문과 다른 사람이 쓴 것처럼 만들 것. 문장을 그대로 옮기지 말 것
-4. 뉴스 기사체 유지 — 문어체, 객관적 어투, 자연스러운 문장 흐름 유지. 블로그 말투(-요, -니다 혼용) 사용 금지
+4. 뉴스 기사체 유지 — 문어체, 객관적 어투, 자연스러운 문장 흐름 유지. 블로그 말투 사용 금지
 5. 제목 새로 작성 — 원문 제목을 그대로 쓰지 말 것. 본문 핵심 내용을 담되 단어·구조를 완전히 다르게 새로 작성. 원문 제목과 단어가 겹치지 않도록 할 것
 
 반드시 순수 JSON만 출력 (마크다운 백틱 없이):
 {"title":"리라이팅된 제목","content":"리라이팅된 본문"}`;
 
-      const raw = await callClaude(
+      const raw = await callClaudeStream(
         [{ role: "user", content: rewritePrompt }],
-        "You are a professional Korean blog writer. Output ONLY valid JSON, no markdown backticks.",
-        4000,
-        "claude-sonnet-4-6"
+        "You are a professional Korean news writer. Output ONLY valid JSON, no markdown backticks.",
+        3500,
+        "claude-sonnet-4-5-20250929"
       );
       const s = raw.indexOf("{"); const e = raw.lastIndexOf("}");
       const parsed = JSON.parse(s !== -1 && e !== -1 ? raw.slice(s, e+1) : raw);
@@ -4913,13 +5092,6 @@ ${text.slice(0, 4000)}
     }
   };
 
-  const downloadImage = (item, idx) => {
-    const a = document.createElement("a");
-    a.href = item.processed;
-    a.download = `rewrite_img_${idx+1}.jpg`;
-    a.click();
-  };
-
   const copyText = () => {
     navigator.clipboard.writeText(`${rewrittenTitle}\n\n${rewrittenText}`);
     setCopiedText(true);
@@ -4929,67 +5101,60 @@ ${text.slice(0, 4000)}
   const isRunning = step === "scraping" || step === "rewriting";
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
-
     {/* URL 입력 */}
     <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px"}}>
       <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"10px"}}>🔗 기사 URL 입력</div>
       <div style={{display:"flex",gap:"8px"}}>
-        <input
-          value={url}
-          onChange={e => setUrl(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && !isRunning && run()}
+        <input value={url} onChange={e=>setUrl(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&!isRunning&&run()}
           placeholder="https://news.example.com/article/..."
           disabled={isRunning}
           style={{flex:1,padding:"10px 14px",background:"#0d1117",border:"1px solid #30363d",
             borderRadius:"8px",color:"#e6edf3",fontSize:"13px",outline:"none",
             fontFamily:"'Noto Sans KR',sans-serif",opacity:isRunning?0.6:1}}
           onFocus={e=>e.target.style.borderColor="#58a6ff"}
-          onBlur={e=>e.target.style.borderColor="#30363d"}
-        />
-        <button onClick={run} disabled={isRunning || !url.trim()}
+          onBlur={e=>e.target.style.borderColor="#30363d"}/>
+        <button onClick={run} disabled={isRunning||!url.trim()}
           style={{padding:"10px 20px",background:isRunning||!url.trim()?"#21262d":"linear-gradient(135deg,#1f6feb,#8957e5)",
             color:isRunning||!url.trim()?"#484f58":"#fff",border:"none",borderRadius:"8px",
             cursor:isRunning||!url.trim()?"not-allowed":"pointer",
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,whiteSpace:"nowrap"}}>
-          {isRunning ? "⏳ 처리중..." : "🚀 시작"}
+          {isRunning?"⏳ 처리중...":"🚀 시작"}
         </button>
-        {step !== "idle" && <button onClick={reset}
+        {step!=="idle"&&<button onClick={reset}
           style={{padding:"10px 14px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-            borderRadius:"8px",cursor:"pointer",fontSize:"13px"}}>🗑️ 초기화</button>}
+            borderRadius:"8px",cursor:"pointer",fontSize:"13px"}}>🗑️</button>}
       </div>
     </div>
 
     {/* 진행 상태 */}
-    {isRunning && (
-      <div style={{background:"#0d1e33",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"18px"}}>
-        <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-          {[
-            {label:"기사 스크래핑", done: step !== "scraping", active: step === "scraping"},
-            {label:`이미지 처리 (${imgProgress}%)`, done: step === "done", active: step === "rewriting" && imgProgress < 100},
-            {label:"AI 리라이팅", done: step === "done", active: step === "rewriting" && imgProgress === 100},
-          ].map((s,i) => (
-            <div key={i} style={{display:"flex",alignItems:"center",gap:"10px"}}>
-              <span style={{fontSize:"16px"}}>{s.done?"✅":s.active?"⏳":"⬜"}</span>
-              <span style={{color:s.done?"#3fb950":s.active?"#ffa657":"#484f58",fontSize:"13px",fontWeight:s.active?700:400}}>
-                {s.label}
-              </span>
-            </div>
-          ))}
-        </div>
+    {isRunning&&(
+      <div style={{background:"#0d1e33",border:"1px solid #1f6feb44",borderRadius:"12px",padding:"16px"}}>
+        {[
+          {label:"기사 스크래핑", done:step!=="scraping", active:step==="scraping"},
+          {label:"이미지 처리 (EXIF 제거 + 보정)", done:step==="done", active:step==="rewriting"&&!rewrittenText},
+          {label:"AI 리라이팅", done:step==="done", active:step==="rewriting"&&!!scraped},
+        ].map((s,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:i<2?"8px":"0"}}>
+            <span style={{fontSize:"14px"}}>{s.done?"✅":s.active?"⏳":"⬜"}</span>
+            <span style={{color:s.done?"#3fb950":s.active?"#ffa657":"#484f58",fontSize:"13px",fontWeight:s.active?700:400}}>
+              {s.label}
+            </span>
+          </div>
+        ))}
       </div>
     )}
 
     {/* 에러 */}
-    {step === "error" && (
-      <div style={{background:"#2d0b0b",border:"1px solid #f8514944",borderRadius:"12px",padding:"16px",color:"#f85149",fontSize:"13px"}}>
+    {step==="error"&&(
+      <div style={{background:"#2d0b0b",border:"1px solid #f8514944",borderRadius:"12px",padding:"14px",color:"#f85149",fontSize:"13px"}}>
         ❌ {errorMsg}
       </div>
     )}
 
     {/* 결과 */}
-    {step === "done" && (
+    {step==="done"&&(
       <>
-        {/* 리라이팅 결과 */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
             <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700}}>✍️ 리라이팅 결과</div>
@@ -4997,10 +5162,9 @@ ${text.slice(0, 4000)}
               style={{padding:"6px 14px",background:copiedText?"#2ea043":"#21262d",
                 color:copiedText?"#fff":"#8b949e",border:"1px solid #30363d",
                 borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600}}>
-              {copiedText ? "✅ 복사됨!" : "📋 전체 복사"}
+              {copiedText?"✅ 복사됨!":"📋 전체 복사"}
             </button>
           </div>
-          {/* 제목 */}
           <div style={{marginBottom:"10px"}}>
             <div style={{color:"#484f58",fontSize:"11px",marginBottom:"4px"}}>제목</div>
             <input value={rewrittenTitle} onChange={e=>setRewrittenTitle(e.target.value)}
@@ -5008,10 +5172,8 @@ ${text.slice(0, 4000)}
                 borderRadius:"8px",color:"#e6edf3",fontSize:"14px",fontWeight:700,outline:"none",
                 fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
               onFocus={e=>e.target.style.borderColor="#58a6ff"}
-              onBlur={e=>e.target.style.borderColor="#30363d"}
-            />
+              onBlur={e=>e.target.style.borderColor="#30363d"}/>
           </div>
-          {/* 본문 */}
           <div>
             <div style={{color:"#484f58",fontSize:"11px",marginBottom:"4px"}}>본문 ({rewrittenText.length.toLocaleString()}자)</div>
             <textarea value={rewrittenText} onChange={e=>setRewrittenText(e.target.value)} rows={14}
@@ -5020,42 +5182,35 @@ ${text.slice(0, 4000)}
                 fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",lineHeight:"1.7",
                 resize:"vertical",outline:"none"}}
               onFocus={e=>e.target.style.borderColor="#58a6ff"}
-              onBlur={e=>e.target.style.borderColor="#30363d"}
-            />
+              onBlur={e=>e.target.style.borderColor="#30363d"}/>
           </div>
         </div>
 
-        {/* 처리된 이미지 */}
-        {processedImages.length > 0 && (
-          <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px"}}>
-            <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"12px"}}>
-              🖼️ 처리된 이미지 ({processedImages.length}장) — EXIF 제거 + 자동보정 완료
+        {processedImages.length>0&&(
+          <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
+            <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"10px"}}>
+              🖼️ 대표 이미지 — EXIF 제거 + 자동보정 완료
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:"10px"}}>
-              {processedImages.map((item, idx) => (
-                <div key={idx} style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"10px",overflow:"hidden"}}>
-                  <img src={item.processed} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",display:"block"}}/>
-                  <div style={{padding:"8px"}}>
-                    <button onClick={() => downloadImage(item, idx)}
-                      style={{width:"100%",padding:"6px",background:"#21262d",color:"#8b949e",
-                        border:"1px solid #30363d",borderRadius:"6px",cursor:"pointer",
-                        fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px"}}>
-                      ⬇️ 저장
-                    </button>
-                  </div>
-                </div>
-              ))}
+            <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+              <img src={processedImages[0].processed} alt=""
+                style={{width:"120px",height:"80px",objectFit:"cover",borderRadius:"8px",border:"1px solid #30363d"}}/>
+              <button onClick={()=>{
+                const a=document.createElement("a");
+                a.href=processedImages[0].processed;
+                a.download=`article_img_${Date.now()}.jpg`;
+                a.click();
+              }} style={{padding:"8px 16px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+                borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px"}}>
+                ⬇️ 이미지 저장
+              </button>
             </div>
           </div>
         )}
 
-        {/* 원문 정보 */}
-        {scraped && (
-          <div style={{background:"#161b22",border:"1px solid #21262d",borderRadius:"10px",padding:"14px"}}>
-            <div style={{color:"#484f58",fontSize:"11px",fontWeight:700,marginBottom:"6px"}}>📄 원문 정보</div>
-            <div style={{color:"#8b949e",fontSize:"12px"}}>제목: {scraped.title}</div>
-            <div style={{color:"#484f58",fontSize:"11px",marginTop:"4px"}}>
-              원문 {scraped.text.length.toLocaleString()}자 · 이미지 {scraped.images.length}개 발견
+        {scraped&&(
+          <div style={{background:"#161b22",border:"1px solid #21262d",borderRadius:"10px",padding:"12px"}}>
+            <div style={{color:"#484f58",fontSize:"11px"}}>
+              📄 원문: {scraped.title} · {scraped.text.length.toLocaleString()}자 · 이미지 {scraped.images.length}개
             </div>
           </div>
         )}
@@ -5083,7 +5238,7 @@ function buildWritePrompt({ kw, year, category, smartBlockType, blogStrategy, bo
   const styleSection = hasBodies
     ? `
 [상위 노출 블로그 본문 분석 - 아래 ${bodies.length}개 글의 어휘 스타일·문체·구조를 분석해서 그 스타일로 작성할 것]
-${bodies.map((b,i) => `--- 상위글 ${i+1} ---\n${b}`).join("\n\n")}
+${bodies.map((b,i) => `--- 상위글 ${i+1} ---\n${b.slice(0,800)}`).join("\n\n")}
 
 어휘 스타일 적용 규칙:
 - 위 상위글들에서 자주 쓰인 어미·표현·문체를 파악해서 그대로 따를 것
@@ -5115,22 +5270,25 @@ ${styleSection}
 작성 규칙:
 0. 최우선 목표: 네이버 홈판(스마트블록)에 노출될 수 있는 글 구조와 품질 유지
 1. ${year}년 최신 정보 기준으로 작성
-2. 메인 키워드는 반드시 위에 명시된 "{mainKw}" 사용. 롱테일 주제에서 새로 추출하지 말 것
+2. 메인 키워드는 반드시 위에 명시된 "${mainKw}" 사용. 롱테일 주제에서 새로 추출하지 말 것
 3. 롱테일 키워드 내용이 글의 주요 목표
-4. 한글+공백 포함 최소 1,800자 ~ 2,500자 (필수 준수)
-5. 1,800자 미만이면 SEO에 맞춰 내용 보강 후 재작성
+4. 한글+공백 포함 최소 2,000자 ~ 3,000자 (필수 준수 — 네이버 C-Rank 기준 3,000자↑ 우수)
+5. 2,000자 미만이면 SEO에 맞춰 내용 보강 후 재작성
 6. 메인 키워드는 글 전체에서 최대 8회까지만 사용. 이 규칙은 절대 어길 수 없음. 8회 초과 시 즉시 재작성
 7. 메인 키워드 외 모든 단어는 최대 7회 이하로 사용. 특정 단어가 7회를 넘으면 동의어·유사어로 반드시 교체
 8. 키워드 밀도: 전체 본문의 1~2% 이내 유지. 같은 단어가 한 문단에 2회 이상 나오면 즉시 다른 표현으로 바꿀 것
-8. 네이버 SEO에 맞는 제목 1개 (메인 키워드 포함, 특수문자 없음, 예: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리")
-9. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 절대 금지. 바로 본론 시작
+9. 네이버 SEO에 맞는 제목 1개 (메인 키워드 포함, 특수문자 없음, 15~32자 적정, 예: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리")
+10. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 절대 금지. 바로 본론 시작
+11. 광고·협찬·체험단·무료제공·클릭하세요 같은 스팸성 표현 절대 사용 금지 (D.I.A. 어뷰징 척도 감점 요인)
 
-10. [소제목 형식] 네이버 블로그에 바로 붙여넣기 가능한 텍스트 형식으로 작성
+12. [소제목 형식 — 본문 구조화 필수] 네이버 블로그에 바로 붙여넣기 가능한 텍스트 형식으로 작성
     - 소제목은 반드시 아래 형식 사용: ▶ 소제목 텍스트
+    - 소제목은 최소 3개 이상 사용 (D.I.A. 모델 구조 점수 반영)
     - ##, **, <h2> 같은 마크다운·HTML 태그 절대 사용 금지
     - 소제목 앞뒤로 빈 줄 1개씩 추가
+    - 각 소제목 아래 최소 3~4문장 이상 작성 (단락이 너무 짧으면 C-Rank 감점)
 
-11. [표 형식] 표가 필요한 경우 아래 텍스트 표 형식만 사용. 글 전체에서 최대 2개까지만 허용. 표가 어울리지 않으면 0개도 가능.
+13. [표 형식] 표가 필요한 경우 아래 텍스트 표 형식만 사용. 글 전체에서 최대 2개까지만 허용. 표가 어울리지 않으면 0개도 가능.
     텍스트 표 형식 예시 (항목이 3개인 경우):
     ━━━━━━━━━━━━━━━━━━━━━━
     항목 | 내용1 | 내용2
@@ -5140,8 +5298,8 @@ ${styleSection}
     ━━━━━━━━━━━━━━━━━━━━━━
     - | 마크다운 표 절대 사용 금지
 
-12. 해시태그 5개 (본문 맨 끝에 한 줄로: #태그1 #태그2 #태그3 #태그4 #태그5)
-13. 문장 단위로 줄바꿈 필수: 각 문장이 끝나면 반드시 \\n을 삽입해 한 줄에 한 문장씩 작성할 것
+14. 해시태그 5개 (본문 맨 끝에 한 줄로: #태그1 #태그2 #태그3 #태그4 #태그5)
+15. 문장 단위로 줄바꿈 필수: 각 문장이 끝나면 반드시 \\n을 삽입해 한 줄에 한 문장씩 작성할 것
 
 반드시 순수 JSON만 출력. 마크다운 없이.
 {"title":"제목","main_keyword":"메인키워드","content":"본문전체(▶소제목,텍스트표,해시태그 포함)","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
@@ -5166,6 +5324,7 @@ export default function BlogTools(){
   const [videoDropdownTop,setVideoDropdownTop]=useState(0);
   const [videoDropdownLeft,setVideoDropdownLeft]=useState(0);
   const [kwResult,setKwResult]=useState(null);
+  const [pendingKeywordSearch,setPendingKeywordSearch]=useState("");
   const [pendingAnalyzeText,setPendingAnalyzeText]=useState("");
   const [pendingAnalyzePost,setPendingAnalyzePost]=useState(null); // {title,main_keyword,content,tags}
   // AnalyzeTab 상태 (탭 이동해도 유지)
@@ -5191,12 +5350,11 @@ export default function BlogTools(){
       const year = new Date().getFullYear();
       const bodies = await fetchBlogBodies(kw);
       const prompt = buildWritePrompt({ kw, year, smartBlockType, blogStrategy, bodies, mainKeyword: mainKeyword||kw });
-      const res = await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,
-          system:"You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",
-          messages:[{role:"user",content:prompt}]})});
-      const data = await res.json();
-      const raw = data.content?.[0]?.text||"";
+      const raw = await callClaudeStream(
+        [{role:"user",content:prompt}],
+        "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",
+        3500, "claude-sonnet-4-5-20250929"
+      );
       const s=raw.indexOf("{"); const e=raw.lastIndexOf("}");
       const parsed = JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
       const meta = {
@@ -5276,6 +5434,7 @@ export default function BlogTools(){
   const sharedProps={
     goAutoWrite,
     setActive, kwResult, setKwResult,
+    pendingKeywordSearch, setPendingKeywordSearch,
     pendingAnalyzeText, setPendingAnalyzeText,
     pendingAnalyzePost, setPendingAnalyzePost,
     analyzeText, setAnalyzeText,
