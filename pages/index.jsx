@@ -310,12 +310,9 @@ async function callClaudeStream(messages, system, maxTokens=3500, model="claude-
   if (onChunk) onChunk(text);
 
   return text
-    .replace(/^```json[
-]*/i, "")
-    .replace(/^```[
-]*/i, "")
-    .replace(/[
-]*```$/i, "")
+    .replace(/^```json\n*/i, "")
+    .replace(/^```\n*/i, "")
+    .replace(/\n*```$/i, "")
     .trim();
 }
 
