@@ -2210,6 +2210,7 @@ function MissingTab(){
   const [expanded,setExpanded]=useState(null);
   const [page,setPage]=useState(1);
   const PER_PAGE=10;
+  const [renderErr,setRenderErr]=useState("");
 
   // ── 방법1: 서버 API 통해 RSS fetch (CORS 우회) ──
   const fetchByBlogId=async()=>{
@@ -2450,6 +2451,8 @@ function MissingTab(){
   const SC={"노출":"#3fb950","누락":"#f85149"};
   const rankColor=r=>r===null?"#484f58":r<=3?"#3fb950":r<=10?"#58a6ff":r<=20?"#ffa657":"#ff7b72";
   const totalPages=posts?Math.ceil(posts.all.length/PER_PAGE):0;
+
+  if(renderErr) return <div style={{padding:"20px",color:"#ff7b72",background:"#2d1117",borderRadius:"10px",border:"1px solid #da3633"}}>⚠️ 렌더링 오류: {renderErr}</div>;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
     <style>{`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`}</style>
