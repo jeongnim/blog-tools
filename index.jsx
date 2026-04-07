@@ -2314,40 +2314,33 @@ function MissingTab(){
     try{
       const {text: body, loaded: bodyLoaded} = await fetchPostBody(post);
 
-      // ── Step 1: AI로 상위노출 가능 키워드 추출 (제목+태그 기반) ──
-      let kws = [];
-      try {
-        const tagStr = (post.tags||[]).join(', ');
-        const aiKwRes = await fetch('/api/claude', {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({
-            model:'claude-sonnet-4-20250514',
-            max_tokens:300,
-            messages:[{role:'user',content:
-              `네이버 블로그 글의 제목과 해시태그를 보고, 이 글이 상위노출될 가능성이 있는 검색 키워드 5개를 추출해줘.\n\n제목: ${post.title}\n해시태그: ${tagStr||'없음'}\n\n규칙:\n- 2~5단어로 이루어진 복합 키워드 우선 (예: 성동구 휴대폰성지, 스마트폰 교체 방법)\n- 검색량이 있을 것 같은 실용적인 키워드\n- 반드시 JSON 배열만 반환, 다른 설명 없이\n- 예시: ["성동구 휴대폰성지","스마트폰 교체","성동구 스마트폰","휴대폰 교체 방법","성동구 핸드폰"]\n\nJSON 배열만 출력:`
-            }]
-          })
-        });
-        if(aiKwRes.ok){
-          const aiKwData = await aiKwRes.json();
-          const rawText = (aiKwData.content||[]).find(c=>c.type==='text')?.text||'';
-          const cleaned = rawText.replace(/```json|```/g,'').trim();
-          const parsed = JSON.parse(cleaned);
-          if(Array.isArray(parsed)) kws = parsed.slice(0,5).map(k=>String(k).trim()).filter(Boolean);
+      // ── Step 1: 제목+태그에서 상위노출 키워드 조합 추출 ──
+      const buildKeywords = (title, tags) => {
+        const result = [];
+        const seen = new Set();
+        const add = (k) => { k = k.trim(); if(k && k.length >= 2 && !seen.has(k) && result.length < 5){ seen.add(k); result.push(k); }};
+
+        // 1순위: 해시태그 (이미 사람이 정한 키워드)
+        (tags||[]).forEach(t => add(t));
+
+        // 2순위: 불용어 제거 후 의미 단어 추출
+        const stopWords = new Set(['하는','하기','방법','방식','하면','이란','이다','입니다','합니다','있는','없는','위한','대한','통해','으로','에서','부터','까지','그리고','또는','하지만','그러나','그래서','때문','경우','경우에','정도','정말','진짜','너무','아주','매우','바로','이제','여기','저기','거기','이것','저것','그것','이런','저런','그런','모든','각각','함께','같이','같은','다른','더욱','더','가장','제일','특히','주로','보통','항상','자주','가끔','별로','전혀','완전','약간','조금','많이','적게']);
+        const words = (title.match(/[가-힣]{2,}/g)||[]).filter(w => !stopWords.has(w) && w.length >= 2);
+
+        // 3순위: 2-gram (연속 두 단어 조합) — 핵심
+        for(let i = 0; i < words.length - 1; i++){
+          add(words[i] + ' ' + words[i+1]);
         }
-      } catch(e) {}
-      // AI 실패 시 fallback: 태그 + 2-gram 조합
-      if(kws.length === 0){
-        const tagKws = (post.tags||[]).map(t=>t.trim()).filter(Boolean);
-        const words = (post.title.match(/[가-힣]{2,}/g)||[]).filter(w=>w.length>=2);
-        const combos = [];
-        for(let i=0;i<words.length-1;i++) combos.push(words[i]+' '+words[i+1]);
-        const seen=new Set();
-        for(const k of [...tagKws,...combos,...words]){
-          if(k&&!seen.has(k)&&kws.length<5){seen.add(k);kws.push(k);}
+        // 4순위: 3-gram (세 단어 조합)
+        for(let i = 0; i < words.length - 2; i++){
+          add(words[i] + ' ' + words[i+1] + ' ' + words[i+2]);
         }
-      }
+        // 5순위: 단일 의미 단어 (3자 이상)
+        words.filter(w => w.length >= 3).forEach(w => add(w));
+
+        return result;
+      };
+      const kws = buildKeywords(post.title, post.tags);
 
       // ── SEO 점수 계산 ──────────────────────────────────────────────────────
       const bodyNoSpace = body.replace(/\s/g, "").length;
@@ -2455,18 +2448,16 @@ function MissingTab(){
         await new Promise(res=>setTimeout(res,200));
       }
 
-      // 미노출(null) 제외 — 노출된 키워드만 저장
+      // 전체 키워드 저장 — null은 100위 밖으로 표시
       const exposedKeywords=kws
-        .map((kw,i)=>({keyword:kw,realRank:rankResults[i]}))
-        .filter(kw=>kw.realRank!==null)
-        .map((kw,i)=>({rank:i+1,keyword:kw.keyword,realRank:kw.realRank,rankLoading:false}));
+        .map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i],rankLoading:false}));
 
       setAnalysis(prev=>({...prev,[post.postNo]:{
         missingStatus, seoScore, seoDetail, titleRank,
         topKeywords:exposedKeywords
       }}));
     }catch(e){
-      setAnalysis(prev=>({...prev,[post.postNo]:{error:true}}));
+      setAnalysis(prev=>({...prev,[post.postNo]:{error:true, errorMsg: e?.message||String(e)}}));
     }
     setAnalyzing(-1);
   };
@@ -2482,7 +2473,7 @@ function MissingTab(){
   const RC={"낮음":"#3fb950","보통":"#ffa657","높음":"#ff7b72","매우높음":"#f85149"};
   const RB={"낮음":"#0d2019","보통":"#2d1e0a","높음":"#2d1117","매우높음":"#2d0b0b"};
   const SC={"노출":"#3fb950","누락":"#f85149"};
-  const rankColor=r=>r===null?"#484f58":r<=3?"#3fb950":r<=10?"#58a6ff":r<=20?"#ffa657":"#ff7b72";
+  const rankColor=r=>r==null?"#484f58":r<=3?"#3fb950":r<=10?"#58a6ff":r<=20?"#ffa657":"#ff7b72";
   const totalPages=posts?Math.ceil(posts.all.length/PER_PAGE):0;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
@@ -2659,7 +2650,7 @@ function MissingTab(){
                   <div key={i} style={{color:"#8b949e",fontSize:"11px",animation:`pulse 1.6s ease ${i*0.4}s infinite`}}>{msg}</div>
                 ))}
               </div>}
-              {a?.error&&<div style={{color:"#ff7b72",fontSize:"12px",marginTop:"3px"}}>⚠️ 분석 실패. 재시도 버튼을 눌러주세요.</div>}
+              {a?.error&&<div style={{color:"#ff7b72",fontSize:"12px",marginTop:"3px"}}>⚠️ 분석 실패: {a.errorMsg||"알 수 없는 오류"}. 재시도 버튼을 눌러주세요.</div>}
 
               {/* 키워드 순위 — 분석 완료 시 바로 표시 */}
               {a&&!a.error&&a.topKeywords&&(
@@ -2669,9 +2660,7 @@ function MissingTab(){
                     <div style={{color:"#8b949e",fontSize:"11px",padding:"4px 0"}}>⏳ 키워드 순위 조회 중...</div>
                   )}
                   {/* 완료 후 — 노출된 것만 표시 */}
-                  {!a.topKeywords.some(kw=>kw.rankLoading)&&a.topKeywords.length===0&&(
-                    <div style={{color:"#484f58",fontSize:"11px",padding:"4px 0"}}>노출 키워드 없음 (모두 100위권 밖)</div>
-                  )}
+
                   {!a.topKeywords.some(kw=>kw.rankLoading)&&a.topKeywords.map((kw,i)=>{
                     const rc=rankColor(kw.realRank);
                     return <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",
@@ -2688,7 +2677,7 @@ function MissingTab(){
                       </a>
                       <div style={{background:rc+"22",color:rc,border:`1px solid ${rc+"55"}`,
                         borderRadius:"6px",padding:"3px 10px",fontSize:"12px",fontWeight:800,minWidth:"40px",textAlign:"center",flexShrink:0}}>
-                        {kw.realRank}위
+                        {kw.realRank!=null?kw.realRank+"위":"100위↓"}
                       </div>
                     </div>;
                   })}
