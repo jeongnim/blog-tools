@@ -2314,16 +2314,33 @@ function MissingTab(){
     try{
       const {text: body, loaded: bodyLoaded} = await fetchPostBody(post);
 
-      // ── Step 1: 키워드 = 태그 + 제목 단어 합치기 (중복 제거, 최대 5개) ──
-      const tagKws = (post.tags||[]).map(t=>t.trim()).filter(Boolean);
-      const titleKws = (post.title.match(/[가-힣a-zA-Z0-9][가-힣a-zA-Z0-9\s]{1,}/g)||[])
-        .map(w=>w.trim()).filter(w=>w.length>=2);
-      const seen=new Set();
-      const kws=[];
-      for(const k of [...tagKws,...titleKws]){
-        const kNorm=k.trim();
-        if(kNorm&&!seen.has(kNorm)&&kws.length<5){seen.add(kNorm);kws.push(kNorm);}
-      }
+      // ── Step 1: 제목+태그에서 상위노출 키워드 조합 추출 ──
+      const buildKeywords = (title, tags) => {
+        const result = [];
+        const seen = new Set();
+        const add = (k) => { k = k.trim(); if(k && k.length >= 2 && !seen.has(k) && result.length < 5){ seen.add(k); result.push(k); }};
+
+        // 1순위: 해시태그 (이미 사람이 정한 키워드)
+        (tags||[]).forEach(t => add(t));
+
+        // 2순위: 불용어 제거 후 의미 단어 추출
+        const stopWords = new Set(['하는','하기','방법','방식','하면','이란','이다','입니다','합니다','있는','없는','위한','대한','통해','으로','에서','부터','까지','그리고','또는','하지만','그러나','그래서','때문','경우','경우에','정도','정말','진짜','너무','아주','매우','바로','이제','여기','저기','거기','이것','저것','그것','이런','저런','그런','모든','각각','함께','같이','같은','다른','더욱','더','가장','제일','특히','주로','보통','항상','자주','가끔','별로','전혀','완전','약간','조금','많이','적게']);
+        const words = (title.match(/[가-힣]{2,}/g)||[]).filter(w => !stopWords.has(w) && w.length >= 2);
+
+        // 3순위: 2-gram (연속 두 단어 조합) — 핵심
+        for(let i = 0; i < words.length - 1; i++){
+          add(words[i] + ' ' + words[i+1]);
+        }
+        // 4순위: 3-gram (세 단어 조합)
+        for(let i = 0; i < words.length - 2; i++){
+          add(words[i] + ' ' + words[i+1] + ' ' + words[i+2]);
+        }
+        // 5순위: 단일 의미 단어 (3자 이상)
+        words.filter(w => w.length >= 3).forEach(w => add(w));
+
+        return result;
+      };
+      const kws = buildKeywords(post.title, post.tags);
 
       // ── SEO 점수 계산 ──────────────────────────────────────────────────────
       const bodyNoSpace = body.replace(/\s/g, "").length;
@@ -2442,7 +2459,7 @@ function MissingTab(){
         topKeywords:exposedKeywords
       }}));
     }catch(e){
-      setAnalysis(prev=>({...prev,[post.postNo]:{error:true}}));
+      setAnalysis(prev=>({...prev,[post.postNo]:{error:true, errorMsg: e?.message||String(e)}}));
     }
     setAnalyzing(-1);
   };
@@ -2635,7 +2652,7 @@ function MissingTab(){
                   <div key={i} style={{color:"#8b949e",fontSize:"11px",animation:`pulse 1.6s ease ${i*0.4}s infinite`}}>{msg}</div>
                 ))}
               </div>}
-              {a?.error&&<div style={{color:"#ff7b72",fontSize:"12px",marginTop:"3px"}}>⚠️ 분석 실패. 재시도 버튼을 눌러주세요.</div>}
+              {a?.error&&<div style={{color:"#ff7b72",fontSize:"12px",marginTop:"3px"}}>⚠️ 분석 실패: {a.errorMsg||"알 수 없는 오류"}. 재시도 버튼을 눌러주세요.</div>}
 
               {/* 키워드 순위 — 분석 완료 시 바로 표시 */}
               {a&&!a.error&&a.topKeywords&&(
