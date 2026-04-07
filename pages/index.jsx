@@ -2210,7 +2210,6 @@ function MissingTab(){
   const [expanded,setExpanded]=useState(null);
   const [page,setPage]=useState(1);
   const PER_PAGE=10;
-  const [renderErr,setRenderErr]=useState("");
 
   // ── 방법1: 서버 API 통해 RSS fetch (CORS 우회) ──
   const fetchByBlogId=async()=>{
@@ -2219,23 +2218,33 @@ function MissingTab(){
     setLoadingFeed(true);setFeedError("");setPosts(null);setAnalysis({});setExpanded(null);
     try{
       const res=await fetch(`/api/blog-rss?blogId=${encodeURIComponent(id)}`);
-      if(!res.ok){const err=await res.json().catch(()=>({error:`오류 (${res.status})`}));throw new Error(err.error||`오류 (${res.status})`);}
+      if(!res.ok){const errText=await res.text();let errMsg=`오류 (${res.status})`;try{const j=JSON.parse(errText);errMsg=j.error||errMsg;}catch(e){}throw new Error(errMsg);}
       const xml=await res.text();
       if(!xml.includes("<item")) throw new Error("게시글을 찾을 수 없어요. 블로그 아이디를 다시 확인해주세요.");
       const doc=new DOMParser().parseFromString(xml,"application/xml");
-      const items=[...doc.querySelectorAll("item")];
+      // XML 파서 에러 체크
+      const parseErr=doc.querySelector("parsererror");
+      if(parseErr) throw new Error("RSS 피드를 파싱할 수 없습니다. 블로그 아이디를 확인해주세요.");
+      const items=[...doc.getElementsByTagName("item")];
       if(!items.length) throw new Error("최근 게시글이 없습니다.");
       const list=items.slice(0,10).map(it=>{
-        const title=it.querySelector("title")?.textContent?.trim()||"(제목 없음)";
-        const link=(it.querySelector("link")?.textContent||it.querySelector("guid")?.textContent||"").trim();
-        const pub=it.querySelector("pubDate")?.textContent||"";
-        const desc=(it.querySelector("description")?.textContent||"").replace(/<[^>]+>/g,"").trim().slice(0,300);
-        const postNo=link.match(/\/(\d+)$/)?.[1]||Math.random().toString().slice(2,10);
+        const title=it.getElementsByTagName("title")[0]?.textContent?.trim()||"(제목 없음)";
+        // <link>는 XML에서 querySelector로 못 읽히는 경우가 있어 정규식으로 추출
+        const rawLink=it.getElementsByTagName("link")[0]?.textContent?.trim()||"";
+        const guid=it.getElementsByTagName("guid")[0]?.textContent?.trim()||"";
+        // 정규식 fallback: XML 원문에서 직접 추출
+        const xmlStr=it.outerHTML||"";
+        const linkRegex=/<link>([^<]+)<\/link>/i;
+        const linkFromRaw=xmlStr.match(linkRegex)?.[1]?.trim()||"";
+        const link=rawLink||linkFromRaw||guid||"";
+        const pub=it.getElementsByTagName("pubDate")[0]?.textContent||"";
+        const desc=(it.getElementsByTagName("description")[0]?.textContent||"").replace(/<[^>]+>/g,"").trim().slice(0,300);
+        const postNo=link.match(/\/(\d+)(?:[?#].*)?$/)?.[1]||guid.match(/\/(\d+)(?:[?#].*)?$/)?.[1]||Math.random().toString().slice(2,10);
         // category 태그에서 블로그 태그(#태그) 추출
-        const categories=[...it.querySelectorAll("category")].map(c=>c.textContent?.trim()).filter(Boolean);
+        const categories=[...it.getElementsByTagName("category")].map(c=>c.textContent?.trim()).filter(Boolean);
         let date="";
         try{if(pub){const d=new Date(pub);date=`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`;}}catch(e){}
-        return{title,link,postNo,date,description:desc,tags:categories,source:"rss"};
+        return{title,link,postNo,date,description:desc,tags:categories,source:"rss",_blogId:id};
       });
       setPosts({all:list,current:list.slice(0,PER_PAGE),total:list.length,page:1,blogId:id});
       setPage(1);
@@ -2252,7 +2261,7 @@ function MissingTab(){
     const m=url.match(/blog\.naver\.com\/([^/\s?#]+)\/(\d+)/);
     if(!m){alert("올바른 네이버 블로그 URL을 입력해주세요.\n예: https://blog.naver.com/아이디/포스트번호");return;}
     const postNo=m[2];
-    const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual"};
+    const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual",_blogId:m[1]};
     setPosts({all:[post],current:[post],total:1,page:1,blogId:m[1]});
     setPage(1);setAnalysis({});setExpanded(null);
     setTimeout(()=>runAnalyze(post,0),80);
@@ -2393,7 +2402,7 @@ function MissingTab(){
 
       // ── Step 2: 글 제목으로 네이버 검색 → 실제 누락 여부 확인 ──
       const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
-      const extractedBlogId=urlMatch?.[1]||posts?.blogId||"";
+      const extractedBlogId=urlMatch?.[1]||post._blogId||"";
       const extractedPostNo=urlMatch?.[2]||post.postNo||"";
 
       // 제목 전체를 검색어로 넣어서 내 글이 결과에 있는지 확인
@@ -2451,8 +2460,6 @@ function MissingTab(){
   const SC={"노출":"#3fb950","누락":"#f85149"};
   const rankColor=r=>r===null?"#484f58":r<=3?"#3fb950":r<=10?"#58a6ff":r<=20?"#ffa657":"#ff7b72";
   const totalPages=posts?Math.ceil(posts.all.length/PER_PAGE):0;
-
-  if(renderErr) return <div style={{padding:"20px",color:"#ff7b72",background:"#2d1117",borderRadius:"10px",border:"1px solid #da3633"}}>⚠️ 렌더링 오류: {renderErr}</div>;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
     <style>{`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`}</style>
@@ -2589,6 +2596,8 @@ function MissingTab(){
       </div>
 
       {posts.current.map((post,idx)=>{
+        const a=analysis[post.postNo];
+        const isAn=analyzing===idx;
         return <div key={post.postNo} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
           <div style={{padding:"13px 16px",display:"flex",alignItems:"flex-start",gap:"10px"}}>
             <div style={{color:"#484f58",fontSize:"11px",fontWeight:700,minWidth:"20px",paddingTop:"3px",flexShrink:0,textAlign:"right"}}>
@@ -2705,6 +2714,7 @@ const EMOJI_CATEGORIES = [
   { id:"flag", label:"🚩 깃발", emojis:"🏁 🚩 🎌 🏴 🏳️ 🏳️‍🌈 🏳️‍⚧️ 🏴‍☠️ 🇺🇳 🇰🇷 🇺🇸 🇯🇵 🇨🇳 🇬🇧 🇫🇷 🇩🇪 🇮🇹 🇪🇸 🇷🇺 🇧🇷 🇮🇳 🇦🇺 🇨🇦 🇲🇽 🇰🇵 🇵🇭 🇻🇳 🇹🇭 🇮🇩 🇲🇾 🇸🇬 🇭🇰 🇹🇼 🇸🇦 🇦🇪 🇹🇷 🇪🇬 🇿🇦 🇳🇬 🇦🇷 🇨🇱 🇨🇴 🇵🇪 🇪🇺 🇵🇹 🇳🇱 🇧🇪 🇨🇭 🇦🇹 🇵🇱 🇸🇪 🇳🇴 🇩🇰 🇫🇮 🇬🇷 🇨🇿 🇭🇺 🇷🇴 🇺🇦 🇮🇱 🇮🇷 🇮🇶 🇵🇰 🇧🇩 🇳🇵 🇱🇰 🇲🇲 🇰🇭 🇱🇦 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🏴󠁧󠁢󠁳󠁣󠁴󠁿 🏴󠁧󠁢󠁷󠁬󠁳󠁿" },
 ];
 
+// ─── TAB: 동영상 압축 (FFmpeg.wasm) ────────────────────────────────────────
 // ─── TAB: 동영상 압축 (FFmpeg.wasm) ────────────────────────────────────────
 function VideoTab(){
   const [file,setFile]=useState(null);
