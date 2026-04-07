@@ -310,12 +310,9 @@ async function callClaudeStream(messages, system, maxTokens=3500, model="claude-
   if (onChunk) onChunk(text);
 
   return text
-    .replace(/^```json[
-]*/i, "")
-    .replace(/^```[
-]*/i, "")
-    .replace(/[
-]*```$/i, "")
+    .replace(/^```json\n*/i, "")
+    .replace(/^```\n*/i, "")
+    .replace(/\n*```$/i, "")
     .trim();
 }
 
@@ -2221,23 +2218,33 @@ function MissingTab(){
     setLoadingFeed(true);setFeedError("");setPosts(null);setAnalysis({});setExpanded(null);
     try{
       const res=await fetch(`/api/blog-rss?blogId=${encodeURIComponent(id)}`);
-      if(!res.ok){const err=await res.json().catch(()=>({error:`오류 (${res.status})`}));throw new Error(err.error||`오류 (${res.status})`);}
+      if(!res.ok){const errText=await res.text();let errMsg=`오류 (${res.status})`;try{const j=JSON.parse(errText);errMsg=j.error||errMsg;}catch(e){}throw new Error(errMsg);}
       const xml=await res.text();
       if(!xml.includes("<item")) throw new Error("게시글을 찾을 수 없어요. 블로그 아이디를 다시 확인해주세요.");
       const doc=new DOMParser().parseFromString(xml,"application/xml");
-      const items=[...doc.querySelectorAll("item")];
+      // XML 파서 에러 체크
+      const parseErr=doc.querySelector("parsererror");
+      if(parseErr) throw new Error("RSS 피드를 파싱할 수 없습니다. 블로그 아이디를 확인해주세요.");
+      const items=[...doc.getElementsByTagName("item")];
       if(!items.length) throw new Error("최근 게시글이 없습니다.");
       const list=items.slice(0,10).map(it=>{
-        const title=it.querySelector("title")?.textContent?.trim()||"(제목 없음)";
-        const link=(it.querySelector("link")?.textContent||it.querySelector("guid")?.textContent||"").trim();
-        const pub=it.querySelector("pubDate")?.textContent||"";
-        const desc=(it.querySelector("description")?.textContent||"").replace(/<[^>]+>/g,"").trim().slice(0,300);
-        const postNo=link.match(/\/(\d+)$/)?.[1]||Math.random().toString().slice(2,10);
+        const title=it.getElementsByTagName("title")[0]?.textContent?.trim()||"(제목 없음)";
+        // <link>는 XML에서 querySelector로 못 읽히는 경우가 있어 정규식으로 추출
+        const rawLink=it.getElementsByTagName("link")[0]?.textContent?.trim()||"";
+        const guid=it.getElementsByTagName("guid")[0]?.textContent?.trim()||"";
+        // 정규식 fallback: XML 원문에서 직접 추출
+        const xmlStr=it.outerHTML||"";
+        const linkRegex=/<link>([^<]+)<\/link>/i;
+        const linkFromRaw=xmlStr.match(linkRegex)?.[1]?.trim()||"";
+        const link=rawLink||linkFromRaw||guid||"";
+        const pub=it.getElementsByTagName("pubDate")[0]?.textContent||"";
+        const desc=(it.getElementsByTagName("description")[0]?.textContent||"").replace(/<[^>]+>/g,"").trim().slice(0,300);
+        const postNo=link.match(/\/(\d+)(?:[?#].*)?$/)?.[1]||guid.match(/\/(\d+)(?:[?#].*)?$/)?.[1]||Math.random().toString().slice(2,10);
         // category 태그에서 블로그 태그(#태그) 추출
-        const categories=[...it.querySelectorAll("category")].map(c=>c.textContent?.trim()).filter(Boolean);
+        const categories=[...it.getElementsByTagName("category")].map(c=>c.textContent?.trim()).filter(Boolean);
         let date="";
         try{if(pub){const d=new Date(pub);date=`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`;}}catch(e){}
-        return{title,link,postNo,date,description:desc,tags:categories,source:"rss"};
+        return{title,link,postNo,date,description:desc,tags:categories,source:"rss",_blogId:id};
       });
       setPosts({all:list,current:list.slice(0,PER_PAGE),total:list.length,page:1,blogId:id});
       setPage(1);
@@ -2254,7 +2261,7 @@ function MissingTab(){
     const m=url.match(/blog\.naver\.com\/([^/\s?#]+)\/(\d+)/);
     if(!m){alert("올바른 네이버 블로그 URL을 입력해주세요.\n예: https://blog.naver.com/아이디/포스트번호");return;}
     const postNo=m[2];
-    const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual"};
+    const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual",_blogId:m[1]};
     setPosts({all:[post],current:[post],total:1,page:1,blogId:m[1]});
     setPage(1);setAnalysis({});setExpanded(null);
     setTimeout(()=>runAnalyze(post,0),80);
@@ -2307,15 +2314,39 @@ function MissingTab(){
     try{
       const {text: body, loaded: bodyLoaded} = await fetchPostBody(post);
 
-      // ── Step 1: 키워드 = 태그 + 제목 단어 합치기 (중복 제거, 최대 5개) ──
-      const tagKws = (post.tags||[]).map(t=>t.trim()).filter(Boolean);
-      const titleKws = (post.title.match(/[가-힣a-zA-Z0-9][가-힣a-zA-Z0-9\s]{1,}/g)||[])
-        .map(w=>w.trim()).filter(w=>w.length>=2);
-      const seen=new Set();
-      const kws=[];
-      for(const k of [...tagKws,...titleKws]){
-        const kNorm=k.trim();
-        if(kNorm&&!seen.has(kNorm)&&kws.length<5){seen.add(kNorm);kws.push(kNorm);}
+      // ── Step 1: AI로 상위노출 가능 키워드 추출 (제목+태그 기반) ──
+      let kws = [];
+      try {
+        const tagStr = (post.tags||[]).join(', ');
+        const aiKwRes = await fetch('/api/claude', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            model:'claude-sonnet-4-20250514',
+            max_tokens:300,
+            messages:[{role:'user',content:
+              `네이버 블로그 글의 제목과 해시태그를 보고, 이 글이 상위노출될 가능성이 있는 검색 키워드 5개를 추출해줘.\n\n제목: ${post.title}\n해시태그: ${tagStr||'없음'}\n\n규칙:\n- 2~5단어로 이루어진 복합 키워드 우선 (예: 성동구 휴대폰성지, 스마트폰 교체 방법)\n- 검색량이 있을 것 같은 실용적인 키워드\n- 반드시 JSON 배열만 반환, 다른 설명 없이\n- 예시: ["성동구 휴대폰성지","스마트폰 교체","성동구 스마트폰","휴대폰 교체 방법","성동구 핸드폰"]\n\nJSON 배열만 출력:`
+            }]
+          })
+        });
+        if(aiKwRes.ok){
+          const aiKwData = await aiKwRes.json();
+          const rawText = (aiKwData.content||[]).find(c=>c.type==='text')?.text||'';
+          const cleaned = rawText.replace(/```json|```/g,'').trim();
+          const parsed = JSON.parse(cleaned);
+          if(Array.isArray(parsed)) kws = parsed.slice(0,5).map(k=>String(k).trim()).filter(Boolean);
+        }
+      } catch(e) {}
+      // AI 실패 시 fallback: 태그 + 2-gram 조합
+      if(kws.length === 0){
+        const tagKws = (post.tags||[]).map(t=>t.trim()).filter(Boolean);
+        const words = (post.title.match(/[가-힣]{2,}/g)||[]).filter(w=>w.length>=2);
+        const combos = [];
+        for(let i=0;i<words.length-1;i++) combos.push(words[i]+' '+words[i+1]);
+        const seen=new Set();
+        for(const k of [...tagKws,...combos,...words]){
+          if(k&&!seen.has(k)&&kws.length<5){seen.add(k);kws.push(k);}
+        }
       }
 
       // ── SEO 점수 계산 ──────────────────────────────────────────────────────
@@ -2395,7 +2426,7 @@ function MissingTab(){
 
       // ── Step 2: 글 제목으로 네이버 검색 → 실제 누락 여부 확인 ──
       const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
-      const extractedBlogId=urlMatch?.[1]||posts?.blogId||"";
+      const extractedBlogId=urlMatch?.[1]||post._blogId||"";
       const extractedPostNo=urlMatch?.[2]||post.postNo||"";
 
       // 제목 전체를 검색어로 넣어서 내 글이 결과에 있는지 확인
@@ -2589,6 +2620,8 @@ function MissingTab(){
       </div>
 
       {posts.current.map((post,idx)=>{
+        const a=analysis[post.postNo];
+        const isAn=analyzing===idx;
         return <div key={post.postNo} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
           <div style={{padding:"13px 16px",display:"flex",alignItems:"flex-start",gap:"10px"}}>
             <div style={{color:"#484f58",fontSize:"11px",fontWeight:700,minWidth:"20px",paddingTop:"3px",flexShrink:0,textAlign:"right"}}>
@@ -2705,6 +2738,7 @@ const EMOJI_CATEGORIES = [
   { id:"flag", label:"🚩 깃발", emojis:"🏁 🚩 🎌 🏴 🏳️ 🏳️‍🌈 🏳️‍⚧️ 🏴‍☠️ 🇺🇳 🇰🇷 🇺🇸 🇯🇵 🇨🇳 🇬🇧 🇫🇷 🇩🇪 🇮🇹 🇪🇸 🇷🇺 🇧🇷 🇮🇳 🇦🇺 🇨🇦 🇲🇽 🇰🇵 🇵🇭 🇻🇳 🇹🇭 🇮🇩 🇲🇾 🇸🇬 🇭🇰 🇹🇼 🇸🇦 🇦🇪 🇹🇷 🇪🇬 🇿🇦 🇳🇬 🇦🇷 🇨🇱 🇨🇴 🇵🇪 🇪🇺 🇵🇹 🇳🇱 🇧🇪 🇨🇭 🇦🇹 🇵🇱 🇸🇪 🇳🇴 🇩🇰 🇫🇮 🇬🇷 🇨🇿 🇭🇺 🇷🇴 🇺🇦 🇮🇱 🇮🇷 🇮🇶 🇵🇰 🇧🇩 🇳🇵 🇱🇰 🇲🇲 🇰🇭 🇱🇦 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🏴󠁧󠁢󠁳󠁣󠁴󠁿 🏴󠁧󠁢󠁷󠁬󠁳󠁿" },
 ];
 
+// ─── TAB: 동영상 압축 (FFmpeg.wasm) ────────────────────────────────────────
 // ─── TAB: 동영상 압축 (FFmpeg.wasm) ────────────────────────────────────────
 function VideoTab(){
   const [file,setFile]=useState(null);
@@ -5233,76 +5267,23 @@ async function fetchBlogBodies(keyword) {
 }
 
 function buildWritePrompt({ kw, year, category, smartBlockType, blogStrategy, bodies, mainKeyword }) {
-  const hasBodies = bodies && bodies.length > 0;
-
-  const styleSection = hasBodies
-    ? `
-[상위 노출 블로그 본문 분석 - 아래 ${bodies.length}개 글의 어휘 스타일·문체·구조를 분석해서 그 스타일로 작성할 것]
-${bodies.map((b,i) => `--- 상위글 ${i+1} ---\n${b.slice(0,800)}`).join("\n\n")}
-
-어휘 스타일 적용 규칙:
-- 위 상위글들에서 자주 쓰인 어미·표현·문체를 파악해서 그대로 따를 것
-- 단, 내용(사실/정보)은 절대 그대로 쓰지 말고 완전히 다르게 재구성할 것
-- 위 글들의 구조(소제목 배치, 단락 길이, 정보 밀도)를 참고해서 비슷하게 구성할 것`
-    : `
-어휘 스타일 규칙 (상위글 분석 불가 → 최적화 추측 적용):
-- 정보성 85% + 주관적 생각·감정 15% 비율로 작성
-- 문체: -니다 체와 -요 체를 자연스럽게 혼용 (딱딱하지 않게)
-- 예시: "~할 수 있습니다. 저도 처음엔 몰랐는데, 써보니까 정말 달랐어요."
-- 독자가 공감할 수 있는 경험담·감정 표현을 15% 비율로 자연스럽게 녹일 것
-- 단순 나열이 아닌 스토리텔링 흐름으로 정보 전달`;
-
   const mainKw = mainKeyword || kw;
-  const contextSection = category
-    ? `카테고리: "${category}"
-분야: ${category} 전문 블로거 관점으로 작성`
-    : `스마트블록 유형: ${smartBlockType||"블로그"}
-블로그 전략: ${blogStrategy||""}`;
+  const ctx = category
+    ? `카테고리: ${category}`
+    : `스마트블록: ${smartBlockType||"블로그"} / 전략: ${blogStrategy||""}`;
 
-  return `메인 키워드 (반드시 이 단어가 글의 중심): "${mainKw}"
-롱테일 주제 (이 내용을 글의 방향으로 활용): "${kw}"
-${contextSection}
-작성 기준 연도: ${year}년
+  return `키워드: "${mainKw}" / 주제: "${kw}" / ${ctx} / ${year}년 기준
 
-위 롱테일 키워드를 주제로 네이버 블로그 홈판 최적화 글을 작성해줘.
-${styleSection}
+네이버 블로그 홈판 최적화 글을 작성해줘:
+1. 본문 1,500~2,000자 (한글+공백)
+2. 소제목 ▶ 형식 3개 이상 (마크다운/HTML 금지)
+3. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
+4. 각 문장 끝 \n 삽입
+5. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
+6. 문체: -니다/-요 혼용, 정보성+경험담
 
-작성 규칙:
-0. 최우선 목표: 네이버 홈판(스마트블록)에 노출될 수 있는 글 구조와 품질 유지
-1. ${year}년 최신 정보 기준으로 작성
-2. 메인 키워드는 반드시 위에 명시된 "${mainKw}" 사용. 롱테일 주제에서 새로 추출하지 말 것
-3. 롱테일 키워드 내용이 글의 주요 목표
-4. 한글+공백 포함 최소 2,000자 ~ 3,000자 (필수 준수 — 네이버 C-Rank 기준 3,000자↑ 우수)
-5. 2,000자 미만이면 SEO에 맞춰 내용 보강 후 재작성
-6. 메인 키워드는 글 전체에서 최대 8회까지만 사용. 이 규칙은 절대 어길 수 없음. 8회 초과 시 즉시 재작성
-7. 메인 키워드 외 모든 단어는 최대 7회 이하로 사용. 특정 단어가 7회를 넘으면 동의어·유사어로 반드시 교체
-8. 키워드 밀도: 전체 본문의 1~2% 이내 유지. 같은 단어가 한 문단에 2회 이상 나오면 즉시 다른 표현으로 바꿀 것
-9. 네이버 SEO에 맞는 제목 1개 (메인 키워드 포함, 특수문자 없음, 15~32자 적정, 예: "기기변경 번호이동 조건별 차이점과 혜택 완전 정리")
-10. 글 첫 줄에 "안녕하세요", 블로거 이름, 자기소개 절대 금지. 바로 본론 시작
-11. 광고·협찬·체험단·무료제공·클릭하세요 같은 스팸성 표현 절대 사용 금지 (D.I.A. 어뷰징 척도 감점 요인)
-
-12. [소제목 형식 — 본문 구조화 필수] 네이버 블로그에 바로 붙여넣기 가능한 텍스트 형식으로 작성
-    - 소제목은 반드시 아래 형식 사용: ▶ 소제목 텍스트
-    - 소제목은 최소 3개 이상 사용 (D.I.A. 모델 구조 점수 반영)
-    - ##, **, <h2> 같은 마크다운·HTML 태그 절대 사용 금지
-    - 소제목 앞뒤로 빈 줄 1개씩 추가
-    - 각 소제목 아래 최소 3~4문장 이상 작성 (단락이 너무 짧으면 C-Rank 감점)
-
-13. [표 형식] 표가 필요한 경우 아래 텍스트 표 형식만 사용. 글 전체에서 최대 2개까지만 허용. 표가 어울리지 않으면 0개도 가능.
-    텍스트 표 형식 예시 (항목이 3개인 경우):
-    ━━━━━━━━━━━━━━━━━━━━━━
-    항목 | 내용1 | 내용2
-    ───────────────────────
-    행1  | 값1   | 값2
-    행2  | 값1   | 값2
-    ━━━━━━━━━━━━━━━━━━━━━━
-    - | 마크다운 표 절대 사용 금지
-
-14. 해시태그 5개 (본문 맨 끝에 한 줄로: #태그1 #태그2 #태그3 #태그4 #태그5)
-15. 문장 단위로 줄바꿈 필수: 각 문장이 끝나면 반드시 \\n을 삽입해 한 줄에 한 문장씩 작성할 것
-
-반드시 순수 JSON만 출력. 마크다운 없이.
-{"title":"제목","main_keyword":"메인키워드","content":"본문전체(▶소제목,텍스트표,해시태그 포함)","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
+순수 JSON만 (마크다운 없이):
+{"title":"제목(15~32자,키워드포함)","main_keyword":"${mainKw}","content":"본문","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
 }
 
 export default function BlogTools(){
@@ -5348,8 +5329,7 @@ export default function BlogTools(){
     setActive("analyze");
     try{
       const year = new Date().getFullYear();
-      const bodies = await fetchBlogBodies(kw);
-      const prompt = buildWritePrompt({ kw, year, smartBlockType, blogStrategy, bodies, mainKeyword: mainKeyword||kw });
+      const prompt = buildWritePrompt({ kw, year, smartBlockType, blogStrategy, bodies: [], mainKeyword: mainKeyword||kw });
       const raw = await callClaudeStream(
         [{role:"user",content:prompt}],
         "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",
