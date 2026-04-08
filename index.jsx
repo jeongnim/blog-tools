@@ -2314,33 +2314,64 @@ function MissingTab(){
     try{
       const {text: body, loaded: bodyLoaded} = await fetchPostBody(post);
 
-      // ── Step 1: 제목+태그에서 상위노출 키워드 조합 추출 ──
-      const buildKeywords = (title, tags) => {
-        const result = [];
+      // ── Step 1: 본문 크롤링 + Claude AI 키워드 추출 ──
+      // 본문은 이미 위에서 fetchPostBody로 가져온 body 사용
+      let kws = [];
+      try {
+        const tagStr = (post.tags||[]).slice(0,10).join(', ');
+        const bodySnippet = body.slice(0, 800); // 본문 앞 800자만 사용
+        const prompt = `네이버 블로그 글의 제목, 해시태그, 본문을 보고 이 글이 네이버 검색에서 상위노출될 가능성이 있는 핵심 키워드 5개를 추출해줘.
+
+제목: ${post.title}
+해시태그: ${tagStr||'없음'}
+본문 일부: ${bodySnippet||'없음'}
+
+규칙:
+- 실제로 네이버에서 사람들이 검색할 법한 구체적인 키워드
+- 단순 연속 단어 조합 금지 (예: "즉시 실천한", "실천한 대응" 같은 의미없는 조합 X)
+- 핵심 명사+명사, 명사+동사 조합 위주 (예: "SKT 해킹", "KT 해킹 사고", "해킹 대응 방법")
+- 검색량이 있을 것 같은 2~4단어 복합 키워드 우선
+- JSON 배열만 반환, 다른 텍스트 없이
+
+예시 출력: ["SKT 해킹","KT 해킹 사고","해킹 대응 방법","통신사 해킹","개인정보 유출 대처"]
+
+JSON 배열만 출력:`;
+
+        const aiRes = await fetch('/api/claude', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 200,
+            messages: [{role:'user', content: prompt}]
+          })
+        });
+        if(aiRes.ok){
+          const aiData = await aiRes.json();
+          const rawText = (aiData.content||[]).find(c=>c.type==='text')?.text||'';
+          const cleaned = rawText.replace(/```json|```/g,'').trim();
+          const parsed = JSON.parse(cleaned);
+          if(Array.isArray(parsed) && parsed.length > 0){
+            kws = parsed.slice(0,5).map(k=>String(k).trim()).filter(Boolean);
+          }
+        }
+      } catch(e) {
+        console.warn('[AI 키워드 추출 실패]', e?.message||e);
+      }
+
+      // AI 실패 시 fallback — 해시태그 + 제목 핵심어 추출
+      if(kws.length === 0){
         const seen = new Set();
-        const add = (k) => { k = k.trim(); if(k && k.length >= 2 && !seen.has(k) && result.length < 5){ seen.add(k); result.push(k); }};
-
-        // 1순위: 해시태그 (이미 사람이 정한 키워드)
-        (tags||[]).forEach(t => add(t));
-
-        // 2순위: 불용어 제거 후 의미 단어 추출
-        const stopWords = new Set(['하는','하기','방법','방식','하면','이란','이다','입니다','합니다','있는','없는','위한','대한','통해','으로','에서','부터','까지','그리고','또는','하지만','그러나','그래서','때문','경우','경우에','정도','정말','진짜','너무','아주','매우','바로','이제','여기','저기','거기','이것','저것','그것','이런','저런','그런','모든','각각','함께','같이','같은','다른','더욱','더','가장','제일','특히','주로','보통','항상','자주','가끔','별로','전혀','완전','약간','조금','많이','적게']);
-        const words = (title.match(/[가-힣]{2,}/g)||[]).filter(w => !stopWords.has(w) && w.length >= 2);
-
-        // 3순위: 2-gram (연속 두 단어 조합) — 핵심
-        for(let i = 0; i < words.length - 1; i++){
-          add(words[i] + ' ' + words[i+1]);
-        }
-        // 4순위: 3-gram (세 단어 조합)
-        for(let i = 0; i < words.length - 2; i++){
-          add(words[i] + ' ' + words[i+1] + ' ' + words[i+2]);
-        }
-        // 5순위: 단일 의미 단어 (3자 이상)
-        words.filter(w => w.length >= 3).forEach(w => add(w));
-
-        return result;
-      };
-      const kws = buildKeywords(post.title, post.tags);
+        const add = (k) => { k=(k||'').trim(); if(k&&k.length>=2&&!seen.has(k)&&kws.length<5){seen.add(k);kws.push(k);}};
+        (post.tags||[]).forEach(t=>add(t));
+        // 영문+한글 단어 분리 후 2-gram
+        const allWords = (post.title.match(/[가-힣A-Za-z0-9]+/g)||[]).filter(w=>w.length>=2);
+        const stopWords = new Set(['하는','하기','방법','하면','있는','없는','위한','대한','그리고','그래서','때문','정도','너무','아주','매우','바로','이제','같은','다른','가장','특히','주로','항상']);
+        const meaningful = allWords.filter(w=>!stopWords.has(w));
+        for(let i=0;i<meaningful.length-1;i++) add(meaningful[i]+' '+meaningful[i+1]);
+        for(let i=0;i<meaningful.length-2;i++) add(meaningful[i]+' '+meaningful[i+1]+' '+meaningful[i+2]);
+        meaningful.filter(w=>w.length>=3).forEach(w=>add(w));
+      }
 
       // ── SEO 점수 계산 ──────────────────────────────────────────────────────
       const bodyNoSpace = body.replace(/\s/g, "").length;
