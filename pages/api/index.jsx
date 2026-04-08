@@ -2314,15 +2314,63 @@ function MissingTab(){
     try{
       const {text: body, loaded: bodyLoaded} = await fetchPostBody(post);
 
-      // ── Step 1: 키워드 = 태그 + 제목 단어 합치기 (중복 제거, 최대 5개) ──
-      const tagKws = (post.tags||[]).map(t=>t.trim()).filter(Boolean);
-      const titleKws = (post.title.match(/[가-힣a-zA-Z0-9][가-힣a-zA-Z0-9\s]{1,}/g)||[])
-        .map(w=>w.trim()).filter(w=>w.length>=2);
-      const seen=new Set();
-      const kws=[];
-      for(const k of [...tagKws,...titleKws]){
-        const kNorm=k.trim();
-        if(kNorm&&!seen.has(kNorm)&&kws.length<5){seen.add(kNorm);kws.push(kNorm);}
+      // ── Step 1: 본문 크롤링 + Claude AI 키워드 추출 ──
+      // 본문은 이미 위에서 fetchPostBody로 가져온 body 사용
+      let kws = [];
+      try {
+        const tagStr = (post.tags||[]).slice(0,10).join(', ');
+        const bodySnippet = body.slice(0, 800); // 본문 앞 800자만 사용
+        const prompt = `네이버 블로그 글의 제목, 해시태그, 본문을 보고 이 글이 네이버 검색에서 상위노출될 가능성이 있는 핵심 키워드 5개를 추출해줘.
+
+제목: ${post.title}
+해시태그: ${tagStr||'없음'}
+본문 일부: ${bodySnippet||'없음'}
+
+규칙:
+- 실제로 네이버에서 사람들이 검색할 법한 구체적인 키워드
+- 단순 연속 단어 조합 금지 (예: "즉시 실천한", "실천한 대응" 같은 의미없는 조합 X)
+- 핵심 명사+명사, 명사+동사 조합 위주 (예: "SKT 해킹", "KT 해킹 사고", "해킹 대응 방법")
+- 검색량이 있을 것 같은 2~4단어 복합 키워드 우선
+- JSON 배열만 반환, 다른 텍스트 없이
+
+예시 출력: ["SKT 해킹","KT 해킹 사고","해킹 대응 방법","통신사 해킹","개인정보 유출 대처"]
+
+JSON 배열만 출력:`;
+
+        const aiRes = await fetch('/api/claude', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 200,
+            messages: [{role:'user', content: prompt}]
+          })
+        });
+        if(aiRes.ok){
+          const aiData = await aiRes.json();
+          const rawText = (aiData.content||[]).find(c=>c.type==='text')?.text||'';
+          const cleaned = rawText.replace(/```json|```/g,'').trim();
+          const parsed = JSON.parse(cleaned);
+          if(Array.isArray(parsed) && parsed.length > 0){
+            kws = parsed.slice(0,5).map(k=>String(k).trim()).filter(Boolean);
+          }
+        }
+      } catch(e) {
+        console.warn('[AI 키워드 추출 실패]', e?.message||e);
+      }
+
+      // AI 실패 시 fallback — 해시태그 + 제목 핵심어 추출
+      if(kws.length === 0){
+        const seen = new Set();
+        const add = (k) => { k=(k||'').trim(); if(k&&k.length>=2&&!seen.has(k)&&kws.length<5){seen.add(k);kws.push(k);}};
+        (post.tags||[]).forEach(t=>add(t));
+        // 영문+한글 단어 분리 후 2-gram
+        const allWords = (post.title.match(/[가-힣A-Za-z0-9]+/g)||[]).filter(w=>w.length>=2);
+        const stopWords = new Set(['하는','하기','방법','하면','있는','없는','위한','대한','그리고','그래서','때문','정도','너무','아주','매우','바로','이제','같은','다른','가장','특히','주로','항상']);
+        const meaningful = allWords.filter(w=>!stopWords.has(w));
+        for(let i=0;i<meaningful.length-1;i++) add(meaningful[i]+' '+meaningful[i+1]);
+        for(let i=0;i<meaningful.length-2;i++) add(meaningful[i]+' '+meaningful[i+1]+' '+meaningful[i+2]);
+        meaningful.filter(w=>w.length>=3).forEach(w=>add(w));
       }
 
       // ── SEO 점수 계산 ──────────────────────────────────────────────────────
@@ -2431,18 +2479,16 @@ function MissingTab(){
         await new Promise(res=>setTimeout(res,200));
       }
 
-      // 미노출(null) 제외 — 노출된 키워드만 저장
+      // 전체 키워드 저장 — null은 100위 밖으로 표시
       const exposedKeywords=kws
-        .map((kw,i)=>({keyword:kw,realRank:rankResults[i]}))
-        .filter(kw=>kw.realRank!==null)
-        .map((kw,i)=>({rank:i+1,keyword:kw.keyword,realRank:kw.realRank,rankLoading:false}));
+        .map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i],rankLoading:false}));
 
       setAnalysis(prev=>({...prev,[post.postNo]:{
         missingStatus, seoScore, seoDetail, titleRank,
         topKeywords:exposedKeywords
       }}));
     }catch(e){
-      setAnalysis(prev=>({...prev,[post.postNo]:{error:true}}));
+      setAnalysis(prev=>({...prev,[post.postNo]:{error:true, errorMsg: e?.message||String(e)}}));
     }
     setAnalyzing(-1);
   };
@@ -2458,7 +2504,7 @@ function MissingTab(){
   const RC={"낮음":"#3fb950","보통":"#ffa657","높음":"#ff7b72","매우높음":"#f85149"};
   const RB={"낮음":"#0d2019","보통":"#2d1e0a","높음":"#2d1117","매우높음":"#2d0b0b"};
   const SC={"노출":"#3fb950","누락":"#f85149"};
-  const rankColor=r=>r===null?"#484f58":r<=3?"#3fb950":r<=10?"#58a6ff":r<=20?"#ffa657":"#ff7b72";
+  const rankColor=r=>r==null?"#484f58":r<=3?"#3fb950":r<=10?"#58a6ff":r<=20?"#ffa657":"#ff7b72";
   const totalPages=posts?Math.ceil(posts.all.length/PER_PAGE):0;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
@@ -2596,6 +2642,8 @@ function MissingTab(){
       </div>
 
       {posts.current.map((post,idx)=>{
+        const a=analysis[post.postNo];
+        const isAn=analyzing===idx;
         return <div key={post.postNo} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
           <div style={{padding:"13px 16px",display:"flex",alignItems:"flex-start",gap:"10px"}}>
             <div style={{color:"#484f58",fontSize:"11px",fontWeight:700,minWidth:"20px",paddingTop:"3px",flexShrink:0,textAlign:"right"}}>
@@ -2633,7 +2681,7 @@ function MissingTab(){
                   <div key={i} style={{color:"#8b949e",fontSize:"11px",animation:`pulse 1.6s ease ${i*0.4}s infinite`}}>{msg}</div>
                 ))}
               </div>}
-              {a?.error&&<div style={{color:"#ff7b72",fontSize:"12px",marginTop:"3px"}}>⚠️ 분석 실패. 재시도 버튼을 눌러주세요.</div>}
+              {a?.error&&<div style={{color:"#ff7b72",fontSize:"12px",marginTop:"3px"}}>⚠️ 분석 실패: {a.errorMsg||"알 수 없는 오류"}. 재시도 버튼을 눌러주세요.</div>}
 
               {/* 키워드 순위 — 분석 완료 시 바로 표시 */}
               {a&&!a.error&&a.topKeywords&&(
@@ -2643,9 +2691,7 @@ function MissingTab(){
                     <div style={{color:"#8b949e",fontSize:"11px",padding:"4px 0"}}>⏳ 키워드 순위 조회 중...</div>
                   )}
                   {/* 완료 후 — 노출된 것만 표시 */}
-                  {!a.topKeywords.some(kw=>kw.rankLoading)&&a.topKeywords.length===0&&(
-                    <div style={{color:"#484f58",fontSize:"11px",padding:"4px 0"}}>노출 키워드 없음 (모두 100위권 밖)</div>
-                  )}
+
                   {!a.topKeywords.some(kw=>kw.rankLoading)&&a.topKeywords.map((kw,i)=>{
                     const rc=rankColor(kw.realRank);
                     return <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",
@@ -2662,7 +2708,7 @@ function MissingTab(){
                       </a>
                       <div style={{background:rc+"22",color:rc,border:`1px solid ${rc+"55"}`,
                         borderRadius:"6px",padding:"3px 10px",fontSize:"12px",fontWeight:800,minWidth:"40px",textAlign:"center",flexShrink:0}}>
-                        {kw.realRank}위
+                        {kw.realRank!=null?kw.realRank+"위":"100위↓"}
                       </div>
                     </div>;
                   })}
