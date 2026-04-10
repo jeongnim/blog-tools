@@ -959,7 +959,24 @@ JSON 형식:
         "You are a Korean blog SEO and quality analysis expert. Output ONLY valid JSON.", 4000);
       const si=raw.indexOf("{"), ei=raw.lastIndexOf("}");
       const parsed=JSON.parse(si!==-1&&ei!==-1?raw.slice(si,ei+1):raw);
-      parsed.morpheme.words=parsed.morpheme.words.sort((a,b)=>b.count-a.count);
+
+      // ── AI가 추출한 단어 목록으로 실제 텍스트에서 직접 카운트 (AI 추정값 사용 안 함) ──
+      const sourceText = text; // 분석 대상 원문
+      if(parsed.morpheme?.words){
+        parsed.morpheme.words = parsed.morpheme.words.map(item => {
+          const word = item.word;
+          if(!word) return item;
+          // 정규식으로 정확히 카운트 (단어 단위 매칭)
+          const escaped = word.replace(/[.*+?^${}()|[\]\]/g, '\$&');
+          const matches = sourceText.match(new RegExp(escaped, 'g'));
+          const realCount = matches ? matches.length : 0;
+          return { ...item, count: realCount };
+        })
+        // count 0인 건 제거, 내림차순 정렬
+        .filter(item => item.count > 0)
+        .sort((a,b) => b.count - a.count);
+      }
+
       setAiResult(parsed);
       setLastText(text);
       setActiveSection("quality");
@@ -1091,27 +1108,6 @@ JSON 형식:
         <span style={{color:"#58a6ff",lineHeight:"1.8"}}>{postMeta.tags.map(t=>"#"+t).join(" ")}</span></>}
       </div>
     </div>}
-
-    {/* ── 키워드 반복 초과 경고 ── */}
-    {postMeta&&postMeta._overLimit&&postMeta._overLimit.length>0&&(
-      <div style={{background:"#2d1117",border:"1px solid #f8514944",borderRadius:"10px",padding:"12px 14px"}}>
-        <div style={{color:"#ff7b72",fontWeight:700,fontSize:"13px",marginBottom:"8px"}}>
-          ⚠️ 단어 반복 초과 감지 — 아래 단어가 권장 횟수를 넘었어요
-        </div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
-          {postMeta._overLimit.map(([w,c],i)=>{
-            const isMain = w===postMeta.main_keyword||postMeta.main_keyword?.includes(w);
-            const limit = isMain ? 19 : 18;
-            return <span key={i} style={{background:"#f8514922",border:"1px solid #f8514944",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",color:"#ff7b72"}}>
-              <strong>{w}</strong> {c}회 <span style={{color:"#484f58",fontSize:"11px"}}>(제한 {limit}회)</span>
-            </span>;
-          })}
-        </div>
-        <div style={{color:"#8b949e",fontSize:"11px",marginTop:"8px"}}>
-          💡 본문에서 해당 단어를 유사어·대명사로 교체하거나 삭제해 주세요.
-        </div>
-      </div>
-    )}
 
     {/* ── Pollinations AI 단락별 이미지 생성 ── */}
     {postMeta&&<ImageGenSection
@@ -5318,14 +5314,10 @@ function buildWritePrompt({ kw, year, category, smartBlockType, blogStrategy, bo
 네이버 블로그 홈판 최적화 글을 작성해줘:
 1. 본문 1,500~2,000자 (한글+공백)
 2. 소제목 ▶ 형식 3개 이상 (마크다운/HTML 금지)
-3. 키워드 반복 제한 (반드시 준수):
-   - 메인 키워드("${mainKw}"): 최대 19회 이하
-   - 그 외 모든 단어(명사·동사·형용사): 각각 최대 18회 이하
-   - 글 완성 후 반드시 스스로 카운트해서 초과 여부 확인 후 제출
-4. 첫 줄 자기소개 금지, 광고성 표현 금지
-5. 각 문장 끝 \n 삽입
-6. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
-7. 문체: -니다/-요 혼용, 정보성+경험담
+3. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
+4. 각 문장 끝 \n 삽입
+5. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
+6. 문체: -니다/-요 혼용, 정보성+경험담
 
 순수 JSON만 (마크다운 없이):
 {"title":"제목(15~32자,키워드포함)","main_keyword":"${mainKw}","content":"본문","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
@@ -5382,36 +5374,12 @@ export default function BlogTools(){
       );
       const s=raw.indexOf("{"); const e=raw.lastIndexOf("}");
       const parsed = JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
-      // ── 키워드 빈도 후처리: 초과 단어 자동 감지 ──
-      const rawContent = parsed.content||"";
-      const mainKwFinal = mainKeyword||parsed.main_keyword||kw;
-      
-      const countWord = (text, word) => {
-        if(!word || !text) return 0;
-        // 단어 앞뒤가 한글/영문/숫자가 아닌 경계에서 매칭
-        const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const matches = text.match(new RegExp(escaped, 'g'));
-        return matches ? matches.length : 0;
-      };
-
-      // 초과 단어 감지 (경고용 메타데이터)
-      const words2 = (rawContent.match(/[가-힣]{2,}/g)||[]);
-      const freq2 = {};
-      words2.forEach(w => { freq2[w]=(freq2[w]||0)+1; });
-      const overLimit = Object.entries(freq2)
-        .filter(([w, c]) => {
-          const isMain = w === mainKwFinal || mainKwFinal.includes(w);
-          return isMain ? c > 19 : c > 18;
-        })
-        .sort((a,b) => b[1]-a[1]);
-
       const meta = {
         title: parsed.title||"",
-        main_keyword: mainKwFinal,
-        content: rawContent,
+        main_keyword: mainKeyword||parsed.main_keyword||kw,
+        content: parsed.content||"",
         tags: parsed.tags||[],
         _source: "keyword",
-        _overLimit: overLimit, // 초과 단어 목록
       };
       setAnalyzePostMeta(meta);
       setAnalyzeText(meta.content);
