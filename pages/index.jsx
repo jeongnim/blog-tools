@@ -1092,6 +1092,27 @@ JSON 형식:
       </div>
     </div>}
 
+    {/* ── 키워드 반복 초과 경고 ── */}
+    {postMeta&&postMeta._overLimit&&postMeta._overLimit.length>0&&(
+      <div style={{background:"#2d1117",border:"1px solid #f8514944",borderRadius:"10px",padding:"12px 14px"}}>
+        <div style={{color:"#ff7b72",fontWeight:700,fontSize:"13px",marginBottom:"8px"}}>
+          ⚠️ 단어 반복 초과 감지 — 아래 단어가 권장 횟수를 넘었어요
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
+          {postMeta._overLimit.map(([w,c],i)=>{
+            const isMain = w===postMeta.main_keyword||postMeta.main_keyword?.includes(w);
+            const limit = isMain ? 19 : 18;
+            return <span key={i} style={{background:"#f8514922",border:"1px solid #f8514944",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",color:"#ff7b72"}}>
+              <strong>{w}</strong> {c}회 <span style={{color:"#484f58",fontSize:"11px"}}>(제한 {limit}회)</span>
+            </span>;
+          })}
+        </div>
+        <div style={{color:"#8b949e",fontSize:"11px",marginTop:"8px"}}>
+          💡 본문에서 해당 단어를 유사어·대명사로 교체하거나 삭제해 주세요.
+        </div>
+      </div>
+    )}
+
     {/* ── Pollinations AI 단락별 이미지 생성 ── */}
     {postMeta&&<ImageGenSection
       postMeta={postMeta}
@@ -2479,11 +2500,9 @@ JSON 배열만 출력:`;
         await new Promise(res=>setTimeout(res,200));
       }
 
-      // 100위 밖(null) 제외 — 순위 있는 키워드만 표시
+      // 전체 키워드 저장 — null은 100위 밖으로 표시
       const exposedKeywords=kws
-        .map((kw,i)=>({keyword:kw,realRank:rankResults[i]}))
-        .filter(kw=>kw.realRank!==null)
-        .map((kw,i)=>({rank:i+1,keyword:kw.keyword,realRank:kw.realRank,rankLoading:false}));
+        .map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i],rankLoading:false}));
 
       setAnalysis(prev=>({...prev,[post.postNo]:{
         missingStatus, seoScore, seoDetail, titleRank,
@@ -2694,9 +2713,6 @@ JSON 배열만 출력:`;
                   )}
                   {/* 완료 후 — 노출된 것만 표시 */}
 
-                  {!a.topKeywords.some(kw=>kw.rankLoading)&&a.topKeywords.length===0&&(
-                    <div style={{color:"#484f58",fontSize:"11px",padding:"4px 0"}}>100위권 내 노출 키워드 없음</div>
-                  )}
                   {!a.topKeywords.some(kw=>kw.rankLoading)&&a.topKeywords.map((kw,i)=>{
                     const rc=rankColor(kw.realRank);
                     return <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",
@@ -2713,7 +2729,7 @@ JSON 배열만 출력:`;
                       </a>
                       <div style={{background:rc+"22",color:rc,border:`1px solid ${rc+"55"}`,
                         borderRadius:"6px",padding:"3px 10px",fontSize:"12px",fontWeight:800,minWidth:"40px",textAlign:"center",flexShrink:0}}>
-                        {kw.realRank}위
+                        {kw.realRank!=null?kw.realRank+"위":"100위↓"}
                       </div>
                     </div>;
                   })}
@@ -5302,10 +5318,14 @@ function buildWritePrompt({ kw, year, category, smartBlockType, blogStrategy, bo
 네이버 블로그 홈판 최적화 글을 작성해줘:
 1. 본문 1,500~2,000자 (한글+공백)
 2. 소제목 ▶ 형식 3개 이상 (마크다운/HTML 금지)
-3. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
-4. 각 문장 끝 \n 삽입
-5. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
-6. 문체: -니다/-요 혼용, 정보성+경험담
+3. 키워드 반복 제한 (반드시 준수):
+   - 메인 키워드("${mainKw}"): 최대 19회 이하
+   - 그 외 모든 단어(명사·동사·형용사): 각각 최대 18회 이하
+   - 글 완성 후 반드시 스스로 카운트해서 초과 여부 확인 후 제출
+4. 첫 줄 자기소개 금지, 광고성 표현 금지
+5. 각 문장 끝 \n 삽입
+6. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
+7. 문체: -니다/-요 혼용, 정보성+경험담
 
 순수 JSON만 (마크다운 없이):
 {"title":"제목(15~32자,키워드포함)","main_keyword":"${mainKw}","content":"본문","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
@@ -5362,12 +5382,36 @@ export default function BlogTools(){
       );
       const s=raw.indexOf("{"); const e=raw.lastIndexOf("}");
       const parsed = JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
+      // ── 키워드 빈도 후처리: 초과 단어 자동 감지 ──
+      const rawContent = parsed.content||"";
+      const mainKwFinal = mainKeyword||parsed.main_keyword||kw;
+      
+      const countWord = (text, word) => {
+        if(!word || !text) return 0;
+        // 단어 앞뒤가 한글/영문/숫자가 아닌 경계에서 매칭
+        const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const matches = text.match(new RegExp(escaped, 'g'));
+        return matches ? matches.length : 0;
+      };
+
+      // 초과 단어 감지 (경고용 메타데이터)
+      const words2 = (rawContent.match(/[가-힣]{2,}/g)||[]);
+      const freq2 = {};
+      words2.forEach(w => { freq2[w]=(freq2[w]||0)+1; });
+      const overLimit = Object.entries(freq2)
+        .filter(([w, c]) => {
+          const isMain = w === mainKwFinal || mainKwFinal.includes(w);
+          return isMain ? c > 19 : c > 18;
+        })
+        .sort((a,b) => b[1]-a[1]);
+
       const meta = {
         title: parsed.title||"",
-        main_keyword: mainKeyword||parsed.main_keyword||kw,
-        content: parsed.content||"",
+        main_keyword: mainKwFinal,
+        content: rawContent,
         tags: parsed.tags||[],
         _source: "keyword",
+        _overLimit: overLimit, // 초과 단어 목록
       };
       setAnalyzePostMeta(meta);
       setAnalyzeText(meta.content);
