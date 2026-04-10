@@ -960,19 +960,16 @@ JSON 형식:
       const si=raw.indexOf("{"), ei=raw.lastIndexOf("}");
       const parsed=JSON.parse(si!==-1&&ei!==-1?raw.slice(si,ei+1):raw);
 
-      // ── AI가 추출한 단어 목록으로 실제 텍스트에서 직접 카운트 (AI 추정값 사용 안 함) ──
-      const sourceText = text; // 분석 대상 원문
+      // AI 추출 단어 목록으로 실제 텍스트에서 직접 카운트 (AI 추정값 사용 안 함)
       if(parsed.morpheme?.words){
         parsed.morpheme.words = parsed.morpheme.words.map(item => {
           const word = item.word;
           if(!word) return item;
-          // 정규식으로 정확히 카운트 (단어 단위 매칭)
-          const escaped = word.replace(/[.*+?^${}()|[\]\]/g, '\$&');
-          const matches = sourceText.match(new RegExp(escaped, 'g'));
-          const realCount = matches ? matches.length : 0;
-          return { ...item, count: realCount };
+          let count = 0;
+          let idx = 0;
+          while((idx = text.indexOf(word, idx)) !== -1){ count++; idx += word.length; }
+          return { ...item, count };
         })
-        // count 0인 건 제거, 내림차순 정렬
         .filter(item => item.count > 0)
         .sort((a,b) => b.count - a.count);
       }
