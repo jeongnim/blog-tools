@@ -4404,81 +4404,76 @@ function ExifTab() {
 
 // ─── TAB: 이미지 자르기 ──────────────────────────────────────────────────
 function CropTab() {
-  const [img, setImg] = useState(null);       // {src, w, h, name, type}
-  const [crop, setCrop] = useState({x:0,y:0,w:0,h:0});
-  const [dragging, setDragging] = useState(false);
-  const [dragStart, setDragStart] = useState(null);
-  const [done, setDone] = useState(null);     // 크롭 결과 blob URL
-  const [copied, setCopied] = useState(false);
-  const previewRef = useRef(null);
-  const canvasRef = useRef(null);
+  const [img, setImg] = useState(null);       // {src, el, w, h, name, type}
+  const [sliceH, setSliceH] = useState(8000);
+  const [downloading, setDownloading] = useState(false);
+  const [dlProgress, setDlProgress] = useState(0);
   const fileRef = useRef(null);
-  const PREVIEW_MAX = 520;
+  const canvasWrapRef = useRef(null);
+  const PREVIEW_MAX_W = 480;
+  const COLORS = ["#f59e0b","#10b981","#6366f1","#ef4444","#3b82f6","#ec4899","#14b8a6","#f97316"];
 
   const loadFile = (file) => {
     if (!file || !file.type.startsWith("image/")) return;
     const url = URL.createObjectURL(file);
-    const i = new Image();
-    i.onload = () => {
-      setImg({src:url, w:i.naturalWidth, h:i.naturalHeight, name:file.name, type:file.type});
-      setCrop({x:0, y:0, w:i.naturalWidth, h:i.naturalHeight});
-      setDone(null);
+    const el = new Image();
+    el.onload = () => {
+      setImg({src:url, el, w:el.naturalWidth, h:el.naturalHeight, name:file.name.replace(/\.[^.]+$/,""), type:file.type});
     };
-    i.src = url;
+    el.src = url;
   };
 
-  const scale = img ? Math.min(1, PREVIEW_MAX / Math.max(img.w, img.h)) : 1;
+  const getSlices = () => {
+    if (!img || !sliceH || sliceH < 1) return [];
+    const slices = [];
+    let y = 0;
+    while (y < img.h) {
+      const h = Math.min(sliceH, img.h - y);
+      slices.push({y, h});
+      y += h;
+    }
+    return slices;
+  };
+
+  const slices = getSlices();
+  const scale = img ? Math.min(1, PREVIEW_MAX_W / img.w) : 1;
   const pw = img ? Math.round(img.w * scale) : 0;
   const ph = img ? Math.round(img.h * scale) : 0;
 
-  // 마우스로 크롭 영역 드래그
-  const onMouseDown = (e) => {
-    const rect = previewRef.current.getBoundingClientRect();
-    const sx = (e.clientX - rect.left) / scale;
-    const sy = (e.clientY - rect.top) / scale;
-    setDragStart({sx, sy});
-    setDragging(true);
-  };
-  const onMouseMove = (e) => {
-    if (!dragging || !dragStart) return;
-    const rect = previewRef.current.getBoundingClientRect();
-    const ex = Math.min(img.w, Math.max(0, (e.clientX - rect.left) / scale));
-    const ey = Math.min(img.h, Math.max(0, (e.clientY - rect.top) / scale));
-    setCrop({
-      x: Math.round(Math.min(dragStart.sx, ex)),
-      y: Math.round(Math.min(dragStart.sy, ey)),
-      w: Math.round(Math.abs(ex - dragStart.sx)),
-      h: Math.round(Math.abs(ey - dragStart.sy)),
-    });
-  };
-  const onMouseUp = () => setDragging(false);
+  const fullCount = slices.filter(s => s.h === sliceH).length;
+  const remSlice = slices.find(s => s.h !== sliceH);
 
-  const doCrop = () => {
-    if (!img || crop.w < 1 || crop.h < 1) return;
-    const canvas = canvasRef.current;
-    canvas.width = crop.w; canvas.height = crop.h;
-    const ctx = canvas.getContext("2d");
-    const src = new Image(); src.src = img.src;
-    src.onload = () => {
-      ctx.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
-      canvas.toBlob(blob => {
-        setDone(URL.createObjectURL(blob));
-      }, img.type || "image/png", 0.95);
-    };
-  };
-
-  const doSave = () => {
-    if (!done) return;
-    const a = document.createElement("a");
-    a.href = done; a.download = `crop_${img.name}`; a.click();
+  const downloadAll = async () => {
+    if (!img || !slices.length) return;
+    setDownloading(true);
+    setDlProgress(0);
+    for (let i = 0; i < slices.length; i++) {
+      const {y, h} = slices[i];
+      const out = document.createElement("canvas");
+      out.width = img.w; out.height = h;
+      out.getContext("2d").drawImage(img.el, 0, y, img.w, h, 0, 0, img.w, h);
+      await new Promise(res => {
+        out.toBlob(blob => {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `${img.name}-${i+1}.png`;
+          a.click();
+          setTimeout(() => { URL.revokeObjectURL(a.href); res(); }, 300);
+        }, "image/png");
+      });
+      setDlProgress(i + 1);
+      await new Promise(r => setTimeout(r, 200));
+    }
+    setDownloading(false);
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
-    <canvas ref={canvasRef} style={{display:"none"}}/>
 
     {/* 업로드 */}
-    {!img && <div onClick={()=>fileRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileRef.current?.click();}}
-      onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();loadFile(e.dataTransfer.files[0]);}}
+    {!img && <div onClick={()=>fileRef.current?.click()}
+      onTouchEnd={e=>{e.preventDefault();fileRef.current?.click();}}
+      onDragOver={e=>e.preventDefault()}
+      onDrop={e=>{e.preventDefault();loadFile(e.dataTransfer.files[0]);}}
       style={{border:"2px dashed #30363d",borderRadius:"12px",padding:"32px",textAlign:"center",
         cursor:"pointer",background:"#0d1117"}}>
       <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>loadFile(e.target.files[0])}/>
@@ -4487,80 +4482,106 @@ function CropTab() {
       <div style={{color:"#484f58",fontSize:"12px"}}>JPG · PNG · WebP · GIF 지원</div>
     </div>}
 
-    {img && <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-      {/* 수치 입력 */}
-      <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 16px"}}>
-        <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"10px"}}>✂️ 자르기 영역 설정 (px) — 이미지 위에서 드래그도 가능</div>
-        <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center"}}>
-          {[["X 위치",crop.x,"x"],["Y 위치",crop.y,"y"],["너비",crop.w,"w"],["높이",crop.h,"h"]].map(([label,val,key])=>(
-            <div key={key} style={{display:"flex",flexDirection:"column",gap:"3px"}}>
-              <span style={{color:"#484f58",fontSize:"10px"}}>{label}</span>
-              <input type="number" value={val} min={0}
-                max={key==="x"||key==="w"?img.w:img.h}
-                onChange={e=>setCrop(p=>({...p,[key]:Math.max(0,parseInt(e.target.value)||0)}))}
-                style={{width:"80px",padding:"5px 8px",background:"#0d1117",border:"1px solid #30363d",
-                  borderRadius:"6px",color:"#e6edf3",fontSize:"13px",outline:"none",
-                  fontFamily:"'Noto Sans KR',sans-serif"}}/>
-            </div>
-          ))}
-          <div style={{display:"flex",gap:"6px",marginLeft:"auto",alignItems:"flex-end",paddingTop:"13px"}}>
-            <button onClick={()=>setCrop({x:0,y:0,w:img.w,h:img.h})}
-              style={{padding:"6px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-                borderRadius:"7px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px"}}>
-              전체 선택
-            </button>
-            <button onClick={doCrop} disabled={crop.w<1||crop.h<1}
-              style={{padding:"6px 16px",background:crop.w>0&&crop.h>0?"#1f6feb":"#21262d",
-                color:crop.w>0&&crop.h>0?"#fff":"#484f58",border:"none",borderRadius:"7px",
-                cursor:crop.w>0?"pointer":"not-allowed",fontFamily:"'Noto Sans KR',sans-serif",
-                fontSize:"12px",fontWeight:700}}>
-              ✂️ 자르기 실행
-            </button>
-            {done && <button onClick={doSave}
-              style={{padding:"6px 14px",background:"#2ea043",color:"#fff",border:"none",
-                borderRadius:"7px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700}}>
-              ⬇️ 저장
-            </button>}
-            <button onClick={()=>{setImg(null);setDone(null);}}
-              style={{padding:"6px 10px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-                borderRadius:"7px",cursor:"pointer",fontSize:"12px"}}>✕</button>
+    {img && <>
+      {/* 컨트롤 바 */}
+      <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 16px",
+        display:"flex",flexWrap:"wrap",gap:"14px",alignItems:"center"}}>
+
+        <div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
+          <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>원본 크기</span>
+          <span style={{color:"#e6edf3",fontSize:"13px",fontWeight:700}}>{img.w} × {img.h}px</span>
+        </div>
+
+        <div style={{width:"1px",height:"32px",background:"#30363d"}}/>
+
+        <div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
+          <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>기준 높이 (px)</span>
+          <input type="number" value={sliceH} min={1} max={img.h}
+            onChange={e=>setSliceH(Math.max(1,parseInt(e.target.value)||1))}
+            style={{width:"100px",padding:"5px 8px",background:"#0d1117",border:"1px solid #30363d",
+              borderRadius:"6px",color:"#e6edf3",fontSize:"13px",outline:"none",
+              fontFamily:"'Noto Sans KR',sans-serif"}}/>
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
+          <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>분할 결과</span>
+          <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
+            {fullCount > 0 && <span style={{fontSize:"12px",fontWeight:700,padding:"2px 10px",
+              borderRadius:"99px",background:"#f59e0b22",color:"#f59e0b"}}>
+              {fullCount}장 × {sliceH}px
+            </span>}
+            {remSlice && <span style={{fontSize:"12px",fontWeight:700,padding:"2px 10px",
+              borderRadius:"99px",background:"#10b98122",color:"#10b981"}}>
+              나머지 1장 × {remSlice.h}px
+            </span>}
+            <span style={{fontSize:"11px",color:"#484f58"}}>총 {slices.length}장</span>
           </div>
+        </div>
+
+        <div style={{marginLeft:"auto",display:"flex",gap:"8px",alignItems:"center"}}>
+          <button onClick={()=>setImg(null)}
+            style={{padding:"6px 10px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+              borderRadius:"7px",cursor:"pointer",fontSize:"12px"}}>✕ 취소</button>
+          <button onClick={downloadAll} disabled={downloading || slices.length===0}
+            style={{padding:"7px 18px",background:downloading?"#21262d":"#1f6feb",
+              color:downloading?"#484f58":"#fff",border:"none",borderRadius:"7px",
+              cursor:downloading?"not-allowed":"pointer",
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700}}>
+            {downloading ? `⬇️ ${dlProgress}/${slices.length} 저장 중...` : `⬇️ 전체 다운로드 (${slices.length}장)`}
+          </button>
         </div>
       </div>
 
-      <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
-        {/* 원본 프리뷰 */}
-        <div style={{flex:1,minWidth:0}}>
+      {/* 프리뷰 */}
+      <div style={{display:"flex",gap:"16px",flexWrap:"wrap",alignItems:"flex-start"}}>
+        {/* 이미지 + 분할선 */}
+        <div>
           <div style={{color:"#484f58",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>
-            원본 ({img.w}×{img.h}px) — 드래그로 영역 선택
+            미리보기 — 점선이 분할 위치
           </div>
-          <div ref={previewRef} style={{position:"relative",display:"inline-block",
-            cursor:"crosshair",userSelect:"none",lineHeight:0,
-            border:"1px solid #30363d",borderRadius:"8px",overflow:"hidden"}}
-            onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
+          <div ref={canvasWrapRef} style={{position:"relative",display:"inline-block",
+            lineHeight:0,border:"1px solid #30363d",borderRadius:"8px",overflow:"hidden"}}>
             <img src={img.src} style={{width:pw,height:ph,display:"block"}} draggable={false} alt=""/>
-            {/* 크롭 오버레이 */}
-            <div style={{position:"absolute",left:crop.x*scale,top:crop.y*scale,
-              width:crop.w*scale,height:crop.h*scale,
-              border:"2px solid #58a6ff",boxShadow:"0 0 0 9999px rgba(0,0,0,0.45)",
-              pointerEvents:"none",boxSizing:"border-box"}}/>
-          </div>
-          <div style={{color:"#484f58",fontSize:"10px",marginTop:"4px"}}>
-            선택: {crop.x},{crop.y} → {crop.w}×{crop.h}px
+            {slices.map((s, i) => {
+              if (i === 0) return null;
+              const color = COLORS[i % COLORS.length];
+              return <div key={i} style={{position:"absolute",left:0,right:0,
+                top: Math.round(s.y * scale),
+                borderTop:`2px dashed ${color}`,pointerEvents:"none"}}>
+                <span style={{fontSize:"10px",fontWeight:700,padding:"1px 5px",
+                  background:`${color}cc`,color:"#fff",borderRadius:"0 3px 3px 0",display:"inline-block"}}>
+                  {img.name}-{i+1} · {s.h}px
+                </span>
+              </div>;
+            })}
           </div>
         </div>
 
-        {/* 결과 프리뷰 */}
-        {done && <div style={{flex:1,minWidth:0}}>
-          <div style={{color:"#3fb950",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>
-            ✅ 잘라내기 결과 ({crop.w}×{crop.h}px)
+        {/* 조각 목록 */}
+        <div style={{flex:1,minWidth:"180px"}}>
+          <div style={{color:"#484f58",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>조각 목록</div>
+          <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+            {slices.map((s, i) => {
+              const color = COLORS[i % COLORS.length];
+              const isRem = s.h !== sliceH;
+              return <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",
+                background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"7px 10px"}}>
+                <span style={{width:"10px",height:"10px",borderRadius:"50%",
+                  background:color,flexShrink:0,display:"inline-block"}}/>
+                <span style={{fontSize:"12px",color:"#c9d1d9",fontWeight:700,minWidth:"80px"}}>
+                  {img.name}-{i+1}
+                </span>
+                <span style={{fontSize:"12px",color:"#8b949e"}}>
+                  {img.w} × {s.h}px
+                </span>
+                {isRem && <span style={{fontSize:"10px",padding:"1px 7px",borderRadius:"99px",
+                  background:"#10b98122",color:"#10b981",marginLeft:"auto"}}>나머지</span>}
+              </div>;
+            })}
           </div>
-          <div style={{border:"1px solid #2ea04344",borderRadius:"8px",overflow:"hidden",lineHeight:0,display:"inline-block"}}>
-            <img src={done} style={{maxWidth:"100%",maxHeight:"320px",display:"block"}} alt="crop result"/>
-          </div>
-        </div>}
+        </div>
       </div>
-    </div>}
+    </>}
   </div>;
 }
 
