@@ -5172,7 +5172,7 @@ ${text.slice(0, 4000)}
       const s = raw.indexOf("{"); const e = raw.lastIndexOf("}");
       const parsed = JSON.parse(s !== -1 && e !== -1 ? raw.slice(s, e+1) : raw);
       setRewrittenTitle(parsed.title || title);
-      setRewrittenText(parsed.content || raw);
+      setRewrittenText((parsed.content || raw).replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, ""));
       setStep("done");
 
     } catch (err) {
@@ -5333,7 +5333,7 @@ function buildWritePrompt({ kw, year, category, smartBlockType, blogStrategy, bo
 1. 본문 1,500~2,000자 (한글+공백)
 2. 소제목 ▶ 형식 3개 이상 (마크다운/HTML 금지)
 3. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
-4. 각 문장 끝 \n 삽입
+4. 각 문장 끝 줄바꿈(\\n)만 사용, HTML 태그(<br> 등) 절대 금지
 5. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
 6. 문체: -니다/-요 혼용, 정보성+경험담
 
@@ -5392,10 +5392,12 @@ export default function BlogTools(){
       );
       const s=raw.indexOf("{"); const e=raw.lastIndexOf("}");
       const parsed = JSON.parse(s!==-1&&e!==-1?raw.slice(s,e+1):raw);
+      const cleanContent = (str="") =>
+        str.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/\n{3,}/g, "\n\n");
       const meta = {
         title: parsed.title||"",
         main_keyword: mainKeyword||parsed.main_keyword||kw,
-        content: parsed.content||"",
+        content: cleanContent(parsed.content||""),
         tags: parsed.tags||[],
         _source: "keyword",
       };
