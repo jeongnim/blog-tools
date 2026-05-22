@@ -2910,26 +2910,43 @@ JSON 배열만 출력:`;
                   )}
                   {/* 완료 후 — 노출된 것만 표시 */}
 
-                  {!a.topKeywords.some(kw=>kw.rankLoading)&&a.topKeywords.map((kw,i)=>{
-                    const rc=rankColor(kw.realRank);
-                    return <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",
-                      background:"#0d1117",border:`1px solid ${rc+"44"}`,
-                      borderRadius:"8px",marginBottom:"5px"}}>
-                      <div style={{width:"18px",height:"18px",background:"#21262d",borderRadius:"4px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                        <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>{i+1}</span>
-                      </div>
-                      <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw.keyword)}`}
-                        target="_blank" rel="noreferrer"
-                        style={{flex:1,color:"#c9d1d9",fontSize:"12px",fontWeight:600,textDecoration:"none"}}
-                        onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#c9d1d9"}>
-                        {kw.keyword} ↗
-                      </a>
-                      <div style={{background:rc+"22",color:rc,border:`1px solid ${rc+"55"}`,
-                        borderRadius:"6px",padding:"3px 10px",fontSize:"12px",fontWeight:800,minWidth:"40px",textAlign:"center",flexShrink:0}}>
-                        {kw.realRank!=null?kw.realRank+"위":"100위↓"}
-                      </div>
-                    </div>;
-                  })}
+                  {!a.topKeywords.some(kw=>kw.rankLoading)&&(()=>{
+                    const ranked=a.topKeywords.filter(kw=>kw.realRank!=null);
+                    const outOf=a.topKeywords.filter(kw=>kw.realRank==null);
+                    return <>
+                      {ranked.map((kw,i)=>{
+                        const rc=rankColor(kw.realRank);
+                        return <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",
+                          background:"#0d1117",border:`1px solid ${rc+"44"}`,
+                          borderRadius:"8px",marginBottom:"5px"}}>
+                          <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw.keyword)}`}
+                            target="_blank" rel="noreferrer"
+                            style={{flex:1,color:"#c9d1d9",fontSize:"12px",fontWeight:600,textDecoration:"none"}}
+                            onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#c9d1d9"}>
+                            {kw.keyword} ↗
+                          </a>
+                          <div style={{background:rc+"22",color:rc,border:`1px solid ${rc+"55"}`,
+                            borderRadius:"6px",padding:"3px 10px",fontSize:"12px",fontWeight:800,minWidth:"40px",textAlign:"center",flexShrink:0}}>
+                            {kw.realRank}위
+                          </div>
+                        </div>;
+                      })}
+                      {outOf.length>0&&<div style={{padding:"5px 10px",fontSize:"11px",color:"#484f58",lineHeight:"1.6"}}>
+                        <span style={{color:"#30363d",marginRight:"6px"}}>100위↓</span>
+                        {outOf.map((kw,i)=>(
+                          <span key={i}>
+                            <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw.keyword)}`}
+                              target="_blank" rel="noreferrer"
+                              style={{color:"#484f58",textDecoration:"none",fontSize:"11px"}}
+                              onMouseEnter={e=>e.target.style.color="#8b949e"} onMouseLeave={e=>e.target.style.color="#484f58"}>
+                              {kw.keyword}
+                            </a>
+                            {i<outOf.length-1&&<span style={{margin:"0 4px",color:"#21262d"}}>·</span>}
+                          </span>
+                        ))}
+                      </div>}
+                    </>;
+                  })()}
                 </div>
               )}
             </div>
