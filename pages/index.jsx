@@ -334,7 +334,7 @@ const WRITE_SUBTABS=[
   {id:"autowrite", icon:"🏷️", label:"카테고리별 키워드추출"},
   {id:"keyword",   icon:"🔍", label:"키워드 글쓰기"},
   {id:"analyze",   icon:"📊", label:"글분석"},
-  {id:"rewrite",   icon:"🔗", label:"기사 리라이팅"},
+  {id:"rewrite",   icon:"🔗", label:"기사 리라이팅", hidden:true},
   {id:"emoji",     icon:"😃", label:"이모지"},
 ];
 
@@ -5748,7 +5748,7 @@ export default function BlogTools(){
                       color:"#58a6ff",fontSize:"11px",fontWeight:700,background:"#0d1117"}}>
                       ✍️ 글쓰기 도구
                     </div>
-                    {WRITE_SUBTABS.map(sub=>{
+                    {WRITE_SUBTABS.filter(sub=>!sub.hidden).map(sub=>{
                       const isSel=active===sub.id;
                       return <button key={sub.id}
                         onClick={()=>selectWriteSub(sub.id)}
@@ -5916,7 +5916,7 @@ export default function BlogTools(){
     {isWriteSub && (
       <div style={{background:"#0d1117",borderBottom:"1px solid #21262d"}}>
         <div style={{display:"flex",gap:"2px",overflowX:"auto"}}>
-        {WRITE_SUBTABS.map(sub=>(
+        {WRITE_SUBTABS.filter(sub=>!sub.hidden).map(sub=>(
           <button key={sub.id} onClick={()=>setActive(sub.id)} style={{
             padding:"8px 13px",border:"none",background:"none",
             borderBottom:`2px solid ${active===sub.id?"#58a6ff":"transparent"}`,
