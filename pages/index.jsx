@@ -2525,47 +2525,56 @@ JSON 배열만 출력:`;
     }
   };
 
-  // ── 방법3: 엑셀 파싱 ──
+  // ── 방법3: 엑셀 파싱 (CDN 런타임 로드 — 빌드 의존성 없음) ──
   const parseExcelFile=async(file)=>{
     setExcelError("");setExcelParsed(false);setExcelRows([]);setExcelHeaders([]);setUrlCol("");setTitleCol("");
+    const ext=file.name.split(".").pop().toLowerCase();
+
+    // CSV — 별도 라이브러리 불필요
+    if(ext==="csv"){
+      try{
+        const text=await file.text();
+        const lines=text.split(/\r?\n/).filter(l=>l.trim());
+        if(lines.length<2){setExcelError("데이터가 없습니다. 첫 행은 헤더, 2행부터 데이터여야 합니다.");return;}
+        const sep=lines[0].includes("\t")?"\t":",";
+        const headers=lines[0].split(sep).map(h=>h.replace(/^"|"$/g,"").trim());
+        const rows=lines.slice(1).map(l=>l.split(sep).map(c=>c.replace(/^"|"$/g,"").trim())).filter(r=>r.some(c=>c));
+        if(!rows.length){setExcelError("데이터 행이 없습니다.");return;}
+        setExcelHeaders(headers);setExcelRows(rows);setExcelParsed(true);
+        const uIdx=headers.findIndex(h=>/url|링크|주소/i.test(h));
+        const tIdx=headers.findIndex(h=>/제목|title/i.test(h));
+        if(uIdx>=0) setUrlCol(headers[uIdx]);
+        if(tIdx>=0) setTitleCol(headers[tIdx]);
+      }catch(e){setExcelError("CSV 파싱 오류: "+e.message);}
+      return;
+    }
+
+    // xlsx / xls — CDN에서 런타임 로드 (npm install 불필요)
     try{
-      const XLSX=await import("xlsx");
+      if(!window.XLSX){
+        await new Promise((resolve,reject)=>{
+          const s=document.createElement("script");
+          s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+          s.onload=resolve;
+          s.onerror=()=>reject(new Error("xlsx 라이브러리 로드 실패. 인터넷 연결을 확인하거나 CSV 파일을 사용해주세요."));
+          document.head.appendChild(s);
+        });
+      }
+      const XLSX=window.XLSX;
       const ab=await file.arrayBuffer();
       const wb=XLSX.read(ab);
       const ws=wb.Sheets[wb.SheetNames[0]];
       const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
-      if(!data||data.length<2) throw new Error("데이터가 없습니다. 첫 행은 헤더, 2행부터 데이터여야 합니다.");
+      if(!data||data.length<2){setExcelError("데이터가 없습니다. 첫 행은 헤더, 2행부터 데이터여야 합니다.");return;}
       const headers=data[0].map(h=>String(h||"").trim());
       const rows=data.slice(1).filter(r=>r.some(c=>String(c).trim()));
-      if(!rows.length) throw new Error("데이터 행이 없습니다.");
-      setExcelHeaders(headers);
-      setExcelRows(rows);
-      setExcelParsed(true);
-      // 자동 컬럼 감지
+      if(!rows.length){setExcelError("데이터 행이 없습니다.");return;}
+      setExcelHeaders(headers);setExcelRows(rows);setExcelParsed(true);
       const uIdx=headers.findIndex(h=>/url|링크|주소/i.test(h));
       const tIdx=headers.findIndex(h=>/제목|title/i.test(h));
       if(uIdx>=0) setUrlCol(headers[uIdx]);
       if(tIdx>=0) setTitleCol(headers[tIdx]);
-    }catch(e){
-      // xlsx 없으면 CSV로 fallback
-      if(e.message&&e.message.includes("Cannot find module")){
-        try{
-          const text=await file.text();
-          const lines=text.split(/\r?\n/).filter(l=>l.trim());
-          if(lines.length<2) throw new Error("데이터가 없습니다.");
-          const sep=lines[0].includes("\t")?"\t":",";
-          const headers=lines[0].split(sep).map(h=>h.replace(/^"|"$/g,"").trim());
-          const rows=lines.slice(1).map(l=>l.split(sep).map(c=>c.replace(/^"|"$/g,"").trim()));
-          setExcelHeaders(headers);setExcelRows(rows);setExcelParsed(true);
-          const uIdx=headers.findIndex(h=>/url|링크|주소/i.test(h));
-          const tIdx=headers.findIndex(h=>/제목|title/i.test(h));
-          if(uIdx>=0) setUrlCol(headers[uIdx]);
-          if(tIdx>=0) setTitleCol(headers[tIdx]);
-        }catch(e2){setExcelError("CSV 파싱 오류: "+e2.message);}
-      }else{
-        setExcelError(e.message||"파일 파싱 오류");
-      }
-    }
+    }catch(e){setExcelError(e.message||"파일 파싱 오류");}
   };
 
   // ── 방법3: 배치 분석 실행 ──
@@ -2729,8 +2738,7 @@ JSON 배열만 출력:`;
             if(f) parseExcelFile(f);
           }}
           style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"28px 16px",
-            textAlign:"center",cursor:"pointer",transition:"border-color .2s",
-            background:"#0d1117"}}>
+            textAlign:"center",cursor:"pointer",transition:"border-color .2s",background:"#0d1117"}}>
           <div style={{fontSize:"28px",marginBottom:"8px"}}>📂</div>
           <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:600,marginBottom:"4px"}}>파일을 여기에 드래그하거나 클릭해서 선택</div>
           <div style={{color:"#484f58",fontSize:"11px"}}>.xlsx · .xls · .csv 파일 지원</div>
@@ -2747,40 +2755,34 @@ JSON 배열만 출력:`;
 
       {/* 파싱 완료 — 컬럼 매핑 */}
       {excelParsed&&<div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-        <div style={{background:"#0d1117",border:"1px solid #1f6feb33",borderRadius:"8px",padding:"10px 14px",
-          fontSize:"11px",color:"#58a6ff"}}>
+        <div style={{background:"#0d1117",border:"1px solid #1f6feb33",borderRadius:"8px",padding:"10px 14px",fontSize:"11px",color:"#58a6ff"}}>
           ✅ {excelRows.length}개 행 파싱 완료 · 헤더: {excelHeaders.join(", ")}
         </div>
 
-        {/* URL 컬럼 선택 */}
         <div>
           <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>
             📎 URL 컬럼 선택 <span style={{color:"#ff7b72"}}>*필수</span>
           </div>
           <select value={urlCol} onChange={e=>setUrlCol(e.target.value)}
             style={{width:"100%",padding:"10px 12px",background:"#0d1117",border:"1px solid #30363d",
-              borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",
-              fontSize:"13px",outline:"none",cursor:"pointer"}}>
+              borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none",cursor:"pointer"}}>
             <option value="">— URL이 있는 열을 선택하세요 —</option>
             {excelHeaders.map((h,i)=><option key={i} value={h}>{h||`(열 ${i+1})`}</option>)}
           </select>
         </div>
 
-        {/* 제목 컬럼 선택 */}
         <div>
           <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>
             ✏️ 제목 컬럼 선택 <span style={{color:"#484f58"}}>(선택 · 없으면 AI가 본문에서 키워드 추출)</span>
           </div>
           <select value={titleCol} onChange={e=>setTitleCol(e.target.value)}
             style={{width:"100%",padding:"10px 12px",background:"#0d1117",border:"1px solid #30363d",
-              borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",
-              fontSize:"13px",outline:"none",cursor:"pointer"}}>
+              borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none",cursor:"pointer"}}>
             <option value="">— 제목 열 없음 —</option>
             {excelHeaders.map((h,i)=><option key={i} value={h}>{h||`(열 ${i+1})`}</option>)}
           </select>
         </div>
 
-        {/* 미리보기 */}
         {urlCol&&(()=>{
           const uIdx=excelHeaders.indexOf(urlCol);
           const tIdx=titleCol?excelHeaders.indexOf(titleCol):-1;
@@ -2808,7 +2810,6 @@ JSON 배열만 출력:`;
           );
         })()}
 
-        {/* 배치 진행 중 */}
         {batchRunning&&<div style={{background:"#0d1117",border:"1px solid #1f6feb33",borderRadius:"8px",padding:"12px 14px"}}>
           <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
             <div style={{color:"#58a6ff",fontSize:"12px",fontWeight:700}}>⚡ 배치 분석 진행 중...</div>
@@ -2816,28 +2817,23 @@ JSON 배열만 출력:`;
           </div>
           <div style={{height:"6px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
             <div style={{height:"100%",background:"#1f6feb",borderRadius:"3px",
-              width:`${batchProgress.total>0?(batchProgress.done/batchProgress.total*100):0}%`,
-              transition:"width .3s ease"}}/>
+              width:`${batchProgress.total>0?(batchProgress.done/batchProgress.total*100):0}%`,transition:"width .3s ease"}}/>
           </div>
         </div>}
 
-        {/* 분석 시작 버튼 */}
         {!batchRunning&&<button onClick={runBatchAnalysis} disabled={!urlCol}
-          style={{width:"100%",padding:"13px",
-            background:urlCol?"#1f6feb":"#21262d",
-            color:urlCol?"#fff":"#484f58",
-            border:"none",borderRadius:"8px",cursor:urlCol?"pointer":"not-allowed",
+          style={{width:"100%",padding:"13px",background:urlCol?"#1f6feb":"#21262d",
+            color:urlCol?"#fff":"#484f58",border:"none",borderRadius:"8px",cursor:urlCol?"pointer":"not-allowed",
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700}}>
           📊 {excelRows.length}개 URL 배치 분석 시작
         </button>}
       </div>}
 
-      {/* 도움말 */}
       {!excelParsed&&!excelError&&<div style={{background:"#0d1117",border:"1px solid #1f6feb22",borderRadius:"8px",padding:"10px 13px",fontSize:"11px",color:"#484f58",lineHeight:"1.8"}}>
-        💡 엑셀 파일 형식 예시:<br/>
+        💡 엑셀 형식 예시 (첫 행 헤더):<br/>
         <span style={{color:"#8b949e"}}>| URL | 제목 |</span><br/>
         <span style={{color:"#8b949e"}}>| https://blog.naver.com/abc/123 | 글 제목 |</span><br/>
-        · URL만 있어도 분석 가능합니다 · xlsx 라이브러리가 없으면 CSV(.csv)를 사용하세요
+        · URL만 있어도 분석 가능 · xlsx 없을 경우 CSV(.csv)로 저장해서 올려주세요
       </div>}
     </div>}
 
