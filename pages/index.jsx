@@ -3809,7 +3809,7 @@ function RestoreTab(){
           setMsg(`모델 다운로드 중... ${Math.round(loaded/1024/1024)}MB / 70MB`);
           await new Promise(r=>setTimeout(r,0));
         }
-        if(loaded<10*1024*1024){ continue; }
+        if(loaded<10*1024){ continue; } // 10KB 미만이면 불완전
         const buf=new Uint8Array(loaded);
         let off=0; for(const c of chunks){buf.set(c,off); off+=c.length;}
         modelBuffer=buf.buffer;
