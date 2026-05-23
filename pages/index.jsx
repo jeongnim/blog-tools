@@ -3791,29 +3791,22 @@ function RestoreTab(){
       window.ort.env.wasm.wasmPaths=ORT_CDN;
     }
 
-    // 2. 모델 다운로드 (여러 URL 순서대로 시도)
-    setMsg("AI 모델 다운로드 중... (첫 실행 시 약 60MB, 이후 캐시됩니다)");
+    // 2. 모델 다운로드 (한 번에 받기)
+    setMsg("AI 모델 다운로드 중... (약 70MB, 처음 한 번만 받습니다)");
+    setProg(5);
     let modelBuffer=null;
     for(const url of AI_MODEL_URLS){
       try{
-        const resp=await fetch(url,{signal:AbortSignal.timeout(180000)});
+        const resp=await fetch(url);
         if(!resp.ok) continue;
-        const total=parseInt(resp.headers.get("content-length")||"0");
-        const reader=resp.body.getReader();
-        const chunks=[];
-        let loaded=0;
-        while(true){
-          const {done,value}=await reader.read();
-          if(done) break;
-          chunks.push(value); loaded+=value.length;
-          if(total>0){
-            setProg(Math.round(loaded/total*38));
-            setMsg(`모델 다운로드 중... ${Math.round(loaded/1024/1024)}MB / ${Math.round(total/1024/1024)}MB`);
-          }
+        setMsg("AI 모델 다운로드 중... 잠시 기다려주세요 (70MB)");
+        setProg(15);
+        modelBuffer=await resp.arrayBuffer();
+        if(modelBuffer.byteLength < 10*1024*1024){
+          // 10MB 미만이면 불완전한 파일
+          modelBuffer=null; continue;
         }
-        const buf=new Uint8Array(loaded);
-        let off=0; for(const c of chunks){buf.set(c,off); off+=c.length;}
-        modelBuffer=buf.buffer;
+        setProg(40);
         break;
       }catch(e){ continue; }
     }
