@@ -3729,7 +3729,7 @@ let _aiSession = null; // 브라우저 세션 동안 모델 캐시
 
 const ORT_CDN = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/";
 const AI_MODEL_URLS = [
-  "https://huggingface.co/jeongnim/realesrgan/resolve/main/real_esrgan_x4.onnx",
+  "https://github.com/onnx/models/raw/main/validated/vision/super_resolution/sub_pixel_cnn_2016/model/super-resolution-10.onnx",
   "/models/realesrgan.onnx",
 ];
 
@@ -3839,84 +3839,63 @@ function RestoreTab(){
       const srcCvs=document.createElement("canvas");
       srcCvs.width=sw; srcCvs.height=sh;
       const srcCtx=srcCvs.getContext("2d"); srcCtx.drawImage(img,0,0);
+      const srcData=srcCtx.getImageData(0,0,sw,sh).data;
 
       const session=await getAISession(setProg,setMsg);
       const inputName=session.inputNames[0];
       const outputName=session.outputNames[0];
 
-      // 타일 설정 (256px 타일, 16px 오버랩)
-      const TILE=256, OVERLAP=16, INNER=TILE-OVERLAP*2;
-      const MODEL_SCALE=4; // Real-ESRGAN x4
-
-      setMsg(`AI 업스케일 처리 중... (${sw}×${sh} → ${sw*MODEL_SCALE}×${sh*MODEL_SCALE})`);
-      setProg(45);
-
+      const MODEL_SCALE=3; // ESPCN x3
       const dw=sw*MODEL_SCALE, dh=sh*MODEL_SCALE;
-      const dstCvs=document.createElement("canvas");
-      dstCvs.width=dw; dstCvs.height=dh;
-      const dstCtx=dstCvs.getContext("2d");
+      setMsg(`AI 업스케일 처리 중... (${sw}×${sh} → ${dw}×${dh})`);
+      setProg(50);
 
-      const tilesX=Math.ceil(sw/INNER), tilesY=Math.ceil(sh/INNER);
-      const totalTiles=tilesX*tilesY;
-      let done=0;
-
-      for(let ty=0;ty<tilesY;ty++){
-        for(let tx=0;tx<tilesX;tx++){
-          const sx0=Math.max(0,tx*INNER-OVERLAP);
-          const sy0=Math.max(0,ty*INNER-OVERLAP);
-          const sx1=Math.min(sw,tx*INNER+INNER+OVERLAP);
-          const sy1=Math.min(sh,ty*INNER+INNER+OVERLAP);
-          const tw=sx1-sx0, th=sy1-sy0;
-
-          // 항상 256×256 고정 입력으로 패딩 (모델 요구사항)
-          const FIXED=256;
-          const padCvs=document.createElement("canvas");
-          padCvs.width=FIXED; padCvs.height=FIXED;
-          padCvs.getContext("2d").drawImage(srcCvs,sx0,sy0,tw,th,0,0,tw,th);
-          const px=padCvs.getContext("2d").getImageData(0,0,FIXED,FIXED).data;
-
-          const inp=new Float32Array(3*FIXED*FIXED);
-          for(let i=0;i<FIXED*FIXED;i++){
-            inp[i]              =px[i*4]  /255;
-            inp[FIXED*FIXED+i]  =px[i*4+1]/255;
-            inp[2*FIXED*FIXED+i]=px[i*4+2]/255;
-          }
-
-          const tensor=new window.ort.Tensor("float32",inp,[1,3,FIXED,FIXED]);
-          const out=await session.run({[inputName]:tensor});
-          const outData=out[outputName].data;
-          const fullW=FIXED*MODEL_SCALE, fullH=FIXED*MODEL_SCALE;
-          const actualW=tw*MODEL_SCALE, actualH=th*MODEL_SCALE;
-
-          const pixels=new Uint8ClampedArray(fullW*fullH*4);
-          for(let i=0;i<fullH*fullW;i++){
-            pixels[i*4]  =Math.max(0,Math.min(255,outData[i]*255));
-            pixels[i*4+1]=Math.max(0,Math.min(255,outData[fullH*fullW+i]*255));
-            pixels[i*4+2]=Math.max(0,Math.min(255,outData[2*fullH*fullW+i]*255));
-            pixels[i*4+3]=255;
-          }
-
-          // 실제 타일 크기만큼만 오버랩 제거 후 dst에 붙이기
-          const padL=(sx0===0?0:OVERLAP)*MODEL_SCALE;
-          const padT=(sy0===0?0:OVERLAP)*MODEL_SCALE;
-          const padR=(sx1===sw?0:OVERLAP)*MODEL_SCALE;
-          const padB=(sy1===sh?0:OVERLAP)*MODEL_SCALE;
-          const cropW=actualW-padL-padR, cropH=actualH-padT-padB;
-          const dstX=tx*INNER*MODEL_SCALE, dstY=ty*INNER*MODEL_SCALE;
-
-          const tmp=document.createElement("canvas");
-          tmp.width=fullW; tmp.height=fullH;
-          tmp.getContext("2d").putImageData(new ImageData(pixels,fullW,fullH),0,0);
-          dstCtx.drawImage(tmp,padL,padT,cropW,cropH,dstX,dstY,cropW,cropH);
-
-          done++;
-          setProg(45+Math.round(done/totalTiles*50));
-          setMsg(`AI 처리 중... ${done}/${totalTiles} 타일 완료`);
-          await new Promise(r=>setTimeout(r,0)); // UI 업데이트 허용
-        }
+      // RGB → YCbCr: Y채널만 AI로, Cb/Cr은 bicubic 업스케일
+      const yData =new Float32Array(sh*sw);
+      const cbData=new Float32Array(sh*sw);
+      const crData=new Float32Array(sh*sw);
+      for(let i=0;i<sh*sw;i++){
+        const r=srcData[i*4]/255, g=srcData[i*4+1]/255, b=srcData[i*4+2]/255;
+        yData[i] =  0.299*r + 0.587*g + 0.114*b;
+        cbData[i]= -0.169*r - 0.331*g + 0.500*b + 0.502;
+        crData[i]=  0.500*r - 0.419*g - 0.081*b + 0.502;
       }
 
-      setProg(97); setMsg("저장 중...");
+      // Y채널 → AI 모델 [1,1,H,W]
+      const tensor=new window.ort.Tensor("float32",yData,[1,1,sh,sw]);
+      const result=await session.run({[inputName]:tensor});
+      const yUp=result[outputName].data; // [1,1,dh,dw]
+      setProg(80); setMsg("색상 채널 합성 중...");
+
+      // Cb/Cr bicubic 업스케일
+      const upscaleChannel=(data,sw,sh,dw,dh)=>{
+        const src=document.createElement("canvas"); src.width=sw; src.height=sh;
+        const id=new ImageData(sw,sh);
+        for(let i=0;i<sh*sw;i++){const v=Math.round(data[i]*255); id.data[i*4]=v; id.data[i*4+1]=v; id.data[i*4+2]=v; id.data[i*4+3]=255;}
+        src.getContext("2d").putImageData(id,0,0);
+        const dst=document.createElement("canvas"); dst.width=dw; dst.height=dh;
+        const ctx=dst.getContext("2d"); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality="high";
+        ctx.drawImage(src,0,0,dw,dh);
+        return ctx.getImageData(0,0,dw,dh).data;
+      };
+      const cbUp=upscaleChannel(cbData,sw,sh,dw,dh);
+      const crUp=upscaleChannel(crData,sw,sh,dw,dh);
+
+      // YCbCr → RGB 합성
+      const out=new Uint8ClampedArray(dw*dh*4);
+      for(let i=0;i<dh*dw;i++){
+        const y=yUp[i];
+        const cb=cbUp[i*4]/255-0.502;
+        const cr=crUp[i*4]/255-0.502;
+        out[i*4]  =Math.max(0,Math.min(255,(y+1.402*cr)*255));
+        out[i*4+1]=Math.max(0,Math.min(255,(y-0.344*cb-0.714*cr)*255));
+        out[i*4+2]=Math.max(0,Math.min(255,(y+1.772*cb)*255));
+        out[i*4+3]=255;
+      }
+
+      setProg(95); setMsg("저장 중...");
+      const dstCvs=document.createElement("canvas"); dstCvs.width=dw; dstCvs.height=dh;
+      dstCvs.getContext("2d").putImageData(new ImageData(out,dw,dh),0,0);
       const blob=await new Promise(res=>dstCvs.toBlob(res,"image/jpeg",0.95));
       setResultUrl(URL.createObjectURL(blob));
       setResultInfo({w:dw,h:dh,bytes:blob.size});
