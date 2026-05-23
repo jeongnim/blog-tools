@@ -3729,7 +3729,8 @@ let _aiSession = null; // 브라우저 세션 동안 모델 캐시
 
 const ORT_CDN = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/";
 const AI_MODEL_URLS = [
-  "/models/realesr.onnx",
+  "https://huggingface.co/jeongnim/realesrgan/resolve/main/real_esrgan_x4.onnx",
+  "/models/realesrgan.onnx",
 ];
 
 function RestoreTab(){
@@ -3809,7 +3810,7 @@ function RestoreTab(){
           setMsg(`모델 다운로드 중... ${Math.round(loaded/1024/1024)}MB / 70MB`);
           await new Promise(r=>setTimeout(r,0));
         }
-        if(loaded<10*1024){ continue; } // 10KB 미만이면 불완전
+        if(loaded<10*1024*1024){ continue; }
         const buf=new Uint8Array(loaded);
         let off=0; for(const c of chunks){buf.set(c,off); off+=c.length;}
         modelBuffer=buf.buffer;
@@ -3824,7 +3825,7 @@ function RestoreTab(){
     // 3. 세션 생성
     setMsg("AI 모델 초기화 중..."); setProg(42);
     const session=await window.ort.InferenceSession.create(modelBuffer,{
-      executionProviders:["webgl","wasm"],
+      executionProviders:["wasm"],
     });
     _aiSession=session;
     return session;
