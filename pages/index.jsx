@@ -3875,18 +3875,26 @@ function RestoreTab(){
           const sy1=Math.min(sh,ty*INNER+INNER+OVERLAP);
           const tw=sx1-sx0, th=sy1-sy0;
 
-          const px=srcCtx.getImageData(sx0,sy0,tw,th).data;
-          const inp=new Float32Array(3*th*tw);
-          for(let i=0;i<th*tw;i++){
-            inp[i]                =px[i*4]  /255;
-            inp[th*tw+i]          =px[i*4+1]/255;
-            inp[2*th*tw+i]        =px[i*4+2]/255;
+          // 8의 배수로 패딩 (모델 요구사항)
+          const pw=Math.ceil(tw/8)*8, ph=Math.ceil(th/8)*8;
+
+          const padCvs=document.createElement("canvas");
+          padCvs.width=pw; padCvs.height=ph;
+          padCvs.getContext("2d").drawImage(srcCvs,sx0,sy0,tw,th,0,0,tw,th);
+          const px=padCvs.getContext("2d").getImageData(0,0,pw,ph).data;
+
+          const inp=new Float32Array(3*ph*pw);
+          for(let i=0;i<ph*pw;i++){
+            inp[i]          =px[i*4]  /255;
+            inp[ph*pw+i]    =px[i*4+1]/255;
+            inp[2*ph*pw+i]  =px[i*4+2]/255;
           }
 
-          const tensor=new window.ort.Tensor("float32",inp,[1,3,th,tw]);
+          const tensor=new window.ort.Tensor("float32",inp,[1,3,ph,pw]);
           const out=await session.run({[inputName]:tensor});
           const outData=out[outputName].data;
-          const outW=tw*MODEL_SCALE, outH=th*MODEL_SCALE;
+          const outW=pw*MODEL_SCALE, outH=ph*MODEL_SCALE;
+          const actualW=tw*MODEL_SCALE, actualH=th*MODEL_SCALE;
 
           const pixels=new Uint8ClampedArray(outW*outH*4);
           for(let i=0;i<outH*outW;i++){
@@ -3901,7 +3909,7 @@ function RestoreTab(){
           const padT=(sy0===0?0:OVERLAP)*MODEL_SCALE;
           const padR=(sx1===sw?0:OVERLAP)*MODEL_SCALE;
           const padB=(sy1===sh?0:OVERLAP)*MODEL_SCALE;
-          const cropW=outW-padL-padR, cropH=outH-padT-padB;
+          const cropW=actualW-padL-padR, cropH=actualH-padT-padB;
           const dstX=tx*INNER*MODEL_SCALE, dstY=ty*INNER*MODEL_SCALE;
 
           const tmp=document.createElement("canvas");
