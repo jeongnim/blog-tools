@@ -3793,7 +3793,6 @@ function RestoreTab(){
 
     // 2. 모델 다운로드 (타임아웃 없이 스트리밍)
     setMsg("AI 모델 다운로드 중... (약 70MB, 처음 한 번만)");
-    setProg(5);
     let modelBuffer=null;
     for(const url of AI_MODEL_URLS){
       try{
@@ -3811,7 +3810,7 @@ function RestoreTab(){
           setMsg(`모델 다운로드 중... ${Math.round(loaded/1024/1024)}MB / 70MB`);
           await new Promise(r=>setTimeout(r,0));
         }
-        if(loaded<10*1024*1024){ continue; } // 10MB 미만이면 불완전
+        if(loaded<10*1024*1024){ continue; }
         const buf=new Uint8Array(loaded);
         let off=0; for(const c of chunks){buf.set(c,off); off+=c.length;}
         modelBuffer=buf.buffer;
@@ -3844,63 +3843,77 @@ function RestoreTab(){
       const srcCvs=document.createElement("canvas");
       srcCvs.width=sw; srcCvs.height=sh;
       const srcCtx=srcCvs.getContext("2d"); srcCtx.drawImage(img,0,0);
-      const srcData=srcCtx.getImageData(0,0,sw,sh).data;
 
       const session=await getAISession(setProg,setMsg);
       const inputName=session.inputNames[0];
       const outputName=session.outputNames[0];
 
-      const MODEL_SCALE=3; // ESPCN x3
+      // 타일 설정 (256px 타일, 16px 오버랩)
+      const TILE=256, OVERLAP=16, INNER=TILE-OVERLAP*2;
+      const MODEL_SCALE=4; // Real-ESRGAN x4
+
+      setMsg(`AI 업스케일 처리 중... (${sw}×${sh} → ${sw*MODEL_SCALE}×${sh*MODEL_SCALE})`);
+      setProg(45);
+
       const dw=sw*MODEL_SCALE, dh=sh*MODEL_SCALE;
-      setMsg(`AI 업스케일 처리 중... (${sw}×${sh} → ${dw}×${dh})`);
-      setProg(50);
+      const dstCvs=document.createElement("canvas");
+      dstCvs.width=dw; dstCvs.height=dh;
+      const dstCtx=dstCvs.getContext("2d");
 
-      // RGB → YCbCr: Y채널만 AI로, Cb/Cr은 bicubic 업스케일
-      const yData =new Float32Array(sh*sw);
-      const cbData=new Float32Array(sh*sw);
-      const crData=new Float32Array(sh*sw);
-      for(let i=0;i<sh*sw;i++){
-        const r=srcData[i*4]/255, g=srcData[i*4+1]/255, b=srcData[i*4+2]/255;
-        yData[i] =  0.299*r + 0.587*g + 0.114*b;
-        cbData[i]= -0.169*r - 0.331*g + 0.500*b + 0.502;
-        crData[i]=  0.500*r - 0.419*g - 0.081*b + 0.502;
+      const tilesX=Math.ceil(sw/INNER), tilesY=Math.ceil(sh/INNER);
+      const totalTiles=tilesX*tilesY;
+      let done=0;
+
+      for(let ty=0;ty<tilesY;ty++){
+        for(let tx=0;tx<tilesX;tx++){
+          const sx0=Math.max(0,tx*INNER-OVERLAP);
+          const sy0=Math.max(0,ty*INNER-OVERLAP);
+          const sx1=Math.min(sw,tx*INNER+INNER+OVERLAP);
+          const sy1=Math.min(sh,ty*INNER+INNER+OVERLAP);
+          const tw=sx1-sx0, th=sy1-sy0;
+
+          const px=srcCtx.getImageData(sx0,sy0,tw,th).data;
+          const inp=new Float32Array(3*th*tw);
+          for(let i=0;i<th*tw;i++){
+            inp[i]                =px[i*4]  /255;
+            inp[th*tw+i]          =px[i*4+1]/255;
+            inp[2*th*tw+i]        =px[i*4+2]/255;
+          }
+
+          const tensor=new window.ort.Tensor("float32",inp,[1,3,th,tw]);
+          const out=await session.run({[inputName]:tensor});
+          const outData=out[outputName].data;
+          const outW=tw*MODEL_SCALE, outH=th*MODEL_SCALE;
+
+          const pixels=new Uint8ClampedArray(outW*outH*4);
+          for(let i=0;i<outH*outW;i++){
+            pixels[i*4]  =Math.max(0,Math.min(255,outData[i]*255));
+            pixels[i*4+1]=Math.max(0,Math.min(255,outData[outH*outW+i]*255));
+            pixels[i*4+2]=Math.max(0,Math.min(255,outData[2*outH*outW+i]*255));
+            pixels[i*4+3]=255;
+          }
+
+          // 오버랩 제거 후 dst에 붙이기
+          const padL=(sx0===0?0:OVERLAP)*MODEL_SCALE;
+          const padT=(sy0===0?0:OVERLAP)*MODEL_SCALE;
+          const padR=(sx1===sw?0:OVERLAP)*MODEL_SCALE;
+          const padB=(sy1===sh?0:OVERLAP)*MODEL_SCALE;
+          const cropW=outW-padL-padR, cropH=outH-padT-padB;
+          const dstX=tx*INNER*MODEL_SCALE, dstY=ty*INNER*MODEL_SCALE;
+
+          const tmp=document.createElement("canvas");
+          tmp.width=outW; tmp.height=outH;
+          tmp.getContext("2d").putImageData(new ImageData(pixels,outW,outH),0,0);
+          dstCtx.drawImage(tmp,padL,padT,cropW,cropH,dstX,dstY,cropW,cropH);
+
+          done++;
+          setProg(45+Math.round(done/totalTiles*50));
+          setMsg(`AI 처리 중... ${done}/${totalTiles} 타일 완료`);
+          await new Promise(r=>setTimeout(r,0)); // UI 업데이트 허용
+        }
       }
 
-      // Y채널 → AI 모델 [1,1,H,W]
-      const tensor=new window.ort.Tensor("float32",yData,[1,1,sh,sw]);
-      const result=await session.run({[inputName]:tensor});
-      const yUp=result[outputName].data; // [1,1,dh,dw]
-      setProg(80); setMsg("색상 채널 합성 중...");
-
-      // Cb/Cr bicubic 업스케일
-      const upscaleChannel=(data,sw,sh,dw,dh)=>{
-        const src=document.createElement("canvas"); src.width=sw; src.height=sh;
-        const id=new ImageData(sw,sh);
-        for(let i=0;i<sh*sw;i++){const v=Math.round(data[i]*255); id.data[i*4]=v; id.data[i*4+1]=v; id.data[i*4+2]=v; id.data[i*4+3]=255;}
-        src.getContext("2d").putImageData(id,0,0);
-        const dst=document.createElement("canvas"); dst.width=dw; dst.height=dh;
-        const ctx=dst.getContext("2d"); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality="high";
-        ctx.drawImage(src,0,0,dw,dh);
-        return ctx.getImageData(0,0,dw,dh).data;
-      };
-      const cbUp=upscaleChannel(cbData,sw,sh,dw,dh);
-      const crUp=upscaleChannel(crData,sw,sh,dw,dh);
-
-      // YCbCr → RGB 합성
-      const out=new Uint8ClampedArray(dw*dh*4);
-      for(let i=0;i<dh*dw;i++){
-        const y=yUp[i];
-        const cb=cbUp[i*4]/255-0.502;
-        const cr=crUp[i*4]/255-0.502;
-        out[i*4]  =Math.max(0,Math.min(255,(y+1.402*cr)*255));
-        out[i*4+1]=Math.max(0,Math.min(255,(y-0.344*cb-0.714*cr)*255));
-        out[i*4+2]=Math.max(0,Math.min(255,(y+1.772*cb)*255));
-        out[i*4+3]=255;
-      }
-
-      setProg(95); setMsg("저장 중...");
-      const dstCvs=document.createElement("canvas"); dstCvs.width=dw; dstCvs.height=dh;
-      dstCvs.getContext("2d").putImageData(new ImageData(out,dw,dh),0,0);
+      setProg(97); setMsg("저장 중...");
       const blob=await new Promise(res=>dstCvs.toBlob(res,"image/jpeg",0.95));
       setResultUrl(URL.createObjectURL(blob));
       setResultInfo({w:dw,h:dh,bytes:blob.size});
@@ -4060,18 +4073,12 @@ function RestoreTab(){
         <div style={{height:"6px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
           <div style={{height:"100%",width:`${progress}%`,borderRadius:"3px",transition:"width .4s",
             background:"linear-gradient(90deg,#7928ca,#1f6feb,#58a6ff)"}}/></div>
-        {progress<45&&<div style={{marginTop:"10px",color:"#484f58",fontSize:"11px",textAlign:"center"}}>
-          ☕ 모델 다운로드 중입니다. 완료 후 다음 실행부터는 바로 시작됩니다.
-        </div>}
       </div>}
 
       {/* 오류 */}
       {errMsg&&<div style={{background:"#2d1117",border:"1px solid #da363333",borderRadius:"8px",
         padding:"14px",display:"flex",flexDirection:"column",gap:"8px"}}>
         <div style={{color:"#ff7b72",fontSize:"13px",fontWeight:700}}>⚠️ {errMsg}</div>
-        <div style={{color:"#8b949e",fontSize:"12px"}}>
-          💡 HuggingFace 모델 repo가 <strong style={{color:"#c9d1d9"}}>Public</strong>으로 설정되어 있는지 확인해주세요.
-        </div>
       </div>}
 
       {/* 결과 */}
@@ -4123,7 +4130,7 @@ function RestoreTab(){
             color:"#fff",fontSize:"11px",fontWeight:700,padding:"3px 10px",borderRadius:"20px"}}>원본</div>
           <div style={{position:"absolute",top:"10px",right:"12px",background:"#1f6feb",
             color:"#fff",fontSize:"11px",fontWeight:700,padding:"3px 10px",borderRadius:"20px"}}>
-            {useAI?"AI 복원":"향상"}
+            AI 복원
           </div>
         </div>
       </>}
