@@ -4047,16 +4047,6 @@ function RestoreTab(){
         <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}}
           onChange={e=>loadFile(e.target.files[0])}/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px"}}>
-        {[["🤖","AI 슈퍼해상도"],["🔍","최대 4X 업스케일"],["🎨","디테일 실제 복원"],
-          ["📦","브라우저 내 처리"],["🔒","서버 전송 없음"],["💾","무료·무제한"]].map(([ic,lb])=>(
-          <div key={lb} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",
-            padding:"14px",display:"flex",alignItems:"center",gap:"10px"}}>
-            <span style={{fontSize:"22px"}}>{ic}</span>
-            <span style={{color:"#8b949e",fontSize:"12px",fontWeight:600}}>{lb}</span>
-          </div>
-        ))}
-      </div>
     </>}
 
     {/* ── 처리 화면 ── */}
@@ -4065,58 +4055,17 @@ function RestoreTab(){
       {/* 컨트롤 바 */}
       {!resultUrl&&!processing&&<>
         <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
-          {/* AI / 기본 모드 토글 */}
-          <div style={{display:"flex",background:"#161b22",border:"1px solid #30363d",
-            borderRadius:"8px",overflow:"hidden",flexShrink:0}}>
-            {[["🤖 AI 향상",true],["⚡ 기본",false]].map(([label,val])=>(
-              <button key={String(val)} onClick={()=>setUseAI(val)} style={{
-                padding:"8px 14px",border:"none",
-                background:useAI===val?"#1f6feb":"transparent",
-                color:useAI===val?"#fff":"#8b949e",cursor:"pointer",
-                fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
-              }}>{label}</button>
-            ))}
-          </div>
-
-          {/* 기본 모드일 때 배율 선택 */}
-          {!useAI&&["1","2","4"].map(s=>(
-            <button key={s} onClick={()=>setScale(s)} style={{
-              padding:"8px 16px",borderRadius:"8px",
-              border:`1px solid ${scale===s?"#58a6ff":"#30363d"}`,
-              background:scale===s?"#1f6feb":"#21262d",
-              color:scale===s?"#fff":"#8b949e",cursor:"pointer",
-              fontWeight:700,fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif",
-            }}>{s}X</button>
-          ))}
-
-          {/* 실행 버튼 */}
-          <button onClick={runProcess} style={{
+          <button onClick={runAIUpscale} style={{
             marginLeft:"auto",padding:"11px 28px",
-            background:useAI?"linear-gradient(135deg,#7928ca,#1f6feb)":"linear-gradient(135deg,#1f6feb,#388bfd)",
+            background:"linear-gradient(135deg,#7928ca,#1f6feb)",
             border:"none",borderRadius:"10px",color:"#fff",cursor:"pointer",
             fontSize:"14px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",
-          }}>{useAI?"🤖 AI 복원 시작":"✨ 기본 향상 시작"}</button>
-
+          }}>🤖 AI 복원 시작</button>
           <button onClick={()=>{setOrigUrl(null);setOrigInfo(null);}} style={{
             padding:"11px 14px",background:"none",border:"1px solid #30363d",
             borderRadius:"10px",color:"#484f58",cursor:"pointer",fontSize:"13px",
           }}>🗑️</button>
         </div>
-
-        {/* AI 모드 안내 */}
-        {useAI&&<div style={{background:"#0d1830",border:"1px solid #1f6feb44",borderRadius:"10px",
-          padding:"12px 16px",display:"flex",gap:"12px",alignItems:"flex-start"}}>
-          <span style={{fontSize:"20px",flexShrink:0}}>🤖</span>
-          <div>
-            <div style={{color:"#58a6ff",fontSize:"13px",fontWeight:700,marginBottom:"4px"}}>
-              AI 슈퍼해상도 (Real-ESRGAN x4)
-            </div>
-            <div style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.6"}}>
-              첫 실행 시 AI 모델(~60MB)을 다운로드합니다. 이후 브라우저가 캐시하므로 빠릅니다.<br/>
-              픽셀을 단순히 키우는 것이 아닌, <strong style={{color:"#c9d1d9"}}>AI가 실제 디테일을 만들어냅니다.</strong>
-            </div>
-          </div>
-        </div>}
       </>}
 
       {/* 진행 표시 */}
@@ -4196,7 +4145,7 @@ function RestoreTab(){
             color:"#fff",fontSize:"11px",fontWeight:700,padding:"3px 10px",borderRadius:"20px"}}>원본</div>
           <div style={{position:"absolute",top:"10px",right:"12px",background:"#1f6feb",
             color:"#fff",fontSize:"11px",fontWeight:700,padding:"3px 10px",borderRadius:"20px"}}>
-            {useAI?"AI 복원":"향상"}
+            {useAI?"AI 복원":"AI 복원"}
           </div>
         </div>
       </>}
