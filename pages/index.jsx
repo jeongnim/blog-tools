@@ -3729,6 +3729,7 @@ let _aiSession = null; // 브라우저 세션 동안 모델 캐시
 
 const ORT_CDN = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/";
 const AI_MODEL_URLS = [
+  "https://huggingface.co/jeongnim/realesrgan/resolve/main/real_esrgan_x4.onnx",
   "/models/realesrgan.onnx",
 ];
 
@@ -3819,7 +3820,8 @@ function RestoreTab(){
 
     if(!modelBuffer){
       throw new Error(
-        "AI 모델 로드 실패. public/models/realesrgan.onnx 파일을 확인해주세요."
+        "AI 모델 로드 실패. 네트워크를 확인하거나, "+
+        "Real-ESRGAN ONNX 모델 파일을 /public/models/realesrgan.onnx 에 추가해주세요."
       );
     }
 
@@ -4134,9 +4136,14 @@ function RestoreTab(){
       {errMsg&&<div style={{background:"#2d1117",border:"1px solid #da363333",borderRadius:"8px",
         padding:"14px",display:"flex",flexDirection:"column",gap:"8px"}}>
         <div style={{color:"#ff7b72",fontSize:"13px",fontWeight:700}}>⚠️ {errMsg}</div>
-        <div style={{color:"#8b949e",fontSize:"12px"}}>
-          💡 프로젝트의 <code style={{color:"#58a6ff",background:"#0d1117",padding:"1px 6px",borderRadius:"4px"}}>public/models/realesrgan.onnx</code> 파일을 확인해주세요.
-        </div>
+        {errMsg.includes("모델 로드 실패")&&<div style={{color:"#8b949e",fontSize:"12px"}}>
+          💡 Real-ESRGAN ONNX 모델을 <code style={{color:"#58a6ff"}}>/public/models/realesrgan.onnx</code>에 배치하거나,
+          기본 모드로 전환해 사용하세요.
+        </div>}
+        <button onClick={()=>{setUseAI(false);setErrMsg("");}} style={{
+          alignSelf:"flex-start",padding:"7px 14px",background:"#21262d",border:"1px solid #30363d",
+          borderRadius:"6px",color:"#8b949e",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif",
+        }}>⚡ 기본 모드로 전환</button>
       </div>}
 
       {/* 결과 */}
