@@ -3729,8 +3729,7 @@ let _aiSession = null; // 브라우저 세션 동안 모델 캐시
 
 const ORT_CDN = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/";
 const AI_MODEL_URLS = [
-  "https://huggingface.co/jeongnim/realesrgan/resolve/main/real_esrgan_x4.onnx",
-  "/models/realesrgan.onnx",
+  "/models/realesr.onnx",
 ];
 
 function RestoreTab(){
