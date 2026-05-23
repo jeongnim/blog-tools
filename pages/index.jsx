@@ -3729,7 +3729,7 @@ let _aiSession = null; // 브라우저 세션 동안 모델 캐시
 
 const ORT_CDN = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/";
 const AI_MODEL_URLS = [
-  "https://github.com/onnx/models/raw/main/validated/vision/super_resolution/sub_pixel_cnn_2016/model/super-resolution-10.onnx",
+  "https://huggingface.co/jeongnim/realesrgan/resolve/main/real_esrgan_x4.onnx",
   "/models/realesrgan.onnx",
 ];
 
@@ -3791,31 +3791,36 @@ function RestoreTab(){
       window.ort.env.wasm.wasmPaths=ORT_CDN;
     }
 
-    // 2. 모델 다운로드 (한 번에 받기)
-    setMsg("AI 모델 다운로드 중... (약 70MB, 처음 한 번만 받습니다)");
+    // 2. 모델 다운로드 (타임아웃 없이 스트리밍)
+    setMsg("AI 모델 다운로드 중... (약 70MB, 처음 한 번만)");
     setProg(5);
     let modelBuffer=null;
     for(const url of AI_MODEL_URLS){
       try{
-        const resp=await fetch(url);
+        const resp=await fetch(url,{cache:"default"});
         if(!resp.ok) continue;
-        setMsg("AI 모델 다운로드 중... 잠시 기다려주세요 (70MB)");
-        setProg(15);
-        modelBuffer=await resp.arrayBuffer();
-        if(modelBuffer.byteLength < 10*1024*1024){
-          // 10MB 미만이면 불완전한 파일
-          modelBuffer=null; continue;
+        const reader=resp.body.getReader();
+        const chunks=[];
+        let loaded=0;
+        const ESTIMATED=70*1024*1024;
+        while(true){
+          const {done,value}=await reader.read();
+          if(done) break;
+          chunks.push(value); loaded+=value.length;
+          setProg(Math.min(35,Math.round(loaded/ESTIMATED*35)));
+          setMsg(`모델 다운로드 중... ${Math.round(loaded/1024/1024)}MB / 70MB`);
+          await new Promise(r=>setTimeout(r,0));
         }
-        setProg(40);
+        if(loaded<10*1024*1024){ continue; } // 10MB 미만이면 불완전
+        const buf=new Uint8Array(loaded);
+        let off=0; for(const c of chunks){buf.set(c,off); off+=c.length;}
+        modelBuffer=buf.buffer;
         break;
       }catch(e){ continue; }
     }
 
     if(!modelBuffer){
-      throw new Error(
-        "AI 모델 로드 실패. 네트워크를 확인하거나, "+
-        "Real-ESRGAN ONNX 모델 파일을 /public/models/realesrgan.onnx 에 추가해주세요."
-      );
+      throw new Error("AI 모델 로드 실패. 네트워크 상태를 확인하거나 잠시 후 다시 시도해주세요.");
     }
 
     // 3. 세션 생성
