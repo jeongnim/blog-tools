@@ -3875,36 +3875,35 @@ function RestoreTab(){
           const sy1=Math.min(sh,ty*INNER+INNER+OVERLAP);
           const tw=sx1-sx0, th=sy1-sy0;
 
-          // 8의 배수로 패딩 (모델 요구사항)
-          const pw=Math.ceil(tw/8)*8, ph=Math.ceil(th/8)*8;
-
+          // 항상 256×256 고정 입력으로 패딩 (모델 요구사항)
+          const FIXED=256;
           const padCvs=document.createElement("canvas");
-          padCvs.width=pw; padCvs.height=ph;
+          padCvs.width=FIXED; padCvs.height=FIXED;
           padCvs.getContext("2d").drawImage(srcCvs,sx0,sy0,tw,th,0,0,tw,th);
-          const px=padCvs.getContext("2d").getImageData(0,0,pw,ph).data;
+          const px=padCvs.getContext("2d").getImageData(0,0,FIXED,FIXED).data;
 
-          const inp=new Float32Array(3*ph*pw);
-          for(let i=0;i<ph*pw;i++){
-            inp[i]          =px[i*4]  /255;
-            inp[ph*pw+i]    =px[i*4+1]/255;
-            inp[2*ph*pw+i]  =px[i*4+2]/255;
+          const inp=new Float32Array(3*FIXED*FIXED);
+          for(let i=0;i<FIXED*FIXED;i++){
+            inp[i]              =px[i*4]  /255;
+            inp[FIXED*FIXED+i]  =px[i*4+1]/255;
+            inp[2*FIXED*FIXED+i]=px[i*4+2]/255;
           }
 
-          const tensor=new window.ort.Tensor("float32",inp,[1,3,ph,pw]);
+          const tensor=new window.ort.Tensor("float32",inp,[1,3,FIXED,FIXED]);
           const out=await session.run({[inputName]:tensor});
           const outData=out[outputName].data;
-          const outW=pw*MODEL_SCALE, outH=ph*MODEL_SCALE;
+          const fullW=FIXED*MODEL_SCALE, fullH=FIXED*MODEL_SCALE;
           const actualW=tw*MODEL_SCALE, actualH=th*MODEL_SCALE;
 
-          const pixels=new Uint8ClampedArray(outW*outH*4);
-          for(let i=0;i<outH*outW;i++){
+          const pixels=new Uint8ClampedArray(fullW*fullH*4);
+          for(let i=0;i<fullH*fullW;i++){
             pixels[i*4]  =Math.max(0,Math.min(255,outData[i]*255));
-            pixels[i*4+1]=Math.max(0,Math.min(255,outData[outH*outW+i]*255));
-            pixels[i*4+2]=Math.max(0,Math.min(255,outData[2*outH*outW+i]*255));
+            pixels[i*4+1]=Math.max(0,Math.min(255,outData[fullH*fullW+i]*255));
+            pixels[i*4+2]=Math.max(0,Math.min(255,outData[2*fullH*fullW+i]*255));
             pixels[i*4+3]=255;
           }
 
-          // 오버랩 제거 후 dst에 붙이기
+          // 실제 타일 크기만큼만 오버랩 제거 후 dst에 붙이기
           const padL=(sx0===0?0:OVERLAP)*MODEL_SCALE;
           const padT=(sy0===0?0:OVERLAP)*MODEL_SCALE;
           const padR=(sx1===sw?0:OVERLAP)*MODEL_SCALE;
@@ -3913,8 +3912,8 @@ function RestoreTab(){
           const dstX=tx*INNER*MODEL_SCALE, dstY=ty*INNER*MODEL_SCALE;
 
           const tmp=document.createElement("canvas");
-          tmp.width=outW; tmp.height=outH;
-          tmp.getContext("2d").putImageData(new ImageData(pixels,outW,outH),0,0);
+          tmp.width=fullW; tmp.height=fullH;
+          tmp.getContext("2d").putImageData(new ImageData(pixels,fullW,fullH),0,0);
           dstCtx.drawImage(tmp,padL,padT,cropW,cropH,dstX,dstY,cropW,cropH);
 
           done++;
