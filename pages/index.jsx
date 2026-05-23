@@ -3723,17 +3723,30 @@ function VideoGifTab(){
 
 
 // ─── TAB: 사진 복원·향상 ────────────────────────────────────────────────────
+
+// ─── TAB: 사진 복원·향상 (AI Real-ESRGAN) ──────────────────────────────────
+let _aiSession = null; // 브라우저 세션 동안 모델 캐시
+
+const ORT_CDN = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/";
+const AI_MODEL_URLS = [
+  "https://huggingface.co/onnx-community/real-esrgan-x4-plus/resolve/main/onnx/model.onnx",
+  "https://huggingface.co/skytnt/real-esrgan/resolve/main/model.onnx",
+  "/models/realesrgan.onnx",
+];
+
 function RestoreTab(){
   const [origUrl,setOrigUrl]=useState(null);
   const [resultUrl,setResultUrl]=useState(null);
   const [processing,setProcessing]=useState(false);
   const [progress,setProgress]=useState(0);
+  const [statusMsg,setStatusMsg]=useState("");
   const [errMsg,setErrMsg]=useState("");
   const [dragOver,setDragOver]=useState(false);
   const [sliderX,setSliderX]=useState(50);
   const [dragging,setDragging]=useState(false);
   const [origInfo,setOrigInfo]=useState(null);
   const [resultInfo,setResultInfo]=useState(null);
+  const [useAI,setUseAI]=useState(true);
   const [scale,setScale]=useState("2");
   const fileRef=useRef(null);
   const sliderRef=useRef(null);
@@ -3741,7 +3754,8 @@ function RestoreTab(){
   const loadFile=useCallback((file)=>{
     if(!file||!file.type.startsWith("image/")) return;
     const url=URL.createObjectURL(file);
-    setOrigUrl(url); setResultUrl(null); setResultInfo(null); setErrMsg(""); setProgress(0);
+    setOrigUrl(url); setResultUrl(null); setResultInfo(null);
+    setErrMsg(""); setProgress(0); setStatusMsg("");
     const img=new Image();
     img.onload=()=>setOrigInfo({w:img.naturalWidth,h:img.naturalHeight,bytes:file.size});
     img.src=url;
@@ -3757,103 +3771,241 @@ function RestoreTab(){
   },[loadFile]);
 
   const loadImg=src=>new Promise((res,rej)=>{
-    const img=new Image();
-    img.crossOrigin="anonymous";
-    img.onload=()=>res(img);
-    img.onerror=rej;
-    img.src=src;
+    const img=new Image(); img.crossOrigin="anonymous";
+    img.onload=()=>res(img); img.onerror=rej; img.src=src;
     if(img.complete&&img.naturalWidth>0) res(img);
   });
 
-  const runProcess=async()=>{
+  // ── ORT 스크립트 로드 + 모델 세션 획득 ──
+  const getAISession=async(setProg,setMsg)=>{
+    if(_aiSession) return _aiSession;
+
+    // 1. ORT Web 스크립트 로드
+    if(!window.ort){
+      setMsg("AI 라이브러리 로딩 중...");
+      await new Promise((res,rej)=>{
+        const s=document.createElement("script");
+        s.src=ORT_CDN+"ort.min.js";
+        s.onload=res; s.onerror=()=>rej(new Error("ORT 스크립트 로드 실패"));
+        document.head.appendChild(s);
+      });
+      window.ort.env.wasm.wasmPaths=ORT_CDN;
+    }
+
+    // 2. 모델 다운로드 (여러 URL 순서대로 시도)
+    setMsg("AI 모델 다운로드 중... (첫 실행 시 약 60MB, 이후 캐시됩니다)");
+    let modelBuffer=null;
+    for(const url of AI_MODEL_URLS){
+      try{
+        const resp=await fetch(url,{signal:AbortSignal.timeout(180000)});
+        if(!resp.ok) continue;
+        const total=parseInt(resp.headers.get("content-length")||"0");
+        const reader=resp.body.getReader();
+        const chunks=[];
+        let loaded=0;
+        while(true){
+          const {done,value}=await reader.read();
+          if(done) break;
+          chunks.push(value); loaded+=value.length;
+          if(total>0){
+            setProg(Math.round(loaded/total*38));
+            setMsg(`모델 다운로드 중... ${Math.round(loaded/1024/1024)}MB / ${Math.round(total/1024/1024)}MB`);
+          }
+        }
+        const buf=new Uint8Array(loaded);
+        let off=0; for(const c of chunks){buf.set(c,off); off+=c.length;}
+        modelBuffer=buf.buffer;
+        break;
+      }catch(e){ continue; }
+    }
+
+    if(!modelBuffer){
+      throw new Error(
+        "AI 모델 로드 실패. 네트워크를 확인하거나, "+
+        "Real-ESRGAN ONNX 모델 파일을 /public/models/realesrgan.onnx 에 추가해주세요."
+      );
+    }
+
+    // 3. 세션 생성
+    setMsg("AI 모델 초기화 중..."); setProg(42);
+    const session=await window.ort.InferenceSession.create(modelBuffer,{
+      executionProviders:["webgl","wasm"],
+    });
+    _aiSession=session;
+    return session;
+  };
+
+  // ── AI 업스케일 (Real-ESRGAN, 타일 처리) ──
+  const runAIUpscale=async()=>{
     if(!origUrl) return;
-    setProcessing(true); setResultUrl(null); setErrMsg(""); setProgress(5);
+    setProcessing(true); setResultUrl(null); setErrMsg(""); setProgress(0);
+    const setProg=p=>setProgress(p);
+    const setMsg=m=>setStatusMsg(m);
+    try{
+      const img=await loadImg(origUrl);
+      const sw=img.naturalWidth, sh=img.naturalHeight;
+      const srcCvs=document.createElement("canvas");
+      srcCvs.width=sw; srcCvs.height=sh;
+      const srcCtx=srcCvs.getContext("2d"); srcCtx.drawImage(img,0,0);
+
+      const session=await getAISession(setProg,setMsg);
+      const inputName=session.inputNames[0];
+      const outputName=session.outputNames[0];
+
+      // 타일 설정 (256px 타일, 16px 오버랩)
+      const TILE=256, OVERLAP=16, INNER=TILE-OVERLAP*2;
+      const MODEL_SCALE=4; // Real-ESRGAN x4
+
+      setMsg(`AI 업스케일 처리 중... (${sw}×${sh} → ${sw*MODEL_SCALE}×${sh*MODEL_SCALE})`);
+      setProg(45);
+
+      const dw=sw*MODEL_SCALE, dh=sh*MODEL_SCALE;
+      const dstCvs=document.createElement("canvas");
+      dstCvs.width=dw; dstCvs.height=dh;
+      const dstCtx=dstCvs.getContext("2d");
+
+      const tilesX=Math.ceil(sw/INNER), tilesY=Math.ceil(sh/INNER);
+      const totalTiles=tilesX*tilesY;
+      let done=0;
+
+      for(let ty=0;ty<tilesY;ty++){
+        for(let tx=0;tx<tilesX;tx++){
+          const sx0=Math.max(0,tx*INNER-OVERLAP);
+          const sy0=Math.max(0,ty*INNER-OVERLAP);
+          const sx1=Math.min(sw,tx*INNER+INNER+OVERLAP);
+          const sy1=Math.min(sh,ty*INNER+INNER+OVERLAP);
+          const tw=sx1-sx0, th=sy1-sy0;
+
+          const px=srcCtx.getImageData(sx0,sy0,tw,th).data;
+          const inp=new Float32Array(3*th*tw);
+          for(let i=0;i<th*tw;i++){
+            inp[i]                =px[i*4]  /255;
+            inp[th*tw+i]          =px[i*4+1]/255;
+            inp[2*th*tw+i]        =px[i*4+2]/255;
+          }
+
+          const tensor=new window.ort.Tensor("float32",inp,[1,3,th,tw]);
+          const out=await session.run({[inputName]:tensor});
+          const outData=out[outputName].data;
+          const outW=tw*MODEL_SCALE, outH=th*MODEL_SCALE;
+
+          const pixels=new Uint8ClampedArray(outW*outH*4);
+          for(let i=0;i<outH*outW;i++){
+            pixels[i*4]  =Math.max(0,Math.min(255,outData[i]*255));
+            pixels[i*4+1]=Math.max(0,Math.min(255,outData[outH*outW+i]*255));
+            pixels[i*4+2]=Math.max(0,Math.min(255,outData[2*outH*outW+i]*255));
+            pixels[i*4+3]=255;
+          }
+
+          // 오버랩 제거 후 dst에 붙이기
+          const padL=(sx0===0?0:OVERLAP)*MODEL_SCALE;
+          const padT=(sy0===0?0:OVERLAP)*MODEL_SCALE;
+          const padR=(sx1===sw?0:OVERLAP)*MODEL_SCALE;
+          const padB=(sy1===sh?0:OVERLAP)*MODEL_SCALE;
+          const cropW=outW-padL-padR, cropH=outH-padT-padB;
+          const dstX=tx*INNER*MODEL_SCALE, dstY=ty*INNER*MODEL_SCALE;
+
+          const tmp=document.createElement("canvas");
+          tmp.width=outW; tmp.height=outH;
+          tmp.getContext("2d").putImageData(new ImageData(pixels,outW,outH),0,0);
+          dstCtx.drawImage(tmp,padL,padT,cropW,cropH,dstX,dstY,cropW,cropH);
+
+          done++;
+          setProg(45+Math.round(done/totalTiles*50));
+          setMsg(`AI 처리 중... ${done}/${totalTiles} 타일 완료`);
+          await new Promise(r=>setTimeout(r,0)); // UI 업데이트 허용
+        }
+      }
+
+      setProg(97); setMsg("저장 중...");
+      const blob=await new Promise(res=>dstCvs.toBlob(res,"image/jpeg",0.95));
+      setResultUrl(URL.createObjectURL(blob));
+      setResultInfo({w:dw,h:dh,bytes:blob.size});
+      setProg(100); setMsg("✅ AI 복원 완료!");
+    }catch(e){
+      setErrMsg("AI 오류: "+e.message);
+    }
+    setProcessing(false);
+  };
+
+  // ── 기본 Canvas 처리 (AI 실패 시 또는 기본 모드) ──
+  const runBasicProcess=async()=>{
+    if(!origUrl) return;
+    setProcessing(true); setResultUrl(null); setErrMsg(""); setProgress(0);
+    const setProg=p=>setProgress(p);
+    const setMsg=m=>setStatusMsg(m);
     try{
       await new Promise(r=>setTimeout(r,20));
       const img=await loadImg(origUrl);
       const sc=Number(scale);
       const dw=img.naturalWidth*sc, dh=img.naturalHeight*sc;
-      setProgress(15);
+      setProg(15); setMsg("이미지 스케일 업...");
 
       const cvs=document.createElement("canvas");
       cvs.width=dw; cvs.height=dh;
       const ctx=cvs.getContext("2d",{willReadFrequently:true});
-      ctx.imageSmoothingEnabled=true;
-      ctx.imageSmoothingQuality="high";
+      ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality="high";
       ctx.drawImage(img,0,0,dw,dh);
-      setProgress(30);
+      setProg(30); setMsg("색상·대비 보정 중...");
 
-      // 1) 자동 밝기·대비·채도
+      // 자동 밝기·대비·채도
       {
-        const id=ctx.getImageData(0,0,dw,dh);
-        const d=id.data;
-        let sum=0;
-        for(let i=0;i<d.length;i+=4) sum+=(d[i]+d[i+1]+d[i+2])/3;
+        const id=ctx.getImageData(0,0,dw,dh); const d=id.data;
+        let sum=0; for(let i=0;i<d.length;i+=4) sum+=(d[i]+d[i+1]+d[i+2])/3;
         const avg=sum/(d.length/4);
         const autoBr=avg<100?20:avg<160?10:avg>200?-10:0;
         const br=(autoBr/100)*255;
-        const ctRaw=0.15;
-        const ctF=(259*(ctRaw*100+255))/(255*(259-ctRaw*100));
+        const ctF=(259*(15+255))/(255*(259-15));
         const sat=1.15;
         for(let i=0;i<d.length;i+=4){
-          let r=d[i],g=d[i+1],b=d[i+2];
-          r+=br; g+=br; b+=br;
+          let r=d[i]+br,g=d[i+1]+br,b=d[i+2]+br;
           r=ctF*(r-128)+128; g=ctF*(g-128)+128; b=ctF*(b-128)+128;
           const L=0.299*r+0.587*g+0.114*b;
           r=L+(r-L)*sat; g=L+(g-L)*sat; b=L+(b-L)*sat;
-          d[i]=r<0?0:r>255?255:r;
-          d[i+1]=g<0?0:g>255?255:g;
-          d[i+2]=b<0?0:b>255?255:b;
+          d[i]=r<0?0:r>255?255:r; d[i+1]=g<0?0:g>255?255:g; d[i+2]=b<0?0:b>255?255:b;
         }
         ctx.putImageData(id,0,0);
       }
-      setProgress(50);
+      setProg(50); setMsg("노이즈 제거 중...");
 
-      // 2) 노이즈 제거 2회
+      // 노이즈 제거
       for(let p=0;p<2;p++){
         const id=ctx.getImageData(0,0,dw,dh);
         const s=new Uint8ClampedArray(id.data), d=id.data;
-        for(let y=1;y<dh-1;y++){
-          for(let x=1;x<dw-1;x++){
-            const i=(y*dw+x)*4;
-            for(let c=0;c<3;c++){
-              d[i+c]=(s[i+c]+s[((y-1)*dw+x)*4+c]+s[((y+1)*dw+x)*4+c]+s[(y*dw+x-1)*4+c]+s[(y*dw+x+1)*4+c]+1)/5|0;
-            }
-          }
+        for(let y=1;y<dh-1;y++) for(let x=1;x<dw-1;x++){
+          const i=(y*dw+x)*4;
+          for(let c=0;c<3;c++) d[i+c]=(s[i+c]+s[((y-1)*dw+x)*4+c]+s[((y+1)*dw+x)*4+c]+s[(y*dw+x-1)*4+c]+s[(y*dw+x+1)*4+c]+1)/5|0;
         }
         ctx.putImageData(id,0,0);
       }
-      setProgress(70);
+      setProg(70); setMsg("선명도 향상 중...");
 
-      // 3) 선명도 (언샤프 마스킹)
+      // 언샤프 마스킹
       {
         const sharp=ctx.getImageData(0,0,dw,dh);
-        const tmp=document.createElement("canvas");
-        tmp.width=dw; tmp.height=dh;
-        const tc=tmp.getContext("2d");
-        tc.filter="blur(1px)";
-        tc.drawImage(cvs,0,0);
+        const tmp=document.createElement("canvas"); tmp.width=dw; tmp.height=dh;
+        const tc=tmp.getContext("2d"); tc.filter="blur(1px)"; tc.drawImage(cvs,0,0);
         const blurred=tc.getImageData(0,0,dw,dh);
         const sd=sharp.data, bd=blurred.data;
-        for(let i=0;i<sd.length;i+=4){
-          for(let c=0;c<3;c++){
-            const v=sd[i+c]+(sd[i+c]-bd[i+c])*1.4;
-            sd[i+c]=v<0?0:v>255?255:v;
-          }
+        for(let i=0;i<sd.length;i+=4) for(let c=0;c<3;c++){
+          const v=sd[i+c]+(sd[i+c]-bd[i+c])*1.4;
+          sd[i+c]=v<0?0:v>255?255:v;
         }
         ctx.putImageData(sharp,0,0);
       }
-      setProgress(90);
+      setProg(90); setMsg("저장 중...");
 
       const blob=await new Promise(res=>cvs.toBlob(res,"image/jpeg",0.95));
       setResultUrl(URL.createObjectURL(blob));
       setResultInfo({w:dw,h:dh,bytes:blob.size});
-      setProgress(100);
+      setProg(100); setMsg("완료!");
     }catch(e){
       setErrMsg("처리 오류: "+e.message);
     }
     setProcessing(false);
   };
+
+  const runProcess=()=>{ useAI?runAIUpscale():runBasicProcess(); };
 
   const onMove=useCallback(e=>{
     if(!dragging||!sliderRef.current) return;
@@ -3864,42 +4016,40 @@ function RestoreTab(){
 
   useEffect(()=>{
     const up=()=>setDragging(false);
-    window.addEventListener("mousemove",onMove);
-    window.addEventListener("mouseup",up);
-    window.addEventListener("touchmove",onMove,{passive:true});
-    window.addEventListener("touchend",up);
+    window.addEventListener("mousemove",onMove); window.addEventListener("mouseup",up);
+    window.addEventListener("touchmove",onMove,{passive:true}); window.addEventListener("touchend",up);
     return()=>{
-      window.removeEventListener("mousemove",onMove);
-      window.removeEventListener("mouseup",up);
-      window.removeEventListener("touchmove",onMove);
-      window.removeEventListener("touchend",up);
+      window.removeEventListener("mousemove",onMove); window.removeEventListener("mouseup",up);
+      window.removeEventListener("touchmove",onMove); window.removeEventListener("touchend",up);
     };
   },[onMove]);
 
   const fmtSz=n=>n>1048576?(n/1048576).toFixed(1)+"MB":(n/1024).toFixed(0)+"KB";
-  const fmtPx=(w,h)=>`${w}x${h}px`;
+  const fmtPx=(w,h)=>`${w}×${h}px`;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
 
+    {/* ── 업로드 화면 ── */}
     {!origUrl&&<>
-      <div onClick={()=>fileRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileRef.current?.click();}}
+      <div onClick={()=>fileRef.current?.click()}
+        onTouchEnd={e=>{e.preventDefault();fileRef.current?.click();}}
         onDrop={e=>{e.preventDefault();setDragOver(false);loadFile(e.dataTransfer.files[0]);}}
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
         style={{border:`2px dashed ${dragOver?"#58a6ff":"#30363d"}`,borderRadius:"14px",
           padding:"56px 20px",textAlign:"center",cursor:"pointer",
           background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
-        <div style={{fontSize:"56px",marginBottom:"14px"}}>✨</div>
+        <div style={{fontSize:"56px",marginBottom:"14px"}}>🤖</div>
         <div style={{color:"#c9d1d9",fontSize:"17px",fontWeight:700,marginBottom:"8px"}}>
           이미지 드래그 · 클릭 · Ctrl+V
         </div>
-        <div style={{color:"#484f58",fontSize:"13px"}}>업로드하면 자동으로 복원·향상됩니다</div>
+        <div style={{color:"#484f58",fontSize:"13px"}}>AI가 진짜 디테일을 복원합니다 (Real-ESRGAN)</div>
         <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}}
           onChange={e=>loadFile(e.target.files[0])}/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px"}}>
-        {[["🔍","업스케일 2X/4X"],["🎨","색상·대비 자동 보정"],["🧹","노이즈 자동 제거"],
-          ["✨","선명도 자동 향상"],["↔️","Before/After 슬라이더"],["⬇️","고화질 JPEG 다운로드"]].map(([ic,lb])=>(
+        {[["🤖","AI 슈퍼해상도"],["🔍","최대 4X 업스케일"],["🎨","디테일 실제 복원"],
+          ["📦","브라우저 내 처리"],["🔒","서버 전송 없음"],["💾","무료·무제한"]].map(([ic,lb])=>(
           <div key={lb} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",
             padding:"14px",display:"flex",alignItems:"center",gap:"10px"}}>
             <span style={{fontSize:"22px"}}>{ic}</span>
@@ -3909,109 +4059,151 @@ function RestoreTab(){
       </div>
     </>}
 
+    {/* ── 처리 화면 ── */}
     {origUrl&&<>
-      {!resultUrl&&!processing&&<div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
-        <span style={{color:"#8b949e",fontSize:"13px"}}>업스케일</span>
-        {["1","2","4"].map(s=>(
-          <button key={s} onClick={()=>setScale(s)}
-            style={{padding:"8px 18px",borderRadius:"8px",
+
+      {/* 컨트롤 바 */}
+      {!resultUrl&&!processing&&<>
+        <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
+          {/* AI / 기본 모드 토글 */}
+          <div style={{display:"flex",background:"#161b22",border:"1px solid #30363d",
+            borderRadius:"8px",overflow:"hidden",flexShrink:0}}>
+            {[["🤖 AI 향상",true],["⚡ 기본",false]].map(([label,val])=>(
+              <button key={String(val)} onClick={()=>setUseAI(val)} style={{
+                padding:"8px 14px",border:"none",
+                background:useAI===val?"#1f6feb":"transparent",
+                color:useAI===val?"#fff":"#8b949e",cursor:"pointer",
+                fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
+              }}>{label}</button>
+            ))}
+          </div>
+
+          {/* 기본 모드일 때 배율 선택 */}
+          {!useAI&&["1","2","4"].map(s=>(
+            <button key={s} onClick={()=>setScale(s)} style={{
+              padding:"8px 16px",borderRadius:"8px",
               border:`1px solid ${scale===s?"#58a6ff":"#30363d"}`,
               background:scale===s?"#1f6feb":"#21262d",
               color:scale===s?"#fff":"#8b949e",cursor:"pointer",
-              fontWeight:700,fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-            {s}X
-          </button>
-        ))}
-        <button onClick={runProcess}
-          style={{marginLeft:"auto",padding:"11px 30px",
-            background:"linear-gradient(135deg,#1f6feb,#388bfd)",
-            border:"none",borderRadius:"10px",color:"#fff",
-            cursor:"pointer",fontSize:"14px",fontWeight:700,
-            fontFamily:"'Noto Sans KR',sans-serif"}}>
-          ✨ 자동 복원·향상 시작
-        </button>
-        <button onClick={()=>{setOrigUrl(null);setOrigInfo(null);}}
-          style={{padding:"11px 14px",background:"none",border:"1px solid #30363d",
-            borderRadius:"10px",color:"#484f58",cursor:"pointer",fontSize:"13px"}}>
-          🗑️
-        </button>
-      </div>}
+              fontWeight:700,fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif",
+            }}>{s}X</button>
+          ))}
 
+          {/* 실행 버튼 */}
+          <button onClick={runProcess} style={{
+            marginLeft:"auto",padding:"11px 28px",
+            background:useAI?"linear-gradient(135deg,#7928ca,#1f6feb)":"linear-gradient(135deg,#1f6feb,#388bfd)",
+            border:"none",borderRadius:"10px",color:"#fff",cursor:"pointer",
+            fontSize:"14px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",
+          }}>{useAI?"🤖 AI 복원 시작":"✨ 기본 향상 시작"}</button>
+
+          <button onClick={()=>{setOrigUrl(null);setOrigInfo(null);}} style={{
+            padding:"11px 14px",background:"none",border:"1px solid #30363d",
+            borderRadius:"10px",color:"#484f58",cursor:"pointer",fontSize:"13px",
+          }}>🗑️</button>
+        </div>
+
+        {/* AI 모드 안내 */}
+        {useAI&&<div style={{background:"#0d1830",border:"1px solid #1f6feb44",borderRadius:"10px",
+          padding:"12px 16px",display:"flex",gap:"12px",alignItems:"flex-start"}}>
+          <span style={{fontSize:"20px",flexShrink:0}}>🤖</span>
+          <div>
+            <div style={{color:"#58a6ff",fontSize:"13px",fontWeight:700,marginBottom:"4px"}}>
+              AI 슈퍼해상도 (Real-ESRGAN x4)
+            </div>
+            <div style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.6"}}>
+              첫 실행 시 AI 모델(~60MB)을 다운로드합니다. 이후 브라우저가 캐시하므로 빠릅니다.<br/>
+              픽셀을 단순히 키우는 것이 아닌, <strong style={{color:"#c9d1d9"}}>AI가 실제 디테일을 만들어냅니다.</strong>
+            </div>
+          </div>
+        </div>}
+      </>}
+
+      {/* 진행 표시 */}
       {processing&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"20px 24px"}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:"10px"}}>
-          <span style={{color:"#8b949e",fontSize:"13px"}}>
-            {progress<20?"📥 이미지 분석 중...":progress<50?"🎨 색상·대비 보정 중...":progress<70?"🧹 노이즈 제거 중...":progress<90?"✨ 선명도 향상 중...":"✅ 마무리 중..."}
-          </span>
+          <span style={{color:"#8b949e",fontSize:"13px"}}>{statusMsg||"처리 중..."}</span>
           <span style={{color:"#58a6ff",fontWeight:700}}>{progress}%</span>
         </div>
         <div style={{height:"6px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
-          <div style={{height:"100%",width:`${progress}%`,borderRadius:"3px",transition:"width .3s",
-            background:"linear-gradient(90deg,#1f6feb,#58a6ff)"}}/>
-        </div>
+          <div style={{height:"100%",width:`${progress}%`,borderRadius:"3px",transition:"width .4s",
+            background:"linear-gradient(90deg,#7928ca,#1f6feb,#58a6ff)"}}/></div>
+        {progress<45&&<div style={{marginTop:"10px",color:"#484f58",fontSize:"11px",textAlign:"center"}}>
+          ☕ 모델 다운로드 중입니다. 완료 후 다음 실행부터는 바로 시작됩니다.
+        </div>}
       </div>}
 
+      {/* 오류 */}
       {errMsg&&<div style={{background:"#2d1117",border:"1px solid #da363333",borderRadius:"8px",
-        padding:"12px",color:"#ff7b72",fontSize:"13px"}}>⚠️ {errMsg}</div>}
+        padding:"14px",display:"flex",flexDirection:"column",gap:"8px"}}>
+        <div style={{color:"#ff7b72",fontSize:"13px",fontWeight:700}}>⚠️ {errMsg}</div>
+        {errMsg.includes("모델 로드 실패")&&<div style={{color:"#8b949e",fontSize:"12px"}}>
+          💡 Real-ESRGAN ONNX 모델을 <code style={{color:"#58a6ff"}}>/public/models/realesrgan.onnx</code>에 배치하거나,
+          기본 모드로 전환해 사용하세요.
+        </div>}
+        <button onClick={()=>{setUseAI(false);setErrMsg("");}} style={{
+          alignSelf:"flex-start",padding:"7px 14px",background:"#21262d",border:"1px solid #30363d",
+          borderRadius:"6px",color:"#8b949e",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif",
+        }}>⚡ 기본 모드로 전환</button>
+      </div>}
 
+      {/* 결과 */}
       {resultUrl&&<>
         <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
           {origInfo&&<span style={{color:"#484f58",fontSize:"12px"}}>원본 {fmtPx(origInfo.w,origInfo.h)}</span>}
           {resultInfo&&<span style={{color:"#3fb950",fontSize:"12px",fontWeight:700}}>
-            → 결과 {fmtPx(resultInfo.w,resultInfo.h)} · {fmtSz(resultInfo.bytes)}
+            → {fmtPx(resultInfo.w,resultInfo.h)} · {fmtSz(resultInfo.bytes)}
           </span>}
-          <a href={resultUrl} download="restored.jpg"
-            style={{marginLeft:"auto",padding:"9px 22px",background:"#2ea043",
-              borderRadius:"8px",color:"#fff",textDecoration:"none",
-              fontSize:"13px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}>
-            ⬇️ 다운로드
-          </a>
-          <button onClick={()=>{setResultUrl(null);setResultInfo(null);setProgress(0);}}
-            style={{padding:"9px 14px",background:"none",border:"1px solid #30363d",
-              borderRadius:"8px",color:"#8b949e",cursor:"pointer",fontSize:"12px",
-              fontFamily:"'Noto Sans KR',sans-serif"}}>🔄 다시</button>
-          <button onClick={()=>{setOrigUrl(null);setResultUrl(null);setOrigInfo(null);setResultInfo(null);}}
-            style={{padding:"9px 14px",background:"none",border:"1px solid #30363d",
-              borderRadius:"8px",color:"#484f58",cursor:"pointer",fontSize:"12px",
-              fontFamily:"'Noto Sans KR',sans-serif"}}>🗑️ 새 이미지</button>
+          <a href={resultUrl} download="restored.jpg" style={{
+            marginLeft:"auto",padding:"9px 22px",background:"#2ea043",
+            borderRadius:"8px",color:"#fff",textDecoration:"none",
+            fontSize:"13px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
+          }}>⬇️ 다운로드</a>
+          <button onClick={()=>{setResultUrl(null);setResultInfo(null);setProgress(0);setStatusMsg("");}} style={{
+            padding:"9px 14px",background:"none",border:"1px solid #30363d",
+            borderRadius:"8px",color:"#8b949e",cursor:"pointer",fontSize:"12px",
+            fontFamily:"'Noto Sans KR',sans-serif",
+          }}>🔄 다시</button>
+          <button onClick={()=>{setOrigUrl(null);setResultUrl(null);setOrigInfo(null);setResultInfo(null);}} style={{
+            padding:"9px 14px",background:"none",border:"1px solid #30363d",
+            borderRadius:"8px",color:"#484f58",cursor:"pointer",fontSize:"12px",
+            fontFamily:"'Noto Sans KR',sans-serif",
+          }}>🗑️ 새 이미지</button>
         </div>
 
+        {/* Before/After 슬라이더 */}
         <div ref={sliderRef}
           onMouseDown={e=>{e.preventDefault();setDragging(true);}}
           onTouchStart={()=>setDragging(true)}
-          style={{position:"relative",borderRadius:"14px",overflow:"hidden",
-            border:"1px solid #30363d",cursor:"ew-resize",userSelect:"none",
-            background:"#000",lineHeight:0,boxShadow:"0 4px 24px rgba(0,0,0,.4)"}}>
-          <img src={resultUrl} style={{display:"block",width:"100%",maxHeight:"640px",objectFit:"contain"}}/>
-          <div style={{position:"absolute",inset:0,overflow:"hidden",
-            width:`${sliderX}%`,pointerEvents:"none"}}>
-            <img src={origUrl} style={{display:"block",width:`${10000/sliderX}%`,
-              maxHeight:"640px",objectFit:"contain"}}/>
+          style={{position:"relative",borderRadius:"14px",overflow:"hidden",cursor:"ew-resize",
+            border:"1px solid #30363d",userSelect:"none",touchAction:"none"}}>
+          <img src={resultUrl} style={{width:"100%",display:"block",maxHeight:"500px",objectFit:"contain"}} alt="복원 결과"/>
+          <div style={{position:"absolute",inset:0,overflow:"hidden",width:`${sliderX}%`}}>
+            <img src={origUrl} style={{width:`${100/sliderX*100}%`,maxWidth:"none",display:"block",
+              maxHeight:"500px",objectFit:"contain"}} alt="원본"/>
           </div>
+          {/* 슬라이더 핸들 */}
           <div style={{position:"absolute",top:0,bottom:0,left:`${sliderX}%`,
-            transform:"translateX(-50%)",width:"3px",
-            background:"#fff",boxShadow:"0 0 10px rgba(0,0,0,.8)",pointerEvents:"none"}}>
+            transform:"translateX(-50%)",width:"3px",background:"#fff",boxShadow:"0 0 8px #00000088"}}>
             <div style={{position:"absolute",top:"50%",left:"50%",
-              transform:"translate(-50%,-50%)",width:"36px",height:"36px",borderRadius:"50%",
-              background:"#fff",boxShadow:"0 2px 12px rgba(0,0,0,.6)",
+              transform:"translate(-50%,-50%)",width:"36px",height:"36px",
+              background:"#fff",borderRadius:"50%",boxShadow:"0 2px 12px #00000066",
               display:"flex",alignItems:"center",justifyContent:"center",
-              fontSize:"16px",fontWeight:900,color:"#0d1117"}}>↔</div>
+              color:"#333",fontSize:"14px",fontWeight:700}}>↔</div>
           </div>
-          <div style={{position:"absolute",top:"12px",left:"14px",
-            background:"rgba(0,0,0,.75)",color:"#fff",padding:"4px 12px",
-            borderRadius:"20px",fontSize:"12px",fontWeight:700,pointerEvents:"none"}}>BEFORE</div>
-          <div style={{position:"absolute",top:"12px",right:"14px",
-            background:"rgba(31,111,235,.95)",color:"#fff",padding:"4px 12px",
-            borderRadius:"20px",fontSize:"12px",fontWeight:700,pointerEvents:"none"}}>AFTER</div>
-        </div>
-        <div style={{textAlign:"center",color:"#484f58",fontSize:"11px"}}>
-          슬라이더를 좌우로 드래그해서 원본과 결과를 비교하세요
+          {/* 라벨 */}
+          <div style={{position:"absolute",top:"10px",left:"12px",background:"#00000088",
+            color:"#fff",fontSize:"11px",fontWeight:700,padding:"3px 10px",borderRadius:"20px"}}>원본</div>
+          <div style={{position:"absolute",top:"10px",right:"12px",background:"#1f6feb",
+            color:"#fff",fontSize:"11px",fontWeight:700,padding:"3px 10px",borderRadius:"20px"}}>
+            {useAI?"AI 복원":"향상"}
+          </div>
         </div>
       </>}
 
-      {!resultUrl&&!processing&&<div style={{borderRadius:"14px",overflow:"hidden",
-        border:"1px solid #30363d",background:"#0d1117",lineHeight:0}}>
-        <img src={origUrl} style={{display:"block",width:"100%",maxHeight:"640px",objectFit:"contain"}}/>
-      </div>}
+      {/* 원본 미리보기 */}
+      {!resultUrl&&!processing&&<img src={origUrl} alt="원본"
+        style={{width:"100%",borderRadius:"12px",maxHeight:"400px",objectFit:"contain",border:"1px solid #30363d"}}/>}
     </>}
   </div>;
 }
