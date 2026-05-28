@@ -4208,7 +4208,8 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
   const [err,setErr]=useState("");
-  const year=new Date().getFullYear();
+  const now=new Date();
+  const yearMonth=`${now.getFullYear()}년 ${now.getMonth()+1}월`;
 
   const genKeywords=async()=>{
     if(!selCat) return;
@@ -4218,11 +4219,11 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
       const themeUrl = `https://section.blog.naver.com/ThemePost.naver?directoryNo=${dirNo}&activeDirectorySeq=${dirNo}&currentPage=1`;
       const prompt=`카테고리: "${selCat}"
 네이버 블로그 주제별 페이지(${themeUrl})의 ${selCat} 카테고리 상위 노출 트렌드를 반영하여,
-${year}년 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각각의 메인 키워드를 추천해줘.
+${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각각의 메인 키워드를 추천해줘.
 
 선정 기준 5가지:
 1. 실제 블로거가 쓸 법한 완성된 제목 형태 (경험·후기·정보·비교 등 독자가 클릭하고 싶은 구체적 제목)
-2. ${year}년 최신 트렌드와 시의성 반영
+2. ${yearMonth} 최신 트렌드와 시의성 반영
 3. 검색량 대비 경쟁이 낮아 상위노출 가능성이 높은 주제
 4. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. 네이버에서 실제로 많이 검색되는 단어
 5. 현재 네이버 블로그 주제별 상위에 노출 중인 실제 유행 소재 반영
@@ -5685,13 +5686,13 @@ async function fetchBlogBodies(keyword) {
   return [];
 }
 
-function buildWritePrompt({ kw, year, category, smartBlockType, blogStrategy, bodies, mainKeyword }) {
+function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrategy, bodies, mainKeyword }) {
   const mainKw = mainKeyword || kw;
   const ctx = category
     ? `카테고리: ${category}`
     : `스마트블록: ${smartBlockType||"블로그"} / 전략: ${blogStrategy||""}`;
 
-  return `키워드: "${mainKw}" / 주제: "${kw}" / ${ctx} / ${year}년 기준
+  return `현재 날짜: ${yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
 
 네이버 블로그 홈판 최적화 글을 작성해줘:
 1. 본문 1,500~2,000자 (한글+공백)
@@ -5700,6 +5701,7 @@ function buildWritePrompt({ kw, year, category, smartBlockType, blogStrategy, bo
 4. 각 문장 끝 줄바꿈(\\n)만 사용, HTML 태그(<br> 등) 절대 금지
 5. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
 6. 문체: -니다/-요 혼용, 정보성+경험담
+7. 반드시 ${yearMonth} 기준의 최신 정보로 작성 (과거 정보나 출시 예정 표현 금지)
 
 순수 JSON만 (마크다운 없이):
 {"title":"제목(15~32자,키워드포함)","main_keyword":"${mainKw}","content":"본문","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
@@ -5747,11 +5749,12 @@ export default function BlogTools(){
     setPendingAnalyzeText("__loading__");
     setActive("analyze");
     try{
-      const year = new Date().getFullYear();
-      const prompt = buildWritePrompt({ kw, year, smartBlockType, blogStrategy, bodies: [], mainKeyword: mainKeyword||kw });
+      const now=new Date();
+      const yearMonth=`${now.getFullYear()}년 ${now.getMonth()+1}월`;
+      const prompt = buildWritePrompt({ kw, yearMonth, smartBlockType, blogStrategy, bodies: [], mainKeyword: mainKeyword||kw });
       const raw = await callClaudeStream(
         [{role:"user",content:prompt}],
-        "You are a professional Korean Naver blog writer optimizing for homepage exposure. Output ONLY valid JSON, no markdown.",
+        `You are a professional Korean Naver blog writer optimizing for homepage exposure. Current date: ${yearMonth}. Write based on the latest information as of this date. Output ONLY valid JSON, no markdown.`,
         3500, "claude-sonnet-4-5-20250929"
       );
       const parsed = safeParseJson(raw);
