@@ -5720,55 +5720,61 @@ function VideoMakeAiTab() {
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  const callReplicate = async (token, dataUrl, prompt, dur, res, idx) => {
+  const callReplicate = async (_token, dataUrl, prompt, dur, res, idx) => {
     updateProg(idx, 25, "Replicate 요청 중...");
-    const model = res === "720p" ? "wavespeedai/wan-2.1-i2v-720p" : "wavespeedai/wan-2.1-i2v-480p";
-    const createRes = await fetch("https://api.replicate.com/v1/predictions", {
-      method: "POST",
-      headers: { "Authorization": `Token ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ version: model, input: { image: dataUrl, prompt, num_frames: parseInt(dur) * 16, fps: 16 } })
+    const r1 = await fetch("/api/video-proxy", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "replicate_create", payload: { image: dataUrl, prompt, num_frames: parseInt(dur) * 16, fps: 16, resolution: res } }),
     });
-    if (!createRes.ok) { const e = await createRes.json(); throw new Error(e.detail || "Replicate 요청 실패"); }
-    const pred = await createRes.json();
+    const pred = await r1.json();
+    if (pred.error) throw new Error(pred.error);
     updateProg(idx, 35, "AI 영상 생성 중...");
     for (let i = 0; i < 120; i++) {
       await sleep(3000);
       updateProg(idx, Math.min(35 + i * 0.5, 90), `생성 중... (${(i+1)*3}초)`);
-      const s = await fetch(`https://api.replicate.com/v1/predictions/${pred.id}`, { headers: { "Authorization": `Token ${token}` } });
-      const st = await s.json();
+      const r2 = await fetch("/api/video-proxy", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "replicate_status", payload: { id: pred.id } }),
+      });
+      const st = await r2.json();
       if (st.status === "succeeded") { const o = st.output; return Array.isArray(o) ? o[0] : o; }
       if (st.status === "failed") throw new Error(st.error || "생성 실패");
     }
     throw new Error("타임아웃");
   };
 
-  const callPixverse = async (apiKey, dataUrl, prompt, dur, idx) => {
+  const callPixverse = async (_apiKey, dataUrl, prompt, dur, idx) => {
     updateProg(idx, 25, "PixVerse 이미지 업로드 중...");
-    const blob = dataURLtoBlob(dataUrl);
-    const fd = new FormData(); fd.append("image", blob, "image.jpg");
-    const upRes = await fetch("https://app-api.pixverse.ai/openapi/v2/image/upload", { method: "POST", headers: { "API-KEY": apiKey }, body: fd });
-    if (!upRes.ok) throw new Error("PixVerse 업로드 실패");
-    const upData = await upRes.json();
-    const imgId = upData?.Resp?.img_id;
+    const [h, d] = dataUrl.split(",");
+    const mimeType = h.match(/:(.*?);/)[1];
+    const r1 = await fetch("/api/video-proxy", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "pixverse_upload", payload: { imageBase64: d, mimeType } }),
+    });
+    const upData = await r1.json();
+    if (upData.error) throw new Error(upData.error);
+    const imgId = upData.img_id;
     if (!imgId) throw new Error("PixVerse 이미지 ID 없음");
     updateProg(idx, 40, "PixVerse 생성 요청...");
-    const genRes = await fetch("https://app-api.pixverse.ai/openapi/v2/video/img/generate", {
-      method: "POST",
-      headers: { "API-KEY": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ img_id: imgId, prompt, duration: parseInt(dur), quality: "high", motion_mode: "normal", aspect_ratio: "9:16" })
+    const r2 = await fetch("/api/video-proxy", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "pixverse_create", payload: { img_id: imgId, prompt, duration: parseInt(dur) } }),
     });
-    if (!genRes.ok) throw new Error("PixVerse 생성 실패");
-    const genData = await genRes.json();
-    const videoId = genData?.Resp?.video_id;
+    const genData = await r2.json();
+    if (genData.error) throw new Error(genData.error);
+    const videoId = genData.video_id;
     if (!videoId) throw new Error("PixVerse 영상 ID 없음");
     for (let i = 0; i < 100; i++) {
       await sleep(3000);
       updateProg(idx, Math.min(50 + i * 0.4, 90), `PixVerse 생성 중... (${(i+1)*3}초)`);
-      const sRes = await fetch(`https://app-api.pixverse.ai/openapi/v2/video/result/${videoId}`, { headers: { "API-KEY": apiKey } });
-      if (!sRes.ok) continue;
-      const sData = await sRes.json();
-      if (sData?.Resp?.status === 1) return sData.Resp.url;
-      if (sData?.Resp?.status === -1) throw new Error("PixVerse 생성 실패");
+      const r3 = await fetch("/api/video-proxy", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "pixverse_status", payload: { video_id: videoId } }),
+      });
+      if (!r3.ok) continue;
+      const sData = await r3.json();
+      if (sData.status === 1) return sData.url;
+      if (sData.status === -1) throw new Error("PixVerse 생성 실패");
     }
     throw new Error("PixVerse 타임아웃");
   };
@@ -5786,9 +5792,6 @@ function VideoMakeAiTab() {
 
   const startGen = async () => {
     if (images.length === 0) { showToast("이미지를 먼저 업로드하세요", "err"); return; }
-    const pk = preferApi === "replicate" ? replicateKey : pixverseKey;
-    const fk = preferApi === "replicate" ? pixverseKey : replicateKey;
-    if (!pk && !fk) { showToast("API 키를 입력하세요", "err"); return; }
     setRunning(true);
     setResults([]);
     setProgresses(images.map(img => ({ name: img.name, pct: 0, msg: "대기 중...", err: false })));
@@ -5798,18 +5801,12 @@ function VideoMakeAiTab() {
       const prompt = img.prompt || globalPrompt || "cinematic product showcase, smooth camera movement, high quality";
       let url = null;
       updateProg(i, 10, "시작...");
-      if (pk) {
+      try {
+        url = await callReplicate(null, img.dataUrl, prompt, duration, resolution, i);
+      } catch(e) { updateProg(i, 40, `⚠️ Replicate 실패: ${e.message} → PixVerse 폴백...`); }
+      if (!url) {
         try {
-          url = preferApi === "replicate"
-            ? await callReplicate(pk, img.dataUrl, prompt, duration, resolution, i)
-            : await callPixverse(pk, img.dataUrl, prompt, duration, i);
-        } catch(e) { updateProg(i, 40, `⚠️ 1순위 실패: ${e.message} → 폴백 시도...`); }
-      }
-      if (!url && fk) {
-        try {
-          url = preferApi === "replicate"
-            ? await callPixverse(fk, img.dataUrl, prompt, duration, i)
-            : await callReplicate(fk, img.dataUrl, prompt, duration, resolution, i);
+          url = await callPixverse(null, img.dataUrl, prompt, duration, i);
         } catch(e) { updateProg(i, 100, `❌ 실패: ${e.message}`, true); continue; }
       }
       if (url) { updateProg(i, 100, "✅ 완료"); newResults.push({ url, name: img.name.replace(/\.[^.]+$/, "") + "_ai.mp4" }); }
