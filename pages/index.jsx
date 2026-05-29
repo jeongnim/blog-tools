@@ -5678,9 +5678,9 @@ ${text.slice(0, 4000)}
 
 // ─── TAB: AI 영상 생성 ────────────────────────────────────────────────────
 function VideoMakeAiTab() {
-  const [replicateKey, setReplicateKey] = React.useState(() => localStorage.getItem("vm_replicate_key") || "");
-  const [pixverseKey, setPixverseKey] = React.useState(() => localStorage.getItem("vm_pixverse_key") || "");
-  const [preferApi, setPreferApi] = React.useState(() => localStorage.getItem("vm_prefer_api") || "replicate");
+  const [replicateKey, setReplicateKey] = React.useState("");
+  const [pixverseKey, setPixverseKey] = React.useState("");
+  const [preferApi, setPreferApi] = React.useState("replicate");
   const [duration, setDuration] = React.useState("10");
   const [resolution, setResolution] = React.useState("720p");
   const [globalPrompt, setGlobalPrompt] = React.useState("");
@@ -5690,6 +5690,14 @@ function VideoMakeAiTab() {
   const [running, setRunning] = React.useState(false);
   const [toast, setToast] = React.useState(null);
   const fileRef = React.useRef();
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      setReplicateKey(localStorage.getItem("vm_replicate_key") || "");
+      setPixverseKey(localStorage.getItem("vm_pixverse_key") || "");
+      setPreferApi(localStorage.getItem("vm_prefer_api") || "replicate");
+    }
+  }, []);
 
   const saveKey = (field, val) => {
     if (field === "replicate") { setReplicateKey(val); localStorage.setItem("vm_replicate_key", val); }
