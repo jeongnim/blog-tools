@@ -5831,31 +5831,7 @@ function VideoMakeAiTab() {
   return <div>
     {toast && <div style={{ position:"fixed", bottom:"20px", right:"20px", background:"#161b22", border:`1px solid ${toast.type==="err"?"#f85149":"#3fb950"}`, borderRadius:"10px", padding:"12px 18px", fontSize:"13px", color:toast.type==="err"?"#f85149":"#3fb950", zIndex:9999 }}>{toast.msg}</div>}
 
-    {/* API 설정 */}
-    <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>🔑 API 키 설정</div>
-      <div style={S.grid2}>
-        <div><label style={S.label}>Replicate API Token (WAN 2.2)</label>
-          <input type="password" style={S.input} value={replicateKey} onChange={e=>saveKey("replicate",e.target.value)} placeholder="r8_xxxxxxxxxxxx" /></div>
-        <div><label style={S.label}>PixVerse API Key (폴백용)</label>
-          <input type="password" style={S.input} value={pixverseKey} onChange={e=>saveKey("pixverse",e.target.value)} placeholder="pv-xxxxxxxxxxxx" /></div>
-      </div>
-      <div style={{...S.grid2, marginTop:"10px"}}>
-        <div><label style={S.label}>우선 API</label>
-          <select style={S.input} value={preferApi} onChange={e=>savePrefer(e.target.value)}>
-            <option value="replicate">Replicate (WAN 2.2) 우선</option>
-            <option value="pixverse">PixVerse 우선</option>
-          </select></div>
-        <div><label style={S.label}>영상 길이</label>
-          <select style={S.input} value={duration} onChange={e=>setDuration(e.target.value)}>
-            <option value="5">5초</option><option value="10">10초</option>
-          </select></div>
-      </div>
-      <div style={{display:"flex",gap:"8px",marginTop:"10px",flexWrap:"wrap"}}>
-        <a href="https://replicate.com/account/api-tokens" target="_blank" rel="noreferrer" style={{...S.btn("#21262d"), textDecoration:"none", border:"1px solid #30363d", fontSize:"12px", padding:"7px 14px"}}>Replicate 토큰 발급 →</a>
-        <a href="https://app.pixverse.ai" target="_blank" rel="noreferrer" style={{...S.btn("#21262d"), textDecoration:"none", border:"1px solid #30363d", fontSize:"12px", padding:"7px 14px"}}>PixVerse 가입 →</a>
-      </div>
-    </div>
+
 
     {/* 이미지 업로드 */}
     <div style={S.card}>
@@ -5883,6 +5859,16 @@ function VideoMakeAiTab() {
     {/* 생성 설정 */}
     <div style={S.card}>
       <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>⚙️ 생성 설정</div>
+      <div style={{...S.grid2, marginBottom:"10px"}}>
+        <div><label style={S.label}>영상 길이</label>
+          <select style={S.input} value={duration} onChange={e=>setDuration(e.target.value)}>
+            <option value="5">5초</option><option value="10">10초</option>
+          </select></div>
+        <div><label style={S.label}>해상도</label>
+          <select style={S.input} value={resolution} onChange={e=>setResolution(e.target.value)}>
+            <option value="720p">720p (권장)</option><option value="480p">480p (빠름)</option>
+          </select></div>
+      </div>
       <label style={S.label}>공통 프롬프트 (선택 · 비우면 AI 자동 분석)</label>
       <textarea value={globalPrompt} onChange={e=>setGlobalPrompt(e.target.value)}
         placeholder="예: cinematic, slow motion, product showcase, smooth camera movement"
