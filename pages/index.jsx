@@ -349,6 +349,9 @@ const TABS=[
 const VIDEO_SUBTABS=[
   {id:"video",    icon:"🎬", label:"동영상 용량 조절"},
   {id:"videogif", icon:"🎞️", label:"동영상 → GIF 변환"},
+  {id:"videomake-ai",  icon:"🤖", label:"AI 영상 생성"},
+  {id:"videomake-ken", icon:"✨", label:"켄번스 효과"},
+  {id:"videomake-sub", icon:"💬", label:"자막 + 음성"},
 ];
 
 // 글쓰기 서브탭
@@ -5673,7 +5676,661 @@ ${text.slice(0, 4000)}
   </div>;
 }
 
-const TOOL_MAP={keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab};
+// ─── TAB: AI 영상 생성 ────────────────────────────────────────────────────
+function VideoMakeAiTab() {
+  const [replicateKey, setReplicateKey] = React.useState(() => localStorage.getItem("vm_replicate_key") || "");
+  const [pixverseKey, setPixverseKey] = React.useState(() => localStorage.getItem("vm_pixverse_key") || "");
+  const [preferApi, setPreferApi] = React.useState(() => localStorage.getItem("vm_prefer_api") || "replicate");
+  const [duration, setDuration] = React.useState("10");
+  const [resolution, setResolution] = React.useState("720p");
+  const [globalPrompt, setGlobalPrompt] = React.useState("");
+  const [images, setImages] = React.useState([]);
+  const [progresses, setProgresses] = React.useState([]);
+  const [results, setResults] = React.useState([]);
+  const [running, setRunning] = React.useState(false);
+  const [toast, setToast] = React.useState(null);
+  const fileRef = React.useRef();
+
+  const saveKey = (field, val) => {
+    if (field === "replicate") { setReplicateKey(val); localStorage.setItem("vm_replicate_key", val); }
+    else { setPixverseKey(val); localStorage.setItem("vm_pixverse_key", val); }
+  };
+  const savePrefer = (v) => { setPreferApi(v); localStorage.setItem("vm_prefer_api", v); };
+
+  const showToast = (msg, type="ok") => {
+    setToast({msg, type});
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const addImages = (files) => {
+    Array.from(files).filter(f => f.type.startsWith("image/")).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = e => setImages(prev => [...prev, { file, dataUrl: e.target.result, name: file.name, prompt: "" }]);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  const callReplicate = async (token, dataUrl, prompt, dur, res, idx) => {
+    updateProg(idx, 25, "Replicate 요청 중...");
+    const model = res === "720p" ? "wavespeedai/wan-2.1-i2v-720p" : "wavespeedai/wan-2.1-i2v-480p";
+    const createRes = await fetch("https://api.replicate.com/v1/predictions", {
+      method: "POST",
+      headers: { "Authorization": `Token ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ version: model, input: { image: dataUrl, prompt, num_frames: parseInt(dur) * 16, fps: 16 } })
+    });
+    if (!createRes.ok) { const e = await createRes.json(); throw new Error(e.detail || "Replicate 요청 실패"); }
+    const pred = await createRes.json();
+    updateProg(idx, 35, "AI 영상 생성 중...");
+    for (let i = 0; i < 120; i++) {
+      await sleep(3000);
+      updateProg(idx, Math.min(35 + i * 0.5, 90), `생성 중... (${(i+1)*3}초)`);
+      const s = await fetch(`https://api.replicate.com/v1/predictions/${pred.id}`, { headers: { "Authorization": `Token ${token}` } });
+      const st = await s.json();
+      if (st.status === "succeeded") { const o = st.output; return Array.isArray(o) ? o[0] : o; }
+      if (st.status === "failed") throw new Error(st.error || "생성 실패");
+    }
+    throw new Error("타임아웃");
+  };
+
+  const callPixverse = async (apiKey, dataUrl, prompt, dur, idx) => {
+    updateProg(idx, 25, "PixVerse 이미지 업로드 중...");
+    const blob = dataURLtoBlob(dataUrl);
+    const fd = new FormData(); fd.append("image", blob, "image.jpg");
+    const upRes = await fetch("https://app-api.pixverse.ai/openapi/v2/image/upload", { method: "POST", headers: { "API-KEY": apiKey }, body: fd });
+    if (!upRes.ok) throw new Error("PixVerse 업로드 실패");
+    const upData = await upRes.json();
+    const imgId = upData?.Resp?.img_id;
+    if (!imgId) throw new Error("PixVerse 이미지 ID 없음");
+    updateProg(idx, 40, "PixVerse 생성 요청...");
+    const genRes = await fetch("https://app-api.pixverse.ai/openapi/v2/video/img/generate", {
+      method: "POST",
+      headers: { "API-KEY": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ img_id: imgId, prompt, duration: parseInt(dur), quality: "high", motion_mode: "normal", aspect_ratio: "9:16" })
+    });
+    if (!genRes.ok) throw new Error("PixVerse 생성 실패");
+    const genData = await genRes.json();
+    const videoId = genData?.Resp?.video_id;
+    if (!videoId) throw new Error("PixVerse 영상 ID 없음");
+    for (let i = 0; i < 100; i++) {
+      await sleep(3000);
+      updateProg(idx, Math.min(50 + i * 0.4, 90), `PixVerse 생성 중... (${(i+1)*3}초)`);
+      const sRes = await fetch(`https://app-api.pixverse.ai/openapi/v2/video/result/${videoId}`, { headers: { "API-KEY": apiKey } });
+      if (!sRes.ok) continue;
+      const sData = await sRes.json();
+      if (sData?.Resp?.status === 1) return sData.Resp.url;
+      if (sData?.Resp?.status === -1) throw new Error("PixVerse 생성 실패");
+    }
+    throw new Error("PixVerse 타임아웃");
+  };
+
+  const dataURLtoBlob = (dataUrl) => {
+    const [h, d] = dataUrl.split(","); const mime = h.match(/:(.*?);/)[1];
+    const bin = atob(d); const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  };
+
+  const updateProg = (idx, pct, msg, err=false) => {
+    setProgresses(prev => prev.map((p, i) => i === idx ? { ...p, pct, msg, err } : p));
+  };
+
+  const startGen = async () => {
+    if (images.length === 0) { showToast("이미지를 먼저 업로드하세요", "err"); return; }
+    const pk = preferApi === "replicate" ? replicateKey : pixverseKey;
+    const fk = preferApi === "replicate" ? pixverseKey : replicateKey;
+    if (!pk && !fk) { showToast("API 키를 입력하세요", "err"); return; }
+    setRunning(true);
+    setResults([]);
+    setProgresses(images.map(img => ({ name: img.name, pct: 0, msg: "대기 중...", err: false })));
+    const newResults = [];
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
+      const prompt = img.prompt || globalPrompt || "cinematic product showcase, smooth camera movement, high quality";
+      let url = null;
+      updateProg(i, 10, "시작...");
+      if (pk) {
+        try {
+          url = preferApi === "replicate"
+            ? await callReplicate(pk, img.dataUrl, prompt, duration, resolution, i)
+            : await callPixverse(pk, img.dataUrl, prompt, duration, i);
+        } catch(e) { updateProg(i, 40, `⚠️ 1순위 실패: ${e.message} → 폴백 시도...`); }
+      }
+      if (!url && fk) {
+        try {
+          url = preferApi === "replicate"
+            ? await callPixverse(fk, img.dataUrl, prompt, duration, i)
+            : await callReplicate(fk, img.dataUrl, prompt, duration, resolution, i);
+        } catch(e) { updateProg(i, 100, `❌ 실패: ${e.message}`, true); continue; }
+      }
+      if (url) { updateProg(i, 100, "✅ 완료"); newResults.push({ url, name: img.name.replace(/\.[^.]+$/, "") + "_ai.mp4" }); }
+    }
+    setResults(newResults);
+    setRunning(false);
+    showToast(`완료! ${newResults.length}개 생성됨`);
+    if (newResults.length > 0) localStorage.setItem("vm_ai_results", JSON.stringify(newResults));
+  };
+
+  const S = {
+    card: { background:"#0d1117", border:"1px solid #21262d", borderRadius:"12px", padding:"16px", marginBottom:"14px" },
+    label: { fontSize:"11px", color:"#8b949e", fontWeight:600, marginBottom:"5px", display:"block" },
+    input: { width:"100%", background:"#161b22", border:"1px solid #30363d", borderRadius:"8px", padding:"9px 12px", color:"#e6edf3", fontFamily:"'Noto Sans KR',sans-serif", fontSize:"13px", outline:"none", boxSizing:"border-box" },
+    btn: (c="#1f6feb") => ({ padding:"10px 20px", border:"none", borderRadius:"8px", background:c, color:c==="#1f6feb"?"#fff":"#0d1117", fontFamily:"'Noto Sans KR',sans-serif", fontSize:"13px", fontWeight:700, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:"7px" }),
+    grid2: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px" },
+  };
+
+  return <div>
+    {toast && <div style={{ position:"fixed", bottom:"20px", right:"20px", background:"#161b22", border:`1px solid ${toast.type==="err"?"#f85149":"#3fb950"}`, borderRadius:"10px", padding:"12px 18px", fontSize:"13px", color:toast.type==="err"?"#f85149":"#3fb950", zIndex:9999 }}>{toast.msg}</div>}
+
+    {/* API 설정 */}
+    <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>🔑 API 키 설정</div>
+      <div style={S.grid2}>
+        <div><label style={S.label}>Replicate API Token (WAN 2.2)</label>
+          <input type="password" style={S.input} value={replicateKey} onChange={e=>saveKey("replicate",e.target.value)} placeholder="r8_xxxxxxxxxxxx" /></div>
+        <div><label style={S.label}>PixVerse API Key (폴백용)</label>
+          <input type="password" style={S.input} value={pixverseKey} onChange={e=>saveKey("pixverse",e.target.value)} placeholder="pv-xxxxxxxxxxxx" /></div>
+      </div>
+      <div style={{...S.grid2, marginTop:"10px"}}>
+        <div><label style={S.label}>우선 API</label>
+          <select style={S.input} value={preferApi} onChange={e=>savePrefer(e.target.value)}>
+            <option value="replicate">Replicate (WAN 2.2) 우선</option>
+            <option value="pixverse">PixVerse 우선</option>
+          </select></div>
+        <div><label style={S.label}>영상 길이</label>
+          <select style={S.input} value={duration} onChange={e=>setDuration(e.target.value)}>
+            <option value="5">5초</option><option value="10">10초</option>
+          </select></div>
+      </div>
+      <div style={{display:"flex",gap:"8px",marginTop:"10px",flexWrap:"wrap"}}>
+        <a href="https://replicate.com/account/api-tokens" target="_blank" rel="noreferrer" style={{...S.btn("#21262d"), textDecoration:"none", border:"1px solid #30363d", fontSize:"12px", padding:"7px 14px"}}>Replicate 토큰 발급 →</a>
+        <a href="https://app.pixverse.ai" target="_blank" rel="noreferrer" style={{...S.btn("#21262d"), textDecoration:"none", border:"1px solid #30363d", fontSize:"12px", padding:"7px 14px"}}>PixVerse 가입 →</a>
+      </div>
+    </div>
+
+    {/* 이미지 업로드 */}
+    <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>📸 이미지 업로드 <span style={{color:"#484f58",fontWeight:400}}>(핵심 장면 3~4개 권장)</span></div>
+      <div onClick={()=>fileRef.current.click()}
+        style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"28px",textAlign:"center",cursor:"pointer",background:"#161b22"}}
+        onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="#58a6ff";}}
+        onDragLeave={e=>{e.currentTarget.style.borderColor="#30363d";}}
+        onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="#30363d";addImages(e.dataTransfer.files);}}>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>addImages(e.target.files)} />
+        <div style={{fontSize:"32px",marginBottom:"8px"}}>📸</div>
+        <div style={{fontSize:"13px",color:"#8b949e"}}>클릭하거나 드래그해서 업로드</div>
+      </div>
+      {images.length > 0 && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:"10px",marginTop:"12px"}}>
+        {images.map((img,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden",position:"relative"}}>
+          <button onClick={()=>setImages(prev=>prev.filter((_,j)=>j!==i))} style={{position:"absolute",top:"5px",right:"5px",background:"rgba(0,0,0,.7)",border:"none",borderRadius:"50%",width:"20px",height:"20px",color:"#fff",cursor:"pointer",fontSize:"11px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+          <img src={img.dataUrl} alt={img.name} style={{width:"100%",height:"90px",objectFit:"cover",display:"block"}} />
+          <input value={img.prompt} onChange={e=>setImages(prev=>prev.map((p,j)=>j===i?{...p,prompt:e.target.value}:p))}
+            placeholder="개별 프롬프트 (선택)"
+            style={{width:"100%",background:"transparent",border:"none",borderTop:"1px solid #30363d",padding:"6px 8px",color:"#8b949e",fontSize:"11px",outline:"none",boxSizing:"border-box"}} />
+        </div>)}
+      </div>}
+    </div>
+
+    {/* 생성 설정 */}
+    <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>⚙️ 생성 설정</div>
+      <label style={S.label}>공통 프롬프트 (선택 · 비우면 AI 자동 분석)</label>
+      <textarea value={globalPrompt} onChange={e=>setGlobalPrompt(e.target.value)}
+        placeholder="예: cinematic, slow motion, product showcase, smooth camera movement"
+        style={{...S.input,resize:"vertical",minHeight:"60px",lineHeight:"1.6"}} rows={2} />
+      <div style={{display:"flex",gap:"10px",marginTop:"12px",flexWrap:"wrap"}}>
+        <button style={S.btn()} disabled={running} onClick={startGen}>
+          {running ? <><span style={{width:"14px",height:"14px",border:"2px solid rgba(255,255,255,.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin .8s linear infinite",display:"inline-block"}}></span> 생성 중...</> : "🚀 AI 영상 생성 시작"}
+        </button>
+        <button style={S.btn("#21262d")} onClick={()=>{setImages([]);setProgresses([]);setResults([]);}}>🗑 초기화</button>
+      </div>
+    </div>
+
+    {/* 진행 상황 */}
+    {progresses.length > 0 && <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>⏳ 생성 진행</div>
+      {progresses.map((p,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"12px",marginBottom:"8px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
+          <span style={{fontSize:"12px",fontWeight:600,color:"#e6edf3"}}>{p.name}</span>
+          <span style={{fontSize:"11px",color:p.err?"#f85149":p.pct===100?"#3fb950":"#8b949e"}}>{p.msg}</span>
+        </div>
+        <div style={{background:"#30363d",borderRadius:"4px",height:"4px"}}>
+          <div style={{width:`${p.pct}%`,height:"100%",borderRadius:"4px",background:p.err?"#f85149":p.pct===100?"#3fb950":"linear-gradient(90deg,#1f6feb,#58a6ff)",transition:"width .4s"}} />
+        </div>
+      </div>)}
+    </div>}
+
+    {/* 결과 */}
+    {results.length > 0 && <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#3fb950",marginBottom:"12px"}}>✅ 생성 완료 ({results.length}개)</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:"12px"}}>
+        {results.map((v,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
+          <video src={v.url} controls muted style={{width:"100%",display:"block",maxHeight:"180px",objectFit:"cover"}} />
+          <div style={{padding:"8px"}}>
+            <a href={v.url} download={v.name} target="_blank" rel="noreferrer"
+              style={{display:"block",textAlign:"center",padding:"7px",background:"#21262d",color:"#58a6ff",borderRadius:"6px",textDecoration:"none",fontSize:"12px",fontWeight:600}}>⬇️ 다운로드</a>
+          </div>
+        </div>)}
+      </div>
+    </div>}
+
+    <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+  </div>;
+}
+
+// ─── TAB: 켄번스 효과 ─────────────────────────────────────────────────────
+function VideoMakeKenTab() {
+  const [images, setImages] = React.useState([]);
+  const [settings, setSettings] = React.useState({});
+  const [results, setResults] = React.useState([]);
+  const [rendering, setRendering] = React.useState(false);
+  const [progress, setProgress] = React.useState({ cur: 0, total: 0, msg: "" });
+  const fileRef = React.useRef();
+  const canvasRef = React.useRef();
+
+  const EFFECTS = [
+    {v:"zoom-in",l:"줌인 (확대)"},{v:"zoom-out",l:"줌아웃 (축소)"},
+    {v:"pan-right",l:"패닝 → 오른쪽"},{v:"pan-left",l:"패닝 ← 왼쪽"},
+    {v:"pan-up",l:"패닝 ↑ 위"},{v:"pan-down",l:"패닝 ↓ 아래"},
+    {v:"zoom-in-pan",l:"줌인+패닝"},{v:"random",l:"🎲 랜덤"},
+  ];
+  const ALL_EFFECTS = ["zoom-in","zoom-out","pan-right","pan-left","pan-up","pan-down","zoom-in-pan"];
+
+  const addImages = (files) => {
+    Array.from(files).filter(f=>f.type.startsWith("image/")).forEach(file=>{
+      const reader = new FileReader();
+      reader.onload = e => {
+        const id = Date.now() + Math.random();
+        setImages(prev=>[...prev,{id,file,dataUrl:e.target.result,name:file.name}]);
+        setSettings(prev=>({...prev,[id]:{effect:"zoom-in",duration:5,zoom:1.3}}));
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const setSetting = (id, key, val) => setSettings(prev=>({...prev,[id]:{...prev[id],[key]:val}}));
+
+  const applyAll = (effect, dur) => {
+    setSettings(prev=>{
+      const next={...prev};
+      Object.keys(next).forEach(id=>{
+        if(effect) next[id]={...next[id],effect};
+        if(dur) next[id]={...next[id],duration:parseInt(dur)};
+      });
+      return next;
+    });
+  };
+
+  const renderClip = (dataUrl, effect, durationSec, zoom) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const W=1080, H=1920, fps=30, total=durationSec*fps;
+      const canvas = canvasRef.current; canvas.width=W; canvas.height=H;
+      const ctx = canvas.getContext("2d");
+      const stream = canvas.captureStream(fps);
+      const rec = new MediaRecorder(stream,{mimeType:"video/webm;codecs=vp9",videoBitsPerSecond:4000000});
+      const chunks=[]; rec.ondataavailable=e=>chunks.push(e.data);
+      rec.onstop=()=>resolve(new Blob(chunks,{type:"video/webm"}));
+      rec.start();
+      let frame=0;
+      const ia=img.width/img.height, ca=W/H;
+      const baseW=ia>ca?H*zoom*ia:W*zoom, baseH=ia>ca?H*zoom:W*zoom/ia;
+      const eff=effect==="random"?ALL_EFFECTS[Math.floor(Math.random()*ALL_EFFECTS.length)]:effect;
+      const draw=()=>{
+        if(frame>=total){rec.stop();return;}
+        const t=frame/total; ctx.clearRect(0,0,W,H);
+        let s=1,tx=0,ty=0;
+        switch(eff){
+          case"zoom-in":s=1+(zoom-1)*t;break;
+          case"zoom-out":s=zoom-(zoom-1)*t;break;
+          case"pan-right":tx=-(baseW-W)*t;break;
+          case"pan-left":tx=-(baseW-W)*(1-t);break;
+          case"pan-up":ty=-(baseH-H)*t;break;
+          case"pan-down":ty=-(baseH-H)*(1-t);break;
+          case"zoom-in-pan":s=1+(zoom-1)*t*.5;tx=-(baseW-W)*t*.3;break;
+        }
+        const dW=(ia>ca?H*ia:W)*s, dH=(ia>ca?H:W/ia)*s;
+        ctx.drawImage(img,(W-dW)/2+tx,(H-dH)/2+ty,dW,dH);
+        frame++; requestAnimationFrame(draw);
+      };
+      draw();
+    };
+    img.onerror=reject; img.src=dataUrl;
+  });
+
+  const startRender = async () => {
+    if(images.length===0) return;
+    setRendering(true); setResults([]);
+    const newResults=[];
+    for(let i=0;i<images.length;i++){
+      const img=images[i]; const s=settings[img.id]||{effect:"zoom-in",duration:5,zoom:1.3};
+      setProgress({cur:i+1,total:images.length,msg:`(${i+1}/${images.length}) ${img.name} 렌더링 중...`});
+      try{
+        const blob=await renderClip(img.dataUrl,s.effect,s.duration,s.zoom);
+        newResults.push({url:URL.createObjectURL(blob),name:img.name.replace(/\.[^.]+$/,"")+"_ken.webm"});
+      }catch(e){console.error(e);}
+    }
+    setResults(newResults); setRendering(false);
+    setProgress({cur:newResults.length,total:images.length,msg:`✅ ${newResults.length}개 완료`});
+    if(newResults.length>0) localStorage.setItem("vm_ken_results",JSON.stringify(newResults.map(r=>({name:r.name}))));
+  };
+
+  const S = {
+    card:{background:"#0d1117",border:"1px solid #21262d",borderRadius:"12px",padding:"16px",marginBottom:"14px"},
+    label:{fontSize:"11px",color:"#8b949e",fontWeight:600,marginBottom:"4px",display:"block"},
+    select:{width:"100%",background:"#161b22",border:"1px solid #30363d",borderRadius:"6px",padding:"7px 10px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",outline:"none"},
+    btn:(c="#1f6feb")=>({padding:"10px 20px",border:"none",borderRadius:"8px",background:c,color:c==="#1f6feb"?"#fff":"#0d1117",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:"7px"}),
+  };
+
+  return <div>
+    <canvas ref={canvasRef} style={{display:"none"}} />
+
+    {/* 업로드 */}
+    <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>🖼️ 이미지 업로드</div>
+      <div style={{background:"rgba(31,111,235,.08)",border:"1px solid rgba(31,111,235,.2)",borderRadius:"8px",padding:"10px 14px",fontSize:"12px",color:"#8b949e",marginBottom:"10px",lineHeight:"1.6"}}>
+        <strong style={{color:"#58a6ff"}}>켄번스 효과</strong>: 이미지에 줌인/아웃/패닝 등 카메라 움직임을 적용해 영상 생성 · <strong style={{color:"#3fb950"}}>완전 무료 · API 불필요</strong>
+      </div>
+      <div onClick={()=>fileRef.current.click()}
+        style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"28px",textAlign:"center",cursor:"pointer",background:"#161b22"}}
+        onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="#58a6ff";}}
+        onDragLeave={e=>{e.currentTarget.style.borderColor="#30363d";}}
+        onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="#30363d";addImages(e.dataTransfer.files);}}>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>addImages(e.target.files)} />
+        <div style={{fontSize:"32px",marginBottom:"8px"}}>🖼️</div>
+        <div style={{fontSize:"13px",color:"#8b949e"}}>클릭하거나 드래그해서 업로드</div>
+      </div>
+    </div>
+
+    {/* 개별 설정 */}
+    {images.length > 0 && <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>⚙️ 각 이미지별 설정</div>
+      {/* 전체 일괄 적용 */}
+      <div style={{display:"flex",gap:"8px",marginBottom:"14px",flexWrap:"wrap",background:"#161b22",padding:"10px 12px",borderRadius:"8px",border:"1px solid #30363d",alignItems:"flex-end"}}>
+        <div style={{flex:1,minWidth:"120px"}}>
+          <label style={S.label}>전체 효과 적용</label>
+          <select style={S.select} defaultValue="" onChange={e=>e.target.value&&applyAll(e.target.value,"")}>
+            <option value="">선택...</option>
+            {EFFECTS.map(ef=><option key={ef.v} value={ef.v}>{ef.l}</option>)}
+          </select>
+        </div>
+        <div style={{flex:1,minWidth:"100px"}}>
+          <label style={S.label}>전체 길이 적용</label>
+          <select style={S.select} defaultValue="" onChange={e=>e.target.value&&applyAll("",e.target.value)}>
+            <option value="">선택...</option>
+            {[3,5,8,10].map(d=><option key={d} value={d}>{d}초</option>)}
+          </select>
+        </div>
+      </div>
+      {/* 개별 카드 */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:"10px"}}>
+        {images.map(img=>{
+          const s=settings[img.id]||{effect:"zoom-in",duration:5,zoom:1.3};
+          return <div key={img.id} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
+            <img src={img.dataUrl} alt={img.name} style={{width:"100%",height:"100px",objectFit:"cover",display:"block"}} />
+            <div style={{padding:"10px"}}>
+              <div style={{fontSize:"11px",color:"#8b949e",marginBottom:"6px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{img.name}</div>
+              <label style={S.label}>효과</label>
+              <select style={{...S.select,marginBottom:"6px"}} value={s.effect} onChange={e=>setSetting(img.id,"effect",e.target.value)}>
+                {EFFECTS.map(ef=><option key={ef.v} value={ef.v}>{ef.l}</option>)}
+              </select>
+              <label style={S.label}>길이</label>
+              <select style={{...S.select,marginBottom:"6px"}} value={s.duration} onChange={e=>setSetting(img.id,"duration",parseInt(e.target.value))}>
+                {[3,5,8,10].map(d=><option key={d} value={d}>{d}초</option>)}
+              </select>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:"3px"}}>
+                <label style={{...S.label,margin:0}}>줌 강도</label>
+                <span style={{fontSize:"11px",color:"#58a6ff",fontWeight:700}}>{s.zoom?.toFixed(1)}x</span>
+              </div>
+              <input type="range" min="1.1" max="2.0" step="0.1" value={s.zoom} style={{width:"100%",accentColor:"#1f6feb"}}
+                onChange={e=>setSetting(img.id,"zoom",parseFloat(e.target.value))} />
+              <button onClick={()=>setImages(prev=>prev.filter(p=>p.id!==img.id))}
+                style={{width:"100%",marginTop:"6px",padding:"5px",border:"none",background:"#21262d",color:"#f85149",borderRadius:"5px",cursor:"pointer",fontSize:"11px"}}>✕ 제거</button>
+            </div>
+          </div>;
+        })}
+      </div>
+      <div style={{marginTop:"14px",display:"flex",gap:"10px",flexWrap:"wrap"}}>
+        <button style={S.btn()} disabled={rendering} onClick={startRender}>
+          {rendering?<><span style={{width:"14px",height:"14px",border:"2px solid rgba(255,255,255,.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin .8s linear infinite",display:"inline-block"}}></span>렌더링 중...</>:"🎬 켄번스 영상 생성"}
+        </button>
+        <button style={S.btn("#21262d")} onClick={()=>{setImages([]);setResults([]);}}>🗑 초기화</button>
+      </div>
+    </div>}
+
+    {/* 진행바 */}
+    {(rendering||progress.msg) && <div style={S.card}>
+      <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"8px"}}>{progress.msg}</div>
+      <div style={{background:"#30363d",borderRadius:"4px",height:"6px"}}>
+        <div style={{width:`${progress.total?Math.round(progress.cur/progress.total*100):0}%`,height:"100%",borderRadius:"4px",background:"linear-gradient(90deg,#1f6feb,#3fb950)",transition:"width .4s"}} />
+      </div>
+    </div>}
+
+    {/* 결과 */}
+    {results.length > 0 && <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#3fb950",marginBottom:"12px"}}>✅ 렌더링 완료 ({results.length}개)</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:"12px"}}>
+        {results.map((v,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
+          <video src={v.url} controls muted loop style={{width:"100%",display:"block",maxHeight:"180px",objectFit:"cover"}} />
+          <div style={{padding:"8px"}}>
+            <a href={v.url} download={v.name} style={{display:"block",textAlign:"center",padding:"7px",background:"#21262d",color:"#58a6ff",borderRadius:"6px",textDecoration:"none",fontSize:"12px",fontWeight:600}}>⬇️ 다운로드</a>
+          </div>
+        </div>)}
+      </div>
+    </div>}
+    <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+  </div>;
+}
+
+// ─── TAB: 자막 + 음성 ─────────────────────────────────────────────────────
+function VideoMakeSubTab() {
+  const [videos, setVideos] = React.useState([]);
+  const [position, setPosition] = React.useState("overlay-bottom");
+  const [fontSize, setFontSize] = React.useState("24");
+  const [fontColor, setFontColor] = React.useState("white");
+  const [ttsRate, setTtsRate] = React.useState("1.0");
+  const [voices, setVoices] = React.useState([]);
+  const [voiceName, setVoiceName] = React.useState("");
+  const [previewText, setPreviewText] = React.useState("");
+  const [previewIdx, setPreviewIdx] = React.useState(null);
+  const canvasRef = React.useRef();
+  const fileRef = React.useRef();
+
+  React.useEffect(() => {
+    const load = () => {
+      const all = window.speechSynthesis.getVoices();
+      const ko = all.filter(v => v.lang.startsWith("ko"));
+      const list = ko.length > 0 ? ko : all;
+      setVoices(list);
+      if (list.length > 0) setVoiceName(list[0].name);
+    };
+    window.speechSynthesis.onvoiceschanged = load;
+    load();
+  }, []);
+
+  const addVideos = (files) => {
+    Array.from(files).filter(f => f.type.startsWith("video/")).forEach(file => {
+      setVideos(prev => [...prev, { id: Date.now()+Math.random(), file, url: URL.createObjectURL(file), name: file.name, subtitle: "" }]);
+    });
+  };
+
+  const setSubtitle = (id, val) => setVideos(prev => prev.map(v => v.id === id ? {...v, subtitle: val} : v));
+  const removeVideo = (id) => setVideos(prev => prev.filter(v => v.id !== id));
+
+  const speak = (text) => {
+    if (!text.trim()) return;
+    const u = new SpeechSynthesisUtterance(text);
+    const v = voices.find(v => v.name === voiceName);
+    if (v) u.voice = v;
+    u.rate = parseFloat(ttsRate);
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+  };
+
+  const drawSubtitle = (ctx, text, W, H, videoH) => {
+    const lines = text.split("\n").filter(l => l.trim());
+    if (!lines.length) return;
+    const fs = parseInt(fontSize);
+    ctx.font = `bold ${fs}px 'Noto Sans KR',sans-serif`;
+    ctx.textAlign = "center";
+    if (position === "bar-bottom") {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, videoH, W, H - videoH);
+      ctx.fillStyle = fontColor;
+      lines.forEach((line, i) => ctx.fillText(line, W/2, videoH + 28 + i * (fs + 8) + fs/2));
+    } else if (position === "overlay-bottom") {
+      const bgH = lines.length * (fs + 12) + 20;
+      const bgY = H - bgH - 36;
+      ctx.fillStyle = "rgba(0,0,0,0.65)";
+      ctx.beginPath();
+      if(ctx.roundRect) ctx.roundRect(16, bgY, W-32, bgH, 8); else ctx.rect(16, bgY, W-32, bgH);
+      ctx.fill();
+      ctx.fillStyle = fontColor;
+      lines.forEach((line, i) => ctx.fillText(line, W/2, bgY + 16 + i * (fs + 8) + fs/2));
+    } else {
+      const bgH = lines.length * (fs + 12) + 20;
+      ctx.fillStyle = "rgba(0,0,0,0.65)";
+      ctx.beginPath();
+      if(ctx.roundRect) ctx.roundRect(16, 28, W-32, bgH, 8); else ctx.rect(16, 28, W-32, bgH);
+      ctx.fill();
+      ctx.fillStyle = fontColor;
+      lines.forEach((line, i) => ctx.fillText(line, W/2, 44 + i * (fs + 8) + fs/2));
+    }
+  };
+
+  const previewSubtitle = (v, idx) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const vid = document.createElement("video");
+    vid.src = v.url;
+    vid.onloadedmetadata = () => {
+      const W = vid.videoWidth || 1080;
+      const vH = vid.videoHeight || 1920;
+      const H = position === "bar-bottom" ? vH + 120 : vH;
+      canvas.width = W; canvas.height = H;
+      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+      vid.currentTime = 0.5;
+      vid.onseeked = () => {
+        ctx.drawImage(vid, 0, 0, W, vH);
+        drawSubtitle(ctx, v.subtitle || "자막 미리보기", W, H, vH);
+        setPreviewIdx(idx);
+      };
+    };
+    vid.load();
+  };
+
+  const POS_OPTIONS = [
+    { val:"overlay-bottom", icon:"📺", label:"영상 위 하단", desc:"반투명 배경 자막" },
+    { val:"overlay-top", icon:"🔝", label:"영상 위 상단", desc:"상단 오버레이" },
+    { val:"bar-bottom", icon:"⬛", label:"하단 검은 띠", desc:"별도 검은 영역" },
+  ];
+
+  const S = {
+    card:{background:"#0d1117",border:"1px solid #21262d",borderRadius:"12px",padding:"16px",marginBottom:"14px"},
+    label:{fontSize:"11px",color:"#8b949e",fontWeight:600,marginBottom:"4px",display:"block"},
+    input:{width:"100%",background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"8px 12px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none",boxSizing:"border-box"},
+    btn:(c="#1f6feb")=>({padding:"9px 18px",border:"none",borderRadius:"7px",background:c,color:c==="#1f6feb"?"#fff":"#c9d1d9",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:"6px"}),
+    grid2:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"},
+  };
+
+  return <div>
+    <canvas ref={canvasRef} style={{display:"none"}} />
+
+    {/* 자막 위치 */}
+    <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>📍 자막 위치 선택</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px",marginBottom:"14px"}}>
+        {POS_OPTIONS.map(opt=><div key={opt.val} onClick={()=>setPosition(opt.val)}
+          style={{border:`2px solid ${position===opt.val?"#1f6feb":"#30363d"}`,borderRadius:"10px",padding:"12px 8px",textAlign:"center",cursor:"pointer",background:position===opt.val?"rgba(31,111,235,.1)":"#161b22",transition:"all .15s"}}>
+          <div style={{fontSize:"24px",marginBottom:"5px"}}>{opt.icon}</div>
+          <div style={{fontSize:"12px",fontWeight:700,color:position===opt.val?"#58a6ff":"#e6edf3"}}>{opt.label}</div>
+          <div style={{fontSize:"10px",color:"#484f58",marginTop:"2px"}}>{opt.desc}</div>
+        </div>)}
+      </div>
+      <div style={S.grid2}>
+        <div><label style={S.label}>폰트 크기</label>
+          <select style={S.input} value={fontSize} onChange={e=>setFontSize(e.target.value)}>
+            {[["18","작게"],["24","보통"],["32","크게"],["40","매우 크게"]].map(([v,l])=><option key={v} value={v}>{l} ({v}px)</option>)}
+          </select></div>
+        <div><label style={S.label}>자막 색상</label>
+          <select style={S.input} value={fontColor} onChange={e=>setFontColor(e.target.value)}>
+            <option value="white">흰색</option>
+            <option value="yellow">노란색</option>
+            <option value="#00ffcc">민트</option>
+            <option value="#ff6584">핑크</option>
+          </select></div>
+      </div>
+    </div>
+
+    {/* TTS */}
+    <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>🔊 음성(TTS) 설정 <span style={{fontSize:"11px",color:"#3fb950",fontWeight:400}}>완전 무료</span></div>
+      <div style={S.grid2}>
+        <div><label style={S.label}>음성 선택</label>
+          <select style={S.input} value={voiceName} onChange={e=>setVoiceName(e.target.value)}>
+            {voices.map(v=><option key={v.name} value={v.name}>{v.name} ({v.lang})</option>)}
+          </select></div>
+        <div><label style={S.label}>속도</label>
+          <select style={S.input} value={ttsRate} onChange={e=>setTtsRate(e.target.value)}>
+            {[["0.8","느리게"],["1.0","보통"],["1.2","빠르게"],["1.5","매우 빠르게"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+          </select></div>
+      </div>
+      <div style={{display:"flex",gap:"8px",marginTop:"10px"}}>
+        <input style={{...S.input,flex:1}} value={previewText} onChange={e=>setPreviewText(e.target.value)} placeholder="미리듣기 텍스트 입력" />
+        <button style={S.btn("#21262d")} onClick={()=>speak(previewText||"안녕하세요 밴드폰입니다")}>▶ 미리듣기</button>
+      </div>
+    </div>
+
+    {/* 영상 업로드 */}
+    <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>🎥 영상 업로드 & 자막 입력</div>
+      <div onClick={()=>fileRef.current.click()}
+        style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"24px",textAlign:"center",cursor:"pointer",background:"#161b22",marginBottom:"12px"}}
+        onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="#58a6ff";}}
+        onDragLeave={e=>{e.currentTarget.style.borderColor="#30363d";}}
+        onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="#30363d";addVideos(e.dataTransfer.files);}}>
+        <input ref={fileRef} type="file" accept="video/*" multiple style={{display:"none"}} onChange={e=>addVideos(e.target.files)} />
+        <div style={{fontSize:"28px",marginBottom:"6px"}}>🎥</div>
+        <div style={{fontSize:"13px",color:"#8b949e"}}>영상 파일 업로드 (MP4, WebM 등)</div>
+      </div>
+      {videos.map((v,idx)=><div key={v.id} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",marginBottom:"10px"}}>
+        <div style={{display:"flex",gap:"12px",alignItems:"flex-start"}}>
+          <video src={v.url} muted style={{width:"80px",height:"56px",objectFit:"cover",borderRadius:"6px",background:"#000",flexShrink:0}} />
+          <div style={{flex:1}}>
+            <div style={{fontSize:"12px",fontWeight:600,color:"#e6edf3",marginBottom:"6px"}}>{v.name}</div>
+            <textarea value={v.subtitle} onChange={e=>setSubtitle(v.id,e.target.value)}
+              placeholder="자막 텍스트 입력 (줄바꿈으로 여러 줄 가능)"
+              style={{...S.input,resize:"vertical",minHeight:"52px",lineHeight:"1.5",fontSize:"12px"}} rows={2} />
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:"5px",flexShrink:0}}>
+            <button style={S.btn("#21262d")} onClick={()=>previewSubtitle(v,idx)}>👁 미리보기</button>
+            <button style={S.btn("#21262d")} onClick={()=>speak(v.subtitle)}>🔊 음성재생</button>
+            <button style={{...S.btn("#21262d"),color:"#f85149"}} onClick={()=>removeVideo(v.id)}>✕</button>
+          </div>
+        </div>
+      </div>)}
+    </div>
+
+    {/* 자막 미리보기 결과 */}
+    {previewIdx !== null && <div style={S.card}>
+      <div style={{fontSize:"13px",fontWeight:700,color:"#3fb950",marginBottom:"10px"}}>👁 자막 미리보기 (프레임)</div>
+      <canvas ref={canvasRef} style={{width:"100%",maxWidth:"360px",display:"block",borderRadius:"8px",border:"1px solid #30363d"}} />
+      <div style={{marginTop:"10px",fontSize:"12px",color:"#484f58"}}>
+        💡 실제 영상+자막 합성은 CapCut, Premiere 등 영상편집 툴을 사용하거나, 위 켄번스/AI 생성 영상에 직접 자막을 넣으세요.<br/>
+        아래 버튼으로 자막 프레임 이미지를 저장할 수 있어요.
+      </div>
+      <button style={{...S.btn("#21262d"),marginTop:"10px"}} onClick={()=>{
+        canvasRef.current.toBlob(blob=>{
+          const url=URL.createObjectURL(blob);
+          const a=document.createElement("a"); a.href=url; a.download="subtitle_preview.png"; a.click();
+        });
+      }}>⬇️ 프레임 이미지 저장</button>
+    </div>}
+  </div>;
+}
+
+const TOOL_MAP={keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab};
 
 
 // ─── 블로그 글쓰기 공통 프롬프트 빌더 ───────────────────────────────────────
