@@ -5678,6 +5678,9 @@ ${text.slice(0, 4000)}
 
 // ─── TAB: AI 영상 생성 ────────────────────────────────────────────────────
 function VideoMakeAiTab() {
+  const [replicateKey, setReplicateKey] = React.useState("");
+  const [pixverseKey, setPixverseKey] = React.useState("");
+  const [preferApi, setPreferApi] = React.useState("replicate");
   const [duration, setDuration] = React.useState("10");
   const [resolution, setResolution] = React.useState("720p");
   const [globalPrompt, setGlobalPrompt] = React.useState("");
@@ -5687,6 +5690,20 @@ function VideoMakeAiTab() {
   const [running, setRunning] = React.useState(false);
   const [toast, setToast] = React.useState(null);
   const fileRef = React.useRef();
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      setReplicateKey(localStorage.getItem("vm_replicate_key") || "");
+      setPixverseKey(localStorage.getItem("vm_pixverse_key") || "");
+      setPreferApi(localStorage.getItem("vm_prefer_api") || "replicate");
+    }
+  }, []);
+
+  const saveKey = (field, val) => {
+    if (field === "replicate") { setReplicateKey(val); localStorage.setItem("vm_replicate_key", val); }
+    else { setPixverseKey(val); localStorage.setItem("vm_pixverse_key", val); }
+  };
+  const savePrefer = (v) => { setPreferApi(v); localStorage.setItem("vm_prefer_api", v); };
 
   const showToast = (msg, type="ok") => {
     setToast({msg, type});
@@ -5797,6 +5814,7 @@ function VideoMakeAiTab() {
     setResults(newResults);
     setRunning(false);
     showToast(`완료! ${newResults.length}개 생성됨`);
+    if (newResults.length > 0) localStorage.setItem("vm_ai_results", JSON.stringify(newResults));
   };
 
   const S = {
@@ -5986,6 +6004,7 @@ function VideoMakeKenTab() {
     }
     setResults(newResults); setRendering(false);
     setProgress({cur:newResults.length,total:images.length,msg:`✅ ${newResults.length}개 완료`});
+    if(newResults.length>0) localStorage.setItem("vm_ken_results",JSON.stringify(newResults.map(r=>({name:r.name}))));
   };
 
   const S = {
