@@ -755,15 +755,20 @@ Return ONLY valid JSON, no markdown:
       for(let i=0;i<sections.length;i++){
         const sec=sections[i];
         try{
-          // rate limit: 요청 사이 16초 간격 (무료티어 15초 제한)
-          if(i>0) await new Promise(r=>setTimeout(r,16000));
+          // rate limit: 요청 사이 20초 간격 (무료티어 제한)
+          if(i>0) await new Promise(r=>setTimeout(r,20000));
 
           const seed=Math.floor(Math.random()*99999);
           const encodedPrompt=encodeURIComponent(sec.prompt);
           const polUrl=`https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`;
 
-          const r=await fetch(polUrl);
-          if(!r.ok) throw new Error(`이미지 생성 실패 (${r.status})`);
+          let r;
+          for(let retry=0;retry<3;retry++){
+            if(retry>0) await new Promise(res=>setTimeout(res,15000));
+            r=await fetch(polUrl);
+            if(r.ok) break;
+            if(retry===2) throw new Error(`이미지 생성 실패 (${r.status})`);
+          }
 
           const blob=await r.blob();
           const base64=await new Promise((resolve,reject)=>{
@@ -1882,7 +1887,6 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         ? ["", "", "실제 네이버 블로그 인기글 제목 (참고용):"].concat(blogTitles.slice(0,15).map((t,i)=>(i+1)+". "+t)).join("\n")
         : "";
       const msgContent = [
-        `현재 날짜: ${(()=>{const n=new Date();return `${n.getFullYear()}년 ${n.getMonth()+1}월`;})()}`,
         '"'+kw+'" 키워드 분석. 순수 JSON만 출력.',
         '{',
         '  "trend": "상승|하락|유지",',
@@ -1893,7 +1897,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         '  "smartBlockReason": "왜 이 유형의 스마트블록이 뜨는지 한 줄",',
         '  "blogStrategy": "이 스마트블록 유형에서 블로그가 노출될 수 있는 전략 한 줄",',
         '  "longtailKeywords": [',
-        `    "현재 날짜 기준 ${(()=>{const n=new Date();return `${n.getFullYear()}년 ${n.getMonth()+1}월`;})()}에 맞는 최신 트렌드를 반영하여 이 키워드로 블로그 글을 쓸 때 활용할 수 있는 구체적인 글 주제 10개.",`,
+        '    "이 키워드로 블로그 글을 쓸 때 활용할 수 있는 구체적인 글 주제 10개.",',
         '    "형식: 실제 블로거가 쓸 법한 완성된 제목 형태로.",',
         '    "예: 천안맛집 → \'천안 성정동 점심 혼밥하기 좋은 국밥집 솔직 후기\' 처럼.",',
         '    "키워드를 자연스럽게 포함하되 독자 클릭을 유도하는 제목으로."',
