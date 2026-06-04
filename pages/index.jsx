@@ -6360,6 +6360,55 @@ function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrateg
 {"title":"제목(15~32자,키워드포함)","main_keyword":"${mainKw}","content":"본문","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
 }
 
+function PasswordGate({children}){
+  const [auth,setAuth]=useState(()=>{
+    if(typeof window==="undefined") return false;
+    return sessionStorage.getItem("bp_auth")==="1";
+  });
+  const [pw,setPw]=useState("");
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+
+  const submit=async()=>{
+    if(!pw.trim()) return;
+    setLoading(true); setErr("");
+    try{
+      const r=await fetch("/api/verify-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+      const d=await r.json();
+      if(d.ok){ sessionStorage.setItem("bp_auth","1"); setAuth(true); }
+      else{ setErr(d.error||"비밀번호가 틀렸습니다."); }
+    }catch(e){ setErr("오류가 발생했습니다. 다시 시도해주세요."); }
+    setLoading(false);
+  };
+
+  if(auth) return children;
+
+  return(
+    <div style={{minHeight:"100vh",background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"16px",padding:"48px 40px",width:"100%",maxWidth:"380px",textAlign:"center"}}>
+        <div style={{fontSize:"32px",marginBottom:"16px"}}>🔒</div>
+        <div style={{fontSize:"20px",fontWeight:700,color:"#e6edf3",marginBottom:"8px"}}>비밀번호를 입력해주세요</div>
+        <div style={{fontSize:"14px",color:"#8b949e",marginBottom:"32px"}}>접근 권한이 필요합니다.</div>
+        <input
+          type="password"
+          value={pw}
+          onChange={e=>setPw(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&submit()}
+          placeholder="비밀번호"
+          style={{width:"100%",padding:"12px 16px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",fontSize:"15px",outline:"none",boxSizing:"border-box",marginBottom:"12px"}}
+          autoFocus
+        />
+        {err&&<div style={{color:"#f85149",fontSize:"13px",marginBottom:"12px"}}>{err}</div>}
+        <button
+          onClick={submit}
+          disabled={loading}
+          style={{width:"100%",padding:"12px",background:"#238636",border:"none",borderRadius:"8px",color:"#fff",fontSize:"15px",fontWeight:700,cursor:"pointer",opacity:loading?0.7:1}}
+        >{loading?"확인 중...":"입력"}</button>
+      </div>
+    </div>
+  );
+}
+
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
   const [isMobile]=useState(()=>typeof window!=="undefined"&&window.matchMedia("(pointer:coarse)").matches);
@@ -6503,7 +6552,7 @@ export default function BlogTools(){
     analyzePostMeta, setAnalyzePostMeta,
   };
 
-  return <div style={{minHeight:"100vh",background:"#010409",fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:"#e6edf3",maxWidth:"1000px",marginLeft:"auto",marginRight:"auto",overflowX:"hidden"}}>
+  return <PasswordGate><div style={{minHeight:"100vh",background:"#010409",fontFamily:"'Noto Sans KR','Apple SD Gothic Neo',sans-serif",color:"#e6edf3",maxWidth:"1000px",marginLeft:"auto",marginRight:"auto",overflowX:"hidden"}}>
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap');
       html,body,#__next,#root{margin:0!important;padding:0!important;box-sizing:border-box;background:#010409}
@@ -6770,5 +6819,5 @@ export default function BlogTools(){
         </div>
       })}
     </div>
-  </div>
+  </div></PasswordGate>
 }
