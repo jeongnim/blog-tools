@@ -760,7 +760,7 @@ Return ONLY valid JSON, no markdown:
 
           const seed=Math.floor(Math.random()*99999);
           const encodedPrompt=encodeURIComponent(sec.prompt);
-          const polUrl=`https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`;
+          const polUrl=`https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=turbo&nologo=true`;
 
           let r;
           for(let retry=0;retry<3;retry++){
