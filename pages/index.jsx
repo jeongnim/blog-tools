@@ -755,31 +755,19 @@ Return ONLY valid JSON, no markdown:
       for(let i=0;i<sections.length;i++){
         const sec=sections[i];
         try{
-          // rate limit: 요청 사이 20초 간격 (무료티어 제한)
-          if(i>0) await new Promise(r=>setTimeout(r,20000));
+          if(i>0) await new Promise(r=>setTimeout(r,2000));
 
-          const seed=Math.floor(Math.random()*99999);
-          const encodedPrompt=encodeURIComponent(sec.prompt);
-          const polUrl=`https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=turbo&nologo=true`;
-
-          let r;
-          for(let retry=0;retry<3;retry++){
-            if(retry>0) await new Promise(res=>setTimeout(res,15000));
-            r=await fetch(polUrl);
-            if(r.ok) break;
-            if(retry===2) throw new Error(`이미지 생성 실패 (${r.status})`);
-          }
-
-          const blob=await r.blob();
-          const base64=await new Promise((resolve,reject)=>{
-            const reader=new FileReader();
-            reader.onload=()=>resolve(reader.result.split(",")[1]);
-            reader.onerror=reject;
-            reader.readAsDataURL(blob);
+          const apiRes=await fetch("/api/imagen",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({prompt:sec.prompt}),
           });
+          const data=await apiRes.json();
+          if(!apiRes.ok||data.error) throw new Error(data.error||`이미지 생성 실패`);
+          const {base64,mimeType}=data;
 
           setGenImages(prev=>prev.map((item,idx)=>
-            idx===i ? {...item, status:"done", base64, mimeType:"image/jpeg"} : item
+            idx===i ? {...item, status:"done", base64, mimeType} : item
           ));
         }catch(e2){
           setGenImages(prev=>prev.map((item,idx)=>
