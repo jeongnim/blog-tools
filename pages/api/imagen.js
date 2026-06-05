@@ -14,8 +14,8 @@ export default async function handler(req, res) {
 
     // 현재 작동하는 엔드포인트 순서대로 시도
     const candidates = [
-      `https://pollinations.ai/p/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`,
-      `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=flux&nologo=true`,
+      `https://pollinations.ai/p/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=turbo&nologo=true`,
+      `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=turbo&nologo=true`,
     ];
 
     let response = null;
