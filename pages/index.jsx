@@ -6338,14 +6338,28 @@ function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrateg
 
   return `현재 날짜: ${yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
 
-네이버 블로그 홈판 최적화 글을 작성해줘:
+네이버 블로그 홈판 노출 + AI 브리핑 인용 최적화 글을 작성해줘:
+
+[구조 원칙]
 1. 본문 1,500~2,000자 (한글+공백)
 2. 소제목 ▶ 형식 3개 이상 (마크다운/HTML 금지)
-3. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
+3. 핵심 결론과 요약을 글 앞부분(도입부)에 먼저 배치 — AI 브리핑이 인용하기 좋은 구조
 4. 각 문장 끝 줄바꿈(\\n)만 사용, HTML 태그(<br> 등) 절대 금지
 5. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
-6. 문체: -니다/-요 혼용, 정보성+경험담
-7. 반드시 ${yearMonth} 기준의 최신 정보로 작성 (과거 정보나 출시 예정 표현 금지)
+
+[내용 원칙 — 네이버 AEO 기준]
+6. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
+7. 직접 경험에서 나온 구체적 사례 반드시 포함 (문제 해결 과정, 시행착오, 실제 사용 후기 등)
+8. 창작자 고유의 시선과 인사이트 포함 — AI가 쉽게 만들 수 없는 개인 관점
+9. 관련 수치, 통계, 또는 업계 기준 등 신뢰도를 높이는 구체적 정보 포함
+10. 단순 정보 나열이 아닌 독자에게 실질적으로 도움되는 내용 중심
+11. 문체: -니다/-요 혼용, 정보성+경험담
+12. 반드시 ${yearMonth} 기준의 최신 정보로 작성 (과거 정보나 출시 예정 표현 금지)
+
+[금지사항]
+- 뻔한 일반 정보만 나열하는 글 (누구나 아는 내용만 반복)
+- 맥락 없이 키워드만 끼워 넣는 표현
+- AI가 기계적으로 생성한 느낌의 틀에 박힌 문장 패턴
 
 순수 JSON만 (마크다운 없이):
 {"title":"제목(15~32자,키워드포함)","main_keyword":"${mainKw}","content":"본문","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
@@ -6447,7 +6461,7 @@ export default function BlogTools(){
       const prompt = buildWritePrompt({ kw, yearMonth, smartBlockType, blogStrategy, bodies: [], mainKeyword: mainKeyword||kw });
       const raw = await callClaudeStream(
         [{role:"user",content:prompt}],
-        `You are a professional Korean Naver blog writer optimizing for homepage exposure. Current date: ${yearMonth}. Write based on the latest information as of this date. Output ONLY valid JSON, no markdown.`,
+        `You are a professional Korean Naver blog writer optimizing for homepage exposure and Naver AI briefing citation. Current date: ${yearMonth}. Write based on the latest information as of this date. Include personal experience, specific cases, and unique insights that AI cannot easily replicate. Structure content so key conclusions appear early for AI summarization. Output ONLY valid JSON, no markdown.`,
         3500, "claude-sonnet-4-5-20250929"
       );
       const parsed = safeParseJson(raw);
