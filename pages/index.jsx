@@ -755,19 +755,31 @@ Return ONLY valid JSON, no markdown:
       for(let i=0;i<sections.length;i++){
         const sec=sections[i];
         try{
-          if(i>0) await new Promise(r=>setTimeout(r,2000));
+          // rate limit: 요청 사이 20초 간격 (무료티어 제한)
+          if(i>0) await new Promise(r=>setTimeout(r,20000));
 
-          const apiRes=await fetch("/api/imagen",{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({prompt:sec.prompt}),
+          const seed=Math.floor(Math.random()*99999);
+          const encodedPrompt=encodeURIComponent(sec.prompt);
+          const polUrl=`https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=768&seed=${seed}&model=turbo&nologo=true`;
+
+          let r;
+          for(let retry=0;retry<3;retry++){
+            if(retry>0) await new Promise(res=>setTimeout(res,15000));
+            r=await fetch(polUrl);
+            if(r.ok) break;
+            if(retry===2) throw new Error(`이미지 생성 실패 (${r.status})`);
+          }
+
+          const blob=await r.blob();
+          const base64=await new Promise((resolve,reject)=>{
+            const reader=new FileReader();
+            reader.onload=()=>resolve(reader.result.split(",")[1]);
+            reader.onerror=reject;
+            reader.readAsDataURL(blob);
           });
-          const data=await apiRes.json();
-          if(!apiRes.ok||data.error) throw new Error(data.error||`이미지 생성 실패`);
-          const {base64,mimeType}=data;
 
           setGenImages(prev=>prev.map((item,idx)=>
-            idx===i ? {...item, status:"done", base64, mimeType} : item
+            idx===i ? {...item, status:"done", base64, mimeType:"image/jpeg"} : item
           ));
         }catch(e2){
           setGenImages(prev=>prev.map((item,idx)=>
@@ -1874,7 +1886,10 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
       const titlesAppend = blogTitles.length > 0
         ? ["", "", "실제 네이버 블로그 인기글 제목 (참고용):"].concat(blogTitles.slice(0,15).map((t,i)=>(i+1)+". "+t)).join("\n")
         : "";
+      const nowDate=new Date();
+      const yearMonthNow=`${nowDate.getFullYear()}년 ${nowDate.getMonth()+1}월`;
       const msgContent = [
+        `현재 날짜: ${yearMonthNow}`,
         '"'+kw+'" 키워드 분석. 순수 JSON만 출력.',
         '{',
         '  "trend": "상승|하락|유지",',
@@ -1885,10 +1900,10 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         '  "smartBlockReason": "왜 이 유형의 스마트블록이 뜨는지 한 줄",',
         '  "blogStrategy": "이 스마트블록 유형에서 블로그가 노출될 수 있는 전략 한 줄",',
         '  "longtailKeywords": [',
-        '    "이 키워드로 블로그 글을 쓸 때 활용할 수 있는 구체적인 글 주제 10개.",',
+        `    "${yearMonthNow} 현재 기준 최신 트렌드를 반영한, 이 키워드로 블로그 글을 쓸 때 활용할 수 있는 구체적인 글 주제 10개.",`,
         '    "형식: 실제 블로거가 쓸 법한 완성된 제목 형태로.",',
         '    "예: 천안맛집 → \'천안 성정동 점심 혼밥하기 좋은 국밥집 솔직 후기\' 처럼.",',
-        '    "키워드를 자연스럽게 포함하되 독자 클릭을 유도하는 제목으로."',
+        '    "키워드를 자연스럽게 포함하되 독자 클릭을 유도하는 제목으로. 과거 연도(2024년 등) 절대 사용 금지."',
         '  ]',
         '}' + titlesAppend
       ].join("\n");
