@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   if (!prompt) return res.status(400).json({ error: "prompt 필요" });
 
   try {
-    // 1. 생성 요청
+    // 1. 생성 요청 (512x512 - 무료 한도 이내)
     const submitRes = await fetch(`${HORDE_API}/generate/async`, {
       method: "POST",
       headers: {
@@ -23,8 +23,8 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         prompt,
         params: {
-          width: 1024,
-          height: 768,
+          width: 512,
+          height: 512,
           steps: 20,
           n: 1,
           sampler_name: "k_euler",
