@@ -975,7 +975,7 @@ JSON 형식:
 
     try{
       const raw=await callClaude([{role:"user",content:prompt}],
-        "You are a Korean blog SEO and quality analysis expert. Output ONLY valid JSON.", 4000);
+        "You are a Korean blog SEO and quality analysis expert. Output ONLY valid JSON.", 2500);
       const parsed=safeParseJson(raw);
 
       // AI 추출 단어 목록으로 실제 텍스트에서 직접 카운트 (AI 추정값 사용 안 함)
