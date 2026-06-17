@@ -15,37 +15,70 @@ function extractBlogInfo(url) {
   return { blogId: "", postNo: "" };
 }
 
-// ── 크롤링 방식: search.naver.com 직접 조회 ──
+// ── 크롤링 방식: search.naver.com 통합검색(nexearch) 직접 조회 ──
 async function crawlNaverRank(keyword, normalizedBlogId, normalizedPostNo) {
   try {
-    const searchUrl = "https://search.naver.com/search.naver?where=blog&query=" + encodeURIComponent(keyword) + "&start=1&display=100";
+    // where=nexearch: 실제 사람이 보는 통합검색 (스마트블록 포함)
+    const searchUrl = "https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query=" + encodeURIComponent(keyword);
     const r = await fetch(searchUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9",
-        "Referer": "https://search.naver.com/",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.naver.com/",
+        "Cache-Control": "no-cache",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
       },
       signal: AbortSignal.timeout(10000),
+      redirect: "follow",
     });
     if (!r.ok) return { crawlRank: null, crawlError: "응답 오류 " + r.status };
 
     const html = await r.text();
 
-    // 블로그 링크 추출 — blog.naver.com URL 패턴
-    const linkPattern = /blog\.naver\.com\/([^/"'\s?#&]+)\/(\d+)/g;
+    // 봇 차단 감지
+    if (html.length < 5000 || html.includes("차단") || html.includes("blocked") || html.includes("captcha")) {
+      return { crawlRank: null, crawlError: "봇 차단 감지" };
+    }
+
+    // 스마트블록 내 블로그 링크 추출
+    // 네이버 통합검색 HTML에서 blog.naver.com 링크만 순서대로 추출
+    // href="https://blog.naver.com/아이디/포스트번호" 패턴
+    const linkPattern = /href=["']https?:\/\/(?:m\.)?blog\.naver\.com\/([^/"'\s?#&]+)\/(\d+)["']/g;
     const found = [];
     let match;
     const seen = new Set();
     while ((match = linkPattern.exec(html)) !== null) {
-      const key = match[1].toLowerCase() + "/" + match[2];
+      const blogId = match[1].toLowerCase();
+      const postNo = match[2];
+      // 네이버 내부 시스템 계정 제외
+      if (blogId === "naverpost" || blogId === "naver" || blogId === "nblog") continue;
+      const key = blogId + "/" + postNo;
       if (!seen.has(key)) {
         seen.add(key);
-        found.push({ blogId: match[1].toLowerCase(), postNo: match[2] });
+        found.push({ blogId, postNo });
       }
     }
 
-    if (found.length === 0) return { crawlRank: null, crawlError: "크롤링 결과 없음 (봇 차단 가능성)" };
+    // href 패턴으로 못 찾으면 일반 URL 패턴으로 fallback
+    if (found.length === 0) {
+      const fallbackPattern = /blog\.naver\.com\/([^/"'\s?#&]+)\/(\d+)/g;
+      while ((match = fallbackPattern.exec(html)) !== null) {
+        const blogId = match[1].toLowerCase();
+        const postNo = match[2];
+        if (blogId === "naverpost" || blogId === "naver" || blogId === "nblog") continue;
+        const key = blogId + "/" + postNo;
+        if (!seen.has(key)) {
+          seen.add(key);
+          found.push({ blogId, postNo });
+        }
+      }
+    }
+
+    if (found.length === 0) return { crawlRank: null, crawlError: "검색 결과 없음 또는 봇 차단" };
 
     let crawlRank = null;
     for (let i = 0; i < found.length; i++) {
