@@ -2496,13 +2496,14 @@ JSON 배열만 출력:`;
         seoAdvice,
       };
 
-      // ── Step 2: 글 제목으로 네이버 검색 → 실제 누락 여부 확인 ──
+      // ── Step 2: 대표 키워드로 네이버 검색 → 실제 누락 여부 확인 ──
       const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
       const extractedBlogId=urlMatch?.[1]||post._blogId||"";
       const extractedPostNo=urlMatch?.[2]||post.postNo||"";
 
-      // 제목 전체를 검색어로 넣어서 내 글이 결과에 있는지 확인
-      const titleRank=await getNaverRank(post.title, extractedBlogId, extractedPostNo);
+      // AI가 추출한 대표 키워드(첫 번째)로 누락 여부 판별 — 제목 전체보다 실제 검색과 일치
+      const repKeyword = kws[0] || post.title;
+      const titleRank=await getNaverRank(repKeyword, extractedBlogId, extractedPostNo);
 
       // 실제 검색 결과 기반 누락 판별 — 크롤링 우선, 없으면 API 기준
       let missingStatus;
