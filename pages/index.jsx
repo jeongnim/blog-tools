@@ -2317,7 +2317,7 @@ function MissingTab(){
     setPage(pg);setExpanded(null);
   };
 
-  // ── 네이버 블로그탭 순위 조회 ──
+  // ── 네이버 블로그탭 순위 조회 (API + 크롤링 병행) ──
   const getNaverRank=async(kw,blogId,postNo)=>{
     try{
       const params=new URLSearchParams({keyword:kw});
@@ -2327,7 +2327,11 @@ function MissingTab(){
       if(!res.ok) return null;
       const data=await res.json();
       if(data.error) return null;
-      return data.myRank??null;
+      return {
+        apiRank: data.myRank??null,
+        crawlRank: data.crawlRank??null,
+        crawlError: data.crawlError??null,
+      };
     }catch(e){return null;}
   };
 
@@ -2500,9 +2504,13 @@ JSON 배열만 출력:`;
       // 제목 전체를 검색어로 넣어서 내 글이 결과에 있는지 확인
       const titleRank=await getNaverRank(post.title, extractedBlogId, extractedPostNo);
 
-      // 실제 검색 결과 기반 누락 판별 — 내 글이 결과에 있으면 노출, 없으면 누락
+      // 실제 검색 결과 기반 누락 판별 — 크롤링 우선, 없으면 API 기준
       let missingStatus;
-      if(titleRank!==null && titleRank!==undefined){
+      const titleApiRank = titleRank?.apiRank??null;
+      const titleCrawlRank = titleRank?.crawlRank??null;
+      if(titleCrawlRank!==null){
+        missingStatus="노출";
+      } else if(titleApiRank!==null){
         missingStatus="노출";
       } else {
         missingStatus="누락";
@@ -2525,7 +2533,7 @@ JSON 배열만 출력:`;
 
       // 전체 키워드 저장 — null은 100위 밖으로 표시
       const exposedKeywords=kws
-        .map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i],rankLoading:false}));
+        .map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i]??null,rankLoading:false}));
 
       setAnalysis(prev=>({...prev,[post.postNo]:{
         missingStatus, seoScore, seoDetail, titleRank,
@@ -2930,23 +2938,42 @@ JSON 배열만 출력:`;
                   {/* 완료 후 — 노출된 것만 표시 */}
 
                   {!a.topKeywords.some(kw=>kw.rankLoading)&&(()=>{
-                    const ranked=a.topKeywords.filter(kw=>kw.realRank!=null);
-                    const outOf=a.topKeywords.filter(kw=>kw.realRank==null);
+                    const ranked=a.topKeywords.filter(kw=>kw.realRank&&(kw.realRank.apiRank!=null||kw.realRank.crawlRank!=null));
+                    const outOf=a.topKeywords.filter(kw=>!kw.realRank||(kw.realRank.apiRank==null&&kw.realRank.crawlRank==null));
                     return <>
                       {ranked.map((kw,i)=>{
-                        const rc=rankColor(kw.realRank);
+                        const ar=kw.realRank?.apiRank??null;
+                        const cr=kw.realRank?.crawlRank??null;
+                        // 대표 순위: 크롤링 우선
+                        const mainRank=cr??ar;
+                        const rc=rankColor(mainRank);
+                        const mismatch=ar!==null&&cr!==null&&ar!==cr;
+                        const crawlOnly=cr!==null&&ar===null;
+                        const apiOnly=ar!==null&&cr===null;
                         return <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",
                           background:"#0d1117",border:`1px solid ${rc+"44"}`,
                           borderRadius:"8px",marginBottom:"5px"}}>
-                          <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw.keyword)}`}
+                          <a href={`https://search.naver.com/search.naver?where=blog&query=${encodeURIComponent(kw.keyword)}`}
                             target="_blank" rel="noreferrer"
                             style={{flex:1,color:"#c9d1d9",fontSize:"12px",fontWeight:600,textDecoration:"none"}}
                             onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#c9d1d9"}>
                             {kw.keyword} ↗
                           </a>
-                          <div style={{background:rc+"22",color:rc,border:`1px solid ${rc+"55"}`,
-                            borderRadius:"6px",padding:"3px 10px",fontSize:"12px",fontWeight:800,minWidth:"40px",textAlign:"center",flexShrink:0}}>
-                            {kw.realRank}위
+                          <div style={{display:"flex",alignItems:"center",gap:"4px",flexShrink:0}}>
+                            {/* 크롤링 순위 */}
+                            {cr!==null&&<div title="실제검색 기준" style={{background:rankColor(cr)+"22",color:rankColor(cr),border:`1px solid ${rankColor(cr)+"55"}`,
+                              borderRadius:"6px",padding:"3px 8px",fontSize:"12px",fontWeight:800,minWidth:"40px",textAlign:"center"}}>
+                              {cr}위
+                            </div>}
+                            {/* API 순위 — 크롤링이 있고 다를 때만, 또는 크롤링 없을 때 */}
+                            {(apiOnly||(mismatch))&&ar!==null&&<div title="Search API 기준" style={{background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
+                              borderRadius:"6px",padding:"3px 8px",fontSize:"11px",minWidth:"40px",textAlign:"center"}}>
+                              API {ar}위
+                            </div>}
+                            {/* 불일치 경고 */}
+                            {mismatch&&<span title={`실제검색 ${cr}위 / API ${ar}위 불일치`} style={{fontSize:"13px",cursor:"default"}}>⚠️</span>}
+                            {/* 크롤링 없고 API만 있을 때 출처 표시 */}
+                            {apiOnly&&<span title="실제검색 확인 불가 (API 기준)" style={{fontSize:"11px",color:"#484f58",cursor:"default"}}>API</span>}
                           </div>
                         </div>;
                       })}
@@ -2954,7 +2981,7 @@ JSON 배열만 출력:`;
                         <span style={{color:"#30363d",marginRight:"6px"}}>100위↓</span>
                         {outOf.map((kw,i)=>(
                           <span key={i}>
-                            <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(kw.keyword)}`}
+                            <a href={`https://search.naver.com/search.naver?where=blog&query=${encodeURIComponent(kw.keyword)}`}
                               target="_blank" rel="noreferrer"
                               style={{color:"#484f58",textDecoration:"none",fontSize:"11px"}}
                               onMouseEnter={e=>e.target.style.color="#8b949e"} onMouseLeave={e=>e.target.style.color="#484f58"}>
