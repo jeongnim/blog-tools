@@ -1,5 +1,5 @@
 // pages/api/naver-rank.js
-export const config = { maxDuration: 15 };
+export const config = { maxDuration: 20 };
 
 function extractBlogInfo(url) {
   if (!url) return { blogId: "", postNo: "" };
@@ -36,53 +36,75 @@ export default async function handler(req, res) {
   const normalizedPostNo = (postNo || "").trim();
 
   try {
-    const apiUrl = "https://openapi.naver.com/v1/search/blog.json?query=" + encodeURIComponent(keyword) + "&display=100&start=1&sort=sim";
+    // sim + date 두 방식 병렬 조회
+    const fetchSort = async (sort) => {
+      const url = "https://openapi.naver.com/v1/search/blog.json?query=" + encodeURIComponent(keyword) + "&display=100&start=1&sort=" + sort;
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 10000);
+      const r = await fetch(url, {
+        headers: { "X-Naver-Client-Id": clientId, "X-Naver-Client-Secret": clientSecret },
+        signal: ctrl.signal,
+      });
+      clearTimeout(t);
+      if (!r.ok) throw new Error("API 오류 " + r.status);
+      return await r.json();
+    };
 
-    const controller = new AbortController();
-    const timer = setTimeout(function() { controller.abort(); }, 10000);
+    const [simResult, dateResult] = await Promise.allSettled([
+      fetchSort("sim"),
+      fetchSort("date"),
+    ]);
 
-    const response = await fetch(apiUrl, {
-      headers: {
-        "X-Naver-Client-Id": clientId,
-        "X-Naver-Client-Secret": clientSecret,
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(response.status).json({ error: "네이버 API 오류: " + response.status, detail: errText });
+    if (simResult.status === "rejected" && dateResult.status === "rejected") {
+      return res.status(500).json({ error: "네이버 API 오류" });
     }
 
-    const data = await response.json();
-    const items = data.items || [];
+    const simItems = simResult.status === "fulfilled" ? (simResult.value.items || []) : [];
+    const dateItems = dateResult.status === "fulfilled" ? (dateResult.value.items || []) : [];
 
+    // 두 결과에서 내 글 순위 찾기
+    const findMyRank = (items) => {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const fromLink    = extractBlogInfo(item.link || "");
+        const fromBlogger = extractBlogInfo(item.bloggerlink || "");
+        if (normalizedPostNo) {
+          if (fromLink.postNo === normalizedPostNo || fromBlogger.postNo === normalizedPostNo) return i + 1;
+        } else if (normalizedBlogId) {
+          if (fromLink.blogId === normalizedBlogId || fromBlogger.blogId === normalizedBlogId) return i + 1;
+        }
+      }
+      return null;
+    };
+
+    const simRank  = findMyRank(simItems);
+    const dateRank = findMyRank(dateItems);
+
+    // 둘 다 있으면 낮은 순위(더 상위) 채택, 없으면 있는 것 채택
     let myRank = null;
+    let rankSource = null;
+    if (simRank !== null && dateRank !== null) {
+      if (simRank <= dateRank) { myRank = simRank; rankSource = "sim"; }
+      else { myRank = dateRank; rankSource = "date"; }
+    } else if (simRank !== null) { myRank = simRank; rankSource = "sim"; }
+    else if (dateRank !== null) { myRank = dateRank; rankSource = "date"; }
 
-    const results = items.map(function(item, index) {
+    // items는 sim 기준으로 반환 (UI용)
+    const results = simItems.map(function(item, index) {
       const rank = index + 1;
       const fromLink    = extractBlogInfo(item.link || "");
       const fromBlogger = extractBlogInfo(item.bloggerlink || "");
-
       let isMine = false;
-
       if (normalizedPostNo) {
         if (fromLink.postNo === normalizedPostNo || fromBlogger.postNo === normalizedPostNo) isMine = true;
       }
       if (!isMine && normalizedBlogId && !normalizedPostNo) {
         if (fromLink.blogId === normalizedBlogId || fromBlogger.blogId === normalizedBlogId) isMine = true;
       }
-
-      if (isMine && myRank === null) myRank = rank;
-
       return {
-        rank,
-        title: (item.title || "").replace(/<[^>]+>/g, ""),
-        link: item.link || "",
-        bloggerlink: item.bloggerlink || "",
-        bloggerName: item.bloggername || "",
-        postDate: item.postdate || "",
+        rank, title: (item.title || "").replace(/<[^>]+>/g, ""),
+        link: item.link || "", bloggerlink: item.bloggerlink || "",
+        bloggerName: item.bloggername || "", postDate: item.postdate || "",
         extractedBlogId: fromLink.blogId || fromBlogger.blogId,
         extractedPostNo: fromLink.postNo || fromBlogger.postNo,
         isMine,
@@ -98,9 +120,12 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       keyword,
-      total: data.total || 0,
-      display: items.length,
+      total: simResult.status === "fulfilled" ? (simResult.value.total || 0) : 0,
+      display: simItems.length,
       myRank,
+      rankSource,
+      simRank,
+      dateRank,
       searchedBlogId: normalizedBlogId,
       searchedPostNo: normalizedPostNo,
       debugTop5,
