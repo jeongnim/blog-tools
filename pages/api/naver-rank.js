@@ -20,7 +20,7 @@ function extractBlogInfo(url) {
   return { blogId: "", postNo: "" };
 }
 
-// ── 홈 PC 프록시: 통합검색/통합랭킹/블로그탭 3영역 동시 조회 ──
+// ── 홈 PC 프록시: 통합검색/블로그탭 2영역 동시 조회 ──
 async function fetchAreasViaHomeProxy(keyword, normalizedBlogId, normalizedPostNo) {
   const proxyUrl = process.env.HOME_PROXY_URL;
   const proxyKey = process.env.HOME_PROXY_KEY;
@@ -108,7 +108,6 @@ export default async function handler(req, res) {
     if (proxy.areas) {
       const candidates = [
         { rank: proxy.areas.main_search?.rank, src: "통합검색" },
-        { rank: proxy.areas.unified_ranking?.rank, src: "통합랭킹" },
         { rank: proxy.areas.blog?.rank, src: "블로그탭" },
       ].filter(c => c.rank !== null && c.rank !== undefined);
 
@@ -154,8 +153,8 @@ export default async function handler(req, res) {
       total: simResult.status === "fulfilled" && simResult.value ? (simResult.value.total || 0) : 0,
       display: simItems.length,
       myRank,
-      rankSource,        // "통합검색" | "통합랭킹" | "블로그탭" | "sim" | "date" | null
-      areas: proxy.areas, // { main_search:{rank,total,...}, unified_ranking:{...}, blog:{...} }
+      rankSource,        // "통합검색" | "블로그탭" | "sim" | "date" | null
+      areas: proxy.areas, // { main_search:{rank,total,...}, blog:{...} }
       proxyError: proxy.error,
       simRank,
       dateRank,
