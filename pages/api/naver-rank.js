@@ -20,37 +20,27 @@ function extractBlogInfo(url) {
   return { blogId: "", postNo: "" };
 }
 
-// ── 홈 PC 프록시를 통한 실제 네이버 통합검색 크롤링 ──
-async function fetchViaHomeProxy(keyword, normalizedBlogId, normalizedPostNo) {
+// ── 홈 PC 프록시: 통합검색/통합랭킹/블로그탭 3영역 동시 조회 ──
+async function fetchAreasViaHomeProxy(keyword, normalizedBlogId, normalizedPostNo) {
   const proxyUrl = process.env.HOME_PROXY_URL;
   const proxyKey = process.env.HOME_PROXY_KEY;
-  if (!proxyUrl || !proxyKey) return { rank: null, error: "프록시 미설정", items: [] };
+  if (!proxyUrl || !proxyKey) return { areas: null, error: "프록시 미설정" };
 
   try {
-    const url = `${proxyUrl}/naver-search?keyword=${encodeURIComponent(keyword)}&key=${encodeURIComponent(proxyKey)}`;
+    const url = `${proxyUrl}/naver-search-areas?keyword=${encodeURIComponent(keyword)}&blogId=${encodeURIComponent(normalizedBlogId)}&postNo=${encodeURIComponent(normalizedPostNo)}&key=${encodeURIComponent(proxyKey)}`;
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 15000);
+    const t = setTimeout(() => ctrl.abort(), 18000);
     const r = await fetch(url, { signal: ctrl.signal });
     clearTimeout(t);
 
-    if (!r.ok) return { rank: null, error: "프록시 응답 오류 " + r.status, items: [] };
+    if (!r.ok) return { areas: null, error: "프록시 응답 오류 " + r.status };
 
     const data = await r.json();
-    if (!data.success) return { rank: null, error: data.error || "프록시 실패", items: [] };
+    if (!data.success) return { areas: null, error: data.error || "프록시 실패" };
 
-    const items = data.items || [];
-    let rank = null;
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (normalizedPostNo) {
-        if (item.postNo === normalizedPostNo) { rank = i + 1; break; }
-      } else if (normalizedBlogId) {
-        if (item.blogId === normalizedBlogId) { rank = i + 1; break; }
-      }
-    }
-    return { rank, error: null, items, total: items.length };
+    return { areas: data.areas, error: null };
   } catch (e) {
-    return { rank: null, error: e.message || "프록시 연결 실패", items: [] };
+    return { areas: null, error: e.message || "프록시 연결 실패" };
   }
 }
 
@@ -69,9 +59,7 @@ export default async function handler(req, res) {
   const normalizedPostNo = (postNo || "").trim();
 
   try {
-    // ── 홈 프록시(실제 검색) + Search API(sim/date) 병렬 조회 ──
-    const tasks = [fetchViaHomeProxy(keyword, normalizedBlogId, normalizedPostNo)];
-
+    // ── 홈 프록시(3영역 실제검색) + Search API(sim/date, fallback용) 병렬 조회 ──
     const fetchSort = async (sort) => {
       if (!clientId || !clientSecret) return null;
       const url = "https://openapi.naver.com/v1/search/blog.json?query=" + encodeURIComponent(keyword) + "&display=100&start=1&sort=" + sort;
@@ -87,12 +75,12 @@ export default async function handler(req, res) {
     };
 
     const [proxyResult, simResult, dateResult] = await Promise.allSettled([
-      tasks[0],
+      fetchAreasViaHomeProxy(keyword, normalizedBlogId, normalizedPostNo),
       fetchSort("sim"),
       fetchSort("date"),
     ]);
 
-    const proxy = proxyResult.status === "fulfilled" ? proxyResult.value : { rank: null, error: proxyResult.reason?.message, items: [] };
+    const proxy = proxyResult.status === "fulfilled" ? proxyResult.value : { areas: null, error: proxyResult.reason?.message };
 
     const simItems = (simResult.status === "fulfilled" && simResult.value) ? (simResult.value.items || []) : [];
     const dateItems = (dateResult.status === "fulfilled" && dateResult.value) ? (dateResult.value.items || []) : [];
@@ -113,20 +101,33 @@ export default async function handler(req, res) {
 
     const simRank  = findMyRank(simItems);
     const dateRank = findMyRank(dateItems);
-    const proxyRank = proxy.rank;
 
-    // 우선순위: 홈프록시(실제검색) > sim/date 중 더 좋은 순위
+    // 3영역 중 가장 좋은(낮은) 순위를 대표 순위로
     let myRank = null;
     let rankSource = null;
-    if (proxyRank !== null) {
-      myRank = proxyRank; rankSource = "live";
-    } else if (simRank !== null && dateRank !== null) {
-      if (simRank <= dateRank) { myRank = simRank; rankSource = "sim"; }
-      else { myRank = dateRank; rankSource = "date"; }
-    } else if (simRank !== null) { myRank = simRank; rankSource = "sim"; }
-    else if (dateRank !== null) { myRank = dateRank; rankSource = "date"; }
+    if (proxy.areas) {
+      const candidates = [
+        { rank: proxy.areas.main_search?.rank, src: "통합검색" },
+        { rank: proxy.areas.unified_ranking?.rank, src: "통합랭킹" },
+        { rank: proxy.areas.blog?.rank, src: "블로그탭" },
+      ].filter(c => c.rank !== null && c.rank !== undefined);
 
-    // items는 sim 기준으로 반환 (UI 디버그용)
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => a.rank - b.rank);
+        myRank = candidates[0].rank;
+        rankSource = candidates[0].src;
+      }
+    }
+    // 프록시에서 못 찾았으면 Search API로 fallback
+    if (myRank === null) {
+      if (simRank !== null && dateRank !== null) {
+        if (simRank <= dateRank) { myRank = simRank; rankSource = "sim"; }
+        else { myRank = dateRank; rankSource = "date"; }
+      } else if (simRank !== null) { myRank = simRank; rankSource = "sim"; }
+      else if (dateRank !== null) { myRank = dateRank; rankSource = "date"; }
+    }
+
+    // items는 sim 기준으로 반환 (UI 디버그/키워드 추출용)
     const results = simItems.map(function(item, index) {
       const rank = index + 1;
       const fromLink    = extractBlogInfo(item.link || "");
@@ -153,10 +154,9 @@ export default async function handler(req, res) {
       total: simResult.status === "fulfilled" && simResult.value ? (simResult.value.total || 0) : 0,
       display: simItems.length,
       myRank,
-      rankSource,       // "live"(홈프록시 실제검색) | "sim" | "date" | null
-      proxyRank,
+      rankSource,        // "통합검색" | "통합랭킹" | "블로그탭" | "sim" | "date" | null
+      areas: proxy.areas, // { main_search:{rank,total,...}, unified_ranking:{...}, blog:{...} }
       proxyError: proxy.error,
-      proxyTotal: proxy.total ?? null,
       simRank,
       dateRank,
       searchedBlogId: normalizedBlogId,
