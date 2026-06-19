@@ -2317,7 +2317,7 @@ function MissingTab(){
     setPage(pg);setExpanded(null);
   };
 
-  // ── 네이버 순위 조회 (통합검색/통합랭킹/블로그탭 3영역) ──
+  // ── 네이버 순위 조회 (통합검색/블로그탭 2영역) ──
   const getNaverRank=async(kw,blogId,postNo)=>{
     try{
       const params=new URLSearchParams({keyword:kw});
@@ -2330,7 +2330,7 @@ function MissingTab(){
       return {
         myRank: data.myRank??null,
         rankSource: data.rankSource??null,
-        areas: data.areas??null, // { main_search:{rank,exposed_area,...}, unified_ranking:{...}, blog:{...} }
+        areas: data.areas??null, // { main_search:{rank,exposed_area,...}, blog:{...} }
       };
     }catch(e){return null;}
   };
@@ -2932,7 +2932,6 @@ JSON 배열만 출력:`;
 
                     const AREA_LABELS=[
                       {key:"main_search",label:"통합검색"},
-                      {key:"unified_ranking",label:"통합랭킹"},
                       {key:"blog",label:"블로그탭"},
                     ];
 
