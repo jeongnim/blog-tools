@@ -4235,6 +4235,7 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
   const [err,setErr]=useState("");
+  const [trendingCount,setTrendingCount]=useState(0);
   const now=new Date();
   const yearMonth=`${now.getFullYear()}년 ${now.getMonth()+1}월`;
 
@@ -4243,17 +4244,28 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
     setLoadingKw(true); setKeywords([]); setErr("");
     try{
       const dirNo = NAVER_DIR_MAP[selCat] || 0;
-      const themeUrl = `https://section.blog.naver.com/ThemePost.naver?directoryNo=${dirNo}&activeDirectorySeq=${dirNo}&currentPage=1`;
+
+      // ── 실시간 인기글 제목 크롤링 ──
+      let trendingTitles = [];
+      try {
+        const tr = await fetch(`/api/naver-trending?dirNo=${dirNo}`);
+        const td = await tr.json();
+        if (td.titles?.length > 0) { trendingTitles = td.titles; setTrendingCount(td.titles.length); }
+      } catch(e) { /* 실패해도 AI 추천은 계속 진행 */ }
+
+      const trendingBlock = trendingTitles.length > 0
+        ? `\n\n현재 네이버 블로그 "${selCat}" 카테고리 실시간 인기글 제목 (참고용):\n${trendingTitles.map((t,i)=>`${i+1}. ${t}`).join("\n")}`
+        : "";
+
       const prompt=`카테고리: "${selCat}"
-네이버 블로그 주제별 페이지(${themeUrl})의 ${selCat} 카테고리 상위 노출 트렌드를 반영하여,
-${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각각의 메인 키워드를 추천해줘.
+${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각각의 메인 키워드를 추천해줘.${trendingBlock}
 
 선정 기준 5가지:
 1. 실제 블로거가 쓸 법한 완성된 제목 형태 (경험·후기·정보·비교 등 독자가 클릭하고 싶은 구체적 제목)
-2. ${yearMonth} 최신 트렌드와 시의성 반영
+2. ${yearMonth} 최신 트렌드와 시의성 반영${trendingTitles.length > 0 ? " (위 실시간 인기글 소재를 참고해 유사하거나 파생된 주제 우선)" : ""}
 3. 검색량 대비 경쟁이 낮아 상위노출 가능성이 높은 주제
 4. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. 네이버에서 실제로 많이 검색되는 단어
-5. 현재 네이버 블로그 주제별 상위에 노출 중인 실제 유행 소재 반영
+5. 인기글과 너무 똑같은 제목은 피하고, 소재만 참고해서 차별화된 새 주제로 발전시킬 것
 
 반드시 순수 JSON만 출력. 마크다운 없이.
 {"keywords":[{"rank":1,"title":"추천 글 주제 제목","mainKeyword":"메인 키워드 (1~2형태소, 예:옷장정리)","reason":"선정 이유 한 줄 (유행성 포함)"},...]}`
@@ -4300,7 +4312,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
 
     {keywords.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 2</div>
-      <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"4px"}}>추천 글 주제 & 메인 키워드</div>
+      <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"4px"}}><span style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>추천 글 주제 & 메인 키워드</span>{trendingCount>0&&<span style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"10px",padding:"2px 9px",fontSize:"11px",fontWeight:700}}>📡 실시간 {trendingCount}개 반영</span>}</div>
       <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>
         <span style={{color:"#58a6ff",fontWeight:700}}>🔍 키워드 조회</span> 버튼을 클릭하면 키워드 글쓰기에서 자동으로 검색됩니다
       </div>
