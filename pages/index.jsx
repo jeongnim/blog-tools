@@ -2379,6 +2379,7 @@ function MissingTab(){
 - 단순 연속 단어 조합 금지 (예: "즉시 실천한", "실천한 대응" 같은 의미없는 조합 X)
 - 핵심 명사+명사, 명사+동사 조합 위주 (예: "SKT 해킹", "KT 해킹 사고", "해킹 대응 방법")
 - 검색량이 있을 것 같은 2~4단어 복합 키워드 우선
+- 단, 제목에서 의미있는 단독 명사(예: "봄", "비", "벚꽃")가 있으면 포함 가능
 - JSON 배열만 반환, 다른 텍스트 없이
 
 예시 출력: ["SKT 해킹","KT 해킹 사고","해킹 대응 방법","통신사 해킹","개인정보 유출 대처"]
@@ -2411,6 +2412,7 @@ JSON 배열만 출력:`;
       if(kws.length === 0){
         const seen = new Set();
         const add = (k) => { k=(k||'').trim(); if(k&&k.length>=2&&!seen.has(k)&&kws.length<5){seen.add(k);kws.push(k);}};
+        const addSingle = (k) => { k=(k||'').trim(); if(k&&k.length>=1&&!seen.has(k)&&kws.length<5){seen.add(k);kws.push(k);}};
         (post.tags||[]).forEach(t=>add(t));
         // 영문+한글 단어 분리 후 2-gram
         const allWords = (post.title.match(/[가-힣A-Za-z0-9]+/g)||[]).filter(w=>w.length>=2);
@@ -2419,6 +2421,9 @@ JSON 배열만 출력:`;
         for(let i=0;i<meaningful.length-1;i++) add(meaningful[i]+' '+meaningful[i+1]);
         for(let i=0;i<meaningful.length-2;i++) add(meaningful[i]+' '+meaningful[i+1]+' '+meaningful[i+2]);
         meaningful.filter(w=>w.length>=3).forEach(w=>add(w));
+        // 제목에서 1글자 한글 명사도 추출 (복합어 조합 후 자리 남을 때)
+        const singleNouns = (post.title.match(/[가-힣]/g)||[]).filter(w=>!seen.has(w));
+        singleNouns.forEach(w=>addSingle(w));
       }
 
       // ── SEO 점수 계산 ──────────────────────────────────────────────────────
