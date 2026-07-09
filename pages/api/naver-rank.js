@@ -40,7 +40,8 @@ async function fetchAreasViaHomeProxy(keyword, normalizedBlogId, normalizedPostN
 
     return { areas: data.areas, error: null };
   } catch (e) {
-    return { areas: null, error: e.message || "프록시 연결 실패" };
+    const detail = e?.cause?.code || e?.cause?.message || e?.message || "알 수 없는 오류";
+    return { areas: null, error: `프록시 연결 실패: ${detail}` };
   }
 }
 
