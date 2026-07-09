@@ -2331,6 +2331,7 @@ function MissingTab(){
         myRank: data.myRank??null,
         rankSource: data.rankSource??null,
         areas: data.areas??null, // { main_search:{rank,exposed_area,...}, blog:{...} }
+        proxyError: data.proxyError??null,
       };
     }catch(e){return null;}
   };
@@ -2973,6 +2974,11 @@ JSON 배열만 출력:`;
                                 {rankColor(mainRank)&&kw.realRank?.rankSource==="sim"||kw.realRank?.rankSource==="date"
                                   ? `API 기준 ${mainRank}위 (영역 확인 불가)`
                                   : "영역 데이터 없음"}
+                                {kw.realRank?.proxyError && (
+                                  <span style={{color:"#ff7b72",marginLeft:"6px"}}>
+                                    [프록시: {kw.realRank.proxyError}]
+                                  </span>
+                                )}
                               </span>
                             )}
                           </div>
