@@ -6389,10 +6389,10 @@ function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrateg
 
   return `현재 날짜: ${yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
 
-네이버 블로그 홈판 노출 + AI 브리핑 인용 최적화 글을 작성해줘:
+네이버 블로그 홈판 노출 + AI 브리핑 인용 + AI탭 대화형 검색 대응 글을 작성해줘:
 
 [구조 원칙]
-1. 본문 1,500~2,000자 (한글+공백)
+1. 본문 1,800~2,300자 (한글+공백)
 2. 소제목 ▶ 형식 3개 이상 (마크다운/HTML 금지)
 3. 핵심 결론과 요약을 글 앞부분(도입부)에 먼저 배치 — AI 브리핑이 인용하기 좋은 구조
 4. 각 문장 끝 줄바꿈(\\n)만 사용, HTML 태그(<br> 등) 절대 금지
@@ -6406,20 +6406,42 @@ function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrateg
    - 첫 문장: 독자가 이 글에서 얻을 핵심 이익을 바로 명시 (인사말·계절 묘사·자기소개 절대 금지)
    - 둘째 문장: 작성자의 직접 경험 근거 1줄 (예: "직접 3곳을 비교해봤습니다", "6개월간 써보며 정리했습니다")
 
+[AI탭 대응 원칙 — 대화형 검색 인용 최적화]
+8. 각 ▶ 소제목 바로 다음 첫 문장은 그 소제목에 대한 완결된 답변이어야 한다.
+   - 단독으로 떼어내도 문맥이 통해야 함 (지시대명사 "이것/해당/위에서" 로 시작 금지)
+   - "~에 대해 알아보겠습니다" 같은 예고 문장 금지
+   - 60자 이내 단문으로 결론부터 제시한 뒤, 다음 문장부터 부연
+9. 각 ▶ 섹션 마지막에 그 섹션에서 자연히 이어질 후속 질문 1개와 답변 2~3문장을 배치.
+   - 형식: "그럼 ○○○는 어떻게 되나요?" 다음 줄에 즉답
+   - AI탭은 사용자가 꼬리질문을 이어가는 구조이므로, 섹션마다 이 블록이 있어야 재인용된다
+   - 글 맨 끝에 FAQ를 몰아넣는 방식 금지 (섹션 단위로 분산)
+10. 글 전체에서 "○○○란 ~이다" 형태의 사전식 정의 문장을 최소 1개 포함.
+    - 25자 이내, 수식어·감탄사 없이 건조하게 서술
+    - 개념 정의형 질의는 검색순위와 무관하게 AI가 인용하는 경향이 있음
+11. 실행 연결 정보를 완전한 문장으로 서술 (표 형태 금지, AI는 표보다 문장을 인용하기 쉬움):
+    - 소요 시간, 준비물, 절차 단계 수, 비용 범위 중 해당되는 것
+    - 예: "번호이동은 신분증만 있으면 매장에서 평균 30분 안에 처리됩니다."
+12. 상업형 프레이밍 회피: "추천/최저가/성지" 류 단독 표현은 AI 답변 생성이 억제되므로,
+    "무엇을 기준으로 판단하는가" 형태의 정보형 문장으로 감싸서 서술한다.
+
 [내용 원칙 — 네이버 AEO 기준]
-8. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
-9. 직접 경험에서 나온 구체적 사례 반드시 포함 (문제 해결 과정, 시행착오, 실제 사용 후기 등)
-10. 창작자 고유의 시선과 인사이트 포함 — AI가 쉽게 만들 수 없는 개인 관점
-11. 관련 수치, 통계, 또는 업계 기준 등 신뢰도를 높이는 구체적 정보 포함
-12. 단순 정보 나열이 아닌 독자에게 실질적으로 도움되는 내용 중심
-13. 문체: -니다/-요 혼용, 정보성+경험담
-14. 반드시 ${yearMonth} 기준의 최신 정보로 작성 (과거 정보나 출시 예정 표현 금지)
-15. 본문 중간 (두 번째 소제목 이후)에 독자 참여 유도 문장 1개 삽입 — 체류시간 증가 목적
-    (예: "혹시 비슷한 경험 있으신가요?", "이 부분이 가장 고민됐는데 여러분은 어떠셨나요?")
-16. 마지막 소제목 ▶ 이후 마무리 구조:
+13. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
+14. 직접 경험에서 나온 구체적 사례 반드시 포함 (문제 해결 과정, 시행착오, 실제 사용 후기 등)
+15. 창작자 고유의 시선과 인사이트 포함 — AI가 쉽게 만들 수 없는 개인 관점
+16. 아래 신뢰도 요소 중 최소 2개를 반드시 포함:
+    - 구체적 수치 + 기준 시점 (예: "${yearMonth} 기준")
+    - 현장에서만 알 수 있는 예외 케이스
+    - 실제 응대·사용 사례 요약
+17. 브랜드·지점명은 글 전체에서 동일 표기 유지 (축약·변형 금지).
+    첫 등장 시 1회만 카테고리를 붙여 서술 (예: "휴대폰 판매점 밴드폰")
+18. 단순 정보 나열이 아닌 독자에게 실질적으로 도움되는 내용 중심
+19. 문체: -니다/-요 혼용, 정보성+경험담
+20. 반드시 ${yearMonth} 기준의 최신 정보로 작성 (과거 정보나 출시 예정 표현 금지)
+21. 독자 참여 유도 문장 1개는 두 번째 소제목 섹션의 맨 마지막 줄에만 배치
+    (섹션 중간 삽입 금지 — 인용 블록이 끊긴다)
+22. 마지막 소제목 ▶ 이후 마무리 구조:
     - 핵심 내용 요약 2~3줄
     - 자연스러운 공감·댓글 유도 문장 1개 (광고성 표현 제외, 강요하지 않는 톤)
-    (예: "도움이 됐다면 공감 한 번 눌러주시면 큰 힘이 됩니다 😊", "궁금한 점은 댓글로 남겨주세요")
 
 [금지사항]
 - 뻔한 일반 정보만 나열하는 글 (누구나 아는 내용만 반복)
@@ -6427,6 +6449,7 @@ function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrateg
 - AI가 기계적으로 생성한 느낌의 틀에 박힌 문장 패턴
 - 도입부를 인사말, 날씨·계절 묘사, 자기소개로 시작하는 것
 - 소제목 없이 긴 문단이 연속되는 구조 (각 소제목 간격 400자 이내 유지)
+- 소제목 직후를 배경 설명이나 서론으로 시작하는 것 (반드시 결론부터)
 
 순수 JSON만 (마크다운 없이):
 {"title":"제목(15~32자,키워드포함)","main_keyword":"${mainKw}","content":"본문","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
@@ -6528,8 +6551,8 @@ export default function BlogTools(){
       const prompt = buildWritePrompt({ kw, yearMonth, smartBlockType, blogStrategy, bodies: [], mainKeyword: mainKeyword||kw });
       const raw = await callClaudeStream(
         [{role:"user",content:prompt}],
-        `You are a professional Korean Naver blog writer optimizing for homepage exposure and Naver AI briefing citation. Current date: ${yearMonth}. Write based on the latest information as of this date. Include personal experience, specific cases, and unique insights that AI cannot easily replicate. Structure content so key conclusions appear early for AI summarization. Output ONLY valid JSON, no markdown.`,
-        3500, "claude-sonnet-4-5-20250929"
+        `You are a professional Korean Naver blog writer optimizing for three targets: Naver blog homepage exposure, AI Briefing citation, and Naver AI Tab conversational search. Current date: ${yearMonth}. Write based on the latest information as of this date. Include personal experience, specific cases, and unique insights that AI cannot easily replicate. Place key conclusions early for AI summarization, and make every ▶ section self-contained so it can be quoted in isolation and support follow-up questions. Output ONLY valid JSON, no markdown.`,
+        4500, "claude-sonnet-4-5-20250929"
       );
       const parsed = safeParseJson(raw);
       const cleanContent = (str="") =>
