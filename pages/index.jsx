@@ -699,18 +699,66 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
 }
 
 
-// ─── 단락별 이미지 생성 컴포넌트 (Pollinations AI) ──────────────────────────────────
+// ─── 단락별 이미지 프롬프트 생성 컴포넌트 (GPT 이미지 생성용) ─────────────────
+const IMG_STYLES=[
+  {id:"photo", label:"실사 사진",
+   en:"photorealistic editorial photograph, natural soft lighting, shallow depth of field, bright and clean, high detail",
+   ko:"실사 사진 느낌, 자연스럽고 부드러운 조명, 얕은 심도, 밝고 깔끔한 분위기, 높은 디테일"},
+  {id:"3d", label:"3D 일러스트",
+   en:"soft 3D rendered illustration, rounded friendly shapes, pastel color palette, studio lighting, clean simple background",
+   ko:"부드러운 3D 렌더링 일러스트, 둥글둥글한 형태, 파스텔 색감, 스튜디오 조명, 단순하고 깔끔한 배경"},
+  {id:"flat", label:"플랫 일러스트",
+   en:"flat vector illustration, simple geometric shapes, limited color palette, minimal shading, modern web illustration style",
+   ko:"플랫 벡터 일러스트, 단순한 도형 위주, 절제된 색상, 최소한의 음영, 모던한 웹 일러스트 스타일"},
+  {id:"info", label:"미니멀 인포그래픽",
+   en:"minimal infographic style illustration, clean icons and simple shapes, generous white space, two accent colors",
+   ko:"미니멀 인포그래픽 스타일, 깔끔한 아이콘과 단순한 도형, 넉넉한 여백, 두 가지 포인트 컬러"},
+];
+const IMG_RATIOS=["16:9","4:3","1:1","3:4"];
+
+function buildFullPrompt(item,styleId,ratio,lang){
+  const st=IMG_STYLES.find(s=>s.id===styleId)||IMG_STYLES[0];
+  if(lang==="ko"){
+    const scene=(item.sceneKo||item.scene||"").trim();
+    return `${scene} ${st.ko}. ${ratio} 비율. 이미지 안에 글자·문자·로고·워터마크는 넣지 말 것.`;
+  }
+  const scene=(item.scene||"").trim();
+  return `${scene} ${st.en}. ${ratio} aspect ratio. No text, letters, watermarks or logos in the image.`;
+}
+
 function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading,setImgLoading,imgError,setImgError,imgSections,setImgSections}){
+  const [styleId,setStyleId]=useState("photo");
+  const [ratio,setRatio]=useState("16:9");
+  const [lang,setLang]=useState("en");
+  const [copied,setCopied]=useState(null);
+
+  const copyText=async(txt,key)=>{
+    try{
+      await navigator.clipboard.writeText(txt);
+    }catch(_){
+      const ta=document.createElement("textarea");
+      ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.select();
+      try{ document.execCommand("copy"); }catch(_e){}
+      document.body.removeChild(ta);
+    }
+    setCopied(key);
+    setTimeout(()=>setCopied(c=>c===key?null:c),1500);
+  };
 
   const startGenerate=async()=>{
+    if(!postContent||postContent.trim().length<50){
+      setImgError("본문이 너무 짧습니다. 글을 먼저 입력해주세요.");
+      return;
+    }
     setImgLoading(true);
     setGenImages([]);
     setImgSections([]);
     setImgError("");
 
     try{
-      // ── Step 1: Claude가 본문을 4개 단락으로 분석 후 각각 다른 영문 이미지 프롬프트 생성 ──
-      const analysisReq=`You are a blog image consultant. Analyze the following Korean blog post and identify 4 distinct sections that would benefit from an accompanying image. For each section, create a vivid, photorealistic English prompt for Pollinations AI.
+      // ── Claude가 본문을 5개 단락으로 나누고 각 단락의 '장면'을 묘사 ──
+      const analysisReq=`You are a blog image art director. Read the Korean blog post below and split it into exactly 5 key sections, following the flow of the post from beginning to end. For each section, describe ONE concrete visual scene that would illustrate it well.
 
 Blog Title: ${postMeta.title||""}
 Main Keyword: ${postMeta.main_keyword||""}
@@ -720,61 +768,35 @@ Blog Content:
 ${postContent.slice(0,3000)}
 
 Rules:
-- Each section must cover a DIFFERENT aspect/topic of the post
-- Prompts must be visually distinct from each other
-- No text in images, no people, no faces
-- Photorealistic, high quality, bright and clean
-- Each prompt under 180 characters
-- Korean section title for display
+- Exactly 5 sections, each covering a DIFFERENT aspect of the post
+- Each scene must be visually distinct from the others (different subject, setting, angle)
+- Describe the SCENE ONLY: subject, setting, composition, mood, colors. Do NOT include style keywords, camera specs, aspect ratio, or "no text" instructions — those are appended later
+- 25-50 words per scene, plain descriptive English
+- No real brand names, no logos, no readable text, no recognizable real people or celebrity faces
+- "sceneKo" = natural Korean rendering of the exact same scene
+- "sectionTitle" = short Korean title, "sectionDesc" = one-line Korean summary of that section
 
 Return ONLY valid JSON, no markdown:
 {"sections":[
-  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","prompt":"English image generation prompt for Pollinations AI"},
-  {"sectionTitle":"...","sectionDesc":"...","prompt":"..."},
-  {"sectionTitle":"...","sectionDesc":"...","prompt":"..."},
-  {"sectionTitle":"...","sectionDesc":"...","prompt":"..."}
+  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","scene":"English scene description","sceneKo":"같은 장면의 한글 묘사"},
+  {"sectionTitle":"...","sectionDesc":"...","scene":"...","sceneKo":"..."},
+  {"sectionTitle":"...","sectionDesc":"...","scene":"...","sceneKo":"..."},
+  {"sectionTitle":"...","sectionDesc":"...","scene":"...","sceneKo":"..."},
+  {"sectionTitle":"...","sectionDesc":"...","scene":"...","sceneKo":"..."}
 ]}`;
 
       const raw=await callClaude([{role:"user",content:analysisReq}],
-        "You are an expert at analyzing blog posts and writing Pollinations AI prompts. Output ONLY valid JSON.",1200,"claude-haiku-4-5-20251001");
+        "You are an expert at analyzing blog posts and writing image generation prompts. Output ONLY valid JSON.",2500,"claude-haiku-4-5-20251001");
 
-      if(!raw||raw.trim()==="") throw new Error("섹션 분석 응답이 비어있습니다.");
+      if(!raw||raw.trim()==="") throw new Error("단락 분석 응답이 비어있습니다.");
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
-      if(s===-1||e===-1) throw new Error("섹션 분석 JSON 형식 오류: "+raw.slice(0,100));
+      if(s===-1||e===-1) throw new Error("단락 분석 JSON 형식 오류: "+raw.slice(0,100));
       const parsed=safeParseJson(raw);
-      const sections=(parsed.sections||[]).slice(0,4);
-      if(sections.length===0) throw new Error("섹션 분석 실패");
+      const sections=(parsed.sections||[]).filter(x=>x&&(x.scene||x.sceneKo)).slice(0,5);
+      if(sections.length===0) throw new Error("단락 분석 실패");
 
       setImgSections(sections);
-
-      // 초기 상태: 4개 슬롯 loading
-      const initial=sections.map(sec=>({...sec,status:"loading",base64:null,mimeType:null,error:null}));
-      setGenImages(initial);
-
-      // ── Step 2: 4개 이미지 순차 생성 (Pollinations - 15초 rate limit 대응) ──
-      for(let i=0;i<sections.length;i++){
-        const sec=sections[i];
-        try{
-          if(i>0) await new Promise(r=>setTimeout(r,2000));
-
-          const apiRes=await fetch("/api/imagen",{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({prompt:sec.prompt}),
-          });
-          const data=await apiRes.json();
-          if(!apiRes.ok||data.error) throw new Error(data.error||`이미지 생성 실패`);
-          const {base64,mimeType}=data;
-
-          setGenImages(prev=>prev.map((item,idx)=>
-            idx===i ? {...item, status:"done", base64, mimeType} : item
-          ));
-        }catch(e2){
-          setGenImages(prev=>prev.map((item,idx)=>
-            idx===i ? {...item, status:"error", error:e2.message} : item
-          ));
-        }
-      }
+      setGenImages(sections);
 
     }catch(e){
       setImgError(e.message);
@@ -782,95 +804,133 @@ Return ONLY valid JSON, no markdown:
     setImgLoading(false);
   };
 
-  const doneCount=genImages.filter(g=>g.status==="done").length;
-  const isGenerating=imgLoading||genImages.some(g=>g.status==="loading");
+  const allText=genImages.map((it,i)=>
+    `[${i+1}] ${it.sectionTitle||`단락 ${i+1}`}\n${buildFullPrompt(it,styleId,ratio,lang)}`
+  ).join("\n\n");
 
   return <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
-    <style>{"@keyframes imgSpin{to{transform:rotate(360deg)}} @keyframes shimmer{0%,100%{opacity:.4}50%{opacity:.9}}"}</style>
+    <style>{"@keyframes imgSpin{to{transform:rotate(360deg)}}"}</style>
 
     {/* 헤더 */}
     <div style={{padding:"14px 18px",background:"linear-gradient(135deg,#0d1117,#161b22)",borderBottom:"1px solid #30363d",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"10px"}}>
       <div>
         <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
           <span style={{fontSize:"18px"}}>🎨</span>
-          <span style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>단락별 블로그 이미지 생성</span>
-          <span style={{fontSize:"10px",background:"linear-gradient(135deg,#1f6feb22,#388bfd22)",color:"#58a6ff",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"2px 8px",fontWeight:700}}>Pollinations AI</span>
+          <span style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>단락별 이미지 프롬프트 생성</span>
+          <span style={{fontSize:"10px",background:"linear-gradient(135deg,#1f6feb22,#388bfd22)",color:"#58a6ff",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"2px 8px",fontWeight:700}}>GPT 붙여넣기용</span>
         </div>
         <div style={{color:"#484f58",fontSize:"11px",marginTop:"3px"}}>
-          본문 내용을 4개 단락으로 분석하여 각 단락에 어울리는 이미지를 생성합니다
+          본문을 5개 단락으로 분석하여 각 단락에 어울리는 이미지 생성 프롬프트 5개를 만들어줍니다
         </div>
       </div>
-      <button onClick={startGenerate} disabled={isGenerating}
+      <button onClick={startGenerate} disabled={imgLoading}
         style={{
           padding:"9px 20px",
-          background:isGenerating?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",
-          color:isGenerating?"#484f58":"#fff",
-          border:"none",borderRadius:"8px",cursor:isGenerating?"not-allowed":"pointer",
+          background:imgLoading?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",
+          color:imgLoading?"#484f58":"#fff",
+          border:"none",borderRadius:"8px",cursor:imgLoading?"not-allowed":"pointer",
           fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
-          whiteSpace:"nowrap",boxShadow:isGenerating?"none":"0 3px 12px #1f6feb55",
+          whiteSpace:"nowrap",boxShadow:imgLoading?"none":"0 3px 12px #1f6feb55",
           transition:"all .2s",display:"flex",alignItems:"center",gap:"6px",
         }}>
-        {isGenerating
-          ? <><span style={{display:"inline-block",width:"12px",height:"12px",border:"2px solid #484f58",borderTopColor:"#8b949e",borderRadius:"50%",animation:"imgSpin .8s linear infinite"}}/>
-              {doneCount>0?`이미지 생성 중 (${doneCount}/4)`:"분석 중..."}</>
-          : genImages.length>0 ? "🔄 다시 생성" : "✨ 이미지 4장 생성"
+        {imgLoading
+          ? <><span style={{display:"inline-block",width:"12px",height:"12px",border:"2px solid #484f58",borderTopColor:"#8b949e",borderRadius:"50%",animation:"imgSpin .8s linear infinite"}}/>단락 분석 중...</>
+          : genImages.length>0 ? "🔄 다시 생성" : "✨ 프롬프트 5개 생성"
         }
       </button>
+    </div>
+
+    {/* 옵션 바 */}
+    <div style={{padding:"10px 16px",borderBottom:"1px solid #21262d",display:"flex",flexWrap:"wrap",gap:"14px",alignItems:"center"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+        <span style={{color:"#484f58",fontSize:"11px",fontWeight:600}}>스타일</span>
+        {IMG_STYLES.map(st=>(
+          <button key={st.id} onClick={()=>setStyleId(st.id)} style={{
+            padding:"4px 10px",borderRadius:"6px",fontSize:"11px",fontWeight:600,cursor:"pointer",
+            fontFamily:"'Noto Sans KR',sans-serif",
+            background:styleId===st.id?"#1f6feb":"#0d1117",
+            color:styleId===st.id?"#fff":"#8b949e",
+            border:`1px solid ${styleId===st.id?"#1f6feb":"#30363d"}`,
+          }}>{st.label}</button>
+        ))}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+        <span style={{color:"#484f58",fontSize:"11px",fontWeight:600}}>비율</span>
+        {IMG_RATIOS.map(r=>(
+          <button key={r} onClick={()=>setRatio(r)} style={{
+            padding:"4px 10px",borderRadius:"6px",fontSize:"11px",fontWeight:600,cursor:"pointer",
+            fontFamily:"'Noto Sans KR',sans-serif",
+            background:ratio===r?"#1f6feb":"#0d1117",
+            color:ratio===r?"#fff":"#8b949e",
+            border:`1px solid ${ratio===r?"#1f6feb":"#30363d"}`,
+          }}>{r}</button>
+        ))}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+        <span style={{color:"#484f58",fontSize:"11px",fontWeight:600}}>언어</span>
+        {[{id:"en",label:"영문"},{id:"ko",label:"국문"}].map(l=>(
+          <button key={l.id} onClick={()=>setLang(l.id)} style={{
+            padding:"4px 10px",borderRadius:"6px",fontSize:"11px",fontWeight:600,cursor:"pointer",
+            fontFamily:"'Noto Sans KR',sans-serif",
+            background:lang===l.id?"#1f6feb":"#0d1117",
+            color:lang===l.id?"#fff":"#8b949e",
+            border:`1px solid ${lang===l.id?"#1f6feb":"#30363d"}`,
+          }}>{l.label}</button>
+        ))}
+      </div>
+      {genImages.length>0&&<button onClick={()=>copyText(allText,"all")} style={{
+        marginLeft:"auto",padding:"5px 14px",borderRadius:"6px",fontSize:"11px",fontWeight:700,cursor:"pointer",
+        fontFamily:"'Noto Sans KR',sans-serif",
+        background:copied==="all"?"#2ea043":"#21262d",
+        color:copied==="all"?"#fff":"#c9d1d9",
+        border:`1px solid ${copied==="all"?"#2ea043":"#30363d"}`,
+      }}>{copied==="all"?"✅ 복사됨":"📋 5개 전체 복사"}</button>}
     </div>
 
     {/* 에러 */}
     {imgError&&<div style={{margin:"12px 16px",background:"#2d1117",border:"1px solid #da363344",borderRadius:"8px",padding:"10px 14px",color:"#ff7b72",fontSize:"12px"}}>⚠️ {imgError}</div>}
 
     {/* 초기 안내 (생성 전) */}
-    {!isGenerating&&genImages.length===0&&!imgError&&<div style={{padding:"28px 20px",textAlign:"center"}}>
-      <div style={{fontSize:"36px",marginBottom:"10px"}}>🖼️</div>
-      <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"6px"}}>글 내용을 분석해서 4개 단락에 맞는 이미지를 자동 생성합니다</div>
+    {!imgLoading&&genImages.length===0&&!imgError&&<div style={{padding:"28px 20px",textAlign:"center"}}>
+      <div style={{fontSize:"36px",marginBottom:"10px"}}>📝</div>
+      <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"6px"}}>글 내용을 분석해서 5개 단락에 맞는 이미지 프롬프트를 만들어줍니다</div>
       <div style={{color:"#484f58",fontSize:"11px",lineHeight:"1.7"}}>
-        · 각 단락마다 내용이 다른 이미지 1장씩 총 4장<br/>
-        · Claude가 단락 분석 → Pollinations AI가 이미지 생성<br/>
-        · 생성된 이미지를 클릭하면 다운로드
+        · 각 단락마다 서로 다른 장면 프롬프트 1개씩 총 5개<br/>
+        · 복사해서 ChatGPT · Gemini · Midjourney 등에 그대로 붙여넣기<br/>
+        · 스타일 · 비율 · 언어는 재생성 없이 바로 바꿔서 복사 가능
       </div>
     </div>}
 
-    {/* 4개 이미지 그리드 */}
-    {genImages.length>0&&<div style={{padding:"14px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
-      {genImages.map((item,i)=>(
-        <div key={i} style={{borderRadius:"10px",overflow:"hidden",border:`1px solid ${item.status==="error"?"#da363344":"#30363d"}`,background:"#0d1117"}}>
-          {/* 이미지 영역 */}
-          {item.status==="loading"&&<div style={{aspectRatio:"4/3",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"10px",background:"linear-gradient(135deg,#0d1117,#161b22)"}}>
-            <div style={{width:"28px",height:"28px",border:"3px solid #1f6feb44",borderTopColor:"#1f6feb",borderRadius:"50%",animation:"imgSpin .8s linear infinite"}}/>
-            <span style={{color:"#484f58",fontSize:"11px",animation:"shimmer 1.5s ease infinite"}}>생성 중...</span>
-          </div>}
-
-          {item.status==="done"&&item.base64&&<div style={{position:"relative",cursor:"pointer",overflow:"hidden"}}
-            onClick={()=>{const a=document.createElement("a");a.href=`data:${item.mimeType};base64,${item.base64}`;a.download=`section-${i+1}.png`;a.click();}}>
-            <img src={`data:${item.mimeType};base64,${item.base64}`} alt={item.sectionTitle}
-              style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",display:"block",transition:"transform .3s"}}
-              onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.04)";}}
-              onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}/>
-            <div style={{position:"absolute",top:"8px",right:"8px",background:"#000a",borderRadius:"5px",padding:"3px 7px",fontSize:"10px",color:"#fff",fontWeight:700}}>⬇️ 저장</div>
-          </div>}
-
-          {item.status==="error"&&<div style={{aspectRatio:"4/3",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"6px",padding:"12px"}}>
-            <span style={{fontSize:"24px"}}>❌</span>
-            <span style={{color:"#ff7b72",fontSize:"11px",textAlign:"center"}}>{item.error||"생성 실패"}</span>
-          </div>}
-
-          {/* 단락 정보 */}
-          <div style={{padding:"8px 10px",borderTop:"1px solid #21262d"}}>
-            <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px"}}>
-              <span style={{background:"#1f6feb",color:"#fff",borderRadius:"4px",padding:"1px 6px",fontSize:"10px",fontWeight:700,flexShrink:0}}>{i+1}</span>
-              <span style={{color:"#c9d1d9",fontSize:"12px",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sectionTitle||`단락 ${i+1}`}</span>
+    {/* 프롬프트 5개 리스트 */}
+    {genImages.length>0&&<div style={{padding:"14px",display:"flex",flexDirection:"column",gap:"10px"}}>
+      {genImages.map((item,i)=>{
+        const full=buildFullPrompt(item,styleId,ratio,lang);
+        return <div key={i} style={{borderRadius:"10px",border:"1px solid #30363d",background:"#0d1117",overflow:"hidden"}}>
+          <div style={{padding:"9px 12px",borderBottom:"1px solid #21262d",display:"flex",alignItems:"center",gap:"8px"}}>
+            <span style={{background:"#1f6feb",color:"#fff",borderRadius:"4px",padding:"1px 7px",fontSize:"10px",fontWeight:700,flexShrink:0}}>{i+1}</span>
+            <div style={{minWidth:0,flex:1}}>
+              <div style={{color:"#c9d1d9",fontSize:"12px",fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sectionTitle||`단락 ${i+1}`}</div>
+              {item.sectionDesc&&<div style={{color:"#484f58",fontSize:"11px",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sectionDesc}</div>}
             </div>
-            {item.sectionDesc&&<div style={{color:"#484f58",fontSize:"11px",lineHeight:"1.5",overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{item.sectionDesc}</div>}
+            <button onClick={()=>copyText(full,i)} style={{
+              padding:"4px 12px",borderRadius:"6px",fontSize:"11px",fontWeight:700,cursor:"pointer",flexShrink:0,
+              fontFamily:"'Noto Sans KR',sans-serif",
+              background:copied===i?"#2ea043":"#21262d",
+              color:copied===i?"#fff":"#c9d1d9",
+              border:`1px solid ${copied===i?"#2ea043":"#30363d"}`,
+            }}>{copied===i?"✅ 복사됨":"📋 복사"}</button>
           </div>
-        </div>
-      ))}
+          <div onClick={()=>copyText(full,i)} style={{
+            padding:"11px 13px",color:"#8b949e",fontSize:"12px",lineHeight:"1.65",cursor:"pointer",
+            wordBreak:"break-word",whiteSpace:"pre-wrap",
+          }}>{full}</div>
+        </div>;
+      })}
     </div>}
 
     {/* 완료 메시지 */}
-    {doneCount===4&&!isGenerating&&<div style={{padding:"8px 16px 12px",textAlign:"center",color:"#484f58",fontSize:"11px",borderTop:"1px solid #21262d"}}>
-      ✅ 4장 생성 완료 · 이미지를 클릭하면 다운로드됩니다
+    {genImages.length>0&&!imgLoading&&<div style={{padding:"8px 16px 12px",textAlign:"center",color:"#484f58",fontSize:"11px",borderTop:"1px solid #21262d"}}>
+      ✅ 프롬프트 {genImages.length}개 생성 완료 · 박스를 클릭해도 복사됩니다
     </div>}
   </div>;
 }
@@ -893,10 +953,10 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
   const [qualReplacements,setQualReplacements]=useState({});
   const [qualLoading,setQualLoading]=useState({});
   const [copiedAll,setCopiedAll]=useState(false);
-  const [genImages,setGenImages]=useState([]); // [{sectionTitle, prompt, base64, mimeType, status, error}]
+  const [genImages,setGenImages]=useState([]); // [{sectionTitle, sectionDesc, scene, sceneKo}]
   const [imgLoading,setImgLoading]=useState(false);
   const [imgError,setImgError]=useState("");
-  const [imgSections,setImgSections]=useState([]); // Claude가 분석한 4개 섹션
+  const [imgSections,setImgSections]=useState([]); // Claude가 분석한 5개 단락
   const aiResult=analyzeAiResult; const setAiResult=setAnalyzeAiResult;
   const lastText=analyzeLastText; const setLastText=setAnalyzeLastText;
   const threshold=analyzeThreshold; const setThreshold=setAnalyzeThreshold;
@@ -1123,7 +1183,7 @@ JSON 형식:
       </div>
     </div>}
 
-    {/* ── Pollinations AI 단락별 이미지 생성 ── */}
+    {/* ── 단락별 이미지 프롬프트 생성 (GPT용) ── */}
     {postMeta&&<ImageGenSection
       postMeta={postMeta}
       postContent={workingText||text}
@@ -6389,10 +6449,10 @@ function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrateg
 
   return `현재 날짜: ${yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
 
-네이버 블로그 홈판 노출 + AI 브리핑 인용 + AI탭 대화형 검색 대응 글을 작성해줘:
+네이버 블로그 홈판 노출 + AI 브리핑 인용 최적화 글을 작성해줘:
 
 [구조 원칙]
-1. 본문 1,800~2,300자 (한글+공백)
+1. 본문 1,500~2,000자 (한글+공백)
 2. 소제목 ▶ 형식 3개 이상 (마크다운/HTML 금지)
 3. 핵심 결론과 요약을 글 앞부분(도입부)에 먼저 배치 — AI 브리핑이 인용하기 좋은 구조
 4. 각 문장 끝 줄바꿈(\\n)만 사용, HTML 태그(<br> 등) 절대 금지
@@ -6406,42 +6466,20 @@ function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrateg
    - 첫 문장: 독자가 이 글에서 얻을 핵심 이익을 바로 명시 (인사말·계절 묘사·자기소개 절대 금지)
    - 둘째 문장: 작성자의 직접 경험 근거 1줄 (예: "직접 3곳을 비교해봤습니다", "6개월간 써보며 정리했습니다")
 
-[AI탭 대응 원칙 — 대화형 검색 인용 최적화]
-8. 각 ▶ 소제목 바로 다음 첫 문장은 그 소제목에 대한 완결된 답변이어야 한다.
-   - 단독으로 떼어내도 문맥이 통해야 함 (지시대명사 "이것/해당/위에서" 로 시작 금지)
-   - "~에 대해 알아보겠습니다" 같은 예고 문장 금지
-   - 60자 이내 단문으로 결론부터 제시한 뒤, 다음 문장부터 부연
-9. 각 ▶ 섹션 마지막에 그 섹션에서 자연히 이어질 후속 질문 1개와 답변 2~3문장을 배치.
-   - 형식: "그럼 ○○○는 어떻게 되나요?" 다음 줄에 즉답
-   - AI탭은 사용자가 꼬리질문을 이어가는 구조이므로, 섹션마다 이 블록이 있어야 재인용된다
-   - 글 맨 끝에 FAQ를 몰아넣는 방식 금지 (섹션 단위로 분산)
-10. 글 전체에서 "○○○란 ~이다" 형태의 사전식 정의 문장을 최소 1개 포함.
-    - 25자 이내, 수식어·감탄사 없이 건조하게 서술
-    - 개념 정의형 질의는 검색순위와 무관하게 AI가 인용하는 경향이 있음
-11. 실행 연결 정보를 완전한 문장으로 서술 (표 형태 금지, AI는 표보다 문장을 인용하기 쉬움):
-    - 소요 시간, 준비물, 절차 단계 수, 비용 범위 중 해당되는 것
-    - 예: "번호이동은 신분증만 있으면 매장에서 평균 30분 안에 처리됩니다."
-12. 상업형 프레이밍 회피: "추천/최저가/성지" 류 단독 표현은 AI 답변 생성이 억제되므로,
-    "무엇을 기준으로 판단하는가" 형태의 정보형 문장으로 감싸서 서술한다.
-
 [내용 원칙 — 네이버 AEO 기준]
-13. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
-14. 직접 경험에서 나온 구체적 사례 반드시 포함 (문제 해결 과정, 시행착오, 실제 사용 후기 등)
-15. 창작자 고유의 시선과 인사이트 포함 — AI가 쉽게 만들 수 없는 개인 관점
-16. 아래 신뢰도 요소 중 최소 2개를 반드시 포함:
-    - 구체적 수치 + 기준 시점 (예: "${yearMonth} 기준")
-    - 현장에서만 알 수 있는 예외 케이스
-    - 실제 응대·사용 사례 요약
-17. 브랜드·지점명은 글 전체에서 동일 표기 유지 (축약·변형 금지).
-    첫 등장 시 1회만 카테고리를 붙여 서술 (예: "휴대폰 판매점 밴드폰")
-18. 단순 정보 나열이 아닌 독자에게 실질적으로 도움되는 내용 중심
-19. 문체: -니다/-요 혼용, 정보성+경험담
-20. 반드시 ${yearMonth} 기준의 최신 정보로 작성 (과거 정보나 출시 예정 표현 금지)
-21. 독자 참여 유도 문장 1개는 두 번째 소제목 섹션의 맨 마지막 줄에만 배치
-    (섹션 중간 삽입 금지 — 인용 블록이 끊긴다)
-22. 마지막 소제목 ▶ 이후 마무리 구조:
+8. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
+9. 직접 경험에서 나온 구체적 사례 반드시 포함 (문제 해결 과정, 시행착오, 실제 사용 후기 등)
+10. 창작자 고유의 시선과 인사이트 포함 — AI가 쉽게 만들 수 없는 개인 관점
+11. 관련 수치, 통계, 또는 업계 기준 등 신뢰도를 높이는 구체적 정보 포함
+12. 단순 정보 나열이 아닌 독자에게 실질적으로 도움되는 내용 중심
+13. 문체: -니다/-요 혼용, 정보성+경험담
+14. 반드시 ${yearMonth} 기준의 최신 정보로 작성 (과거 정보나 출시 예정 표현 금지)
+15. 본문 중간 (두 번째 소제목 이후)에 독자 참여 유도 문장 1개 삽입 — 체류시간 증가 목적
+    (예: "혹시 비슷한 경험 있으신가요?", "이 부분이 가장 고민됐는데 여러분은 어떠셨나요?")
+16. 마지막 소제목 ▶ 이후 마무리 구조:
     - 핵심 내용 요약 2~3줄
     - 자연스러운 공감·댓글 유도 문장 1개 (광고성 표현 제외, 강요하지 않는 톤)
+    (예: "도움이 됐다면 공감 한 번 눌러주시면 큰 힘이 됩니다 😊", "궁금한 점은 댓글로 남겨주세요")
 
 [금지사항]
 - 뻔한 일반 정보만 나열하는 글 (누구나 아는 내용만 반복)
@@ -6449,7 +6487,6 @@ function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrateg
 - AI가 기계적으로 생성한 느낌의 틀에 박힌 문장 패턴
 - 도입부를 인사말, 날씨·계절 묘사, 자기소개로 시작하는 것
 - 소제목 없이 긴 문단이 연속되는 구조 (각 소제목 간격 400자 이내 유지)
-- 소제목 직후를 배경 설명이나 서론으로 시작하는 것 (반드시 결론부터)
 
 순수 JSON만 (마크다운 없이):
 {"title":"제목(15~32자,키워드포함)","main_keyword":"${mainKw}","content":"본문","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
@@ -6551,8 +6588,8 @@ export default function BlogTools(){
       const prompt = buildWritePrompt({ kw, yearMonth, smartBlockType, blogStrategy, bodies: [], mainKeyword: mainKeyword||kw });
       const raw = await callClaudeStream(
         [{role:"user",content:prompt}],
-        `You are a professional Korean Naver blog writer optimizing for three targets: Naver blog homepage exposure, AI Briefing citation, and Naver AI Tab conversational search. Current date: ${yearMonth}. Write based on the latest information as of this date. Include personal experience, specific cases, and unique insights that AI cannot easily replicate. Place key conclusions early for AI summarization, and make every ▶ section self-contained so it can be quoted in isolation and support follow-up questions. Output ONLY valid JSON, no markdown.`,
-        4500, "claude-sonnet-4-5-20250929"
+        `You are a professional Korean Naver blog writer optimizing for homepage exposure and Naver AI briefing citation. Current date: ${yearMonth}. Write based on the latest information as of this date. Include personal experience, specific cases, and unique insights that AI cannot easily replicate. Structure content so key conclusions appear early for AI summarization. Output ONLY valid JSON, no markdown.`,
+        3500, "claude-sonnet-4-5-20250929"
       );
       const parsed = safeParseJson(raw);
       const cleanContent = (str="") =>
