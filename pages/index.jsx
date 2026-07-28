@@ -1858,8 +1858,19 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
   },[inputVal]);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
+  const [customTopic,setCustomTopic]=useState("");   // 직접 입력한 글 주제
 
   const result = kwResult; // 단일 객체: naver + AI 모두 포함
+
+  // 키워드가 바뀌면 직접 입력한 주제 초기화
+  useEffect(()=>{ setCustomTopic(""); },[result?.keyword]);
+
+  // 주제 하나로 자동글쓰기 실행 (추천 주제 / 직접 입력 공통)
+  const writeTopic=(topic)=>{
+    const t=(topic||"").trim();
+    if(!t||!goAutoWrite) return;
+    goAutoWrite(t,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword);
+  };
   const fmtNum = n => { if(n===null||n===undefined) return "-"; const num=Number(n); if(isNaN(num)) return "-"; if(num<=10) return "10 이하"; return num.toLocaleString(); };
 
   const analyze=async(overrideKw)=>{
@@ -2259,16 +2270,59 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
           </div>
         </div>
 
-        {/* 추천 글 주제 */}
+        {/* ── 글 주제 정하기 (직접 입력 + AI 추천) ── */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
-          <SectionTitle>✍️ 추천 글 주제 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· AI 추출</span></SectionTitle>
+          <SectionTitle>✍️ 글 주제 정하기</SectionTitle>
+
+          {/* 직접 주제 입력 */}
+          <div style={{background:"#0d1117",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"11px 12px",marginBottom:"14px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"8px",flexWrap:"wrap"}}>
+              <span style={{color:"#58a6ff",fontSize:"12px",fontWeight:700}}>✏️ 직접 주제 입력</span>
+              <span style={{color:"#484f58",fontSize:"10px"}}>· 아래 추천 주제를 불러와서 고쳐 써도 됩니다</span>
+            </div>
+            <div style={{display:"flex",gap:"7px",flexWrap:"wrap"}}>
+              <input value={customTopic} onChange={e=>setCustomTopic(e.target.value)}
+                onKeyDown={e=>{ if(e.key==="Enter") writeTopic(customTopic); }}
+                placeholder={`예: ${result.keyword} 처음 알아볼 때 꼭 확인해야 할 5가지`}
+                style={{flex:"1 1 240px",minWidth:0,padding:"9px 11px",background:"#010409",border:"1px solid #30363d",
+                  borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none"}}
+                onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
+              <button onClick={()=>writeTopic(customTopic)} disabled={!customTopic.trim()}
+                style={{background:customTopic.trim()?"linear-gradient(135deg,#1f6feb,#388bfd)":"#21262d",
+                  border:"none",color:customTopic.trim()?"#fff":"#484f58",borderRadius:"8px",padding:"9px 16px",
+                  fontSize:"12px",fontWeight:700,cursor:customTopic.trim()?"pointer":"not-allowed",
+                  fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
+                ✍️ 이 주제로 글쓰기
+              </button>
+              {customTopic&&<button onClick={()=>setCustomTopic("")}
+                style={{background:"#21262d",border:"1px solid #30363d",color:"#8b949e",borderRadius:"8px",
+                  padding:"9px 10px",fontSize:"12px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",flexShrink:0}}>
+                🗑️
+              </button>}
+            </div>
+            {customTopic.trim()&&!customTopic.replace(/\s/g,"").toLowerCase().includes((result.keyword||"").replace(/\s/g,"").toLowerCase())&&
+              <div style={{color:"#ffa657",fontSize:"10px",marginTop:"7px"}}>
+                ⚠️ 제목에 키워드 "{result.keyword}"를 그대로 넣어야 검색 노출에 유리합니다
+              </div>}
+          </div>
+
+          {/* AI 추천 주제 */}
+          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"7px"}}>
+            🤖 AI 추천 주제 {result.longtailKeywords?.length>0&&<span style={{color:"#484f58",fontWeight:400}}>· {result.longtailKeywords.length}개 · ✏️ 를 누르면 위 칸으로 가져와 수정할 수 있어요</span>}
+          </div>
           <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
             {result.longtailKeywords?.map((kw,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",background:"#0d1117",
-                borderRadius:"8px",padding:"8px 10px",border:"1px solid #21262d"}}>
+                borderRadius:"8px",padding:"8px 10px",border:`1px solid ${customTopic===kw?"#1f6feb":"#21262d"}`}}>
                 <span style={{color:"#484f58",fontSize:"11px",minWidth:"16px",flexShrink:0}}>{i+1}</span>
                 <span style={{flex:1,color:"#c9d1d9",fontSize:"12px",lineHeight:"1.4"}}>{kw}</span>
-                <button onClick={()=>goAutoWrite&&goAutoWrite(kw,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword)}
+                <button onClick={()=>setCustomTopic(kw)} title="위 입력칸으로 가져와서 수정하기"
+                  style={{background:"#21262d",border:"1px solid #30363d",color:"#8b949e",
+                    borderRadius:"6px",padding:"4px 8px",fontSize:"11px",fontWeight:700,cursor:"pointer",
+                    fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
+                  ✏️
+                </button>
+                <button onClick={()=>writeTopic(kw)}
                   style={{background:"linear-gradient(135deg,#1f6feb,#388bfd)",border:"none",color:"#fff",
                     borderRadius:"6px",padding:"4px 10px",fontSize:"11px",fontWeight:700,cursor:"pointer",
                     fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
