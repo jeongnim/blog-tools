@@ -2368,12 +2368,16 @@ function MissingTab(){
   const [batchRunning,setBatchRunning]=useState(false);
   const [batchProgress,setBatchProgress]=useState({done:0,total:0});
   const excelFileRef=useRef(null);
+  // 추가검색 — 제목 옆 입력창으로 직접 넣은 키워드 순위
+  const [extraKw,setExtraKw]=useState({});            // {postNo: 입력중인 키워드}
+  const [extraResults,setExtraResults]=useState({});  // {postNo: [{keyword,realRank,loading}]}
+  const [extraLoading,setExtraLoading]=useState({});  // {postNo: bool}
 
   // ── 방법1: 서버 API 통해 RSS fetch (CORS 우회) ──
   const fetchByBlogId=async()=>{
     const id=blogId.trim();
     if(!id){alert("블로그 아이디를 입력해주세요.");return;}
-    setLoadingFeed(true);setFeedError("");setPosts(null);setAnalysis({});setExpanded(null);
+    setLoadingFeed(true);setFeedError("");setPosts(null);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});
     try{
       const res=await fetch(`/api/blog-rss?blogId=${encodeURIComponent(id)}`);
       if(!res.ok){const errText=await res.text();let errMsg=`오류 (${res.status})`;try{const j=JSON.parse(errText);errMsg=j.error||errMsg;}catch(e){}throw new Error(errMsg);}
@@ -2421,7 +2425,7 @@ function MissingTab(){
     const postNo=m[2];
     const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual",_blogId:m[1]};
     setPosts({all:[post],current:[post],total:1,page:1,blogId:m[1]});
-    setPage(1);setAnalysis({});setExpanded(null);
+    setPage(1);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});
     setTimeout(()=>runAnalyze(post,0),80);
   };
 
@@ -2448,6 +2452,36 @@ function MissingTab(){
         proxyError: data.proxyError??null,
       };
     }catch(e){return null;}
+  };
+
+  // ── 추가검색: 제목 옆 입력창 키워드로 순위 조회 ──
+  const runExtraKeyword=async(post)=>{
+    const kw=(extraKw[post.postNo]||"").trim();
+    if(!kw) return;
+    if(extraLoading[post.postNo]) return;
+    const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
+    const bid=urlMatch?.[1]||post._blogId||"";
+    const pno=urlMatch?.[2]||post.postNo||"";
+
+    setExtraLoading(p=>({...p,[post.postNo]:true}));
+    setExtraKw(p=>({...p,[post.postNo]:""}));
+    // 같은 키워드를 다시 검색하면 기존 결과를 갱신
+    setExtraResults(p=>({...p,[post.postNo]:[
+      ...(p[post.postNo]||[]).filter(x=>x.keyword!==kw),
+      {keyword:kw,realRank:null,loading:true},
+    ]}));
+
+    let r=null;
+    try{ r=await getNaverRank(kw,bid,pno); }catch(e){ r=null; }
+
+    setExtraResults(p=>({...p,[post.postNo]:(p[post.postNo]||[]).map(x=>
+      x.keyword===kw?{keyword:kw,realRank:r,loading:false}:x
+    )}));
+    setExtraLoading(p=>({...p,[post.postNo]:false}));
+  };
+
+  const removeExtraKeyword=(postNo,keyword)=>{
+    setExtraResults(p=>({...p,[postNo]:(p[postNo]||[]).filter(x=>x.keyword!==keyword)}));
   };
 
   // ── 본문 크롤링 — blog-content API 통해 서버에서 모바일 URL 크롤링 ──
@@ -2728,7 +2762,7 @@ JSON 배열만 출력:`;
     }).filter(Boolean);
     if(!validPosts.length){setExcelError("유효한 네이버 블로그 URL이 없습니다.\nblog.naver.com/아이디/번호 형식인지 확인해주세요.");return;}
     setPosts({all:validPosts,current:validPosts.slice(0,PER_PAGE),total:validPosts.length,page:1,blogId:""});
-    setPage(1);setAnalysis({});setExpanded(null);
+    setPage(1);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});
     setBatchRunning(true);setBatchProgress({done:0,total:validPosts.length});
     for(let i=0;i<validPosts.length;i++){
       await runAnalyze(validPosts[i],i);
@@ -2750,7 +2784,7 @@ JSON 배열만 출력:`;
     {/* ── 모드 탭 ── */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",background:"#0d1117",borderRadius:"10px",border:"1px solid #21262d",overflow:"hidden"}}>
       {[["blogId","📋 방법1 · 블로그 ID로 최근글"],["url","🔗 방법2 · URL 직접 입력"],["excel","📊 방법3 · 엑셀 업로드"]].map(([id,lbl])=>(
-        <button key={id} data-mode-url={id==="url"?"true":undefined} onClick={()=>{setMode(id);setPosts(null);setAnalysis({});setExpanded(null);setFeedError("");}} style={{
+        <button key={id} data-mode-url={id==="url"?"true":undefined} onClick={()=>{setMode(id);setPosts(null);setAnalysis({});setExpanded(null);setFeedError("");setExtraResults({});setExtraKw({});}} style={{
           padding:"13px 8px",border:"none",background:mode===id?"#161b22":"transparent",
           color:mode===id?"#e6edf3":"#8b949e",cursor:"pointer",
           fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:mode===id?700:400,
@@ -2988,7 +3022,7 @@ JSON 배열만 출력:`;
               borderRadius:"6px",cursor:"pointer",fontSize:"12px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>
               ⚡ 전체 분석
             </button>}
-          <button onClick={()=>{setPosts(null);setAnalysis({});setExpanded(null);}}
+          <button onClick={()=>{setPosts(null);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});}}
             style={{padding:"6px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
               borderRadius:"6px",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
             🗑️ 초기화
@@ -3006,15 +3040,39 @@ JSON 배열만 출력:`;
             </div>
             <div style={{flex:1,minWidth:0}}>
               {/* 제목 — 클릭 시 네이버 검색결과로 이동 */}
-              <div style={{marginBottom:"5px",display:"flex",gap:"8px",alignItems:"flex-start"}}>
+              <div style={{marginBottom:"5px",display:"flex",gap:"8px",alignItems:"flex-start",flexWrap:"wrap"}}>
                 <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(post.title)}`}
                     target="_blank" rel="noreferrer"
-                    style={{color:"#e6edf3",fontSize:"14px",fontWeight:600,textDecoration:"none",lineHeight:"1.5",flex:1,wordBreak:"break-word"}}
+                    style={{color:"#e6edf3",fontSize:"14px",fontWeight:600,textDecoration:"none",lineHeight:"1.5",flex:1,minWidth:"160px",wordBreak:"break-word"}}
                     title="클릭 시 네이버에서 이 제목으로 검색한 결과를 확인합니다"
                     onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
                     {post.title}
                   </a>
                 {post.date&&<span style={{color:"#484f58",fontSize:"11px",flexShrink:0,paddingTop:"2px"}}>{post.date}</span>}
+                {/* 추가검색 — 원하는 키워드 직접 입력 */}
+                <div style={{display:"flex",gap:"4px",alignItems:"center",flexShrink:0}}>
+                  <input
+                    value={extraKw[post.postNo]||""}
+                    onChange={e=>setExtraKw(p=>({...p,[post.postNo]:e.target.value}))}
+                    onKeyDown={e=>{if(e.key==="Enter")runExtraKeyword(post);}}
+                    placeholder="키워드 직접 확인"
+                    style={{width:"124px",boxSizing:"border-box",padding:"5px 9px",background:"#0d1117",
+                      border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",
+                      fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px",outline:"none"}}
+                    onFocus={e=>e.target.style.borderColor="#d29922"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
+                  <button onClick={()=>runExtraKeyword(post)}
+                    disabled={!(extraKw[post.postNo]||"").trim()||!!extraLoading[post.postNo]}
+                    title="이 글이 입력한 키워드로 몇 위에 있는지 확인합니다"
+                    style={{padding:"5px 10px",
+                      background:(extraKw[post.postNo]||"").trim()&&!extraLoading[post.postNo]?"#d2992222":"#21262d",
+                      color:(extraKw[post.postNo]||"").trim()&&!extraLoading[post.postNo]?"#e3b341":"#484f58",
+                      border:`1px solid ${(extraKw[post.postNo]||"").trim()&&!extraLoading[post.postNo]?"#d2992255":"#30363d"}`,
+                      borderRadius:"6px",
+                      cursor:(extraKw[post.postNo]||"").trim()&&!extraLoading[post.postNo]?"pointer":"not-allowed",
+                      fontSize:"11px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
+                    {extraLoading[post.postNo]?"조회 중...":"➕ 추가검색"}
+                  </button>
+                </div>
               </div>
               {/* 설명 */}
               {post.description&&!a&&<div style={{color:"#484f58",fontSize:"12px",marginBottom:"5px",lineHeight:"1.5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{post.description}</div>}
@@ -3114,6 +3172,82 @@ JSON 배열만 출력:`;
                       </div>}
                     </>;
                   })()}
+                </div>
+              )}
+
+              {/* ── 추가 분석 — 직접 입력한 키워드 순위 ── */}
+              {(extraResults[post.postNo]||[]).length>0&&(
+                <div style={{marginTop:"8px",paddingTop:"8px",borderTop:"1px dashed #30363d"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"6px"}}>
+                    <span style={{color:"#e3b341",fontSize:"11px",fontWeight:700}}>➕ 추가 분석</span>
+                    <span style={{color:"#484f58",fontSize:"10px"}}>
+                      직접 입력한 키워드 {(extraResults[post.postNo]||[]).length}개
+                    </span>
+                    <button onClick={()=>setExtraResults(p=>({...p,[post.postNo]:[]}))}
+                      style={{marginLeft:"auto",padding:"2px 8px",background:"transparent",color:"#484f58",
+                        border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"10px",
+                        fontFamily:"'Noto Sans KR',sans-serif"}}>전체 지우기</button>
+                  </div>
+
+                  {(extraResults[post.postNo]||[]).map((kw,i)=>{
+                    const areas=kw.realRank?.areas;
+                    const mainRank=kw.realRank?.myRank??null;
+                    const rc=rankColor(mainRank);
+                    const AREA_LABELS=[
+                      {key:"main_search",label:"통합검색"},
+                      {key:"blog",label:"블로그탭"},
+                    ];
+                    return <div key={i} style={{padding:"7px 10px",background:"#0d1117",
+                      border:`1px solid ${kw.loading?"#30363d":(mainRank!=null?rc+"44":"#30363d")}`,
+                      borderRadius:"8px",marginBottom:"5px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                        <a href={`https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(kw.keyword)}`}
+                          target="_blank" rel="noreferrer"
+                          style={{color:"#c9d1d9",fontSize:"12px",fontWeight:600,textDecoration:"none",wordBreak:"break-word"}}
+                          onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#c9d1d9"}>
+                          {kw.keyword} ↗
+                        </a>
+                        <button onClick={()=>removeExtraKeyword(post.postNo,kw.keyword)}
+                          title="이 키워드 결과 삭제"
+                          style={{marginLeft:"auto",padding:"0 5px",background:"transparent",color:"#484f58",
+                            border:"none",cursor:"pointer",fontSize:"13px",lineHeight:1}}>×</button>
+                      </div>
+
+                      {kw.loading
+                        ? <div style={{color:"#8b949e",fontSize:"11px",marginTop:"5px",animation:"pulse 1.6s ease infinite"}}>
+                            ⏳ 네이버 순위 조회 중...
+                          </div>
+                        : <div style={{display:"flex",gap:"6px",marginTop:"5px",flexWrap:"wrap",alignItems:"center"}}>
+                            {areas ? AREA_LABELS.map(({key,label})=>{
+                              const area=areas[key];
+                              const r=area?.rank??null;
+                              const ac=rankColor(r);
+                              return <div key={key} style={{
+                                background: r!=null ? ac+"22" : "#161b22",
+                                color: r!=null ? ac : "#484f58",
+                                border:`1px solid ${r!=null?ac+"55":"#30363d"}`,
+                                borderRadius:"6px",padding:"3px 8px",fontSize:"11px",
+                                display:"flex",alignItems:"center",gap:"4px"}}>
+                                <span style={{opacity:0.8}}>{label}</span>
+                                <span style={{fontWeight:800}}>{r!=null?`${r}위`:"—"}</span>
+                              </div>;
+                            }) : (
+                              <span style={{fontSize:"11px",color:"#484f58"}}>
+                                {mainRank!=null
+                                  ? `API 기준 ${mainRank}위 (영역 확인 불가)`
+                                  : "100위 밖 · 미노출"}
+                                {kw.realRank?.proxyError && (
+                                  <span style={{color:"#ff7b72",marginLeft:"6px"}}>
+                                    [프록시: {kw.realRank.proxyError}]
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                            {areas&&mainRank==null&&
+                              <span style={{fontSize:"11px",color:"#484f58"}}>100위 밖 · 미노출</span>}
+                          </div>}
+                    </div>;
+                  })}
                 </div>
               )}
             </div>
