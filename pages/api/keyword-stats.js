@@ -3,6 +3,10 @@ import crypto from "crypto";
 
 export const config = { maxDuration: 30 };
 
+// 네이버 광고 API는 hintKeywords에 공백을 허용하지 않음.
+// 또한 응답의 relKeyword는 공백 제거 + 영문 대문자로 정규화되어 돌아옴.
+const normKeyword = (s) => (s || "").replace(/\s+/g, "").toUpperCase();
+
 // 네이버 자동완성 API - 신조어/광고DB 없는 키워드 연관어 보완용
 async function fetchAutoComplete(keyword) {
   try {
@@ -31,7 +35,14 @@ export default async function handler(req, res) {
     return res.status(200).json({ error: "네이버 광고 API 환경변수 없음", keywordList: [] });
   }
 
-  const keywordList = keywords.split(",").map(k => k.trim()).filter(Boolean).slice(0, 10);
+  // 원본(공백 포함) — 자동완성 조회용
+  const rawList = keywords.split(",").map(k => k.trim()).filter(Boolean);
+  // 정규화(공백 제거 + 대문자) 후 중복 제거, hintKeywords는 최대 5개
+  const keywordList = [...new Set(rawList.map(normKeyword))].filter(Boolean).slice(0, 5);
+
+  if (keywordList.length === 0) {
+    return res.status(200).json({ error: "유효한 키워드 없음", keywordList: [] });
+  }
 
   try {
     const timestamp = Date.now().toString();
@@ -54,23 +65,30 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(200).json({ error: `API 오류 ${response.status}`, detail: errText, keywordList: [] });
+      return res.status(200).json({
+        error: `API 오류 ${response.status}`,
+        detail: errText,
+        sentKeywords: keywordList,   // 디버깅용: 실제로 보낸 값
+        keywordList: [],
+      });
     }
 
     const data = await response.json();
 
     // 연관검색어가 부족할 때 자동완성으로 보완
-    const mainKw = keywordList[0];
+    const mainRaw  = rawList[0];
+    const mainNorm = keywordList[0];
     const relCount = (data.keywordList || []).filter(
-      i => i.relKeyword?.toLowerCase() !== mainKw?.toLowerCase()
+      i => normKeyword(i.relKeyword) !== mainNorm
     ).length;
 
     let autoComplete = [];
     if (relCount < 3) {
-      autoComplete = await fetchAutoComplete(mainKw);
+      // 자동완성은 공백 있는 원본이 더 잘 잡힘
+      autoComplete = await fetchAutoComplete(mainRaw);
     }
 
-    res.status(200).json({ ...data, autoComplete });
+    res.status(200).json({ ...data, autoComplete, sentKeywords: keywordList });
 
   } catch (err) {
     res.status(200).json({ error: err.message, keywordList: [] });
