@@ -2373,46 +2373,44 @@ function MissingTab(){
   const [extraResults,setExtraResults]=useState({});  // {postNo: [{keyword,realRank,loading}]}
   const [extraLoading,setExtraLoading]=useState({});  // {postNo: bool}
 
-  // ── 방법1: 서버 API 통해 RSS fetch (CORS 우회) ──
-  const fetchByBlogId=async()=>{
-    const id=blogId.trim();
-    if(!id){alert("블로그 아이디를 입력해주세요.");return;}
-    setLoadingFeed(true);setFeedError("");setPosts(null);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});
+  // ── 방법1: 블로그 전체 글 목록을 10개씩 페이지 단위로 조회 (과거 글까지) ──
+  const fetchBlogPage=async(id,pg=1,keep=false)=>{
+    const bid=(id||"").trim();
+    if(!bid){alert("블로그 아이디를 입력해주세요.");return;}
+    setLoadingFeed(true);setFeedError("");setExpanded(null);
+    if(!keep){setPosts(null);setAnalysis({});setExtraResults({});setExtraKw({});}
     try{
-      const res=await fetch(`/api/blog-rss?blogId=${encodeURIComponent(id)}`);
-      if(!res.ok){const errText=await res.text();let errMsg=`오류 (${res.status})`;try{const j=JSON.parse(errText);errMsg=j.error||errMsg;}catch(e){}throw new Error(errMsg);}
-      const xml=await res.text();
-      if(!xml.includes("<item")) throw new Error("게시글을 찾을 수 없어요. 블로그 아이디를 다시 확인해주세요.");
-      const doc=new DOMParser().parseFromString(xml,"application/xml");
-      // XML 파서 에러 체크
-      const parseErr=doc.querySelector("parsererror");
-      if(parseErr) throw new Error("RSS 피드를 파싱할 수 없습니다. 블로그 아이디를 확인해주세요.");
-      const items=[...doc.getElementsByTagName("item")];
-      if(!items.length) throw new Error("최근 게시글이 없습니다.");
-      const list=items.slice(0,10).map(it=>{
-        const title=it.getElementsByTagName("title")[0]?.textContent?.trim()||"(제목 없음)";
-        // <link>는 XML에서 querySelector로 못 읽히는 경우가 있어 정규식으로 추출
-        const rawLink=it.getElementsByTagName("link")[0]?.textContent?.trim()||"";
-        const guid=it.getElementsByTagName("guid")[0]?.textContent?.trim()||"";
-        // 정규식 fallback: XML 원문에서 직접 추출
-        const xmlStr=it.outerHTML||"";
-        const linkRegex=/<link>([^<]+)<\/link>/i;
-        const linkFromRaw=xmlStr.match(linkRegex)?.[1]?.trim()||"";
-        const link=rawLink||linkFromRaw||guid||"";
-        const pub=it.getElementsByTagName("pubDate")[0]?.textContent||"";
-        const desc=(it.getElementsByTagName("description")[0]?.textContent||"").replace(/<[^>]+>/g,"").trim().slice(0,300);
-        const postNo=link.match(/\/(\d+)(?:[?#].*)?$/)?.[1]||guid.match(/\/(\d+)(?:[?#].*)?$/)?.[1]||Math.random().toString().slice(2,10);
-        // category 태그에서 블로그 태그(#태그) 추출
-        const categories=[...it.getElementsByTagName("category")].map(c=>c.textContent?.trim()).filter(Boolean);
-        let date="";
-        try{if(pub){const d=new Date(pub);date=`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`;}}catch(e){}
-        return{title,link,postNo,date,description:desc,tags:categories,source:"rss",_blogId:id};
+      const res=await fetch(`/api/blog-posts?blogId=${encodeURIComponent(bid)}&page=${pg}&size=${PER_PAGE}`);
+      let data=null;
+      try{ data=await res.json(); }catch(e){}
+      if(!res.ok||!data) throw new Error(data?.error||`오류 (${res.status})`);
+      if(data.error||data.success===false) throw new Error(data.error||"게시글 목록을 불러오지 못했습니다.");
+
+      const list=(data.posts||[]).map(p=>({
+        title:p.title||"(제목 없음)",
+        link:p.link||`https://blog.naver.com/${data.blogId||bid}/${p.postNo}`,
+        postNo:String(p.postNo||Math.random().toString().slice(2,10)),
+        date:p.date||"",
+        description:"",
+        tags:[],
+        source:"list",
+        _blogId:data.blogId||bid,
+      }));
+      if(!list.length) throw new Error(pg>1?"이 페이지에는 게시글이 없습니다.":"게시글을 찾을 수 없어요. 블로그 아이디를 다시 확인해주세요.");
+
+      const totalCount=data.totalCount||list.length;
+      setPosts({
+        all:list, current:list, total:totalCount, page:pg,
+        blogId:data.blogId||bid, serverPaged:true,
+        totalPages:data.totalPages||Math.max(Math.ceil(totalCount/PER_PAGE),1),
+        notice:data.notice||"",
       });
-      setPosts({all:list,current:list.slice(0,PER_PAGE),total:list.length,page:1,blogId:id});
-      setPage(1);
+      setPage(pg);
     }catch(e){setFeedError(e.message||"오류가 발생했습니다.");}
     setLoadingFeed(false);
   };
+
+  const fetchByBlogId=()=>fetchBlogPage(blogId,1,false);
 
   // ── 방법2: URL+제목+본문 직접 입력 → 즉시 분석 ──
   const analyzeManual=()=>{
@@ -2431,6 +2429,14 @@ function MissingTab(){
 
   const goPage=(pg)=>{
     if(!posts)return;
+    const tp=posts.serverPaged?(posts.totalPages||1):Math.max(Math.ceil(posts.all.length/PER_PAGE),1);
+    if(pg<1||pg>tp||pg===posts.page)return;
+    // 방법1(블로그 ID)은 서버에서 해당 페이지를 새로 불러옴 → 과거 글까지 조회 가능
+    if(posts.serverPaged){
+      if(loadingFeed)return;
+      fetchBlogPage(posts.blogId,pg,true);
+      return;
+    }
     setPosts(p=>({...p,current:p.all.slice((pg-1)*PER_PAGE,pg*PER_PAGE),page:pg}));
     setPage(pg);setExpanded(null);
   };
@@ -2776,14 +2782,14 @@ JSON 배열만 출력:`;
   const RB={"낮음":"#0d2019","보통":"#2d1e0a","높음":"#2d1117","매우높음":"#2d0b0b"};
   const SC={"노출":"#3fb950","누락":"#f85149"};
   const rankColor=r=>r==null?"#484f58":r<=3?"#3fb950":r<=10?"#58a6ff":r<=20?"#ffa657":"#ff7b72";
-  const totalPages=posts?Math.ceil(posts.all.length/PER_PAGE):0;
+  const totalPages=posts?(posts.serverPaged?(posts.totalPages||1):Math.ceil(posts.all.length/PER_PAGE)):0;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
     <style>{`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`}</style>
 
     {/* ── 모드 탭 ── */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",background:"#0d1117",borderRadius:"10px",border:"1px solid #21262d",overflow:"hidden"}}>
-      {[["blogId","📋 방법1 · 블로그 ID로 최근글"],["url","🔗 방법2 · URL 직접 입력"],["excel","📊 방법3 · 엑셀 업로드"]].map(([id,lbl])=>(
+      {[["blogId","📋 방법1 · 블로그 ID"],["url","🔗 방법2 · URL 직접 입력"],["excel","📊 방법3 · 엑셀 업로드"]].map(([id,lbl])=>(
         <button key={id} data-mode-url={id==="url"?"true":undefined} onClick={()=>{setMode(id);setPosts(null);setAnalysis({});setExpanded(null);setFeedError("");setExtraResults({});setExtraKw({});}} style={{
           padding:"13px 8px",border:"none",background:mode===id?"#161b22":"transparent",
           color:mode===id?"#e6edf3":"#8b949e",cursor:"pointer",
@@ -2821,7 +2827,7 @@ JSON 배열만 출력:`;
       </div>
 
       {loadingFeed&&<div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
-        {["RSS 피드 연결 중...","최근 게시글 10개 파싱 중...","목록 구성 중..."].map((m,i)=>(
+        {["블로그 글 목록 연결 중...",`${posts?.serverPaged?`${page}페이지`:"1페이지"} 게시글 10개 불러오는 중...`,"목록 구성 중..."].map((m,i)=>(
           <div key={i} style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"7px",padding:"8px 12px",
             color:"#8b949e",fontSize:"12px",animation:`pulse 1.6s ease ${i*0.3}s infinite`,display:"flex",gap:"8px"}}>
             ⏳ {m}
@@ -2835,7 +2841,8 @@ JSON 배열만 출력:`;
       </div>}
 
       <div style={{background:"#0d1117",border:"1px solid #1f6feb22",borderRadius:"8px",padding:"10px 13px",fontSize:"11px",color:"#484f58",lineHeight:"1.7"}}>
-        💡 최근 게시글 <strong style={{color:"#8b949e"}}>10개</strong>를 자동으로 불러와 누락여부 · 상위노출 키워드를 분석합니다.
+        💡 게시글을 <strong style={{color:"#8b949e"}}>10개씩</strong> 불러와 누락여부 · 상위노출 키워드를 분석합니다.
+        목록 아래 <strong style={{color:"#8b949e"}}>페이지 버튼</strong>으로 과거 글까지 계속 넘겨서 확인할 수 있어요.
       </div>
     </div>}
 
@@ -2843,7 +2850,7 @@ JSON 배열만 출력:`;
     {mode==="url"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"12px"}}>
       <div>
         <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700,marginBottom:"4px"}}>게시글 정보 입력</div>
-        <div style={{color:"#484f58",fontSize:"11px",marginBottom:"12px"}}>최신 10개 외 과거 글도 확인 가능 · 제목+본문을 직접 붙여넣으면 정확한 분석이 됩니다</div>
+        <div style={{color:"#484f58",fontSize:"11px",marginBottom:"12px"}}>특정 글 1개만 확인할 때 · 제목+본문을 직접 붙여넣으면 가장 정확한 분석이 됩니다</div>
 
         {/* URL */}
         <div style={{marginBottom:"8px"}}>
@@ -3015,6 +3022,8 @@ JSON 배열만 출력:`;
           총 <span style={{color:"#58a6ff"}}>{posts.total}개</span>
           {posts.blogId&&<span style={{color:"#8b949e",marginLeft:"6px"}}>· @{posts.blogId}</span>}
           {totalPages>1&&<span style={{color:"#484f58",fontSize:"12px",marginLeft:"6px"}}>{page}/{totalPages}p</span>}
+          {posts.serverPaged&&loadingFeed&&<span style={{color:"#58a6ff",fontSize:"12px",marginLeft:"6px"}}>⏳ 페이지 불러오는 중...</span>}
+          {posts.notice&&<span style={{color:"#ffa657",fontSize:"11px",marginLeft:"6px"}}>· {posts.notice}</span>}
         </div>
         <div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
           {posts.current.some(p=>!analysis[p.postNo])&&analyzing===-1&&
