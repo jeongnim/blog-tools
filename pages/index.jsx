@@ -6638,15 +6638,42 @@ async function fetchBlogBodies(keyword) {
   return [];
 }
 
-function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrategy, bodies, mainKeyword }) {
+function buildWritePrompt({ kw, yearMonth, today, category, smartBlockType, blogStrategy, bodies, mainKeyword }) {
   const mainKw = mainKeyword || kw;
   const ctx = category
     ? `카테고리: ${category}`
     : `스마트블록: ${smartBlockType||"블로그"} / 전략: ${blogStrategy||""}`;
 
-  return `현재 날짜: ${yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
+  // 참고자료(상위 노출 블로그 본문)가 있으면 사실 근거로 제공
+  const refBlock = (bodies && bodies.length > 0)
+    ? `\n[참고자료 — 이 키워드 상위 노출 글 본문]\n${bodies.slice(0,3).map((b,i)=>`(${i+1})\n${String(b).slice(0,1800)}`).join("\n\n")}\n\n※ 참고자료는 "사실 확인용"으로만 사용. 문장·표현을 베끼지 말 것.\n※ 참고자료에도 없는 수치·날짜·가격은 절대 만들어내지 말 것.\n`
+    : "";
 
+  return `오늘 날짜: ${today || yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
+${refBlock}
 네이버 블로그 홈판 노출 + AI 브리핑 인용 최적화 글을 작성해줘:
+
+[사실 원칙 — 다른 모든 규칙보다 우선]
+A. 확실하지 않은 정보를 사실처럼 단정하지 말 것. 애매하면 아예 쓰지 않는 쪽을 택할 것.
+B. 아래 항목은 확실히 아는 경우가 아니면 절대 지어내지 말 것:
+   - 가격, 요금, 할인액, 지원금 액수
+   - 통계, 퍼센트, 판매량, 순위, 평점, 후기 개수
+   - 출시일, 시행일, 마감일, "N월부터 달라집니다" 같은 시점 정보
+   - 제품 모델명, 스펙, 세부 기능, 옵션 구성
+   - 법령·제도·정책·약관의 구체적 내용과 조건
+   - 기업·기관·인물의 발표 내용, 공식 입장, 인용문
+   - 논문·조사·연구 결과 및 그 출처
+C. B의 정보가 글에 꼭 필요하면 둘 중 하나로 처리:
+   (a) 정성적 표현으로 대체 → "가격대가 꽤 부담되는 편입니다", "생각보다 오래 걸립니다"
+   (b) 본문에 [확인필요: 항목명] 형태로 표시 → 작성자가 직접 채워 넣음 (한 글에 최대 3개)
+D. 시점 표현: 오늘은 ${today || yearMonth}이지만, 최근 정보는 정확히 모를 수 있음.
+   "${yearMonth} 기준 ~입니다"라고 단정하는 문장은 정말 확실할 때만 쓸 것.
+   불확실하면 "지금은 달라졌을 수 있으니 확인해보시는 게 좋습니다" 식으로 열어둘 것.
+E. 경험담은 자유롭게 써도 되지만, 검증 가능한 수치가 아니라 과정·판단·체감 중심으로 쓸 것.
+   (X) "3개월 써보니 배터리가 27% 감소했습니다"
+   (O) "3개월쯤 쓰니 하루를 못 버티는 날이 눈에 띄게 늘었습니다"
+F. 의견은 의견인 게 드러나게 쓸 것 — "개인적으로는", "제 기준에서는", "제가 겪어본 범위에서는".
+G. 구체적이지만 틀린 글보다, 덜 구체적이어도 맞는 글이 낫다.
 
 [구조 원칙]
 1. 본문 1,500~2,000자 (한글+공백)
@@ -6654,31 +6681,36 @@ function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrateg
 3. 핵심 결론과 요약을 글 앞부분(도입부)에 먼저 배치 — AI 브리핑이 인용하기 좋은 구조
 4. 각 문장 끝 줄바꿈(\\n)만 사용, HTML 태그(<br> 등) 절대 금지
 5. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
-6. 제목은 반드시 아래 4가지 패턴 중 하나 사용:
-   - 숫자형: "3가지", "5단계", "10만원 절약" 등 구체적 숫자 포함
+6. 제목은 반드시 아래 4가지 패턴 중 하나 사용 (단, 숫자형 제목에 사실 원칙 B에 걸리는 수치는 쓰지 말 것):
+   - 숫자형: "3가지", "5단계" 등 글 구성 자체를 가리키는 숫자
    - 질문형: "~해도 될까?", "~하면 어떻게 될까?" 등 독자 궁금증 자극
    - 경험담형: "직접 써봤습니다", "3개월 사용 후기" 등 실사용 강조
    - 비교형: "A vs B 직접 비교", "싼 것 vs 비싼 것 차이" 등 대조 구도
 7. 도입부 구조 (홈판 미리보기 텍스트 최적화):
    - 첫 문장: 독자가 이 글에서 얻을 핵심 이익을 바로 명시 (인사말·계절 묘사·자기소개 절대 금지)
-   - 둘째 문장: 작성자의 직접 경험 근거 1줄 (예: "직접 3곳을 비교해봤습니다", "6개월간 써보며 정리했습니다")
+   - 둘째 문장: 작성자의 직접 경험 근거 1줄 (예: "직접 3곳을 비교해봤습니다")
 
 [내용 원칙 — 네이버 AEO 기준]
 8. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
-9. 직접 경험에서 나온 구체적 사례 반드시 포함 (문제 해결 과정, 시행착오, 실제 사용 후기 등)
+9. 경험에서 나온 구체적 사례 포함 — 문제 해결 과정, 시행착오, 판단 기준 중심
+   (지어낸 수치·날짜·모델명으로 구체성을 만들지 말 것. 구체성은 '과정 묘사'로 낼 것)
 10. 창작자 고유의 시선과 인사이트 포함 — AI가 쉽게 만들 수 없는 개인 관점
-11. 관련 수치, 통계, 또는 업계 기준 등 신뢰도를 높이는 구체적 정보 포함
+11. 수치·통계·업계 기준은 확실히 아는 경우에만 넣을 것. 확실하지 않으면 넣지 말고,
+    대신 판단 기준·비교 관점·체크리스트로 신뢰도를 만들 것 (억지로 채우지 말 것)
 12. 단순 정보 나열이 아닌 독자에게 실질적으로 도움되는 내용 중심
 13. 문체: -니다/-요 혼용, 정보성+경험담
-14. 반드시 ${yearMonth} 기준의 최신 정보로 작성 (과거 정보나 출시 예정 표현 금지)
+14. 시의성은 '변할 수 있다'는 전제로 다룰 것 — 확실치 않은 최신 정보를 단정하지 말고,
+    시점에 따라 달라질 수 있는 부분은 확인을 권하는 문장으로 처리
 15. 본문 중간 (두 번째 소제목 이후)에 독자 참여 유도 문장 1개 삽입 — 체류시간 증가 목적
-    (예: "혹시 비슷한 경험 있으신가요?", "이 부분이 가장 고민됐는데 여러분은 어떠셨나요?")
+    (예: "혹시 비슷한 경험 있으신가요?")
 16. 마지막 소제목 ▶ 이후 마무리 구조:
     - 핵심 내용 요약 2~3줄
     - 자연스러운 공감·댓글 유도 문장 1개 (광고성 표현 제외, 강요하지 않는 톤)
-    (예: "도움이 됐다면 공감 한 번 눌러주시면 큰 힘이 됩니다 😊", "궁금한 점은 댓글로 남겨주세요")
 
 [금지사항]
+- 확인되지 않은 가격·수치·날짜·스펙을 사실처럼 쓰는 것 (가장 중요)
+- 존재하지 않는 기관·조사·논문·뉴스를 출처로 인용하는 것
+- 실제로 없는 후기·사례·인물을 만들어내 인용하는 것
 - 뻔한 일반 정보만 나열하는 글 (누구나 아는 내용만 반복)
 - 맥락 없이 키워드만 끼워 넣는 표현
 - AI가 기계적으로 생성한 느낌의 틀에 박힌 문장 패턴
@@ -6686,7 +6718,7 @@ function buildWritePrompt({ kw, yearMonth, category, smartBlockType, blogStrateg
 - 소제목 없이 긴 문단이 연속되는 구조 (각 소제목 간격 400자 이내 유지)
 
 순수 JSON만 (마크다운 없이):
-{"title":"제목(15~32자,키워드포함)","main_keyword":"${mainKw}","content":"본문","tags":["태그1","태그2","태그3","태그4","태그5"]}`;
+{"title":"제목(15~32자,키워드포함)","main_keyword":"${mainKw}","content":"본문","tags":["태그1","태그2","태그3","태그4","태그5"],"uncertain":["글에서 확인이 필요한 항목이 있으면 나열, 없으면 빈 배열"]}`;
 }
 
 function PasswordGate({children}){
@@ -6780,12 +6812,35 @@ export default function BlogTools(){
     setPendingAnalyzeText("__loading__");
     setActive("analyze");
     try{
-      const now=new Date();
-      const yearMonth=`${now.getFullYear()}년 ${now.getMonth()+1}월`;
-      const prompt = buildWritePrompt({ kw, yearMonth, smartBlockType, blogStrategy, bodies: [], mainKeyword: mainKeyword||kw });
+      const now = new Date();
+      const yearMonth = `${now.getFullYear()}년 ${now.getMonth()+1}월`;
+      const todayStr  = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일`;
+
+      // 상위 노출 글 본문을 사실 근거로 확보 (12초 안에 안 오면 그냥 진행)
+      const bodies = await Promise.race([
+        fetchBlogBodies(mainKeyword || kw),
+        new Promise(r => setTimeout(() => r([]), 12000)),
+      ]);
+
+      const prompt = buildWritePrompt({
+        kw, yearMonth, today: todayStr, smartBlockType, blogStrategy,
+        bodies, mainKeyword: mainKeyword || kw,
+      });
+
       const raw = await callClaudeStream(
-        [{role:"user",content:prompt}],
-        `You are a professional Korean Naver blog writer optimizing for homepage exposure and Naver AI briefing citation. Current date: ${yearMonth}. Write based on the latest information as of this date. Include personal experience, specific cases, and unique insights that AI cannot easily replicate. Structure content so key conclusions appear early for AI summarization. Output ONLY valid JSON, no markdown.`,
+        [{ role: "user", content: prompt }],
+        `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation.
+
+Today is ${todayStr}. You cannot search the web, and your knowledge of recent events may be outdated or wrong.
+
+FACTUAL DISCIPLINE — this overrides every stylistic instruction in the user message:
+- Never assert a specific fact you are not confident is true. Do not invent prices, fees, subsidy amounts, statistics, percentages, sales figures, ratings, release dates, effective dates, model names, specs, laws, policies, terms, official statements, quotes, studies, or institutions.
+- If a specific figure would make the writing stronger but you are not sure of it, either express it qualitatively, or insert a [확인필요: ...] placeholder for the author to fill in (max 3 per post).
+- Do NOT claim anything is "current as of ${yearMonth}" unless you genuinely know it. Prefer hedged or timeless phrasing over confident but unverified recency.
+- Opinions, judgments, preferences and narrative experience are encouraged — but write them as opinions, not as verified facts. Make experience concrete through process and reasoning, not through fabricated measurements.
+- A shorter, less specific post that is true is better than a specific post that is false. If reference material is provided, restrict factual claims to what it supports (without copying its wording).
+
+Structure content so key conclusions appear early for AI summarization. Output ONLY valid JSON, no markdown.`,
         3500, "claude-sonnet-4-5-20250929"
       );
       const parsed = safeParseJson(raw);
