@@ -729,7 +729,7 @@ function buildFullPrompt(item,styleId,ratio,lang){
 function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading,setImgLoading,imgError,setImgError,imgSections,setImgSections}){
   const [styleId,setStyleId]=useState("photo");
   const [ratio,setRatio]=useState("16:9");
-  const [lang,setLang]=useState("en");
+  const [lang,setLang]=useState("ko");
   const [copied,setCopied]=useState(null);
 
   const copyText=async(txt,key)=>{
@@ -768,11 +768,15 @@ Blog Content:
 ${postContent.slice(0,3000)}
 
 Rules:
+- GROUNDING (most important): every section and every scene must come STRICTLY from what the post actually says. Follow the post's real order. Do not add objects, places, activities, situations or facts that do not appear in the post.
+- "sectionDesc" must summarise an actual passage of the post — never a topic the post does not cover.
 - Exactly 5 sections, each covering a DIFFERENT aspect of the post
 - Each scene must be visually distinct from the others (different subject, setting, angle)
 - Describe the SCENE ONLY: subject, setting, composition, mood, colors. Do NOT include style keywords, camera specs, aspect ratio, or "no text" instructions — those are appended later
+- If the post is about a specific product, brand or service, depict it accurately at CATEGORY level — correct form factor, scale and usage context (e.g. "a modern foldable smartphone held open in both hands"). Never depict a shape, feature or usage that contradicts the post, and never guess at details the post does not state.
+- Never visualise prices, numbers, charts, graphs, screens or UI text — an image must not assert a fact the post has not stated.
 - 25-50 words per scene, plain descriptive English
-- No real brand names, no logos, no readable text, no recognizable real people or celebrity faces
+- No real brand names, no logos, no brand marks, no readable text, no recognizable real people or celebrity faces
 - "sceneKo" = natural Korean rendering of the exact same scene
 - "sectionTitle" = short Korean title, "sectionDesc" = one-line Korean summary of that section
 
@@ -786,7 +790,7 @@ Return ONLY valid JSON, no markdown:
 ]}`;
 
       const raw=await callClaude([{role:"user",content:analysisReq}],
-        "You are an expert at analyzing blog posts and writing image generation prompts. Output ONLY valid JSON.",2500,"claude-haiku-4-5-20251001");
+        "You are an expert at analyzing blog posts and writing image generation prompts. Base every section and scene strictly on the given post content — never invent details, products, brands or facts the post does not contain. Depict named products only at an accurate category level, with no logos or readable text. Output ONLY valid JSON.",2500,"claude-haiku-4-5-20251001");
 
       if(!raw||raw.trim()==="") throw new Error("단락 분석 응답이 비어있습니다.");
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
@@ -6673,7 +6677,17 @@ E. 경험담은 자유롭게 써도 되지만, 검증 가능한 수치가 아니
    (X) "3개월 써보니 배터리가 27% 감소했습니다"
    (O) "3개월쯤 쓰니 하루를 못 버티는 날이 눈에 띄게 늘었습니다"
 F. 의견은 의견인 게 드러나게 쓸 것 — "개인적으로는", "제 기준에서는", "제가 겪어본 범위에서는".
-G. 구체적이지만 틀린 글보다, 덜 구체적이어도 맞는 글이 낫다.
+G. 구체적이지만 틀린 글보다, 덜 구체적이어도 맞는 글이 낛다.
+
+[브랜드·상표 원칙]
+H. 특정 브랜드·제품·서비스명이 등장하면, 그 대상에 관해 정확한 내용만 쓸 것.
+I. 공식 표기를 그대로 사용할 것 — 임의 축약, 오탈자, 존재하지 않는 모델명·세대 표기 금지.
+   모델명·세대·스펙이 확실하지 않으면 아예 언급하지 말고 카테고리 수준으로 쓸 것 (예: "최근 폴더블 모델").
+J. 브랜드에 사실이 아닌 기능·가격·정책·혜택을 갖다 붙이지 말 것.
+   A사의 기능을 B사 것처럼 쓰거나, 제조사·통신사·유통점의 역할과 책임을 섞지 말 것.
+K. 브랜드 간 비교는 확인 가능한 일반적 차이 또는 개인적 체감으로 한정.
+   근거 없는 우열 단정, 비방, 허위 비교는 금지.
+L. 확실한 부분과 불확실한 부분이 섮이면, 확실한 것만 쓰고 나머지는 [확인필요: 항목명]으로 남길 것.
 
 [구조 원칙]
 1. 본문 1,500~2,000자 (한글+공백)
@@ -6839,6 +6853,11 @@ FACTUAL DISCIPLINE — this overrides every stylistic instruction in the user me
 - Do NOT claim anything is "current as of ${yearMonth}" unless you genuinely know it. Prefer hedged or timeless phrasing over confident but unverified recency.
 - Opinions, judgments, preferences and narrative experience are encouraged — but write them as opinions, not as verified facts. Make experience concrete through process and reasoning, not through fabricated measurements.
 - A shorter, less specific post that is true is better than a specific post that is false. If reference material is provided, restrict factual claims to what it supports (without copying its wording).
+
+BRAND ACCURACY:
+- When a specific brand, product line or service is named, everything you write about it must be accurate. Use official naming exactly as it is written; never invent model names, generation numbers, product tiers or spec details.
+- If you are not certain which model, generation or specification applies, stay at category level instead of guessing.
+- Never attribute one brand's feature, price, policy or benefit to another, never confuse the roles of manufacturer, carrier and retailer, and never make an unverified superiority claim or a disparaging comparison about a real brand.
 
 Structure content so key conclusions appear early for AI summarization. Output ONLY valid JSON, no markdown.`,
         3500, "claude-sonnet-4-5-20250929"
