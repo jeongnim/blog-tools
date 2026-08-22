@@ -305,8 +305,17 @@ async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5
   return data.content?.[0]?.text||"";
 }
 
+function stripCodeFence(text) {
+  return String(text || "")
+    .replace(/^```json\n*/i, "")
+    .replace(/^```\n*/i, "")
+    .replace(/\n*```$/i, "")
+    .trim();
+}
+
+// 실제 SSE 스트리밍. 토큰이 오는 대로 받으므로 긴 본문에서도 중간 결과가 남는다.
 async function callClaudeStream(messages, system, maxTokens=3500, model="claude-sonnet-4-5-20250929", onChunk) {
-  const body = { model, max_tokens: maxTokens, messages };
+  const body = { model, max_tokens: maxTokens, messages, stream: true };
   if (system) body.system = system;
 
   const res = await fetch("/api/claude", {
@@ -315,27 +324,69 @@ async function callClaudeStream(messages, system, maxTokens=3500, model="claude-
     body: JSON.stringify(body),
   });
 
-  const rawText = await res.text();
-  let data;
-  try { data = JSON.parse(rawText); }
-  catch(_) { throw new Error("API 응답 파싱 실패: " + rawText.slice(0, 120)); }
+  const ctype = res.headers.get("content-type") || "";
 
-  if (data.error) {
-    const msg = typeof data.error === "object"
-      ? (data.error.message || JSON.stringify(data.error))
-      : (data.message || data.error);
-    throw new Error(msg);
+  // 스트리밍이 아닌 응답(에러 JSON 등)은 기존 방식으로 처리
+  if (!ctype.includes("text/event-stream") || !res.body) {
+    const rawText = await res.text();
+    let data;
+    try { data = JSON.parse(rawText); }
+    catch(_) {
+      throw new Error(
+        res.status === 504 || /TIMEOUT/i.test(rawText)
+          ? "생성 시간이 초과됐습니다. 잠시 후 다시 시도해주세요."
+          : "API 응답 파싱 실패: " + rawText.slice(0, 120)
+      );
+    }
+    if (data.error) {
+      const msg = typeof data.error === "object"
+        ? (data.error.message || JSON.stringify(data.error))
+        : (data.message || data.error);
+      throw new Error(msg);
+    }
+    const text = data.content?.[0]?.text || "";
+    if (!text) throw new Error("응답이 비어있습니다.");
+    if (onChunk) onChunk(text);
+    return stripCodeFence(text);
   }
 
-  const text = data.content?.[0]?.text || "";
-  if (!text) throw new Error("응답이 비어있습니다.");
-  if (onChunk) onChunk(text);
+  const reader  = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full   = "";
+  let apiError = null;
 
-  return text
-    .replace(/^```json\n*/i, "")
-    .replace(/^```\n*/i, "")
-    .replace(/\n*```$/i, "")
-    .trim();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE는 빈 줄로 이벤트가 구분된다
+    const events = buffer.split("\n\n");
+    buffer = events.pop() || "";
+
+    for (const evt of events) {
+      for (const line of evt.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const obj = JSON.parse(payload);
+          if (obj.type === "content_block_delta" && obj.delta?.type === "text_delta") {
+            full += obj.delta.text;
+            if (onChunk) onChunk(full);
+          } else if (obj.type === "error") {
+            apiError = obj.error?.message || "생성 중 오류가 발생했습니다.";
+          }
+        } catch(_) { /* 조각난 JSON은 무시 */ }
+      }
+    }
+  }
+
+  if (apiError) throw new Error(apiError);
+  if (!full.trim()) throw new Error("응답이 비어있습니다.");
+
+  return stripCodeFence(full);
 }
 
 // 메인 탭 (네비바에 표시)
@@ -7020,7 +7071,7 @@ T6. 제목에 사실 원칙 B에 해당하는 수치(가격·기간·퍼센트)�
    - 이 중 최소 1개는 독자가 검색창에 칠 법한 질문형 소제목으로 쓸 것
      (예: "▶ 개통 전에 유심을 먼저 사도 될까?")
 3. 각 문장 끝 줄바꿈(\\n)만 사용, HTML 태그(<br> 등) 절대 금지
-4. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
+4. 해시태그는 본문에 쓰지 말 것 — JSON의 tags 배열에만 담을 것 (본문 끝에는 붙이지 않는다)
 5. 도입부 구조 (홈판 미리보기 + AI 인용 최적화):
    - 첫 문장: 이 글의 결론 또는 핵심 정의를 한 문장으로 단정해서 제시
      (인사말·계절 묘사·자기소개 절대 금지)
@@ -7034,11 +7085,8 @@ AEO2. 각 소제목 아래 첫 문장은 그 소제목 질문에 대한 답을 �
       배경 설명부터 시작하지 말 것 — 답 먼저, 설명은 그 다음.
 AEO3. 모든 문단은 자기완결형으로 쓸 것. 앞 문단을 읽지 않아도 그 문단만 떼어내서
       읽었을 때 뜻이 통해야 한다. "이것", "그건", "위에서 말한" 같은 앞뒤 의존 표현 금지.
-AEO4. 본문 마지막 해시태그 바로 앞에 아래 형식으로 자주 묻는 질문 3개를 넣을 것:
-      ▶ 자주 묻는 질문
-      Q. (독자가 실제로 검색창에 칠 법한 완성된 질문 문장)
-      A. (2~3문장으로 끝나는 자기완결 답변. 첫 문장에서 바로 결론을 말할 것)
-      ※ 질문 3개는 서로 다른 것을 물어야 하고, 본문에서 이미 다룬 내용을 다른 각도로 정리하는 형태여야 한다.
+AEO4. "자주 묻는 질문" 블록은 여기서 쓰지 말 것 — 다음 단계에서 따로 붙인다.
+      대신 본문이 그 블록으로 자연스럽게 이어지도록 마무리할 것.
 AEO5. 조건·절차·기준처럼 항목이 나뉘는 내용은 줄바꿈으로 한 줄씩 끊어서 쓸 것.
       한 문단에 여러 조건을 뭉쳐 넣지 말 것.
 AEO6. 사실 원칙 C를 지키되, 인용 가치가 있는 문장 구조는 반드시 유지할 것.
@@ -7074,7 +7122,7 @@ AEO6. 사실 원칙 C를 지키되, 인용 가치가 있는 문장 구조는 반
 - 앞 문단에 의존하는 지시대명사로 문단을 시작하는 것
 
 순수 JSON만 (마크다운 없이):
-{"title":"제목(${pat.label}, 15~32자, "${mainKw}" 포함)","main_keyword":"${mainKw}","content":"본문(자주 묻는 질문 3개 포함)","tags":["태그1","태그2","태그3","태그4","태그5"],"faq":[{"q":"질문1","a":"답변1"},{"q":"질문2","a":"답변2"},{"q":"질문3","a":"답변3"}],"uncertain":["글에서 확인이 필요한 항목이 있으면 나열, 없으면 빈 배열"]}`;
+{"title":"제목(${pat.label}, 15~32자, "${mainKw}" 포함)","main_keyword":"${mainKw}","content":"본문(해시태그·자주묻는질문 제외)","tags":["태그1","태그2","태그3","태그4","태그5"],"uncertain":["글에서 확인이 필요한 항목이 있으면 나열, 없으면 빈 배열"]}`;
 }
 
 // ─── 생성된 제목 검증 ──────────────────────────────────────────────────────
@@ -7274,18 +7322,20 @@ CITATION READINESS (AEO) — apply this within the limits of factual discipline 
 - Lead with the answer. The opening lines and the first sentence under every subheading must state the conclusion before any background.
 - Write self-contained paragraphs. Each paragraph must make sense when lifted out of the post on its own; avoid pronouns and back-references that depend on earlier paragraphs.
 - Preserve quotable sentence structure. A sentence with a [확인필요:] placeholder is still quotable; a sentence that hedges away its own subject is not.
-- Include a closing Q&A block of three questions phrased the way a reader would actually search, each answered in two or three self-contained sentences.
+- Do not write the closing Q&A block or hashtags in this step; they are generated separately afterward.
 
 Output ONLY valid JSON, no markdown.`;
 
       const raw = await callClaudeStream(
         [{ role: "user", content: prompt }],
         sysPrompt,
-        4000, "claude-sonnet-4-5-20250929"
+        3500, "claude-sonnet-4-5-20250929"
       );
       const parsed = safeParseJson(raw);
       const cleanContent = (str="") =>
         str.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/\n{3,}/g, "\n\n");
+
+      const bodyText = cleanContent(parsed.content||"");
 
       let finalTitle = parsed.title || "";
       const check = validateTitle(finalTitle, { mainKw, topTitles, commercialWords: banWords, avoidWords });
@@ -7335,12 +7385,51 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
 
       recordTitleUse(pattern.id, finalTitle);
 
+      // ── 2단계: 자주 묻는 질문 3개 (AEO 인용률이 가장 높은 블록) ──
+      // 본문 생성과 한 번에 처리하면 함수 실행 시간이 한계를 넘어 통째로 날아간다.
+      let faq = [];
+      try {
+        const faqPrompt = `아래 블로그 글을 읽고, 독자가 네이버 검색창에 실제로 칠 법한 질문 3개와 답변을 만들어줘.
+
+제목: ${finalTitle}
+메인 키워드: ${mainKw}
+
+본문:
+${bodyText.slice(0, 2500)}
+
+규칙:
+- 질문은 완성된 문장으로 (예: "유심을 먼저 사도 개통되나요?")
+- 답변은 2~3문장. 첫 문장에서 바로 결론을 말할 것
+- 답변만 따로 떼어 읽어도 뜻이 통해야 함 ("위에서 말한", "이것" 같은 표현 금지)
+- 본문에 없는 가격·날짜·수치를 새로 지어내지 말 것. 본문에 [확인필요:]가 있으면 그대로 유지
+- 3개는 서로 다른 것을 물을 것
+
+순수 JSON만: {"faq":[{"q":"질문","a":"답변"},{"q":"질문","a":"답변"},{"q":"질문","a":"답변"}]}`;
+
+        const faqRaw = await callClaude(
+          [{ role: "user", content: faqPrompt }],
+          "You write Korean blog FAQ blocks. Output ONLY valid JSON.",
+          1200, "claude-haiku-4-5-20251001"
+        );
+        faq = (safeParseJson(faqRaw)?.faq || []).filter(x => x && x.q && x.a).slice(0, 3);
+      } catch(e) { /* FAQ 실패해도 본문은 살린다 */ }
+
+      // ── 본문 + FAQ + 해시태그 조립 ──
+      const tags = parsed.tags || [];
+      const faqBlock = faq.length > 0
+        ? "\n\n▶ 자주 묻는 질문\n\n" + faq.map(f => `Q. ${f.q}\nA. ${f.a}`).join("\n\n")
+        : "";
+      const tagBlock = tags.length > 0
+        ? "\n\n" + tags.map(t => "#" + String(t).replace(/^#/, "")).join(" ")
+        : "";
+      const fullContent = (bodyText + faqBlock + tagBlock).replace(/\n{3,}/g, "\n\n");
+
       const meta = {
         title: finalTitle,
         main_keyword: mainKw || parsed.main_keyword || kw,
-        content: cleanContent(parsed.content||""),
-        tags: parsed.tags||[],
-        faq: parsed.faq||[],
+        content: fullContent,
+        tags,
+        faq,
         titlePattern: pattern.label,
         titleNotice,
         _source: "keyword",
