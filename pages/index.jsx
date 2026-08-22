@@ -1293,11 +1293,13 @@ JSON 형식:
   };
 
   // 복사/다운로드 (제목+본문+해시태그)
+  // 본문 끝에 이미 해시태그가 붙어 있으면 또 붙이지 않는다 (중복 방지)
   const buildFullText=()=>{
     const title=postMeta?.title||"";
     const kw=postMeta?.main_keyword||"";
     const body=workingText||text;
-    const tags=(postMeta?.tags||[]).map(t=>"#"+t).join(" ");
+    const bodyHasTags=/(?:^|\n)\s*#[^\n]+\s*$/.test(String(body||"").trimEnd());
+    const tags=bodyHasTags?"":(postMeta?.tags||[]).map(t=>"#"+t).join(" ");
     return [kw?"[메인키워드] "+kw:"",title?"[제목] "+title:"",body,tags].filter(Boolean).join("\n\n");
   };
   const doCopyAll=()=>{
@@ -7296,7 +7298,7 @@ AEO6. 사실 원칙 C를 지키되, 인용 가치가 있는 문장 구조는 반
 14. 시의성은 '변할 수 있다'는 전제로 다룰 것
 
 [마무리]
-15. 마지막 소제목 ▶ 이후 마무리를 둘 것:
+15. 본문 마지막에 "▶ 정리" 소제목을 따로 두고 마무리할 것 (앞 소제목 안에 뭉쳐 넣지 말 것):
     - 핵심 내용 요약 2~3줄 (각 줄이 독립적으로 읽히게)
     - 요약으로 끝낼 것. 그 뒤에 아무 말도 덧붙이지 말 것.
     ※ 댓글·공감·구독을 유도하는 문장은 절대 쓰지 말 것.
