@@ -7102,13 +7102,39 @@ function validateTitle(title, { mainKw, topTitles, commercialWords, avoidWords }
 }
 
 function PasswordGate({children}){
-  const [auth,setAuth]=useState(()=>{
-    if(typeof window==="undefined") return false;
-    return sessionStorage.getItem("bp_auth")==="1";
-  });
+  // 인증 상태는 서버가 굽는 httpOnly 쿠키가 진실이다.
+  // 브라우저 저장소 값으로는 통과할 수 없다.
+  const [auth,setAuth]=useState(null);   // null = 확인 중
   const [pw,setPw]=useState("");
   const [err,setErr]=useState("");
   const [loading,setLoading]=useState(false);
+
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      try{
+        const r=await fetch("/api/auth-status");
+        const d=await r.json();
+        if(alive) setAuth(!!d.ok);
+      }catch(e){ if(alive) setAuth(false); }
+    })();
+    return ()=>{ alive=false; };
+  },[]);
+
+  // API가 401을 돌려주면(세션 만료 등) 즉시 잠금 화면으로 되돌린다
+  useEffect(()=>{
+    if(typeof window==="undefined") return;
+    const orig=window.fetch;
+    window.fetch=async(...args)=>{
+      const res=await orig(...args);
+      try{
+        const url=typeof args[0]==="string"?args[0]:args[0]?.url||"";
+        if(res.status===401&&url.startsWith("/api/")) setAuth(false);
+      }catch(e){}
+      return res;
+    };
+    return ()=>{ window.fetch=orig; };
+  },[]);
 
   const submit=async()=>{
     if(!pw.trim()) return;
@@ -7116,11 +7142,17 @@ function PasswordGate({children}){
     try{
       const r=await fetch("/api/verify-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
       const d=await r.json();
-      if(d.ok){ sessionStorage.setItem("bp_auth","1"); setAuth(true); }
+      if(d.ok){ setPw(""); setAuth(true); }
       else{ setErr(d.error||"비밀번호가 틀렸습니다."); }
     }catch(e){ setErr("오류가 발생했습니다. 다시 시도해주세요."); }
     setLoading(false);
   };
+
+  if(auth===null) return(
+    <div style={{minHeight:"100vh",background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"center",color:"#484f58",fontSize:"13px"}}>
+      확인 중...
+    </div>
+  );
 
   if(auth) return children;
 
