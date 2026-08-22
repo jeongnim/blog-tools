@@ -3,7 +3,7 @@
 export const config = { maxDuration: 30 };
 
 export default async function handler(req, res) {
-  const { keyword } = req.query;
+  const { keyword, display } = req.query;
   if (!keyword) return res.status(400).json({ error: "keyword 필요" });
 
   const clientId     = process.env.NAVER_CLIENT_ID;
@@ -13,9 +13,12 @@ export default async function handler(req, res) {
     return res.status(200).json({ titles: [], links: [], error: "NAVER_CLIENT_ID/SECRET 없음" });
   }
 
+  // 제목 중복 회피 판정에 쓰려면 5개로는 표본이 너무 적다 (기본 15개)
+  const count = Math.min(Math.max(parseInt(display, 10) || 15, 1), 30);
+
   try {
     const r = await fetch(
-      `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=5&start=1&sort=sim`,
+      `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=${count}&start=1&sort=sim`,
       {
         headers: {
           "X-Naver-Client-Id": clientId,
@@ -26,7 +29,7 @@ export default async function handler(req, res) {
     const data = await r.json();
     if (data.errorCode) return res.status(200).json({ titles: [], links: [], error: data.errorMessage });
 
-    const items = (data.items || []).slice(0, 5);
+    const items = (data.items || []).slice(0, count);
     const titles = items.map(i => i.title.replace(/<[^>]+>/g, ""));
     const links  = items.map(i => i.link || i.bloggerlink);
 
