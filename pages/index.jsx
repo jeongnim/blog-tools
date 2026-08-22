@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 // ─── Constants ────────────────────────────────────────────────────────────
 const FORBIDDEN_CATEGORIES = [
@@ -303,6 +303,49 @@ async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5
   }
 
   return data.content?.[0]?.text||"";
+}
+
+// 웹 검색 도구를 붙인 호출. [확인필요:] 항목을 실제 출처로 채울 때 쓴다.
+// 응답에 검색 결과 블록이 섞여 오므로 text 블록만 모아서 돌려준다.
+async function callClaudeSearch(messages, system, maxTokens=3000, model="claude-sonnet-4-5-20250929", maxSearches=6) {
+  const body = {
+    model,
+    max_tokens: maxTokens,
+    messages,
+    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearches }],
+  };
+  if (system) body.system = system;
+
+  const res = await fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const rawText = await res.text();
+  let data;
+  try { data = JSON.parse(rawText); }
+  catch(_) {
+    throw new Error(
+      /TIMEOUT/i.test(rawText)
+        ? "조사 시간이 초과됐습니다. 항목을 줄여서 다시 시도해주세요."
+        : "API 응답 파싱 실패: " + rawText.slice(0, 120)
+    );
+  }
+  if (data.error) {
+    const msg = typeof data.error === "object"
+      ? (data.error.message || JSON.stringify(data.error))
+      : (data.message || data.error);
+    throw new Error(msg);
+  }
+
+  const text = (data.content || [])
+    .filter(b => b.type === "text")
+    .map(b => b.text)
+    .join("\n")
+    .trim();
+  if (!text) throw new Error("조사 결과가 비어있습니다.");
+  return stripCodeFence(text);
 }
 
 function stripCodeFence(text) {
@@ -1018,6 +1061,75 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
   const replacements=analyzeReplacements; const setReplacements=setAnalyzeReplacements;
   const workingText=analyzeWorkingText; const setWorkingText=setAnalyzeWorkingText;
 
+  // ── [확인필요:] 항목 웹 조사 ──
+  const [factLoading,setFactLoading]=useState(false);
+  const [factResults,setFactResults]=useState(null);
+  const [factError,setFactError]=useState("");
+  const [factApplied,setFactApplied]=useState({});
+
+  const liveText = workingText || text;
+  const placeholders = useMemo(()=>{
+    const out=[]; const re=/\[확인필요:\s*([^\]]+)\]/g; let m;
+    while((m=re.exec(liveText))!==null){
+      const label=m[1].trim();
+      if(!out.includes(label)) out.push(label);
+    }
+    return out;
+  },[liveText]);
+
+  const runFactCheck=async()=>{
+    if(placeholders.length===0) return;
+    setFactLoading(true); setFactError(""); setFactResults(null); setFactApplied({});
+    try{
+      const prompt=`아래 블로그 글에 확인이 필요한 항목이 남아 있습니다. 웹에서 검색해서 각 항목의 실제 값을 찾아주세요.
+
+글 제목: ${postMeta?.title||"(제목 없음)"}
+메인 키워드: ${postMeta?.main_keyword||""}
+오늘 날짜: ${new Date().toLocaleDateString("ko-KR")}
+
+확인이 필요한 항목:
+${placeholders.map((x,i)=>`${i+1}. ${x}`).join("\n")}
+
+글의 맥락 (어떤 상황에서 쓰인 값인지 파악용):
+${liveText.slice(0,2000)}
+
+규칙:
+- 반드시 웹 검색으로 확인된 값만 답할 것. 검색해도 확실하지 않으면 found를 false로 둘 것
+- 추측하거나 일반적인 시세로 메우지 말 것. 모르면 모른다고 하는 게 맞다
+- 공식 출처(사업자 공식 홈페이지, 정부·기관 사이트, 통신사 요금제 페이지 등)를 우선할 것
+- value는 본문에 그대로 넣을 수 있는 짧은 형태로 (예: "5,500", "9월 15일", "약 3만원")
+  단위나 조사는 본문에 이미 있으니 숫자·날짜 위주로 쓸 것
+- source에는 확인한 페이지의 URL을, sourceName에는 그 사이트 이름을 적을 것
+- note에는 조건이나 예외가 있으면 한 줄로 (예: "요금제별로 다름", "2026년 8월 기준")
+- 지역·요금제·시점에 따라 값이 여러 개면 가장 대표적인 것 하나만 고르고 note에 범위를 적을 것
+
+순수 JSON만 출력:
+{"items":[{"label":"항목명(위 목록과 똑같이)","found":true,"value":"찾은 값","source":"https://...","sourceName":"출처 사이트명","note":"조건·기준 시점"},{"label":"...","found":false,"reason":"찾지 못한 이유"}]}`;
+
+      const raw=await callClaudeSearch(
+        [{role:"user",content:prompt}],
+        `You verify factual placeholders in Korean blog drafts using web search.
+
+Search before answering every item. Never fill a value from memory or from what seems typical — if the search does not confirm it, set found to false.
+Prefer official primary sources over blogs and aggregators. When a value varies by plan, region or date, pick the most representative one and state the condition in note.
+Output ONLY valid JSON.`,
+        4000, "claude-sonnet-4-5-20250929", Math.min(placeholders.length * 2 + 2, 10)
+      );
+      const parsed=safeParseJson(raw);
+      setFactResults(parsed.items||[]);
+    }catch(e){ setFactError(e.message||"조사 중 오류가 발생했습니다."); }
+    setFactLoading(false);
+  };
+
+  const applyFactValue=(label,value)=>{
+    const esc=String(label).replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    const re=new RegExp("\\[확인필요:\\s*"+esc+"\\s*\\]","g");
+    const next=liveText.replace(re,String(value));
+    if(workingText) setWorkingText(next); else setText(next);
+    setFactApplied(a=>({...a,[label]:true}));
+  };
+
+
   const resetAll=()=>{
     setAnalyzeText("");setAnalyzeAiResult(null);setAnalyzeLastText("");
     setAnalyzeWorkingText("");setAnalyzeReplacements({});setAnalyzeActiveSection("morpheme");
@@ -1244,6 +1356,59 @@ JSON 형식:
         {postMeta.tags?.length>0&&<><span style={{color:"#484f58"}}>해시태그</span>
         <span style={{color:"#58a6ff",lineHeight:"1.8"}}>{postMeta.tags.map(t=>"#"+t).join(" ")}</span></>}
       </div>
+    </div>}
+
+    {/* ── [확인필요:] 항목 웹 조사 ── */}
+    {placeholders.length>0&&<div style={{background:"#161b22",border:"1px solid #d2992244",borderRadius:"10px",overflow:"hidden"}}>
+      <div style={{padding:"12px 16px",borderBottom:"1px solid #21262d",display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+        <span style={{color:"#d29922",fontWeight:700,fontSize:"13px"}}>🔎 확인이 필요한 항목 {placeholders.length}개</span>
+        <span style={{color:"#484f58",fontSize:"11px"}}>웹에서 실제 값을 찾아 채웁니다 · 확인 안 되는 항목은 그대로 둡니다</span>
+        <button onClick={runFactCheck} disabled={factLoading}
+          style={{marginLeft:"auto",padding:"6px 14px",borderRadius:"6px",border:"none",
+            background:factLoading?"#21262d":"#d29922",color:factLoading?"#484f58":"#0d1117",
+            fontSize:"12px",fontWeight:700,cursor:factLoading?"wait":"pointer",
+            fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
+          {factLoading?"⏳ 검색 중...":factResults?"🔄 다시 조사":"🔎 웹에서 찾기"}
+        </button>
+      </div>
+
+      {!factResults&&!factLoading&&<div style={{padding:"10px 16px",display:"flex",flexWrap:"wrap",gap:"6px"}}>
+        {placeholders.map((x,i)=>(
+          <span key={i} style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",padding:"3px 9px",color:"#8b949e",fontSize:"11px"}}>{x}</span>
+        ))}
+      </div>}
+
+      {factError&&<div style={{margin:"10px 16px",background:"#2d1117",border:"1px solid #da363344",borderRadius:"8px",padding:"10px 12px",color:"#ff7b72",fontSize:"12px"}}>⚠️ {factError}</div>}
+
+      {factResults&&<div style={{padding:"12px 16px",display:"flex",flexDirection:"column",gap:"8px"}}>
+        {factResults.map((it,i)=>{
+          const done=factApplied[it.label];
+          return <div key={i} style={{background:"#0d1117",border:`1px solid ${it.found?"#3fb95033":"#30363d"}`,borderRadius:"8px",padding:"10px 12px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+              <span style={{color:"#8b949e",fontSize:"11px"}}>{it.label}</span>
+              {it.found
+                ? <span style={{color:"#3fb950",fontWeight:700,fontSize:"13px"}}>{it.value}</span>
+                : <span style={{color:"#f85149",fontSize:"12px"}}>확인 실패 — 직접 채워주세요</span>}
+              {it.found&&<button onClick={()=>applyFactValue(it.label,it.value)} disabled={done}
+                style={{marginLeft:"auto",padding:"4px 12px",borderRadius:"6px",
+                  border:`1px solid ${done?"#2ea043":"#30363d"}`,
+                  background:done?"#2ea043":"#21262d",color:done?"#fff":"#c9d1d9",
+                  fontSize:"11px",fontWeight:700,cursor:done?"default":"pointer",
+                  fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
+                {done?"✅ 적용됨":"본문에 넣기"}
+              </button>}
+            </div>
+            {(it.note||it.reason)&&<div style={{color:"#484f58",fontSize:"11px",marginTop:"4px"}}>{it.note||it.reason}</div>}
+            {it.source&&<a href={it.source} target="_blank" rel="noreferrer"
+              style={{color:"#58a6ff",fontSize:"11px",marginTop:"3px",display:"inline-block",textDecoration:"none",wordBreak:"break-all"}}>
+              🔗 {it.sourceName||it.source}
+            </a>}
+          </div>;
+        })}
+        <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>
+          출처 링크를 눌러 원문을 직접 확인한 뒤 넣으시는 걸 권합니다
+        </div>
+      </div>}
     </div>}
 
     {/* ── 단락별 이미지 프롬프트 생성 (GPT용) ── */}
@@ -7103,12 +7268,14 @@ AEO6. 사실 원칙 C를 지키되, 인용 가치가 있는 문장 구조는 반
 13. 문체: -니다/-요 혼용, 정보성+경험담
 14. 시의성은 '변할 수 있다'는 전제로 다룰 것
 
-[마무리 — 인용 대상 문장과 분리할 것]
-15. 마지막 소제목 ▶ 이후, 자주 묻는 질문 블록 앞에 마무리를 둘 것:
+[마무리]
+15. 마지막 소제목 ▶ 이후 마무리를 둘 것:
     - 핵심 내용 요약 2~3줄 (각 줄이 독립적으로 읽히게)
-    - 자연스러운 공감 유도 문장 1개 (광고성 표현 제외, 강요하지 않는 톤)
-    ※ 독자 참여 유도 문장은 여기 한 번만. 본문 중간에는 넣지 말 것 —
-      인용 후보 문단 사이에 끼면 AI가 문맥을 끊어 읽는다.
+    - 요약으로 끝낼 것. 그 뒤에 아무 말도 덧붙이지 말 것.
+    ※ 댓글·공감·구독을 유도하는 문장은 절대 쓰지 말 것.
+      "댓글로 경험 공유해주세요", "도움이 되셨다면", "궁금한 점은 댓글로",
+      "다음 글에서 만나요" 같은 맺음말 전부 금지.
+      저품질 신호로 잡히고, AI 브리핑이 인용할 문단 사이에 끼면 문맥이 끊긴다.
 
 [금지사항]
 - 확인되지 않은 가격·수치·날짜·스펙을 사실처럼 쓰는 것 (가장 중요)
@@ -7120,6 +7287,7 @@ AEO6. 사실 원칙 C를 지키되, 인용 가치가 있는 문장 구조는 반
 - 도입부를 인사말, 날씨·계절 묘사, 자기소개로 시작하는 것
 - 소제목 없이 긴 문단이 연속되는 구조 (각 소제목 간격 400자 이내 유지)
 - 앞 문단에 의존하는 지시대명사로 문단을 시작하는 것
+- 댓글·공감·구독 유도 문장, 인사성 맺음말 (한 문장도 쓰지 말 것)
 
 순수 JSON만 (마크다운 없이):
 {"title":"제목(${pat.label}, 15~32자, "${mainKw}" 포함)","main_keyword":"${mainKw}","content":"본문(해시태그·자주묻는질문 제외)","tags":["태그1","태그2","태그3","태그4","태그5"],"uncertain":["글에서 확인이 필요한 항목이 있으면 나열, 없으면 빈 배열"]}`;
@@ -7323,6 +7491,7 @@ CITATION READINESS (AEO) — apply this within the limits of factual discipline 
 - Write self-contained paragraphs. Each paragraph must make sense when lifted out of the post on its own; avoid pronouns and back-references that depend on earlier paragraphs.
 - Preserve quotable sentence structure. A sentence with a [확인필요:] placeholder is still quotable; a sentence that hedges away its own subject is not.
 - Do not write the closing Q&A block or hashtags in this step; they are generated separately afterward.
+- Never write engagement bait: no requests for comments, likes, subscriptions, and no sign-off pleasantries. End on the summary.
 
 Output ONLY valid JSON, no markdown.`;
 
