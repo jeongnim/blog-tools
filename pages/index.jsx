@@ -1355,6 +1355,18 @@ JSON 형식:
         <span style={{color:"#8b949e"}}>{(workingText||text).length.toLocaleString()}자</span>
         {postMeta.tags?.length>0&&<><span style={{color:"#484f58"}}>해시태그</span>
         <span style={{color:"#58a6ff",lineHeight:"1.8"}}>{postMeta.tags.map(t=>"#"+t).join(" ")}</span></>}
+        {postMeta.factSummary&&<><span style={{color:"#484f58"}}>수치조사</span>
+        <span style={{color:"#8b949e",lineHeight:"1.6"}}>
+          검색으로 확인 <b style={{color:"#3fb950"}}>{postMeta.factSummary.resolved}</b>
+          {postMeta.factSummary.approx>0&&<> · 대략치 <b style={{color:"#d29922"}}>{postMeta.factSummary.approx}</b></>}
+          {postMeta.factSummary.unresolved?.length>0&&<> · 미해결 <b style={{color:"#f85149"}}>{postMeta.factSummary.unresolved.length}</b></>}
+          {postMeta.factSummary.sources?.length>0&&<span style={{display:"block",marginTop:"3px"}}>
+            {postMeta.factSummary.sources.slice(0,3).map((src,i)=>(
+              <a key={i} href={src.url} target="_blank" rel="noreferrer"
+                style={{color:"#58a6ff",textDecoration:"none",marginRight:"8px",fontSize:"11px"}}>🔗 {src.name}</a>
+            ))}
+          </span>}
+        </span></>}
       </div>
     </div>}
 
@@ -7183,6 +7195,18 @@ function buildWritePrompt({
 ${refBlock}${titleBlock}${commercialBlock}${avoidBlock}
 네이버 블로그 홈판 노출 + AI 브리핑(AEO) 인용 최적화 글을 작성해줘:
 
+[주제 원칙 — 글의 범위를 정하는 기준. 사실 원칙 다음으로 우선한다]
+S1. 이 글이 다루는 것은 "${kw}" 하나뿐이다. 제목·소제목·본문 전부 이 주제의 하위 내용이어야 한다.
+S2. 소제목을 정하기 전에 스스로 확인할 것 — "이 소제목은 주제를 더 깊게 파는가, 옆으로 새는가?"
+    옆으로 새는 소제목은 버릴 것. 주제를 넓히지 말고 깊게 팔 것.
+S3. 주제에 없는 축으로 확장 금지. 주제가 "설정 방법"이면 제품 비교·가격 비교·기종 호환성 목록·
+    업체 추천 같은 다른 축으로 넘어가지 말 것. 그런 내용은 따로 쓸 글의 소재이지 이 글의 소제목이 아니다.
+    글이 짧아질까 봐 다른 축을 끌어오지 말고, 같은 주제 안에서 단계·상황·예외를 더 자세히 쓸 것.
+S4. 참고자료는 사실 확인용이다. 참고자료의 소제목 구성이나 목차를 따라가지 말 것.
+    다른 글이 다섯 가지를 다뤘다고 해서 이 글도 그럴 이유는 없다.
+S5. 주제에 "직접 써보고", "후기", "정리", "비교" 같은 표현이 있으면 그 관점을 글 전체에서 유지할 것.
+    주제가 경험담이면 끝까지 경험담으로 쓸 것.
+
 [사실 원칙 — 다른 모든 규칙보다 우선]
 A. 확실하지 않은 정보를 사실처럼 단정하지 말 것. 애매하면 아예 쓰지 않는 쪽을 택할 것.
 B. 아래 항목은 확실히 아는 경우가 아니면 절대 지어내지 말 것:
@@ -7229,10 +7253,13 @@ T4. 위 [이미 상위에 노출 중인 글 제목] 중 어느 하나와도 2글
     겹치는 조합을 피해 다른 각도에서 접근할 것. 같은 소재라도 다루는 측면을 바꾸면 된다.
 T5. 상업성 단어와 최근 반복 단어를 제목에 쓰지 말 것 (위 목록 참고).
 T6. 제목에 사실 원칙 B에 해당하는 수치(가격·기간·퍼센트)를 넣지 말 것.
+T7. 제목은 주제 "${kw}"의 핵심 행위나 관점을 담을 것. 주제가 "설정 방법"인데
+    제목이 제품 비교나 추천처럼 읽히면 안 된다.
 
 [구조 원칙]
 1. 본문 1,500~2,000자 (한글+공백)
-2. 소제목 ▶ 형식 3개 이상 (마크다운/HTML 금지)
+2. 소제목 ▶ 형식 3~4개 (마크다운/HTML 금지)
+   - 모든 소제목은 "${kw}"의 하위 항목이어야 한다. 하나라도 옆길로 새면 실패다
    - 이 중 최소 1개는 독자가 검색창에 칠 법한 질문형 소제목으로 쓸 것
      (예: "▶ 개통 전에 유심을 먼저 사도 될까?")
 3. 각 문장 끝 줄바꿈(\\n)만 사용, HTML 태그(<br> 등) 절대 금지
@@ -7291,6 +7318,99 @@ AEO6. 사실 원칙 C를 지키되, 인용 가치가 있는 문장 구조는 반
 
 순수 JSON만 (마크다운 없이):
 {"title":"제목(${pat.label}, 15~32자, "${mainKw}" 포함)","main_keyword":"${mainKw}","content":"본문(해시태그·자주묻는질문 제외)","tags":["태그1","태그2","태그3","태그4","태그5"],"uncertain":["글에서 확인이 필요한 항목이 있으면 나열, 없으면 빈 배열"]}`;
+}
+
+// ─── [확인필요:] 항목 자동 해결 ────────────────────────────────────────────
+// 글 생성 직후 웹 검색으로 실제 값을 채운다.
+// 검색으로 확인되면 값을 넣고, 확인이 안 되면 알려진 대략 범위 + 확인 안내 문구로 대체한다.
+// 어느 쪽도 안 되면 [확인필요:]를 그대로 남겨 작성자가 채우게 한다.
+
+function extractPlaceholders(text) {
+  const out = [];
+  const re = /\[확인필요:\s*([^\]]+)\]/g;
+  let m;
+  while ((m = re.exec(String(text || ""))) !== null) {
+    const label = m[1].trim();
+    if (label && !out.includes(label)) out.push(label);
+  }
+  return out;
+}
+
+async function resolveUncertainValues({ placeholders, title, mainKw, text }) {
+  const prompt = `아래 블로그 글에 확인이 필요한 항목이 남아 있습니다. 웹에서 검색해서 실제 값을 찾아주세요.
+
+글 제목: ${title || ""}
+메인 키워드: ${mainKw || ""}
+오늘 날짜: ${new Date().toLocaleDateString("ko-KR")}
+
+확인이 필요한 항목:
+${placeholders.map((x, i) => `${i + 1}. ${x}`).join("\n")}
+
+글의 맥락 (어떤 상황에서 쓰인 값인지 파악용):
+${String(text || "").slice(0, 2000)}
+
+각 항목을 이 순서로 처리하세요:
+1) 웹 검색으로 확실히 확인되면 → found: true, value에 값, source에 URL
+2) 확인은 안 되지만 인터넷에 일반적으로 알려진 범위가 있으면 → found: false, approx에 범위
+   - 반드시 범위나 근사 표현으로 쓸 것 ("대략 5,000~8,000", "보통 하루 1GB 안팎")
+   - 하나의 값으로 단정하지 말 것
+3) 근거가 전혀 없으면 → found: false, approx는 빈 문자열
+   - 이 경우 아무 값도 지어내지 말 것. 빈 값이 틀린 값보다 낫다
+
+지켜야 할 것:
+- 검색하지 않고 기억이나 통념으로 value를 채우지 말 것
+- 공식 출처(사업자 공식 홈페이지, 정부·기관 사이트, 통신사 요금제 페이지)를 우선할 것
+- value와 approx는 본문에 그대로 들어갈 짧은 형태로 (숫자·날짜 위주, 단위와 조사는 본문에 이미 있음)
+- checkAt에는 독자가 직접 확인하기 좋은 곳을 적을 것 (예: "각 통신사 로밍 요금제 페이지")
+- note에는 조건이나 기준 시점을 한 줄로 (예: "요금제별로 다름", "2026년 8월 기준")
+
+순수 JSON만 출력:
+{"items":[{"label":"항목명(위 목록과 똑같이)","found":true,"value":"찾은 값","source":"https://...","sourceName":"출처 사이트명","note":"조건·기준 시점","checkAt":"확인할 곳"},{"label":"...","found":false,"approx":"대략 범위 또는 빈 문자열","checkAt":"확인할 곳","reason":"찾지 못한 이유"}]}`;
+
+  const raw = await callClaudeSearch(
+    [{ role: "user", content: prompt }],
+    `You verify factual placeholders in Korean blog drafts using web search.
+
+Search before answering every item. Never fill value from memory or from what seems typical — if the search does not confirm it, set found to false.
+When the search fails but a commonly published range exists, put a hedged range in approx. Never state a single figure there.
+When there is no basis at all, leave approx empty. An empty value is better than a wrong one.
+Prefer official primary sources. Output ONLY valid JSON.`,
+    4000, "claude-sonnet-4-5-20250929", Math.min(placeholders.length * 2 + 2, 10)
+  );
+
+  return (safeParseJson(raw)?.items || []).filter(x => x && x.label);
+}
+
+// 찾은 값을 본문에 반영하고, 대략치를 쓴 경우 확인 안내 문장을 덧붙인다
+function applyResolvedValues(text, items) {
+  let out = String(text || "");
+  const approxUsed = [];
+  const unresolved = [];
+  const sources = [];
+
+  (items || []).forEach(it => {
+    const esc = String(it.label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp("\\[확인필요:\\s*" + esc + "\\s*\\]", "g");
+
+    if (it.found && it.value) {
+      out = out.replace(re, String(it.value));
+      if (it.source) sources.push({ name: it.sourceName || it.source, url: it.source });
+    } else if (it.approx) {
+      out = out.replace(re, String(it.approx));
+      approxUsed.push(it);
+    } else {
+      unresolved.push(it.label);
+    }
+  });
+
+  // 대략치가 들어갔으면 마지막에 확인 안내를 한 번만 붙인다
+  if (approxUsed.length > 0) {
+    const where = approxUsed.map(x => x.checkAt).filter(Boolean)[0] || "공식 홈페이지";
+    out = out.trimEnd() +
+      `\n\n위에 적은 수치는 시점과 조건에 따라 달라질 수 있는 값이라 대략적인 기준으로만 봐주세요. 정확한 내용은 ${where}에서 직접 확인하시는 게 가장 정확합니다.`;
+  }
+
+  return { text: out, approxUsed, unresolved, sources };
 }
 
 // ─── 생성된 제목 검증 ──────────────────────────────────────────────────────
@@ -7486,6 +7606,11 @@ BRAND ACCURACY:
 - If you are not certain which model, generation or specification applies, stay at category level instead of guessing.
 - Never attribute one brand's feature, price, policy or benefit to another, never confuse the roles of manufacturer, carrier and retailer, and never make an unverified superiority claim or a disparaging comparison about a real brand.
 
+TOPIC DISCIPLINE — second only to factual discipline:
+- The 주제 given in the user message defines the entire scope of the post. Every subheading must be a subdivision of it.
+- Go deeper, never wider. If the topic feels too narrow to fill the length, add steps, edge cases, failure modes and situational detail within the topic — do not import an adjacent axis (product comparison, pricing, device compatibility, vendor recommendations) to pad it out.
+- Reference material is for verifying facts only. Never mirror its outline or section structure.
+
 CITATION READINESS (AEO) — apply this within the limits of factual discipline above:
 - Lead with the answer. The opening lines and the first sentence under every subheading must state the conclusion before any background.
 - Write self-contained paragraphs. Each paragraph must make sense when lifted out of the post on its own; avoid pronouns and back-references that depend on earlier paragraphs.
@@ -7504,7 +7629,34 @@ Output ONLY valid JSON, no markdown.`;
       const cleanContent = (str="") =>
         str.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/\n{3,}/g, "\n\n");
 
-      const bodyText = cleanContent(parsed.content||"");
+      // 모델이 규칙을 어기고 해시태그나 FAQ를 본문에 넣는 경우가 있어 먼저 잘라낸다
+      // (코드에서 따로 붙이므로 그대로 두면 중복된다)
+      const stripAppendix = (t="") => t
+        .replace(/\n+▶\s*자주\s*묻는\s*질문[\s\S]*$/g, "")
+        .replace(/(?:\n+#[^\n]*)+\s*$/g, "")
+        .trimEnd();
+
+      let bodyText = stripAppendix(cleanContent(parsed.content||""));
+
+      // ── [확인필요:] 항목을 웹 검색으로 자동 해결 ──
+      let factItems = [];
+      let factSummary = null;
+      const placeholders = extractPlaceholders(bodyText);
+      if (placeholders.length > 0) {
+        try {
+          factItems = await resolveUncertainValues({
+            placeholders, title: parsed.title, mainKw, text: bodyText,
+          });
+          const applied = applyResolvedValues(bodyText, factItems);
+          bodyText = applied.text;
+          factSummary = {
+            resolved: factItems.filter(x => x.found && x.value).length,
+            approx: applied.approxUsed.length,
+            unresolved: applied.unresolved,
+            sources: applied.sources,
+          };
+        } catch(e) { /* 조사 실패해도 본문은 살린다 — [확인필요:]가 그대로 남는다 */ }
+      }
 
       let finalTitle = parsed.title || "";
       const check = validateTitle(finalTitle, { mainKw, topTitles, commercialWords: banWords, avoidWords });
@@ -7601,6 +7753,8 @@ ${bodyText.slice(0, 2500)}
         faq,
         titlePattern: pattern.label,
         titleNotice,
+        factSummary,
+        factItems,
         _source: "keyword",
       };
       setAnalyzePostMeta(meta);
