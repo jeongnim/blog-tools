@@ -1,7 +1,11 @@
 // pages/api/scrape.js
 // URL을 받아서 기사 텍스트 + 이미지 URL 목록을 추출합니다
 
+import { requireAuth } from "../../lib/auth";
+
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

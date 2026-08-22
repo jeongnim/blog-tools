@@ -1,4 +1,6 @@
 // pages/api/blog-count.js
+import { requireAuth } from "../../lib/auth";
+
 export const config = { maxDuration: 30 };
 
 // 프록시가 꺼져 있을 때 매 요청마다 타임아웃을 기다리지 않도록,
@@ -38,6 +40,8 @@ async function fetchCountViaHomeProxy(keyword) {
 }
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+
   const { keyword } = req.query;
   if (!keyword) return res.status(400).json({ error: "keyword 필요" });
 

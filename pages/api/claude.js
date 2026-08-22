@@ -1,7 +1,11 @@
 // pages/api/claude.js
+import { requireAuth } from "../../lib/auth";
+
 export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+
   if (req.method !== "POST") return res.status(405).json({ error: "POST만 허용" });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;

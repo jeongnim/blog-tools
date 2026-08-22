@@ -1,4 +1,6 @@
 // pages/api/blog-content.js
+import { requireAuth } from "../../lib/auth";
+
 export const config = { maxDuration: 45 };
 
 // 블로그 URL → 본문 텍스트 추출 (모바일 우선)
@@ -85,6 +87,8 @@ async function fetchBlogBody(url) {
 }
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+
   const { keyword, url } = req.query;
 
   // ── url 파라미터: 특정 블로그 글 본문 직접 크롤링 ──

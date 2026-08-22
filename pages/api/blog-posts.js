@@ -1,6 +1,8 @@
 // pages/api/blog-posts.js
 // 네이버 블로그 전체 글 목록을 페이지 단위로 조회 (RSS와 달리 과거 글까지 접근 가능)
 // PostTitleListAsync 엔드포인트 사용 → 실패 시 RSS로 fallback (1페이지 한정)
+import { requireAuth } from "../../lib/auth";
+
 export const config = { maxDuration: 20 };
 
 const UA =
@@ -98,8 +100,11 @@ async function fetchViaRss(blogId, size) {
 }
 
 export default async function handler(req, res) {
+
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  if (!requireAuth(req, res)) return;
 
   const rawId = (req.query.blogId || "").trim();
   if (!rawId) return res.status(400).json({ error: "blogId 파라미터가 필요합니다." });

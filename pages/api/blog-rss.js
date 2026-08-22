@@ -1,8 +1,12 @@
 // pages/api/blog-rss.js
 // 네이버 블로그 RSS를 서버에서 fetch → CORS 우회
+import { requireAuth } from "../../lib/auth";
+
 export const config = { maxDuration: 15 };
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+
   const { blogId } = req.query;
   if (!blogId) return res.status(400).json({ error: "blogId 파라미터가 필요합니다." });
 

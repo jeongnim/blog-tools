@@ -1,4 +1,6 @@
 // pages/api/naver-rank.js
+import { requireAuth } from "../../lib/auth";
+
 export const config = { maxDuration: 25 };
 
 function extractBlogInfo(url) {
@@ -46,9 +48,12 @@ async function fetchAreasViaHomeProxy(keyword, normalizedBlogId, normalizedPostN
 }
 
 export default async function handler(req, res) {
+
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  if (!requireAuth(req, res)) return;
 
   const { keyword, blogId, postNo } = req.query;
   if (!keyword) return res.status(400).json({ error: "keyword 파라미터가 필요합니다." });

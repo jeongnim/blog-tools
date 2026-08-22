@@ -1,6 +1,8 @@
 // pages/api/trending-keywords.js
 // 트렌드 키워드 소스 통합 — 구글 트렌드(일간 RSS) + 네이버 블로그 주제별 인기글
 // 판다랭크·signal.bz 크롤링은 쓰지 않는다. 두 소스 모두 공개 경로만 사용.
+import { requireAuth } from "../../lib/auth";
+
 export const config = { maxDuration: 20 };
 
 const UA =
@@ -104,8 +106,11 @@ async function fetchNaverTopPosts(dirNo) {
 }
 
 export default async function handler(req, res) {
+
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  if (!requireAuth(req, res)) return;
 
   const dirNo = parseInt(req.query.dirNo, 10) || 0;
 

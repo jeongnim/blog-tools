@@ -1,8 +1,12 @@
 // pages/api/video-proxy.js
 // Replicate(WAN 2.2) & PixVerse API 프록시 — 키는 Vercel 환경변수에만 저장
+import { requireAuth } from "../../lib/auth";
+
 export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+
   if (req.method !== "POST") return res.status(405).json({ error: "POST만 허용" });
 
   const { action, payload } = req.body;

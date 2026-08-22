@@ -1,11 +1,15 @@
 // pages/api/imagen.js
 // AI Horde (Stable Horde) 이미지 생성 (완전 무료, 분산 GPU 네트워크)
+import { requireAuth } from "../../lib/auth";
+
 export const config = { maxDuration: 60 };
 
 const HORDE_API = "https://stablehorde.net/api/v2";
 const ANON_KEY = "0000000000";
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+
   if (req.method !== "POST") return res.status(405).json({ error: "POST만 허용" });
 
   const { prompt } = req.body;

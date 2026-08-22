@@ -1,7 +1,11 @@
 // pages/api/img-proxy.js
 // 외부 이미지를 서버 사이드에서 가져와서 클라이언트에 전달 (CORS 우회)
 
+import { requireAuth } from "../../lib/auth";
+
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+
   const { url } = req.query;
 
   if (!url) return res.status(400).send('URL 파라미터 필요');

@@ -1,10 +1,15 @@
 // pages/api/naver-trending.js
 // 네이버 블로그 주제별 실시간 인기글 제목 크롤링
+import { requireAuth } from "../../lib/auth";
+
 export const config = { maxDuration: 15 };
 
 export default async function handler(req, res) {
+
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  if (!requireAuth(req, res)) return;
 
   const { dirNo } = req.query;
   if (!dirNo) return res.status(400).json({ error: "dirNo 파라미터 필요" });

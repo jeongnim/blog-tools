@@ -1,8 +1,12 @@
 // pages/api/blog-titles.js
 // 네이버 Search API로 상위 블로그 글 제목 + URL 반환
+import { requireAuth } from "../../lib/auth";
+
 export const config = { maxDuration: 30 };
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+
   const { keyword, display } = req.query;
   if (!keyword) return res.status(400).json({ error: "keyword 필요" });
 
