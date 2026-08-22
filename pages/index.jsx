@@ -1179,7 +1179,15 @@ JSON 형식:
         <span style={{color:"#484f58"}}>메인키워드</span>
         <span style={{color:"#58a6ff",fontWeight:700}}>{postMeta.main_keyword||"-"}</span>
         <span style={{color:"#484f58"}}>제목</span>
-        <span style={{color:"#e6edf3",fontWeight:600,lineHeight:"1.5"}}>{postMeta.title||"(없음)"}</span>
+        <span style={{color:"#e6edf3",fontWeight:600,lineHeight:"1.5"}}>
+          {postMeta.title||"(없음)"}
+          {postMeta.title&&<span style={{color:"#484f58",fontWeight:400,marginLeft:"6px",fontSize:"11px"}}>
+            {postMeta.title.length}자{postMeta.titlePattern?` · ${postMeta.titlePattern}`:""}
+          </span>}
+          {postMeta.titleNotice&&<span style={{display:"block",color:"#d29922",fontWeight:400,fontSize:"11px",marginTop:"3px"}}>
+            ⚠️ {postMeta.titleNotice} — 직접 다듬는 걸 권합니다
+          </span>}
+        </span>
         <span style={{color:"#484f58"}}>본문내용</span>
         <span style={{color:"#8b949e"}}>{(workingText||text).length.toLocaleString()}자</span>
         {postMeta.tags?.length>0&&<><span style={{color:"#484f58"}}>해시태그</span>
@@ -2381,6 +2389,7 @@ function MissingTab(){
   const fetchBlogPage=async(id,pg=1,keep=false)=>{
     const bid=(id||"").trim();
     if(!bid){alert("블로그 아이디를 입력해주세요.");return;}
+    lsSet(LS_BLOGID, bid);   // 글쓰기 탭에서 제목 반복 단어를 분석할 때 사용
     setLoadingFeed(true);setFeedError("");setExpanded(null);
     if(!keep){setPosts(null);setAnalysis({});setExtraResults({});setExtraKw({});}
     try{
@@ -4508,36 +4517,50 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   const [keywords,setKeywords]=useState([]);
   const [err,setErr]=useState("");
   const [trendingCount,setTrendingCount]=useState(0);
+  const [googleCount,setGoogleCount]=useState(0);
+  const [stats,setStats]=useState({});        // { 메인키워드: {monthly, commercial} }
+  const [detail,setDetail]=useState({});      // { 메인키워드: {loading, related[], monthlyPosts, saturation, source} }
   const now=new Date();
   const yearMonth=`${now.getFullYear()}년 ${now.getMonth()+1}월`;
 
   const genKeywords=async()=>{
     if(!selCat) return;
     setLoadingKw(true); setKeywords([]); setErr("");
+    setStats({}); setDetail({}); setTrendingCount(0); setGoogleCount(0);
     try{
       const dirNo = NAVER_DIR_MAP[selCat] || 0;
 
-      // ── 실시간 인기글 제목 크롤링 ──
+      // ── 트렌드 소스: 구글 트렌드(일간) + 네이버 주제별 인기글 ──
       let trendingTitles = [];
+      let googleTrends   = [];
       try {
-        const tr = await fetch(`/api/naver-trending?dirNo=${dirNo}`);
+        const tr = await fetch(`/api/trending-keywords?dirNo=${dirNo}`);
         const td = await tr.json();
-        if (td.titles?.length > 0) { trendingTitles = td.titles; setTrendingCount(td.titles.length); }
+        trendingTitles = td.naverTopPosts || [];
+        googleTrends   = (td.google || []).map(g => g.keyword).filter(Boolean);
+        setTrendingCount(trendingTitles.length);
+        setGoogleCount(googleTrends.length);
       } catch(e) { /* 실패해도 AI 추천은 계속 진행 */ }
 
       const trendingBlock = trendingTitles.length > 0
         ? `\n\n현재 네이버 블로그 "${selCat}" 카테고리 실시간 인기글 제목 (참고용):\n${trendingTitles.map((t,i)=>`${i+1}. ${t}`).join("\n")}`
         : "";
 
-      const prompt=`카테고리: "${selCat}"
-${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각각의 메인 키워드를 추천해줘.${trendingBlock}
+      const googleBlock = googleTrends.length > 0
+        ? `\n\n오늘 구글 트렌드 한국 인기 급상승 검색어 (참고용):\n${googleTrends.map((t,i)=>`${i+1}. ${t}`).join(", ")}\n※ 이 중 "${selCat}" 카테고리와 실제로 연결되는 것만 활용할 것. 억지로 끼워 맞추지 말 것.`
+        : "";
 
-선정 기준 5가지:
+      const prompt=`카테고리: "${selCat}"
+${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각각의 메인 키워드를 추천해줘.${trendingBlock}${googleBlock}
+
+선정 기준:
 1. 실제 블로거가 쓸 법한 완성된 제목 형태 (경험·후기·정보·비교 등 독자가 클릭하고 싶은 구체적 제목)
 2. ${yearMonth} 최신 트렌드와 시의성 반영${trendingTitles.length > 0 ? " (위 실시간 인기글 소재를 참고해 유사하거나 파생된 주제 우선)" : ""}
-3. 검색량 대비 경쟁이 낮아 상위노출 가능성이 높은 주제
-4. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. 네이버에서 실제로 많이 검색되는 단어
-5. 인기글과 너무 똑같은 제목은 피하고, 소재만 참고해서 차별화된 새 주제로 발전시킬 것
+3. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. 네이버에서 실제로 많이 검색되는 단어
+4. 인기글과 너무 똑같은 제목은 피하고, 소재만 참고해서 차별화된 새 주제로 발전시킬 것
+5. 10개의 메인 키워드는 서로 겹치지 않게 분산시킬 것 (같은 단어를 변형만 해서 반복하지 말 것)
+
+※ 검색량과 경쟁도는 추측하지 말 것. 추천 후 실제 데이터로 따로 조회한다.
 
 반드시 순수 JSON만 출력. 마크다운 없이.
 {"keywords":[{"rank":1,"title":"추천 글 주제 제목","mainKeyword":"메인 키워드 (1~2형태소, 예:옷장정리)","reason":"선정 이유 한 줄 (유행성 포함)"},...]}`
@@ -4545,9 +4568,76 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
       const raw=await callClaude([{role:"user",content:prompt}],
         "You are a Naver blog SEO expert. Output ONLY valid JSON, no markdown.",1500,"claude-haiku-4-5-20251001");
       const parsed=safeParseJson(raw);
-      setKeywords(parsed.keywords||[]);
+      const list=parsed.keywords||[];
+      setKeywords(list);
+      fetchBulkStats(list);
     }catch(ex){setErr("추천 글 주제 생성 오류: "+(ex?.message||String(ex)));}
     setLoadingKw(false);
+  };
+
+  // ── 추천된 10개의 월 검색량·상업성을 실제 광고 API로 조회 (5개씩 2회) ──
+  const fetchBulkStats=async(list)=>{
+    const kws=list.map(k=>k.mainKeyword||k.keyword).filter(Boolean);
+    const flat=s=>String(s||"").replace(/\s+/g,"").toUpperCase();
+    const next={};
+
+    for(let i=0;i<kws.length;i+=5){
+      const chunk=kws.slice(i,i+5);
+      try{
+        const r=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(chunk.join(","))}`);
+        const d=await r.json();
+        (d.keywordList||[]).forEach(item=>{
+          const hit=chunk.find(k=>flat(k)===flat(item.relKeyword));
+          if(!hit) return;
+          const pc =Number(item.monthlyPcQcCnt)||0;
+          const mob=Number(item.monthlyMobileQcCnt)||0;
+          next[hit]={ monthly: pc+mob, commercial: isCommercialStat(item), depth: Number(item.plAvgDepth)||0 };
+        });
+      }catch(e){}
+    }
+    setStats(s=>({...s,...next}));
+  };
+
+  // ── 개별 키워드: 연관검색어 + 이번 달 발행량 + 포화도 ──
+  const loadDetail=async(mainKeyword)=>{
+    if(!mainKeyword) return;
+    setDetail(d=>({...d,[mainKeyword]:{...(d[mainKeyword]||{}),loading:true}}));
+
+    const flat=s=>String(s||"").replace(/\s+/g,"").toUpperCase();
+    let related=[]; let monthlyPosts=null; let totalPosts=null; let source=null;
+
+    try{
+      const r=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(mainKeyword)}`);
+      const d=await r.json();
+      related=(d.keywordList||[])
+        .filter(i=>flat(i.relKeyword)!==flat(mainKeyword))
+        .map(i=>({
+          keyword:i.relKeyword,
+          monthly:(Number(i.monthlyPcQcCnt)||0)+(Number(i.monthlyMobileQcCnt)||0),
+          commercial:isCommercialStat(i),
+        }))
+        .sort((a,b)=>b.monthly-a.monthly)
+        .slice(0,12);
+      if(related.length===0&&(d.autoComplete||[]).length>0){
+        related=d.autoComplete.map(k=>({keyword:k,monthly:null,commercial:false}));
+      }
+    }catch(e){}
+
+    try{
+      const r=await fetch(`/api/blog-count?keyword=${encodeURIComponent(mainKeyword)}`);
+      const d=await r.json();
+      monthlyPosts=d.monthly??null;
+      totalPosts=d.total??null;
+      source=d.source||null;
+    }catch(e){}
+
+    const searchVol=stats[mainKeyword]?.monthly||null;
+    let saturation=null;
+    if(monthlyPosts!==null&&searchVol&&searchVol>0){
+      saturation=Math.round((monthlyPosts/searchVol)*100);
+    }
+
+    setDetail(d=>({...d,[mainKeyword]:{loading:false,related,monthlyPosts,totalPosts,saturation,source}}));
   };
 
   const goKeywordSearch=(mainKeyword)=>{
@@ -4556,11 +4646,23 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
     setActive("keyword");
   };
 
+  const fmt=n=>{ if(n===null||n===undefined) return "-"; const v=Number(n); if(isNaN(v)) return "-"; return v.toLocaleString(); };
+
+  // 포화도 해석 — 낮을수록 등록 난이도가 낮다
+  const satLabel=s=>{
+    if(s===null||s===undefined) return {text:"-",color:"#484f58"};
+    if(s<30)   return {text:`포화도 ${s}% · 매우 낮음`,color:"#3fb950"};
+    if(s<100)  return {text:`포화도 ${s}% · 낮음`,color:"#3fb950"};
+    if(s<300)  return {text:`포화도 ${s}% · 보통`,color:"#d29922"};
+    if(s<1000) return {text:`포화도 ${s}% · 높음`,color:"#f85149"};
+    return {text:`포화도 ${s}% · 매우 높음`,color:"#f85149"};
+  };
+
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
     <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 1</div>
       <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"12px"}}>카테고리 선택</div>
-      <select value={selCat} onChange={e=>{setSelCat(e.target.value);setKeywords([]);setErr("");}}
+      <select value={selCat} onChange={e=>{setSelCat(e.target.value);setKeywords([]);setErr("");setStats({});setDetail({});}}
         style={{width:"100%",padding:"10px 14px",background:"#0d1117",border:"1px solid #30363d",
           borderRadius:"8px",color:selCat?"#e6edf3":"#484f58",fontSize:"14px",outline:"none",cursor:"pointer",
           fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}>
@@ -4584,41 +4686,94 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
 
     {keywords.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 2</div>
-      <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"4px"}}><span style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>추천 글 주제 & 메인 키워드</span>{trendingCount>0&&<span style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"10px",padding:"2px 9px",fontSize:"11px",fontWeight:700}}>📡 실시간 {trendingCount}개 반영</span>}</div>
+      <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"4px",flexWrap:"wrap"}}>
+        <span style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>추천 글 주제 & 메인 키워드</span>
+        {trendingCount>0&&<span style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"10px",padding:"2px 9px",fontSize:"11px",fontWeight:700}}>📡 네이버 인기글 {trendingCount}</span>}
+        {googleCount>0&&<span style={{background:"#3fb95022",color:"#3fb950",border:"1px solid #3fb95044",borderRadius:"10px",padding:"2px 9px",fontSize:"11px",fontWeight:700}}>📈 구글 트렌드 {googleCount}</span>}
+      </div>
       <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>
-        <span style={{color:"#58a6ff",fontWeight:700}}>🔍 키워드 조회</span> 버튼을 클릭하면 키워드 글쓰기에서 자동으로 검색됩니다
+        월 검색량은 네이버 광고 API 실측값입니다 · <span style={{color:"#58a6ff",fontWeight:700}}>연관검색어 · 난이도</span>를 누르면 이번 달 발행량까지 조회합니다
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-        {keywords.map((kw,idx)=>(
-          <div key={idx} style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"10px",padding:"12px 14px"}}>
+        {keywords.map((kw,idx)=>{
+          const mainKw=kw.mainKeyword||kw.keyword;
+          const st=stats[mainKw];
+          const dt=detail[mainKw];
+          const sat=dt?satLabel(dt.saturation):null;
+          return <div key={idx} style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"10px",padding:"12px 14px"}}>
             <div style={{display:"flex",alignItems:"flex-start",gap:"10px",marginBottom:"8px"}}>
               <span style={{minWidth:"24px",height:"24px",borderRadius:"50%",background:"#1f6feb22",
                 color:"#58a6ff",border:"1px solid #1f6feb44",display:"flex",alignItems:"center",
                 justifyContent:"center",fontSize:"11px",fontWeight:700,flexShrink:0,marginTop:"1px"}}>
                 {kw.rank}
               </span>
-              <div style={{flex:1}}>
+              <div style={{flex:1,minWidth:0}}>
                 <div style={{color:"#e6edf3",fontWeight:600,fontSize:"14px",lineHeight:"1.5"}}>{kw.title||kw.keyword}</div>
                 <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>{kw.reason}</div>
               </div>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:"8px",paddingLeft:"34px"}}>
+
+            <div style={{display:"flex",alignItems:"center",gap:"8px",paddingLeft:"34px",flexWrap:"wrap"}}>
               <span style={{fontSize:"11px",color:"#8b949e",flexShrink:0}}>메인 키워드</span>
               <span style={{background:"#1f6feb15",border:"1px solid #1f6feb44",borderRadius:"6px",
-                padding:"3px 10px",color:"#79c0ff",fontSize:"12px",fontWeight:700,flex:1}}>
-                {kw.mainKeyword||kw.keyword}
+                padding:"3px 10px",color:"#79c0ff",fontSize:"12px",fontWeight:700}}>
+                {mainKw}
               </span>
-              <button onClick={()=>goKeywordSearch(kw.mainKeyword||kw.keyword)}
-                style={{padding:"5px 12px",borderRadius:"6px",border:"none",background:"#1f6feb",color:"#fff",
-                  fontSize:"11px",fontWeight:700,cursor:"pointer",flexShrink:0,
-                  fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}
-                onMouseEnter={e=>e.currentTarget.style.background="#388bfd"}
-                onMouseLeave={e=>e.currentTarget.style.background="#1f6feb"}>
-                🔍 키워드 조회
-              </button>
+              {st&&<span style={{fontSize:"11px",color:"#8b949e"}}>월 검색량 <b style={{color:"#e6edf3"}}>{fmt(st.monthly)}</b></span>}
+              {st?.commercial&&<span title={`통합검색 평균 광고 노출 ${st.depth}개`}
+                style={{background:"#f8514915",border:"1px solid #f8514944",borderRadius:"6px",padding:"2px 8px",color:"#ff7b72",fontSize:"10px",fontWeight:700}}>
+                💰 상업성 키워드
+              </span>}
+              <div style={{marginLeft:"auto",display:"flex",gap:"6px",flexShrink:0}}>
+                <button onClick={()=>loadDetail(mainKw)} disabled={dt?.loading}
+                  style={{padding:"5px 12px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",
+                    color:dt?.loading?"#484f58":"#c9d1d9",fontSize:"11px",fontWeight:700,
+                    cursor:dt?.loading?"wait":"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
+                  {dt?.loading?"⏳ 조회 중":dt?"🔄 다시 조회":"📊 연관검색어 · 난이도"}
+                </button>
+                <button onClick={()=>goKeywordSearch(mainKw)}
+                  style={{padding:"5px 12px",borderRadius:"6px",border:"none",background:"#1f6feb",color:"#fff",
+                    fontSize:"11px",fontWeight:700,cursor:"pointer",
+                    fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="#388bfd"}
+                  onMouseLeave={e=>e.currentTarget.style.background="#1f6feb"}>
+                  🔍 키워드 조회
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+
+            {dt&&!dt.loading&&<div style={{marginTop:"10px",marginLeft:"34px",padding:"10px 12px",background:"#161b22",border:"1px solid #21262d",borderRadius:"8px"}}>
+              <div style={{display:"flex",gap:"16px",flexWrap:"wrap",marginBottom:dt.related?.length?"10px":0}}>
+                <span style={{fontSize:"11px",color:"#8b949e"}}>
+                  이번 달 발행량 <b style={{color:"#e6edf3"}}>{fmt(dt.monthlyPosts)}</b>
+                  <span style={{color:"#484f58",marginLeft:"5px"}}>
+                    {dt.source==="proxy"?"(실측)":dt.source==="estimate"?"(추정 · 프록시 미연결)":""}
+                  </span>
+                </span>
+                {dt.totalPosts!==null&&<span style={{fontSize:"11px",color:"#8b949e"}}>누적 <b style={{color:"#e6edf3"}}>{fmt(dt.totalPosts)}</b></span>}
+                {sat&&<span style={{fontSize:"11px",fontWeight:700,color:sat.color}}>{sat.text}</span>}
+              </div>
+              {dt.related?.length>0&&<div>
+                <div style={{fontSize:"11px",color:"#484f58",marginBottom:"6px",fontWeight:600}}>연관 검색어</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
+                  {dt.related.map((r,i)=>(
+                    <button key={i} onClick={()=>goKeywordSearch(r.keyword)}
+                      title={r.commercial?"통합검색에서 광고가 먼저 뜨는 상업성 키워드":""}
+                      style={{padding:"4px 9px",borderRadius:"6px",cursor:"pointer",
+                        fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px",
+                        background:"#0d1117",
+                        border:`1px solid ${r.commercial?"#f8514944":"#30363d"}`,
+                        color:r.commercial?"#ff7b72":"#c9d1d9"}}>
+                      {r.commercial?"💰 ":""}{r.keyword}
+                      {r.monthly!==null&&<span style={{color:"#484f58",marginLeft:"5px"}}>{fmt(r.monthly)}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>}
+              {!dt.related?.length&&<div style={{fontSize:"11px",color:"#484f58"}}>연관 검색어가 조회되지 않았습니다 (광고 DB에 없는 키워드일 수 있어요)</div>}
+            </div>}
+          </div>;
+        })}
       </div>
     </div>}
   </div>;
@@ -6642,7 +6797,147 @@ async function fetchBlogBodies(keyword) {
   return [];
 }
 
-function buildWritePrompt({ kw, yearMonth, today, category, smartBlockType, blogStrategy, bodies, mainKeyword }) {
+// 이 키워드로 이미 상위에 노출 중인 글 제목 — 제목 중복 회피용
+async function fetchTopTitles(keyword) {
+  try {
+    const r = await fetch(`/api/blog-titles?keyword=${encodeURIComponent(keyword)}`);
+    const d = await r.json();
+    return (d.titles || []).filter(Boolean);
+  } catch(e) { return []; }
+}
+
+// 광고 노출 깊이(plAvgDepth)로 상업성 키워드를 판정
+// 통합검색에서 광고가 먼저 뜨는 단어 = 제목에 쓰면 안 되는 단어
+async function fetchCommercialWords(mainKw) {
+  const found = new Set();
+  try {
+    const r = await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(mainKw)}`);
+    const d = await r.json();
+    (d.keywordList || []).forEach(item => {
+      if (isCommercialStat(item) && item.relKeyword) found.add(String(item.relKeyword).trim());
+    });
+  } catch(e) {}
+  COMMERCIAL_SEED.forEach(w => found.add(w));
+  return Array.from(found).slice(0, 30);
+}
+
+// 내 블로그 최근 제목에서 이미 과다 사용된 단어
+// 누락확인 탭에서 조회한 적 있는 블로그 ID가 있으면 실제 글 제목을 쓰고,
+// 없으면 이 도구로 생성했던 제목들로 대체한다.
+async function fetchAvoidWords() {
+  const bid = lsGet(LS_BLOGID, "");
+  if (bid) {
+    try {
+      const r = await fetch(`/api/blog-posts?blogId=${encodeURIComponent(bid)}&page=1&size=30`);
+      const d = await r.json();
+      const titles = (d.posts || []).map(p => p.title).filter(Boolean);
+      if (titles.length >= 10) return repeatedTitleWords(titles, 4);
+    } catch(e) {}
+  }
+  return repeatedTitleWords(lsGet(LS_TITLES, []), 3);
+}
+
+// ─── 제목 패턴 로테이션 ────────────────────────────────────────────────────
+const TITLE_PATTERNS = [
+  { id: "number",     label: "숫자형",   guide: `"3가지", "5단계"처럼 글 구성 자체를 가리키는 숫자를 제목에 쓸 것. 가격·통계·기간 같은 사실 수치는 제목에 절대 쓰지 말 것` },
+  { id: "question",   label: "질문형",   guide: `"~해도 될까?", "~하면 어떻게 될까?"처럼 독자가 실제로 검색창에 칠 법한 의문문으로 쓸 것` },
+  { id: "experience", label: "경험담형", guide: `"직접 써봤습니다", "3개월 쓰고 남는 것"처럼 실사용자의 1인칭 경험을 드러낼 것` },
+  { id: "compare",    label: "비교형",   guide: `"A vs B", "싼 것과 비싼 것의 차이"처럼 두 대상을 맞세우는 구도로 쓸 것` },
+  { id: "howto",      label: "방법형",   guide: `"~하는 법", "~할 때 확인할 것"처럼 절차·해결 과정을 알려주는 형태로 쓸 것` },
+  { id: "caution",    label: "주의형",   guide: `"~전에 알아야 할 것", "놓치기 쉬운 부분"처럼 실수·함정을 짚어주는 형태로 쓸 것` },
+];
+
+const LS_PATTERNS = "bp_title_patterns";   // 최근 사용한 제목 패턴 id (최신순)
+const LS_TITLES   = "bp_recent_titles";    // 이 도구로 생성한 최근 제목
+const LS_BLOGID   = "bp_blog_id";          // 누락확인 탭에서 마지막으로 조회한 블로그 ID
+
+function lsGet(key, fallback) {
+  if (typeof window === "undefined") return fallback;
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch (e) { return fallback; }
+}
+function lsSet(key, val) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+}
+
+// 최근 2회에 쓴 패턴은 제외하고, 누적 사용이 가장 적은 패턴을 고름
+function pickTitlePattern() {
+  const recent = lsGet(LS_PATTERNS, []);
+  const blocked = new Set(recent.slice(0, 2));
+  const count = {};
+  TITLE_PATTERNS.forEach(p => { count[p.id] = 0; });
+  recent.forEach(id => { if (count[id] !== undefined) count[id] += 1; });
+  const pool = TITLE_PATTERNS.filter(p => !blocked.has(p.id));
+  const candidates = pool.length > 0 ? pool : TITLE_PATTERNS;
+  let best = candidates[0];
+  candidates.forEach(p => { if (count[p.id] < count[best.id]) best = p; });
+  return best;
+}
+function recordTitleUse(patternId, title) {
+  const recent = lsGet(LS_PATTERNS, []);
+  lsSet(LS_PATTERNS, [patternId].concat(recent).slice(0, 20));
+  if (title) {
+    const titles = lsGet(LS_TITLES, []);
+    lsSet(LS_TITLES, [title].concat(titles).slice(0, 60));
+  }
+}
+
+// ─── 제목 어휘 분석 ────────────────────────────────────────────────────────
+const TITLE_STOPWORDS = new Set([
+  "그리고","하지만","그래서","이제","정말","진짜","오늘","이번","다음","최근",
+  "우리","제가","저는","해서","해도","하는","하고","있는","없는","같은","위한","대한",
+]);
+
+// 제목에서 의미 있는 2글자 이상 토큰만 추출
+function titleTokens(str) {
+  return String(str || "")
+    .replace(/[^\uAC00-\uD7A3a-zA-Z0-9]+/g, " ")
+    .split(/\s+/)
+    .map(t => t.trim())
+    .filter(t => t.length >= 2 && !TITLE_STOPWORDS.has(t));
+}
+
+// 두 제목 사이의 토큰 중복 개수
+function tokenOverlap(a, b) {
+  const setB = new Set(titleTokens(b));
+  return titleTokens(a).filter(t => setB.has(t)).length;
+}
+
+// 최근 제목들에서 과다 사용된 단어 (기본 3회 이상)
+function repeatedTitleWords(titles, minCount = 3) {
+  const count = {};
+  (titles || []).forEach(t => {
+    new Set(titleTokens(t)).forEach(tok => { count[tok] = (count[tok] || 0) + 1; });
+  });
+  return Object.keys(count)
+    .filter(k => count[k] >= minCount)
+    .sort((a, b) => count[b] - count[a])
+    .slice(0, 12);
+}
+
+// ─── 상업성 키워드 ────────────────────────────────────────────────────────
+// 통합검색에서 광고가 먼저 노출되는 성격의 단어들 (기본 시드)
+const COMMERCIAL_SEED = [
+  "병원","법률","변호사","보험","맛집","술집","웨딩","안경","안마","대출","코인",
+  "운전연수","주차대행","문신","다이어트","탈모","왁싱","누수","이사","견적","시공",
+  "설치","분양","임플란트","교정","클리닉","시술","최저가","할인","특가","이벤트","무료",
+];
+
+// 네이버 광고 API 응답으로 상업성 판정
+// plAvgDepth = 통합검색에 노출되는 평균 광고 개수 → 이게 높을수록 상업성 키워드
+function isCommercialStat(item) {
+  if (!item) return false;
+  const depth = Number(item.plAvgDepth);
+  if (!isNaN(depth) && depth >= 8) return true;
+  return item.compIdx === "높음";
+}
+
+// ─── 글쓰기 프롬프트 빌더 ──────────────────────────────────────────────────
+function buildWritePrompt({
+  kw, yearMonth, today, category, smartBlockType, blogStrategy, bodies, mainKeyword,
+  topTitles, commercialWords, avoidWords, pattern,
+}) {
   const mainKw = mainKeyword || kw;
   const ctx = category
     ? `카테고리: ${category}`
@@ -6653,9 +6948,24 @@ function buildWritePrompt({ kw, yearMonth, today, category, smartBlockType, blog
     ? `\n[참고자료 — 이 키워드 상위 노출 글 본문]\n${bodies.slice(0,3).map((b,i)=>`(${i+1})\n${String(b).slice(0,1800)}`).join("\n\n")}\n\n※ 참고자료는 "사실 확인용"으로만 사용. 문장·표현을 베끼지 말 것.\n※ 참고자료에도 없는 수치·날짜·가격은 절대 만들어내지 말 것.\n`
     : "";
 
+  // 이미 상위를 점유한 제목들 — 제목 중복 회피용
+  const titleBlock = (topTitles && topTitles.length > 0)
+    ? `\n[이미 상위에 노출 중인 글 제목 — 이것과 겹치지 않게 쓸 것]\n${topTitles.slice(0,15).map((t,i)=>`${i+1}. ${t}`).join("\n")}\n`
+    : "";
+
+  const pat = pattern || TITLE_PATTERNS[0];
+
+  const commercialBlock = (commercialWords && commercialWords.length > 0)
+    ? `\n[제목에 쓰면 안 되는 상업성 단어]\n${commercialWords.join(", ")}\n※ 이 단어들은 통합검색에서 광고가 먼저 뜨는 상업성 키워드입니다. 제목에 넣으면 저품질로 분류될 확률이 올라갑니다. 본문에서 꼭 필요하면 최소한으로만 쓰고, 제목에는 절대 쓰지 마세요.\n`
+    : "";
+
+  const avoidBlock = (avoidWords && avoidWords.length > 0)
+    ? `\n[최근 내 블로그 제목에 이미 많이 쓴 단어 — 이번 제목에는 쓰지 말 것]\n${avoidWords.join(", ")}\n※ 같은 단어가 제목마다 반복되면 블로그 전체 점수가 떨어집니다.\n`
+    : "";
+
   return `오늘 날짜: ${today || yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
-${refBlock}
-네이버 블로그 홈판 노출 + AI 브리핑 인용 최적화 글을 작성해줘:
+${refBlock}${titleBlock}${commercialBlock}${avoidBlock}
+네이버 블로그 홈판 노출 + AI 브리핑(AEO) 인용 최적화 글을 작성해줘:
 
 [사실 원칙 — 다른 모든 규칙보다 우선]
 A. 확실하지 않은 정보를 사실처럼 단정하지 말 것. 애매하면 아예 쓰지 않는 쪽을 택할 것.
@@ -6667,9 +6977,14 @@ B. 아래 항목은 확실히 아는 경우가 아니면 절대 지어내지 말
    - 법령·제도·정책·약관의 구체적 내용과 조건
    - 기업·기관·인물의 발표 내용, 공식 입장, 인용문
    - 논문·조사·연구 결과 및 그 출처
-C. B의 정보가 글에 꼭 필요하면 둘 중 하나로 처리:
-   (a) 정성적 표현으로 대체 → "가격대가 꽤 부담되는 편입니다", "생각보다 오래 걸립니다"
-   (b) 본문에 [확인필요: 항목명] 형태로 표시 → 작성자가 직접 채워 넣음 (한 글에 최대 3개)
+C. B의 정보가 글에 꼭 필요할 때 — 기본은 (a)다:
+   (a) 문장 구조는 구체적으로 유지하고 확신 없는 값만 [확인필요: 항목명]으로 비워둘 것 (한 글에 최대 3개)
+       (O) "기본 요금은 [확인필요: 월 요금]원이고, 약정 조건에 따라 달라집니다"
+       (O) "신청 마감은 [확인필요: 마감일]까지이며, 이후에는 접수되지 않습니다"
+   (b) 항목 자체가 글의 곁가지라 비워둘 가치도 없을 때만 정성적 표현으로 대체
+       ("가격대가 부담되는 편입니다")
+   ※ 값을 모른다고 문장 전체를 뭉뚱그리지 말 것. 뭉개진 문장은 AI 브리핑이 인용하지 못하고,
+     나중에 작성자가 사실을 채워 넣을 수도 없어서 글의 가치가 사라진다.
 D. 시점 표현: 오늘은 ${today || yearMonth}이지만, 최근 정보는 정확히 모를 수 있음.
    "${yearMonth} 기준 ~입니다"라고 단정하는 문장은 정말 확실할 때만 쓸 것.
    불확실하면 "지금은 달라졌을 수 있으니 확인해보시는 게 좋습니다" 식으로 열어둘 것.
@@ -6677,7 +6992,7 @@ E. 경험담은 자유롭게 써도 되지만, 검증 가능한 수치가 아니
    (X) "3개월 써보니 배터리가 27% 감소했습니다"
    (O) "3개월쯤 쓰니 하루를 못 버티는 날이 눈에 띄게 늘었습니다"
 F. 의견은 의견인 게 드러나게 쓸 것 — "개인적으로는", "제 기준에서는", "제가 겪어본 범위에서는".
-G. 구체적이지만 틀린 글보다, 덜 구체적이어도 맞는 글이 낛다.
+G. 구체적이지만 틀린 글보다, 덜 구체적이어도 맞는 글이 낫다.
 
 [브랜드·상표 원칙]
 H. 특정 브랜드·제품·서비스명이 등장하면, 그 대상에 관해 정확한 내용만 쓸 것.
@@ -6687,39 +7002,65 @@ J. 브랜드에 사실이 아닌 기능·가격·정책·혜택을 갖다 붙이
    A사의 기능을 B사 것처럼 쓰거나, 제조사·통신사·유통점의 역할과 책임을 섞지 말 것.
 K. 브랜드 간 비교는 확인 가능한 일반적 차이 또는 개인적 체감으로 한정.
    근거 없는 우열 단정, 비방, 허위 비교는 금지.
-L. 확실한 부분과 불확실한 부분이 섮이면, 확실한 것만 쓰고 나머지는 [확인필요: 항목명]으로 남길 것.
+L. 확실한 부분과 불확실한 부분이 섞이면, 확실한 것만 쓰고 나머지는 [확인필요: 항목명]으로 남길 것.
+
+[제목 원칙]
+T1. 이번 글의 제목 패턴은 "${pat.label}"으로 고정한다. ${pat.guide}
+    다른 패턴으로 쓰지 말 것.
+T2. 길이는 공백 포함 15~32자. 이 범위를 벗어나면 실패다.
+T3. 메인 키워드 "${mainKw}"를 제목 안에 그대로(띄어쓰기 포함 형태 그대로) 넣을 것.
+T4. 위 [이미 상위에 노출 중인 글 제목] 중 어느 하나와도 2글자 이상 단어가 3개 넘게 겹치면 안 된다.
+    겹치는 조합을 피해 다른 각도에서 접근할 것. 같은 소재라도 다루는 측면을 바꾸면 된다.
+T5. 상업성 단어와 최근 반복 단어를 제목에 쓰지 말 것 (위 목록 참고).
+T6. 제목에 사실 원칙 B에 해당하는 수치(가격·기간·퍼센트)를 넣지 말 것.
 
 [구조 원칙]
 1. 본문 1,500~2,000자 (한글+공백)
 2. 소제목 ▶ 형식 3개 이상 (마크다운/HTML 금지)
-3. 핵심 결론과 요약을 글 앞부분(도입부)에 먼저 배치 — AI 브리핑이 인용하기 좋은 구조
-4. 각 문장 끝 줄바꿈(\\n)만 사용, HTML 태그(<br> 등) 절대 금지
-5. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
-6. 제목은 반드시 아래 4가지 패턴 중 하나 사용 (단, 숫자형 제목에 사실 원칙 B에 걸리는 수치는 쓰지 말 것):
-   - 숫자형: "3가지", "5단계" 등 글 구성 자체를 가리키는 숫자
-   - 질문형: "~해도 될까?", "~하면 어떻게 될까?" 등 독자 궁금증 자극
-   - 경험담형: "직접 써봤습니다", "3개월 사용 후기" 등 실사용 강조
-   - 비교형: "A vs B 직접 비교", "싼 것 vs 비싼 것 차이" 등 대조 구도
-7. 도입부 구조 (홈판 미리보기 텍스트 최적화):
-   - 첫 문장: 독자가 이 글에서 얻을 핵심 이익을 바로 명시 (인사말·계절 묘사·자기소개 절대 금지)
-   - 둘째 문장: 작성자의 직접 경험 근거 1줄 (예: "직접 3곳을 비교해봤습니다")
+   - 이 중 최소 1개는 독자가 검색창에 칠 법한 질문형 소제목으로 쓸 것
+     (예: "▶ 개통 전에 유심을 먼저 사도 될까?")
+3. 각 문장 끝 줄바꿈(\\n)만 사용, HTML 태그(<br> 등) 절대 금지
+4. 끝에 해시태그 5개 (#태그1 #태그2 #태그3 #태그4 #태그5)
+5. 도입부 구조 (홈판 미리보기 + AI 인용 최적화):
+   - 첫 문장: 이 글의 결론 또는 핵심 정의를 한 문장으로 단정해서 제시
+     (인사말·계절 묘사·자기소개 절대 금지)
+   - 둘째 문장: 그 결론이 성립하는 조건이나 예외를 한 줄로 덧붙임
+   - 셋째 문장: 작성자의 직접 경험 근거 1줄 (예: "직접 3곳을 비교해봤습니다")
 
-[내용 원칙 — 네이버 AEO 기준]
+[AEO 원칙 — AI 브리핑 인용을 위한 조건]
+AEO1. 도입부 3문장 안에 "X는 ~입니다" 형태의 정의·결론 문장을 최소 1개 넣을 것.
+      AI가 글에서 가장 먼저 떼어가는 문장이 여기다.
+AEO2. 각 소제목 아래 첫 문장은 그 소제목 질문에 대한 답을 바로 제시할 것.
+      배경 설명부터 시작하지 말 것 — 답 먼저, 설명은 그 다음.
+AEO3. 모든 문단은 자기완결형으로 쓸 것. 앞 문단을 읽지 않아도 그 문단만 떼어내서
+      읽었을 때 뜻이 통해야 한다. "이것", "그건", "위에서 말한" 같은 앞뒤 의존 표현 금지.
+AEO4. 본문 마지막 해시태그 바로 앞에 아래 형식으로 자주 묻는 질문 3개를 넣을 것:
+      ▶ 자주 묻는 질문
+      Q. (독자가 실제로 검색창에 칠 법한 완성된 질문 문장)
+      A. (2~3문장으로 끝나는 자기완결 답변. 첫 문장에서 바로 결론을 말할 것)
+      ※ 질문 3개는 서로 다른 것을 물어야 하고, 본문에서 이미 다룬 내용을 다른 각도로 정리하는 형태여야 한다.
+AEO5. 조건·절차·기준처럼 항목이 나뉘는 내용은 줄바꿈으로 한 줄씩 끊어서 쓸 것.
+      한 문단에 여러 조건을 뭉쳐 넣지 말 것.
+AEO6. 사실 원칙 C를 지키되, 인용 가치가 있는 문장 구조는 반드시 유지할 것.
+      값을 모르면 [확인필요:]로 비워두고 문장은 구체적으로 쓴다.
+
+[내용 원칙 — C-Rank / DIA]
 8. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
 9. 경험에서 나온 구체적 사례 포함 — 문제 해결 과정, 시행착오, 판단 기준 중심
    (지어낸 수치·날짜·모델명으로 구체성을 만들지 말 것. 구체성은 '과정 묘사'로 낼 것)
 10. 창작자 고유의 시선과 인사이트 포함 — AI가 쉽게 만들 수 없는 개인 관점
-11. 수치·통계·업계 기준은 확실히 아는 경우에만 넣을 것. 확실하지 않으면 넣지 말고,
-    대신 판단 기준·비교 관점·체크리스트로 신뢰도를 만들 것 (억지로 채우지 말 것)
+11. 수치·통계·업계 기준은 확실히 아는 경우에만 넣을 것. 확실하지 않으면 [확인필요:]로 처리하고,
+    판단 기준·비교 관점·체크리스트로 신뢰도를 보강할 것
 12. 단순 정보 나열이 아닌 독자에게 실질적으로 도움되는 내용 중심
 13. 문체: -니다/-요 혼용, 정보성+경험담
-14. 시의성은 '변할 수 있다'는 전제로 다룰 것 — 확실치 않은 최신 정보를 단정하지 말고,
-    시점에 따라 달라질 수 있는 부분은 확인을 권하는 문장으로 처리
-15. 본문 중간 (두 번째 소제목 이후)에 독자 참여 유도 문장 1개 삽입 — 체류시간 증가 목적
-    (예: "혹시 비슷한 경험 있으신가요?")
-16. 마지막 소제목 ▶ 이후 마무리 구조:
-    - 핵심 내용 요약 2~3줄
-    - 자연스러운 공감·댓글 유도 문장 1개 (광고성 표현 제외, 강요하지 않는 톤)
+14. 시의성은 '변할 수 있다'는 전제로 다룰 것
+
+[마무리 — 인용 대상 문장과 분리할 것]
+15. 마지막 소제목 ▶ 이후, 자주 묻는 질문 블록 앞에 마무리를 둘 것:
+    - 핵심 내용 요약 2~3줄 (각 줄이 독립적으로 읽히게)
+    - 자연스러운 공감 유도 문장 1개 (광고성 표현 제외, 강요하지 않는 톤)
+    ※ 독자 참여 유도 문장은 여기 한 번만. 본문 중간에는 넣지 말 것 —
+      인용 후보 문단 사이에 끼면 AI가 문맥을 끊어 읽는다.
 
 [금지사항]
 - 확인되지 않은 가격·수치·날짜·스펙을 사실처럼 쓰는 것 (가장 중요)
@@ -6730,9 +7071,34 @@ L. 확실한 부분과 불확실한 부분이 섮이면, 확실한 것만 쓰고
 - AI가 기계적으로 생성한 느낌의 틀에 박힌 문장 패턴
 - 도입부를 인사말, 날씨·계절 묘사, 자기소개로 시작하는 것
 - 소제목 없이 긴 문단이 연속되는 구조 (각 소제목 간격 400자 이내 유지)
+- 앞 문단에 의존하는 지시대명사로 문단을 시작하는 것
 
 순수 JSON만 (마크다운 없이):
-{"title":"제목(15~32자,키워드포함)","main_keyword":"${mainKw}","content":"본문","tags":["태그1","태그2","태그3","태그4","태그5"],"uncertain":["글에서 확인이 필요한 항목이 있으면 나열, 없으면 빈 배열"]}`;
+{"title":"제목(${pat.label}, 15~32자, "${mainKw}" 포함)","main_keyword":"${mainKw}","content":"본문(자주 묻는 질문 3개 포함)","tags":["태그1","태그2","태그3","태그4","태그5"],"faq":[{"q":"질문1","a":"답변1"},{"q":"질문2","a":"답변2"},{"q":"질문3","a":"답변3"}],"uncertain":["글에서 확인이 필요한 항목이 있으면 나열, 없으면 빈 배열"]}`;
+}
+
+// ─── 생성된 제목 검증 ──────────────────────────────────────────────────────
+// 통과하지 못하면 사유를 돌려주고, 호출부에서 1회 재생성한다.
+function validateTitle(title, { mainKw, topTitles, commercialWords, avoidWords }) {
+  const t = String(title || "").trim();
+  const reasons = [];
+
+  if (!t) return { ok: false, reasons: ["제목이 비어 있음"] };
+  if (t.length < 15 || t.length > 32) reasons.push(`길이 ${t.length}자 (15~32자 필요)`);
+
+  const flat = s => String(s || "").replace(/\s+/g, "");
+  if (mainKw && !flat(t).includes(flat(mainKw))) reasons.push(`메인 키워드 "${mainKw}" 미포함`);
+
+  const dup = (topTitles || []).find(o => tokenOverlap(t, o) > 3);
+  if (dup) reasons.push(`상위 노출 글과 단어 과다 중복 → "${String(dup).slice(0,20)}…"`);
+
+  const hitCommercial = (commercialWords || []).filter(w => t.includes(w));
+  if (hitCommercial.length > 0) reasons.push(`상업성 단어 포함: ${hitCommercial.join(", ")}`);
+
+  const hitAvoid = (avoidWords || []).filter(w => t.includes(w));
+  if (hitAvoid.length > 0) reasons.push(`최근 반복 단어 포함: ${hitAvoid.join(", ")}`);
+
+  return { ok: reasons.length === 0, reasons };
 }
 
 function PasswordGate({children}){
@@ -6829,27 +7195,40 @@ export default function BlogTools(){
       const now = new Date();
       const yearMonth = `${now.getFullYear()}년 ${now.getMonth()+1}월`;
       const todayStr  = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일`;
+      const mainKw = mainKeyword || kw;
 
-      // 상위 노출 글 본문을 사실 근거로 확보 (12초 안에 안 오면 그냥 진행)
-      const bodies = await Promise.race([
-        fetchBlogBodies(mainKeyword || kw),
-        new Promise(r => setTimeout(() => r([]), 12000)),
+      // 상위 노출 글 본문 / 상위 제목 / 상업성 단어 / 최근 반복 단어를 병렬로 확보
+      // (12초 안에 안 오는 항목은 비워둔 채 그냥 진행)
+      const withTimeout = (p, ms, fallback) =>
+        Promise.race([p, new Promise(r => setTimeout(() => r(fallback), ms))]);
+
+      const [bodies, topTitles, commercialWords, avoidWordsRaw] = await Promise.all([
+        withTimeout(fetchBlogBodies(mainKw), 12000, []),
+        withTimeout(fetchTopTitles(mainKw), 8000, []),
+        withTimeout(fetchCommercialWords(mainKw), 8000, []),
+        withTimeout(fetchAvoidWords(), 8000, []),
       ]);
+
+      // 메인 키워드는 제목에 반드시 들어가야 하므로 금지 목록에서 제외
+      const flat = s => String(s||"").replace(/\s+/g,"");
+      const avoidWords = avoidWordsRaw.filter(w => !flat(mainKw).includes(flat(w)));
+      const banWords   = commercialWords.filter(w => !flat(mainKw).includes(flat(w)));
+
+      const pattern = pickTitlePattern();
 
       const prompt = buildWritePrompt({
         kw, yearMonth, today: todayStr, smartBlockType, blogStrategy,
-        bodies, mainKeyword: mainKeyword || kw,
+        bodies, mainKeyword: mainKw,
+        topTitles, commercialWords: banWords, avoidWords, pattern,
       });
 
-      const raw = await callClaudeStream(
-        [{ role: "user", content: prompt }],
-        `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation.
+      const sysPrompt = `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation (AEO).
 
 Today is ${todayStr}. You cannot search the web, and your knowledge of recent events may be outdated or wrong.
 
 FACTUAL DISCIPLINE — this overrides every stylistic instruction in the user message:
 - Never assert a specific fact you are not confident is true. Do not invent prices, fees, subsidy amounts, statistics, percentages, sales figures, ratings, release dates, effective dates, model names, specs, laws, policies, terms, official statements, quotes, studies, or institutions.
-- If a specific figure would make the writing stronger but you are not sure of it, either express it qualitatively, or insert a [확인필요: ...] placeholder for the author to fill in (max 3 per post).
+- When you are unsure of a specific figure, DO NOT vague the whole sentence away. Keep the sentence concrete and specific, and leave only the unknown value as a [확인필요: ...] placeholder for the author to fill in (max 3 per post). Falling back to qualitative phrasing is a last resort, reserved for details too peripheral to be worth a placeholder.
 - Do NOT claim anything is "current as of ${yearMonth}" unless you genuinely know it. Prefer hedged or timeless phrasing over confident but unverified recency.
 - Opinions, judgments, preferences and narrative experience are encouraged — but write them as opinions, not as verified facts. Make experience concrete through process and reasoning, not through fabricated measurements.
 - A shorter, less specific post that is true is better than a specific post that is false. If reference material is provided, restrict factual claims to what it supports (without copying its wording).
@@ -6859,17 +7238,79 @@ BRAND ACCURACY:
 - If you are not certain which model, generation or specification applies, stay at category level instead of guessing.
 - Never attribute one brand's feature, price, policy or benefit to another, never confuse the roles of manufacturer, carrier and retailer, and never make an unverified superiority claim or a disparaging comparison about a real brand.
 
-Structure content so key conclusions appear early for AI summarization. Output ONLY valid JSON, no markdown.`,
-        3500, "claude-sonnet-4-5-20250929"
+CITATION READINESS (AEO) — apply this within the limits of factual discipline above:
+- Lead with the answer. The opening lines and the first sentence under every subheading must state the conclusion before any background.
+- Write self-contained paragraphs. Each paragraph must make sense when lifted out of the post on its own; avoid pronouns and back-references that depend on earlier paragraphs.
+- Preserve quotable sentence structure. A sentence with a [확인필요:] placeholder is still quotable; a sentence that hedges away its own subject is not.
+- Include a closing Q&A block of three questions phrased the way a reader would actually search, each answered in two or three self-contained sentences.
+
+Output ONLY valid JSON, no markdown.`;
+
+      const raw = await callClaudeStream(
+        [{ role: "user", content: prompt }],
+        sysPrompt,
+        4000, "claude-sonnet-4-5-20250929"
       );
       const parsed = safeParseJson(raw);
       const cleanContent = (str="") =>
         str.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/\n{3,}/g, "\n\n");
+
+      let finalTitle = parsed.title || "";
+      const check = validateTitle(finalTitle, { mainKw, topTitles, commercialWords: banWords, avoidWords });
+
+      // ── 제목이 기준에 안 맞으면 제목만 1회 재생성 ──
+      let titleNotice = "";
+      if (!check.ok) {
+        try {
+          const retitlePrompt = `아래 블로그 글에 붙일 제목을 다시 지어줘. 이전 제목이 기준에 맞지 않았다.
+
+이전 제목: ${finalTitle}
+탈락 사유: ${check.reasons.join(" / ")}
+
+메인 키워드: "${mainKw}"
+제목 패턴: ${pattern.label} — ${pattern.guide}
+
+지켜야 할 조건:
+- 공백 포함 15~32자
+- "${mainKw}"를 그대로 포함
+- 아래 제목들과 2글자 이상 단어가 3개 넘게 겹치면 안 됨
+${(topTitles||[]).slice(0,10).map((t,i)=>`  ${i+1}. ${t}`).join("\n") || "  (없음)"}
+- 아래 단어는 제목에 쓰지 말 것: ${[...banWords, ...avoidWords].join(", ") || "(없음)"}
+- 가격·기간·퍼센트 같은 수치는 제목에 쓰지 말 것
+
+글 앞부분:
+${cleanContent(parsed.content||"").slice(0, 700)}
+
+순수 JSON만: {"title":"새 제목"}`;
+
+          const retitleRaw = await callClaude(
+            [{ role: "user", content: retitlePrompt }],
+            "You write Korean blog titles. Output ONLY valid JSON.",
+            300, "claude-haiku-4-5-20251001"
+          );
+          const retitled = safeParseJson(retitleRaw)?.title || "";
+          const recheck = validateTitle(retitled, { mainKw, topTitles, commercialWords: banWords, avoidWords });
+          if (retitled && (recheck.ok || recheck.reasons.length < check.reasons.length)) {
+            finalTitle = retitled;
+            if (!recheck.ok) titleNotice = recheck.reasons.join(" · ");
+          } else {
+            titleNotice = check.reasons.join(" · ");
+          }
+        } catch(e) {
+          titleNotice = check.reasons.join(" · ");
+        }
+      }
+
+      recordTitleUse(pattern.id, finalTitle);
+
       const meta = {
-        title: parsed.title||"",
-        main_keyword: mainKeyword||parsed.main_keyword||kw,
+        title: finalTitle,
+        main_keyword: mainKw || parsed.main_keyword || kw,
         content: cleanContent(parsed.content||""),
         tags: parsed.tags||[],
+        faq: parsed.faq||[],
+        titlePattern: pattern.label,
+        titleNotice,
         _source: "keyword",
       };
       setAnalyzePostMeta(meta);
