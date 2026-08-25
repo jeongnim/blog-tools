@@ -28,8 +28,9 @@ async function fetchCountViaHomeProxy(keyword) {
     if (data.monthly === null || data.monthly === undefined) return null;
 
     return {
-      total: data.total ?? null,
       monthly: data.monthly,
+      exact: data.exact !== false,
+      capped: !!data.capped,
       monthLabel: data.monthLabel || null,
     };
   } catch (e) {
@@ -45,20 +46,18 @@ export default async function handler(req, res) {
   const { keyword } = req.query;
   if (!keyword) return res.status(400).json({ error: "keyword 필요" });
 
-  // 프록시 실측이 되면 Search API 키가 없어도 답을 줄 수 있으므로 먼저 시도한다
+  // 월 발행량은 프록시 실측, 누적은 검색 API — 각자 잘하는 쪽을 쓴다
   const proxied = await fetchCountViaHomeProxy(keyword);
-  if (proxied) {
-    return res.status(200).json({
-      total: proxied.total,
-      monthly: proxied.monthly,
-      monthLabel: proxied.monthLabel,
-      source: "proxy",
-    });
-  }
 
   const clientId     = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
+    if (proxied) {
+      return res.status(200).json({
+        total: null, monthly: proxied.monthly, monthLabel: proxied.monthLabel,
+        exact: proxied.exact, capped: proxied.capped, source: "proxy",
+      });
+    }
     return res.status(200).json({ total: null, monthly: null, error: "API 키 없음 · 프록시 응답 없음" });
   }
 
@@ -93,6 +92,18 @@ export default async function handler(req, res) {
       return res.status(200).json({ total: null, monthly: null, error: `네이버 API 오류: ${d1.errorMessage}` });
     }
     const total = d1.total ?? null;
+
+    // 프록시가 월 발행량을 실측했으면 추정 단계를 건너뛴다
+    if (proxied) {
+      return res.status(200).json({
+        total,
+        monthly: proxied.monthly,
+        monthLabel: proxied.monthLabel,
+        exact: proxied.exact,
+        capped: proxied.capped,
+        source: "proxy",
+      });
+    }
 
     // ── 2. 최신순 3페이지(300개) 조회 ──
     const pages = await Promise.all(
