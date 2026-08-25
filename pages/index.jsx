@@ -4834,7 +4834,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
     setDetail(d=>({...d,[mainKeyword]:{...(d[mainKeyword]||{}),loading:true}}));
 
     const flat=s=>String(s||"").replace(/\s+/g,"").toUpperCase();
-    let related=[]; let monthlyPosts=null; let totalPosts=null; let source=null;
+    let related=[]; let monthlyPosts=null; let totalPosts=null; let source=null; let capped=false;
 
     try{
       const r=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(mainKeyword)}`);
@@ -4859,6 +4859,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
       monthlyPosts=d.monthly??null;
       totalPosts=d.total??null;
       source=d.source||null;
+      capped=!!d.capped;
     }catch(e){}
 
     const searchVol=stats[mainKeyword]?.monthly||null;
@@ -4867,7 +4868,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
       saturation=Math.round((monthlyPosts/searchVol)*100);
     }
 
-    setDetail(d=>({...d,[mainKeyword]:{loading:false,related,monthlyPosts,totalPosts,saturation,source}}));
+    setDetail(d=>({...d,[mainKeyword]:{loading:false,related,monthlyPosts,totalPosts,saturation,source,capped}}));
   };
 
   const goKeywordSearch=(mainKeyword)=>{
@@ -4977,7 +4978,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
                 <span style={{fontSize:"11px",color:"#8b949e"}}>
                   이번 달 발행량 <b style={{color:"#e6edf3"}}>{fmt(dt.monthlyPosts)}</b>
                   <span style={{color:"#484f58",marginLeft:"5px"}}>
-                    {dt.source==="proxy"?"(실측)":dt.source==="estimate"?"(추정 · 프록시 미연결)":""}
+                    {dt.source==="proxy"?(dt.capped?"(실측 · 하한값)":"(실측)"):dt.source==="estimate"?"(추정 · 프록시 미연결)":""}
                   </span>
                 </span>
                 {dt.totalPosts!==null&&<span style={{fontSize:"11px",color:"#8b949e"}}>누적 <b style={{color:"#e6edf3"}}>{fmt(dt.totalPosts)}</b></span>}
@@ -7277,8 +7278,10 @@ AEO1. 도입부 3문장 안에 "X는 ~입니다" 형태의 정의·결론 문장
       AI가 글에서 가장 먼저 떼어가는 문장이 여기다.
 AEO2. 각 소제목 아래 첫 문장은 그 소제목 질문에 대한 답을 바로 제시할 것.
       배경 설명부터 시작하지 말 것 — 답 먼저, 설명은 그 다음.
-AEO3. 모든 문단은 자기완결형으로 쓸 것. 앞 문단을 읽지 않아도 그 문단만 떼어내서
+AEO3. 정보를 설명하는 문단은 자기완결형으로 쓸 것. 앞 문단을 읽지 않아도 그 문단만 떼어내서
       읽었을 때 뜻이 통해야 한다. "이것", "그건", "위에서 말한" 같은 앞뒤 의존 표현 금지.
+      ※ 단, 경험을 서술하는 문단에는 이 규칙을 적용하지 않는다. 경험은 흐름이 있어야 읽히므로
+        자연스럽게 이어 쓸 것. 다만 그 문단만 읽어도 무슨 상황인지는 알 수 있어야 한다.
 AEO4. "자주 묻는 질문" 블록은 여기서 쓰지 말 것 — 다음 단계에서 따로 붙인다.
       대신 본문이 그 블록으로 자연스럽게 이어지도록 마무리할 것.
 AEO5. 조건·절차·기준처럼 항목이 나뉘는 내용은 줄바꿈으로 한 줄씩 끊어서 쓸 것.
@@ -7286,9 +7289,22 @@ AEO5. 조건·절차·기준처럼 항목이 나뉘는 내용은 줄바꿈으로
 AEO6. 사실 원칙 C를 지키되, 인용 가치가 있는 문장 구조는 반드시 유지할 것.
       값을 모르면 [확인필요:]로 비워두고 문장은 구체적으로 쓴다.
 
+[경험 원칙 — 이 글을 AI가 쓴 글과 구분 짓는 부분]
+E1. 경험을 소제목 끝에 한 덩어리로 몰아넣지 말 것. 설명하는 도중에 섞어 넣을 것.
+    (X) 절차 설명 → 절차 설명 → 마지막에 "저는 ~한 적이 있습니다"
+    (O) 절차를 설명하다가 "이 단계에서 저는 ~해서 ~했습니다"로 바로 이어지는 구조
+E2. 같은 형태의 문장으로 경험을 반복하지 말 것.
+    "저는 ~한 적이 있습니다. 그 뒤로는 ~합니다"를 소제목마다 반복하면 그게 더 기계적으로 읽힌다.
+    문장 형태를 매번 바꿀 것.
+E3. 경험 대목에는 장면 하나가 들어 있어야 한다 — 언제, 어디서, 무엇을 하려다, 어떻게 됐는지.
+    "불편했습니다" 같은 평가만 쓰지 말고 그 상황을 보여줄 것.
+E4. 최소 두 군데는 '왜 그렇게 했는지'를 쓸 것. 판단의 이유와 비교해본 선택지가 드러나야 한다.
+    정보는 검색하면 나오지만 판단 근거는 겪어본 사람만 쓸 수 있다.
+E5. 경험과 설명의 비중은 대략 3:7. 경험이 부록처럼 붙는 게 아니라 설명의 근거로 쓰여야 한다.
+
 [내용 원칙 — C-Rank / DIA]
 8. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
-9. 경험에서 나온 구체적 사례 포함 — 문제 해결 과정, 시행착오, 판단 기준 중심
+9. 경험에서 나온 구체적 사례 포함 — 위 [경험 원칙]을 따를 것
    (지어낸 수치·날짜·모델명으로 구체성을 만들지 말 것. 구체성은 '과정 묘사'로 낼 것)
 10. 창작자 고유의 시선과 인사이트 포함 — AI가 쉽게 만들 수 없는 개인 관점
 11. 수치·통계·업계 기준은 확실히 아는 경우에만 넣을 것. 확실하지 않으면 [확인필요:]로 처리하고,
@@ -7612,6 +7628,13 @@ TOPIC DISCIPLINE — second only to factual discipline:
 - The 주제 given in the user message defines the entire scope of the post. Every subheading must be a subdivision of it.
 - Go deeper, never wider. If the topic feels too narrow to fill the length, add steps, edge cases, failure modes and situational detail within the topic — do not import an adjacent axis (product comparison, pricing, device compatibility, vendor recommendations) to pad it out.
 - Reference material is for verifying facts only. Never mirror its outline or section structure.
+
+LIVED EXPERIENCE — do not let the AEO rules flatten this:
+- Weave first-person experience into the explanation rather than appending it as a closing anecdote to each section.
+- Vary the sentence shape every time. Repeating one narrative template across sections reads more machine-made than no anecdote at all.
+- Show a scene: when, where, what was attempted, what happened. Evaluative summaries ("it was inconvenient") are not experience.
+- Twice or more, explain the reasoning behind a choice and what alternative was weighed. Anyone can look up the facts; only someone who did it can explain the judgment.
+- The self-contained-paragraph rule below applies to explanatory paragraphs, not narrative ones. Narrative may flow.
 
 CITATION READINESS (AEO) — apply this within the limits of factual discipline above:
 - Lead with the answer. The opening lines and the first sentence under every subheading must state the conclusion before any background.
