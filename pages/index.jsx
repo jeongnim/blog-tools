@@ -4834,7 +4834,8 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
     setDetail(d=>({...d,[mainKeyword]:{...(d[mainKeyword]||{}),loading:true}}));
 
     const flat=s=>String(s||"").replace(/\s+/g,"").toUpperCase();
-    let related=[]; let monthlyPosts=null; let totalPosts=null; let source=null; let capped=false;
+    let related=[]; let monthlyPosts=null; let totalPosts=null; let source=null;
+    let capped=false; let exact=false; let atLeast=null;
 
     try{
       const r=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(mainKeyword)}`);
@@ -4860,6 +4861,8 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
       totalPosts=d.total??null;
       source=d.source||null;
       capped=!!d.capped;
+      exact=!!d.exact;
+      atLeast=d.atLeast??null;
     }catch(e){}
 
     const searchVol=stats[mainKeyword]?.monthly||null;
@@ -4868,7 +4871,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
       saturation=Math.round((monthlyPosts/searchVol)*100);
     }
 
-    setDetail(d=>({...d,[mainKeyword]:{loading:false,related,monthlyPosts,totalPosts,saturation,source,capped}}));
+    setDetail(d=>({...d,[mainKeyword]:{loading:false,related,monthlyPosts,totalPosts,saturation,source,capped,exact,atLeast}}));
   };
 
   const goKeywordSearch=(mainKeyword)=>{
@@ -4923,7 +4926,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
         {googleCount>0&&<span style={{background:"#3fb95022",color:"#3fb950",border:"1px solid #3fb95044",borderRadius:"10px",padding:"2px 9px",fontSize:"11px",fontWeight:700}}>📈 구글 트렌드 {googleCount}</span>}
       </div>
       <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>
-        월 검색량은 네이버 광고 API 실측값입니다 · <span style={{color:"#58a6ff",fontWeight:700}}>연관검색어 · 난이도</span>를 누르면 이번 달 발행량까지 조회합니다
+        월 검색량은 네이버 광고 API 실측값입니다 · <span style={{color:"#58a6ff",fontWeight:700}}>연관검색어 · 난이도</span>를 누르면 이번 달 발행량까지 조회합니다 (월 1,000건 미만은 정확한 실측)
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         {keywords.map((kw,idx)=>{
@@ -4976,9 +4979,13 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
             {dt&&!dt.loading&&<div style={{marginTop:"10px",marginLeft:"34px",padding:"10px 12px",background:"#161b22",border:"1px solid #21262d",borderRadius:"8px"}}>
               <div style={{display:"flex",gap:"16px",flexWrap:"wrap",marginBottom:dt.related?.length?"10px":0}}>
                 <span style={{fontSize:"11px",color:"#8b949e"}}>
-                  이번 달 발행량 <b style={{color:"#e6edf3"}}>{fmt(dt.monthlyPosts)}</b>
+                  이번 달 발행량 <b style={{color:"#e6edf3"}}>
+                    {dt.capped?"약 ":""}{fmt(dt.monthlyPosts)}
+                  </b>
                   <span style={{color:"#484f58",marginLeft:"5px"}}>
-                    {dt.source==="proxy"?(dt.capped?"(실측 · 하한값)":"(실측)"):dt.source==="estimate"?"(추정 · 프록시 미연결)":""}
+                    {dt.capped
+                      ? `(추정 · 최소 ${fmt(dt.atLeast)}건 이상)`
+                      : dt.exact ? "(실측)" : ""}
                   </span>
                 </span>
                 {dt.totalPosts!==null&&<span style={{fontSize:"11px",color:"#8b949e"}}>누적 <b style={{color:"#e6edf3"}}>{fmt(dt.totalPosts)}</b></span>}
