@@ -1,43 +1,28 @@
 // pages/api/blog-count.js
+// 발행량 집계 — 네이버 검색 API만 사용 (집 PC 프록시 불필요)
+//
+// 방식: 최신순으로 최대 1,000개를 받아 이번 달 글을 직접 센다.
+//   - 표본 안에 지난달 글이 섞여 있으면 → 이번 달 경계를 넘었다는 뜻이므로 실제 개수 (exact)
+//   - 1,000개가 전부 이번 달이면 → 그보다 많다는 뜻이므로 일평균으로 환산 (추정)
+// 판단이 갈리는 구간(월 수십~수백 건)에서는 항상 정확한 값이 나온다.
 import { requireAuth } from "../../lib/auth";
 
 export const config = { maxDuration: 30 };
 
-// 프록시가 꺼져 있을 때 매 요청마다 타임아웃을 기다리지 않도록,
-// 한 번 실패하면 60초 동안은 아예 건너뛰고 바로 추정 경로로 간다.
-let proxyDownUntil = 0;
+const PAGES = [1, 101, 201, 301, 401, 501, 601, 701, 801, 901];   // 검색 API start 상한 1000
 
-// ── 집 PC 프록시: 블로그탭 기간검색으로 실측 발행량 조회 ──
-// Search API 표본 추정과 달리 "이번 달에 올라온 글 수"를 그대로 가져온다.
-async function fetchCountViaHomeProxy(keyword) {
-  const proxyUrl = process.env.HOME_PROXY_URL;
-  const proxyKey = process.env.HOME_PROXY_KEY;
-  if (!proxyUrl || !proxyKey) return null;
-  if (Date.now() < proxyDownUntil) return null;
+function kstNow() {
+  return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+}
 
-  try {
-    const url = `${proxyUrl}/naver-blog-count?keyword=${encodeURIComponent(keyword)}&key=${encodeURIComponent(proxyKey)}`;
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 6000);
-    const r = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(t);
-    if (!r.ok) { proxyDownUntil = Date.now() + 60000; return null; }
+function toDateInt(item) {
+  const s = String(item.postdate || "");
+  return /^\d{8}$/.test(s) ? parseInt(s, 10) : null;
+}
 
-    const data = await r.json();
-    if (!data.success) return null;
-    if (data.monthly === null || data.monthly === undefined) return null;
-
-    return {
-      monthly: data.monthly,
-      exact: data.exact !== false,
-      capped: !!data.capped,
-      monthLabel: data.monthLabel || null,
-    };
-  } catch (e) {
-    // 연결 실패·타임아웃 → 당분간 프록시를 건너뛴다
-    proxyDownUntil = Date.now() + 60000;
-    return null;
-  }
+function dateIntToDate(n) {
+  const s = String(n);
+  return new Date(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T00:00:00+09:00`);
 }
 
 export default async function handler(req, res) {
@@ -46,19 +31,10 @@ export default async function handler(req, res) {
   const { keyword } = req.query;
   if (!keyword) return res.status(400).json({ error: "keyword 필요" });
 
-  // 월 발행량은 프록시 실측, 누적은 검색 API — 각자 잘하는 쪽을 쓴다
-  const proxied = await fetchCountViaHomeProxy(keyword);
-
   const clientId     = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
-    if (proxied) {
-      return res.status(200).json({
-        total: null, monthly: proxied.monthly, monthLabel: proxied.monthLabel,
-        exact: proxied.exact, capped: proxied.capped, source: "proxy",
-      });
-    }
-    return res.status(200).json({ total: null, monthly: null, error: "API 키 없음 · 프록시 응답 없음" });
+    return res.status(200).json({ total: null, monthly: null, error: "API 키 없음" });
   }
 
   const headers = {
@@ -66,25 +42,12 @@ export default async function handler(req, res) {
     "X-Naver-Client-Secret": clientSecret,
   };
 
-  function getKSTDateInt(offsetDays = 0) {
-    const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-    kst.setDate(kst.getDate() + offsetDays);
-    const y = kst.getFullYear();
-    const m = String(kst.getMonth()+1).padStart(2,"0");
-    const d = String(kst.getDate()).padStart(2,"0");
-    return parseInt(`${y}${m}${d}`, 10);
-  }
-
-  function toDateInt(item) {
-    const s = String(item.postdate || "");
-    if (s.length === 8 && /^\d{8}$/.test(s)) return parseInt(s, 10);
-    return null;
-  }
+  const q = encodeURIComponent(keyword);
 
   try {
-    // ── 1. 전체 누적 게시물 수 (프록시 실패 시 추정 경로) ──
+    // ── 1. 누적 발행량 ──
     const r1 = await fetch(
-      `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=1&sort=sim`,
+      `https://openapi.naver.com/v1/search/blog.json?query=${q}&display=1&sort=sim`,
       { headers }
     );
     const d1 = await r1.json();
@@ -93,90 +56,75 @@ export default async function handler(req, res) {
     }
     const total = d1.total ?? null;
 
-    // 프록시가 월 발행량을 실측했으면 추정 단계를 건너뛴다
-    if (proxied) {
-      return res.status(200).json({
-        total,
-        monthly: proxied.monthly,
-        monthLabel: proxied.monthLabel,
-        exact: proxied.exact,
-        capped: proxied.capped,
-        source: "proxy",
-      });
-    }
-
-    // ── 2. 최신순 3페이지(300개) 조회 ──
+    // ── 2. 최신순 1,000개 (100개씩 10페이지) ──
     const pages = await Promise.all(
-      [1, 101, 201].map(start =>
+      PAGES.map(start =>
         fetch(
-          `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=100&start=${start}&sort=date`,
+          `https://openapi.naver.com/v1/search/blog.json?query=${q}&display=100&start=${start}&sort=date`,
           { headers }
         ).then(r => r.json()).catch(() => ({ items: [] }))
       )
     );
-    const allDates = pages
+
+    const dates = pages
       .flatMap(d => (d.items || []).map(toDateInt).filter(n => n !== null))
       .sort((a, b) => b - a);
 
-    const today = getKSTDateInt(0);
-    const thirtyDaysAgo = getKSTDateInt(-30);
-
-    let monthly = null;
-
-    if (allDates.length >= 2) {
-      const dateCount = {};
-      allDates.forEach(d => { dateCount[d] = (dateCount[d]||0)+1; });
-
-      const todayCount     = dateCount[today] || 0;
-      const recentCount    = allDates.filter(d => d >= thirtyDaysAgo).length;
-
-      if (recentCount > 0 && recentCount < allDates.length) {
-        // 30일 경계가 샘플 안에 있음 → 직접 카운트
-        monthly = recentCount;
-
-      } else if (recentCount === allDates.length) {
-        // 300개 전부 30일 이내
-        const nonTodayDates = allDates.filter(d => d < today);
-
-        if (nonTodayDates.length >= 10) {
-          // 어제치 데이터 충분 → 어제치 기반 일평균
-          const oldest = nonTodayDates[nonTodayDates.length - 1];
-          const oldestStr = String(oldest);
-          const oldestDate = new Date(`${oldestStr.slice(0,4)}-${oldestStr.slice(4,6)}-${oldestStr.slice(6,8)}T00:00:00+09:00`);
-          const yesterdayDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-          yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-          yesterdayDate.setHours(0,0,0,0);
-          const spanDays = Math.max(
-            Math.round((yesterdayDate - oldestDate) / 86400000) + 1,
-            1
-          );
-          monthly = Math.round((nonTodayDates.length / spanDays) * 30);
-
-        } else {
-          // 어제치 없음 → 오늘 진행률로 하루 추정
-          const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-          const progress = Math.max((kst.getHours() * 60 + kst.getMinutes()) / 1440, 1/96);
-          monthly = Math.round((todayCount / progress) * 30);
-        }
-
-      } else {
-        // 전부 30일 이전 (드문 키워드)
-        const newest = allDates[0];
-        const oldest = allDates[allDates.length - 1];
-        const newestStr = String(newest), oldestStr = String(oldest);
-        const spanMs = new Date(`${newestStr.slice(0,4)}-${newestStr.slice(4,6)}-${newestStr.slice(6,8)}`) -
-                       new Date(`${oldestStr.slice(0,4)}-${oldestStr.slice(4,6)}-${oldestStr.slice(6,8)}`);
-        const spanDays = Math.max(spanMs / 86400000, 1);
-        monthly = Math.round((allDates.length / spanDays) * 30);
-      }
-
-    } else if (allDates.length === 1) {
-      monthly = total ? Math.round(total / 12) : 1;
-    } else {
-      monthly = total ? Math.round(total / 12) : null;
+    if (dates.length === 0) {
+      return res.status(200).json({
+        total, monthly: null, exact: false, source: "searchapi",
+        error: "최신 글을 찾지 못했습니다.",
+      });
     }
 
-    res.status(200).json({ total, monthly, source: "estimate" });
+    const today = kstNow();
+    const y = today.getFullYear();
+    const m = today.getMonth() + 1;
+    const monthStartInt = parseInt(`${y}${String(m).padStart(2, "0")}01`, 10);
+    const monthLabel = `${y}년 ${m}월 1일~${today.getDate()}일`;
+
+    const thisMonth = dates.filter(d => d >= monthStartInt);
+    const sampleCoversBoundary = thisMonth.length < dates.length;
+
+    // ── 경계가 표본 안에 있음 → 실제 개수 ──
+    if (sampleCoversBoundary) {
+      return res.status(200).json({
+        total,
+        monthly: thisMonth.length,
+        exact: true,
+        capped: false,
+        sampled: dates.length,
+        monthLabel,
+        source: "searchapi",
+      });
+    }
+
+    // ── 1,000개가 전부 이번 달 → 하한값 + 일평균 환산 ──
+    // 오늘은 아직 진행 중이라 일평균 계산에서 빼고, 어제까지로 속도를 잡는다.
+    const todayInt = parseInt(`${y}${String(m).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`, 10);
+    const beforeToday = dates.filter(d => d < todayInt);
+
+    let estimate = null;
+    if (beforeToday.length >= 10) {
+      const oldest = dateIntToDate(beforeToday[beforeToday.length - 1]);
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(0, 0, 0, 0);
+      const spanDays = Math.max(Math.round((yesterday - oldest) / 86400000) + 1, 1);
+      const perDay = beforeToday.length / spanDays;
+      estimate = Math.round(perDay * today.getDate());
+    }
+
+    return res.status(200).json({
+      total,
+      monthly: estimate ?? dates.length,
+      exact: false,
+      capped: true,                 // 최소 dates.length 이상이라는 뜻
+      atLeast: dates.length,
+      sampled: dates.length,
+      monthLabel,
+      source: "searchapi",
+    });
 
   } catch (err) {
     res.status(200).json({ total: null, monthly: null, error: err.message });
