@@ -7545,6 +7545,19 @@ function PasswordGate({children}){
 
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
+
+  // 로그아웃 — 서버가 쿠키를 지우고, 화면은 잠금 상태로 되돌아간다
+  const doLogout=async()=>{
+    if(!confirm("로그아웃하시겠어요?\n작성 중인 내용은 저장되지 않습니다.")) return;
+    try{
+      await fetch("/api/verify-password",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"logout"}),
+      });
+    }catch(e){}
+    location.reload();
+  };
   const [isMobile]=useState(()=>typeof window!=="undefined"&&window.matchMedia("(pointer:coarse)").matches);
   const [writeMenuOpen,setWriteMenuOpen]=useState(false);
   const [imgMenuOpen,setImgMenuOpen]=useState(false);
@@ -7887,6 +7900,15 @@ ${bodyText.slice(0, 2500)}
       <div style={{padding:"10px 12px",display:"flex",alignItems:"center",gap:"10px"}}>
         <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"17px"}}>✍️</div>
         <div style={{fontSize:"16px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div>
+        <button onClick={doLogout} title="자리를 뜰 때 눌러주세요"
+          style={{marginLeft:"auto",padding:"5px 12px",borderRadius:"6px",
+            border:"1px solid #30363d",background:"#161b22",color:"#8b949e",
+            fontSize:"11px",fontWeight:600,cursor:"pointer",
+            fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}
+          onMouseEnter={e=>{e.currentTarget.style.color="#f85149";e.currentTarget.style.borderColor="#f8514966";}}
+          onMouseLeave={e=>{e.currentTarget.style.color="#8b949e";e.currentTarget.style.borderColor="#30363d";}}>
+          🔒 로그아웃
+        </button>
       </div>
     </div>
 
