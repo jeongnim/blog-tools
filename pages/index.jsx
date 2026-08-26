@@ -480,7 +480,7 @@ function Textarea({value,onChange,placeholder,rows=9}){
   return <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} rows={rows}
     style={{width:"100%",boxSizing:"border-box",padding:"14px 16px",background:"#0d1117",
       border:"1px solid #30363d",borderRadius:"10px",color:"#e6edf3",
-      fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",lineHeight:"1.7",resize:"vertical",outline:"none"}}
+      fontFamily:"'Noto Sans KR',sans-serif",fontSize:"16px",lineHeight:"1.7",resize:"vertical",outline:"none"}}
     onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>;
 }
 // ─── 블로그 본문 미리보기 (네이버 블로그 형식 렌더링) ──────────────────────
@@ -503,7 +503,7 @@ function BlogPreview({ text }) {
         }
         result.push(
           <div key={`tt${i}`} style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px",
-            padding:"10px 14px",margin:"10px 0",fontFamily:"monospace",fontSize:"12px",
+            padding:"10px 14px",margin:"10px 0",fontFamily:"monospace",fontSize:"14px",
             color:"#c9d1d9",whiteSpace:"pre",overflowX:"auto"}}>
             {tableLines.join("\n")}
           </div>
@@ -514,19 +514,19 @@ function BlogPreview({ text }) {
       // ▶ 소제목
       if (line.startsWith("▶ ") || line.startsWith("▶")) {
         const heading = line.replace(/^▶\s*/, "");
-        result.push(<div key={i} style={{fontSize:"15px",fontWeight:700,color:"#e6edf3",
+        result.push(<div key={i} style={{fontSize:"17px",fontWeight:700,color:"#e6edf3",
           margin:"16px 0 6px",borderLeft:"3px solid #1f6feb",paddingLeft:"10px"}}>{heading}</div>);
       }
       // ## 소제목 (하위호환)
       else if (line.startsWith("## ")) {
-        result.push(<div key={i} style={{fontSize:"15px",fontWeight:700,color:"#e6edf3",
+        result.push(<div key={i} style={{fontSize:"17px",fontWeight:700,color:"#e6edf3",
           margin:"16px 0 6px",borderLeft:"3px solid #1f6feb",paddingLeft:"10px"}}>{line.slice(3)}</div>);
       } else if (line.startsWith("# ")) {
-        result.push(<div key={i} style={{fontSize:"16px",fontWeight:700,color:"#fff",margin:"16px 0 8px"}}>{line.slice(2)}</div>);
+        result.push(<div key={i} style={{fontSize:"18px",fontWeight:700,color:"#fff",margin:"16px 0 8px"}}>{line.slice(2)}</div>);
       } else if (line.trim() === "") {
         result.push(<div key={i} style={{height:"6px"}}/>);
       } else {
-        result.push(<div key={i} style={{fontSize:"13px",color:"#c9d1d9",lineHeight:"1.8",marginBottom:"2px"}}>{line}</div>);
+        result.push(<div key={i} style={{fontSize:"15px",color:"#c9d1d9",lineHeight:"1.8",marginBottom:"2px"}}>{line}</div>);
       }
       i++;
     }
@@ -540,12 +540,12 @@ function BlogPreview({ text }) {
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
       padding:"10px 14px",cursor:"pointer",userSelect:"none"}}
       onClick={()=>setOpen(o=>!o)}>
-      <span style={{fontSize:"12px",fontWeight:700,color:"#8b949e"}}>
+      <span style={{fontSize:"14px",fontWeight:700,color:"#8b949e"}}>
         📄 본문 미리보기
         {hasTable&&<span style={{marginLeft:"8px",background:"#1f6feb33",color:"#58a6ff",
-          fontSize:"10px",padding:"2px 7px",borderRadius:"10px",border:"1px solid #1f6feb44"}}>표 포함</span>}
+          fontSize:"12px",padding:"2px 7px",borderRadius:"10px",border:"1px solid #1f6feb44"}}>표 포함</span>}
       </span>
-      <span style={{color:"#484f58",fontSize:"11px"}}>{open?"▲ 접기":"▼ 펼치기"}</span>
+      <span style={{color:"#484f58",fontSize:"13px"}}>{open?"▲ 접기":"▼ 펼치기"}</span>
     </div>
     {open&&<div style={{padding:"14px 16px",borderTop:"1px solid #21262d",maxHeight:"500px",overflowY:"auto"}}>
       {renderContent(text)}
@@ -559,17 +559,17 @@ function Btn({onClick,children,variant="primary",loading,disabled}){
     background:bg[variant],color:variant==="secondary"?"#c9d1d9":"#fff",
     padding:"9px 20px",borderRadius:"8px",border:variant==="secondary"?"1px solid #30363d":"none",
     cursor:(loading||disabled)?"not-allowed":"pointer",fontFamily:"'Noto Sans KR',sans-serif",
-    fontSize:"13px",fontWeight:600,opacity:(loading||disabled)?.6:1,
+    fontSize:"15px",fontWeight:600,opacity:(loading||disabled)?.6:1,
   }}>{loading?"⏳ 처리중...":children}</button>;
 }
 function StatCard({label,value,accent}){
   return <div style={{background:"#161b22",borderRadius:"10px",padding:"14px 18px",textAlign:"center",borderTop:`3px solid ${accent||"#1f6feb"}`}}>
     <div style={{color:accent||"#58a6ff",fontSize:"22px",fontWeight:700}}>{typeof value==="number"?value.toLocaleString():value}</div>
-    <div style={{color:"#8b949e",fontSize:"12px",marginTop:"4px"}}>{label}</div>
+    <div style={{color:"#8b949e",fontSize:"14px",marginTop:"4px"}}>{label}</div>
   </div>;
 }
 function SectionTitle({children}){
-  return <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"10px",letterSpacing:"0.04em"}}>{children}</div>;
+  return <div style={{color:"#8b949e",fontSize:"14px",fontWeight:700,marginBottom:"10px",letterSpacing:"0.04em"}}>{children}</div>;
 }
 
 // ─── 금칙어 섹션 (AI 추천 포함) ──────────────────────────────────────────
@@ -660,16 +660,16 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
   const highCount=forbidden.filter(f=>f.severity==="high").length;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-    {!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 잠시 기다리면 자동으로 분석됩니다</div>}
+    {!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"16px",textAlign:"center"}}>글 입력 후 잠시 기다리면 자동으로 분석됩니다</div>}
     {workingText&&<>
       {/* 요약 헤더 */}
       <div style={{background:highCount>0?"#2d0b0b":"#0d2019",border:`1px solid ${highCount>0?"#f8514944":"#2ea04344"}`,borderRadius:"12px",padding:"14px 16px",display:"flex",alignItems:"center",gap:"14px"}}>
         <div style={{fontSize:"28px"}}>{highCount>0?"🔞":forbidden.length>0?"⚠️":"✅"}</div>
         <div style={{flex:1}}>
-          <div style={{color:highCount>0?"#f85149":forbidden.length>0?"#ffa657":"#3fb950",fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>
+          <div style={{color:highCount>0?"#f85149":forbidden.length>0?"#ffa657":"#3fb950",fontSize:"17px",fontWeight:700,marginBottom:"4px"}}>
             {highCount>0?`19금·위험 단어 ${highCount}개 발견 — 네이버 노출 차단 위험`:forbidden.length>0?`금칙어 총 ${forbidden.length}개 발견`:"금칙어 없음 ✓"}
           </div>
-          <div style={{color:"#8b949e",fontSize:"12px"}}>
+          <div style={{color:"#8b949e",fontSize:"14px"}}>
             {FORBIDDEN_CATEGORIES.filter(c=>byCat[c.id]).map(c=>`${c.icon} ${c.label} ${byCat[c.id].length}개`).join(" · ")||"모든 카테고리 통과"}
           </div>
         </div>
@@ -677,18 +677,18 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
           {forbidden.length>0&&<button onClick={aiRecommendAll} disabled={aiLoading}
             style={{padding:"7px 14px",background:aiLoading?"#21262d":"linear-gradient(135deg,#1f6feb,#8957e5)",
               color:aiLoading?"#484f58":"#fff",border:"none",borderRadius:"8px",cursor:aiLoading?"not-allowed":"pointer",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700}}>
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700}}>
             {aiLoading?"⏳ 추천중...":"✨ AI 전체 대체 추천"}
           </button>}
           {forbidden.length>0&&Object.values(replacements).some(v=>v?.trim())&&
             <button onClick={doReplaceAll}
               style={{padding:"7px 14px",background:"#2ea043",color:"#fff",border:"none",borderRadius:"8px",
-                cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700}}>
+                cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700}}>
               ✅ 전체 바꾸기
             </button>}
           <button onClick={()=>navigator.clipboard.writeText(workingText)}
             style={{padding:"7px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-              borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px"}}>
+              borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px"}}>
             📋 결과 복사
           </button>
         </div>
@@ -699,10 +699,10 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
         {FORBIDDEN_CATEGORIES.filter(c=>byCat[c.id]).map(cat=>(
           <div key={cat.id} style={{background:cat.bg,border:`1px solid ${cat.border}`,borderRadius:"12px",overflow:"hidden"}}>
             <div style={{padding:"10px 14px",borderBottom:`1px solid ${cat.border}`,display:"flex",alignItems:"center",gap:"8px"}}>
-              <span style={{fontSize:"16px"}}>{cat.icon}</span>
-              <span style={{color:cat.color,fontWeight:700,fontSize:"13px"}}>{cat.label}</span>
-              <span style={{background:cat.color+"22",color:cat.color,border:`1px solid ${cat.color}44`,borderRadius:"20px",padding:"1px 10px",fontSize:"11px",fontWeight:700}}>{byCat[cat.id].length}개</span>
-              <span style={{color:"#484f58",fontSize:"11px",marginLeft:"4px"}}>{cat.desc}</span>
+              <span style={{fontSize:"18px"}}>{cat.icon}</span>
+              <span style={{color:cat.color,fontWeight:700,fontSize:"15px"}}>{cat.label}</span>
+              <span style={{background:cat.color+"22",color:cat.color,border:`1px solid ${cat.color}44`,borderRadius:"20px",padding:"1px 10px",fontSize:"13px",fontWeight:700}}>{byCat[cat.id].length}개</span>
+              <span style={{color:"#484f58",fontSize:"13px",marginLeft:"4px"}}>{cat.desc}</span>
             </div>
             <div style={{display:"flex",flexDirection:"column"}}>
               {byCat[cat.id].map((item,i)=>{
@@ -713,9 +713,9 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
                   <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:suggList.length>0?"6px":"0"}}>
                     {/* 금칙어 + 구문 */}
                     <div style={{minWidth:"120px"}}>
-                      <span style={{color:cat.color,fontWeight:700,fontSize:"13px"}}>"{item.word}"</span>
-                      <span style={{color:"#484f58",fontSize:"10px",marginLeft:"6px"}}>{item.count}회</span>
-                      {item.phrase&&<div style={{color:"#8b949e",fontSize:"10px",marginTop:"2px",fontStyle:"italic"}}>
+                      <span style={{color:cat.color,fontWeight:700,fontSize:"15px"}}>"{item.word}"</span>
+                      <span style={{color:"#484f58",fontSize:"12px",marginLeft:"6px"}}>{item.count}회</span>
+                      {item.phrase&&<div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px",fontStyle:"italic"}}>
                         ...{item.phrase}...
                       </div>}
                     </div>
@@ -727,7 +727,7 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
                       onKeyDown={e=>e.key==="Enter"&&doReplace(item.word)}
                       style={{flex:1,padding:"6px 8px",background:"#0d1117",
                         border:`1px solid ${replacements[item.word]?.trim()?"#1f6feb66":"#30363d"}`,
-                        borderRadius:"6px",color:"#e6edf3",fontSize:"12px",outline:"none",
+                        borderRadius:"6px",color:"#e6edf3",fontSize:"14px",outline:"none",
                         fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
                       onFocus={e=>e.target.style.borderColor="#58a6ff"}
                       onBlur={e=>e.target.style.borderColor=replacements[item.word]?.trim()?"#1f6feb66":"#30363d"}/>
@@ -735,25 +735,25 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
                     <button onClick={()=>aiRecommendOne(item.word)} disabled={isPerLoading} title="AI 대체어 추천"
                       style={{padding:"6px 8px",background:isPerLoading?"#21262d":"#8957e522",
                         color:isPerLoading?"#484f58":"#d2a8ff",border:`1px solid ${isPerLoading?"#30363d":"#8957e544"}`,
-                        borderRadius:"6px",cursor:isPerLoading?"not-allowed":"pointer",fontSize:"13px",flexShrink:0}}>
+                        borderRadius:"6px",cursor:isPerLoading?"not-allowed":"pointer",fontSize:"15px",flexShrink:0}}>
                       {isPerLoading?"⏳":"✨"}
                     </button>
                     <button onClick={()=>doReplace(item.word)}
                       style={{padding:"6px 12px",background:replacements[item.word]?.trim()?"#1f6feb":"#21262d",
                         color:replacements[item.word]?.trim()?"#fff":"#484f58",border:"none",
                         borderRadius:"6px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
-                        fontSize:"11px",fontWeight:600,flexShrink:0}}>
+                        fontSize:"13px",fontWeight:600,flexShrink:0}}>
                       바꾸기
                     </button>
                   </div>
                   {suggList.length>0&&<div style={{display:"flex",gap:"5px",flexWrap:"wrap",paddingLeft:"130px"}}>
-                    <span style={{color:"#484f58",fontSize:"10px",flexShrink:0,alignSelf:"center"}}>추천:</span>
+                    <span style={{color:"#484f58",fontSize:"12px",flexShrink:0,alignSelf:"center"}}>추천:</span>
                     {suggList.map((s,si)=>(
                       <button key={si} onClick={()=>setReplacements(p=>({...p,[item.word]:s}))}
                         style={{padding:"2px 10px",background:replacements[item.word]===s?"#1f6feb22":"#21262d",
                           color:replacements[item.word]===s?"#58a6ff":"#8b949e",
                           border:`1px solid ${replacements[item.word]===s?"#1f6feb55":"#30363d"}`,
-                          borderRadius:"20px",cursor:"pointer",fontSize:"11px",
+                          borderRadius:"20px",cursor:"pointer",fontSize:"13px",
                           fontFamily:"'Noto Sans KR',sans-serif"}}>
                         {s}
                       </button>
@@ -768,9 +768,9 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
 
       {/* 미리보기 */}
       {forbidden.length>0&&<div>
-        <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"8px",fontWeight:600}}>📄 텍스트 미리보기 (금칙어 하이라이트)</div>
+        <div style={{fontSize:"14px",color:"#8b949e",marginBottom:"8px",fontWeight:600}}>📄 텍스트 미리보기 (금칙어 하이라이트)</div>
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px",
-          fontSize:"13px",lineHeight:"1.9",color:"#c9d1d9",maxHeight:"300px",overflowY:"auto",
+          fontSize:"15px",lineHeight:"1.9",color:"#c9d1d9",maxHeight:"300px",overflowY:"auto",
           whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
           {Array.isArray(hp)
             ?hp.map((p,i)=>{
@@ -785,8 +785,8 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
 
       {forbidden.length===0&&<div style={{background:"#0d2019",border:"1px solid #2ea04344",borderRadius:"10px",padding:"20px",textAlign:"center"}}>
         <div style={{fontSize:"24px",marginBottom:"8px"}}>✅</div>
-        <div style={{color:"#3fb950",fontSize:"14px",fontWeight:700}}>모든 카테고리 금칙어 없음</div>
-        <div style={{color:"#484f58",fontSize:"12px",marginTop:"4px"}}>19금 · 도박 · 광고 · 스팸 · 저품질 패턴 모두 통과</div>
+        <div style={{color:"#3fb950",fontSize:"16px",fontWeight:700}}>모든 카테고리 금칙어 없음</div>
+        <div style={{color:"#484f58",fontSize:"14px",marginTop:"4px"}}>19금 · 도박 · 광고 · 스팸 · 저품질 패턴 모두 통과</div>
       </div>}
     </>}
   </div>;
@@ -914,10 +914,10 @@ Return ONLY valid JSON, no markdown:
       <div>
         <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
           <span style={{fontSize:"18px"}}>🎨</span>
-          <span style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>단락별 이미지 프롬프트 생성</span>
-          <span style={{fontSize:"10px",background:"linear-gradient(135deg,#1f6feb22,#388bfd22)",color:"#58a6ff",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"2px 8px",fontWeight:700}}>GPT 붙여넣기용</span>
+          <span style={{color:"#e6edf3",fontSize:"16px",fontWeight:700}}>단락별 이미지 프롬프트 생성</span>
+          <span style={{fontSize:"12px",background:"linear-gradient(135deg,#1f6feb22,#388bfd22)",color:"#58a6ff",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"2px 8px",fontWeight:700}}>GPT 붙여넣기용</span>
         </div>
-        <div style={{color:"#484f58",fontSize:"11px",marginTop:"3px"}}>
+        <div style={{color:"#484f58",fontSize:"13px",marginTop:"3px"}}>
           본문을 5개 단락으로 분석하여 각 단락에 어울리는 이미지 생성 프롬프트 5개를 만들어줍니다
         </div>
       </div>
@@ -927,7 +927,7 @@ Return ONLY valid JSON, no markdown:
           background:imgLoading?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",
           color:imgLoading?"#484f58":"#fff",
           border:"none",borderRadius:"8px",cursor:imgLoading?"not-allowed":"pointer",
-          fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
+          fontSize:"14px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
           whiteSpace:"nowrap",boxShadow:imgLoading?"none":"0 3px 12px #1f6feb55",
           transition:"all .2s",display:"flex",alignItems:"center",gap:"6px",
         }}>
@@ -941,10 +941,10 @@ Return ONLY valid JSON, no markdown:
     {/* 옵션 바 */}
     <div style={{padding:"10px 16px",borderBottom:"1px solid #21262d",display:"flex",flexWrap:"wrap",gap:"14px",alignItems:"center"}}>
       <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-        <span style={{color:"#484f58",fontSize:"11px",fontWeight:600}}>스타일</span>
+        <span style={{color:"#484f58",fontSize:"13px",fontWeight:600}}>스타일</span>
         {IMG_STYLES.map(st=>(
           <button key={st.id} onClick={()=>setStyleId(st.id)} style={{
-            padding:"4px 10px",borderRadius:"6px",fontSize:"11px",fontWeight:600,cursor:"pointer",
+            padding:"4px 10px",borderRadius:"6px",fontSize:"13px",fontWeight:600,cursor:"pointer",
             fontFamily:"'Noto Sans KR',sans-serif",
             background:styleId===st.id?"#1f6feb":"#0d1117",
             color:styleId===st.id?"#fff":"#8b949e",
@@ -953,10 +953,10 @@ Return ONLY valid JSON, no markdown:
         ))}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-        <span style={{color:"#484f58",fontSize:"11px",fontWeight:600}}>비율</span>
+        <span style={{color:"#484f58",fontSize:"13px",fontWeight:600}}>비율</span>
         {IMG_RATIOS.map(r=>(
           <button key={r} onClick={()=>setRatio(r)} style={{
-            padding:"4px 10px",borderRadius:"6px",fontSize:"11px",fontWeight:600,cursor:"pointer",
+            padding:"4px 10px",borderRadius:"6px",fontSize:"13px",fontWeight:600,cursor:"pointer",
             fontFamily:"'Noto Sans KR',sans-serif",
             background:ratio===r?"#1f6feb":"#0d1117",
             color:ratio===r?"#fff":"#8b949e",
@@ -965,10 +965,10 @@ Return ONLY valid JSON, no markdown:
         ))}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-        <span style={{color:"#484f58",fontSize:"11px",fontWeight:600}}>언어</span>
+        <span style={{color:"#484f58",fontSize:"13px",fontWeight:600}}>언어</span>
         {[{id:"en",label:"영문"},{id:"ko",label:"국문"}].map(l=>(
           <button key={l.id} onClick={()=>setLang(l.id)} style={{
-            padding:"4px 10px",borderRadius:"6px",fontSize:"11px",fontWeight:600,cursor:"pointer",
+            padding:"4px 10px",borderRadius:"6px",fontSize:"13px",fontWeight:600,cursor:"pointer",
             fontFamily:"'Noto Sans KR',sans-serif",
             background:lang===l.id?"#1f6feb":"#0d1117",
             color:lang===l.id?"#fff":"#8b949e",
@@ -977,7 +977,7 @@ Return ONLY valid JSON, no markdown:
         ))}
       </div>
       {genImages.length>0&&<button onClick={()=>copyText(allText,"all")} style={{
-        marginLeft:"auto",padding:"5px 14px",borderRadius:"6px",fontSize:"11px",fontWeight:700,cursor:"pointer",
+        marginLeft:"auto",padding:"5px 14px",borderRadius:"6px",fontSize:"13px",fontWeight:700,cursor:"pointer",
         fontFamily:"'Noto Sans KR',sans-serif",
         background:copied==="all"?"#2ea043":"#21262d",
         color:copied==="all"?"#fff":"#c9d1d9",
@@ -986,13 +986,13 @@ Return ONLY valid JSON, no markdown:
     </div>
 
     {/* 에러 */}
-    {imgError&&<div style={{margin:"12px 16px",background:"#2d1117",border:"1px solid #da363344",borderRadius:"8px",padding:"10px 14px",color:"#ff7b72",fontSize:"12px"}}>⚠️ {imgError}</div>}
+    {imgError&&<div style={{margin:"12px 16px",background:"#2d1117",border:"1px solid #da363344",borderRadius:"8px",padding:"10px 14px",color:"#ff7b72",fontSize:"14px"}}>⚠️ {imgError}</div>}
 
     {/* 초기 안내 (생성 전) */}
     {!imgLoading&&genImages.length===0&&!imgError&&<div style={{padding:"28px 20px",textAlign:"center"}}>
       <div style={{fontSize:"36px",marginBottom:"10px"}}>📝</div>
-      <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"6px"}}>글 내용을 분석해서 5개 단락에 맞는 이미지 프롬프트를 만들어줍니다</div>
-      <div style={{color:"#484f58",fontSize:"11px",lineHeight:"1.7"}}>
+      <div style={{color:"#8b949e",fontSize:"15px",fontWeight:600,marginBottom:"6px"}}>글 내용을 분석해서 5개 단락에 맞는 이미지 프롬프트를 만들어줍니다</div>
+      <div style={{color:"#484f58",fontSize:"13px",lineHeight:"1.7"}}>
         · 각 단락마다 서로 다른 장면 프롬프트 1개씩 총 5개<br/>
         · 복사해서 ChatGPT · Gemini · Midjourney 등에 그대로 붙여넣기<br/>
         · 스타일 · 비율 · 언어는 재생성 없이 바로 바꿔서 복사 가능
@@ -1005,13 +1005,13 @@ Return ONLY valid JSON, no markdown:
         const full=buildFullPrompt(item,styleId,ratio,lang);
         return <div key={i} style={{borderRadius:"10px",border:"1px solid #30363d",background:"#0d1117",overflow:"hidden"}}>
           <div style={{padding:"9px 12px",borderBottom:"1px solid #21262d",display:"flex",alignItems:"center",gap:"8px"}}>
-            <span style={{background:"#1f6feb",color:"#fff",borderRadius:"4px",padding:"1px 7px",fontSize:"10px",fontWeight:700,flexShrink:0}}>{i+1}</span>
+            <span style={{background:"#1f6feb",color:"#fff",borderRadius:"4px",padding:"1px 7px",fontSize:"12px",fontWeight:700,flexShrink:0}}>{i+1}</span>
             <div style={{minWidth:0,flex:1}}>
-              <div style={{color:"#c9d1d9",fontSize:"12px",fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sectionTitle||`단락 ${i+1}`}</div>
-              {item.sectionDesc&&<div style={{color:"#484f58",fontSize:"11px",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sectionDesc}</div>}
+              <div style={{color:"#c9d1d9",fontSize:"14px",fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sectionTitle||`단락 ${i+1}`}</div>
+              {item.sectionDesc&&<div style={{color:"#484f58",fontSize:"13px",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sectionDesc}</div>}
             </div>
             <button onClick={()=>copyText(full,i)} style={{
-              padding:"4px 12px",borderRadius:"6px",fontSize:"11px",fontWeight:700,cursor:"pointer",flexShrink:0,
+              padding:"4px 12px",borderRadius:"6px",fontSize:"13px",fontWeight:700,cursor:"pointer",flexShrink:0,
               fontFamily:"'Noto Sans KR',sans-serif",
               background:copied===i?"#2ea043":"#21262d",
               color:copied===i?"#fff":"#c9d1d9",
@@ -1019,7 +1019,7 @@ Return ONLY valid JSON, no markdown:
             }}>{copied===i?"✅ 복사됨":"📋 복사"}</button>
           </div>
           <div onClick={()=>copyText(full,i)} style={{
-            padding:"11px 13px",color:"#8b949e",fontSize:"12px",lineHeight:"1.65",cursor:"pointer",
+            padding:"11px 13px",color:"#8b949e",fontSize:"14px",lineHeight:"1.65",cursor:"pointer",
             wordBreak:"break-word",whiteSpace:"pre-wrap",
           }}>{full}</div>
         </div>;
@@ -1027,7 +1027,7 @@ Return ONLY valid JSON, no markdown:
     </div>}
 
     {/* 완료 메시지 */}
-    {genImages.length>0&&!imgLoading&&<div style={{padding:"8px 16px 12px",textAlign:"center",color:"#484f58",fontSize:"11px",borderTop:"1px solid #21262d"}}>
+    {genImages.length>0&&!imgLoading&&<div style={{padding:"8px 16px 12px",textAlign:"center",color:"#484f58",fontSize:"13px",borderTop:"1px solid #21262d"}}>
       ✅ 프롬프트 {genImages.length}개 생성 완료 · 박스를 클릭해도 복사됩니다
     </div>}
   </div>;
@@ -1335,10 +1335,10 @@ JSON 형식:
     <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
 
     {/* ── 카테고리글쓰기에서 넘어온 경우: 메타 정보 표시 ── */}
-    {postMeta&&<div style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",padding:"10px 14px",fontSize:"12px"}}>
+    {postMeta&&<div style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",padding:"10px 14px",fontSize:"14px"}}>
       <div style={{display:"flex",alignItems:"center",gap:"6px",color:"#3fb950",fontWeight:700,marginBottom:"8px"}}>
         <span>{postMeta._source==="keyword"?"🔍 키워드 글쓰기 결과":"📋 카테고리 글쓰기 결과"}</span>
-        <span style={{color:"#484f58",fontWeight:400,fontSize:"11px",marginLeft:"auto"}}>분석 후 아래에서 복사·다운로드 가능</span>
+        <span style={{color:"#484f58",fontWeight:400,fontSize:"13px",marginLeft:"auto"}}>분석 후 아래에서 복사·다운로드 가능</span>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"56px 1fr",rowGap:"5px",alignItems:"baseline"}}>
         <span style={{color:"#484f58"}}>메인키워드</span>
@@ -1346,10 +1346,10 @@ JSON 형식:
         <span style={{color:"#484f58"}}>제목</span>
         <span style={{color:"#e6edf3",fontWeight:600,lineHeight:"1.5"}}>
           {postMeta.title||"(없음)"}
-          {postMeta.title&&<span style={{color:"#484f58",fontWeight:400,marginLeft:"6px",fontSize:"11px"}}>
+          {postMeta.title&&<span style={{color:"#484f58",fontWeight:400,marginLeft:"6px",fontSize:"13px"}}>
             {postMeta.title.length}자{postMeta.titlePattern?` · ${postMeta.titlePattern}`:""}
           </span>}
-          {postMeta.titleNotice&&<span style={{display:"block",color:"#d29922",fontWeight:400,fontSize:"11px",marginTop:"3px"}}>
+          {postMeta.titleNotice&&<span style={{display:"block",color:"#d29922",fontWeight:400,fontSize:"13px",marginTop:"3px"}}>
             ⚠️ {postMeta.titleNotice} — 직접 다듬는 걸 권합니다
           </span>}
         </span>
@@ -1365,7 +1365,7 @@ JSON 형식:
           {postMeta.factSummary.sources?.length>0&&<span style={{display:"block",marginTop:"3px"}}>
             {postMeta.factSummary.sources.slice(0,3).map((src,i)=>(
               <a key={i} href={src.url} target="_blank" rel="noreferrer"
-                style={{color:"#58a6ff",textDecoration:"none",marginRight:"8px",fontSize:"11px"}}>🔗 {src.name}</a>
+                style={{color:"#58a6ff",textDecoration:"none",marginRight:"8px",fontSize:"13px"}}>🔗 {src.name}</a>
             ))}
           </span>}
         </span></>}
@@ -1375,12 +1375,12 @@ JSON 형식:
     {/* ── [확인필요:] 항목 웹 조사 ── */}
     {placeholders.length>0&&<div style={{background:"#161b22",border:"1px solid #d2992244",borderRadius:"10px",overflow:"hidden"}}>
       <div style={{padding:"12px 16px",borderBottom:"1px solid #21262d",display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
-        <span style={{color:"#d29922",fontWeight:700,fontSize:"13px"}}>🔎 확인이 필요한 항목 {placeholders.length}개</span>
-        <span style={{color:"#484f58",fontSize:"11px"}}>웹에서 실제 값을 찾아 채웁니다 · 확인 안 되는 항목은 그대로 둡니다</span>
+        <span style={{color:"#d29922",fontWeight:700,fontSize:"15px"}}>🔎 확인이 필요한 항목 {placeholders.length}개</span>
+        <span style={{color:"#484f58",fontSize:"13px"}}>웹에서 실제 값을 찾아 채웁니다 · 확인 안 되는 항목은 그대로 둡니다</span>
         <button onClick={runFactCheck} disabled={factLoading}
           style={{marginLeft:"auto",padding:"6px 14px",borderRadius:"6px",border:"none",
             background:factLoading?"#21262d":"#d29922",color:factLoading?"#484f58":"#0d1117",
-            fontSize:"12px",fontWeight:700,cursor:factLoading?"wait":"pointer",
+            fontSize:"14px",fontWeight:700,cursor:factLoading?"wait":"pointer",
             fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
           {factLoading?"⏳ 검색 중...":factResults?"🔄 다시 조사":"🔎 웹에서 찾기"}
         </button>
@@ -1388,38 +1388,38 @@ JSON 형식:
 
       {!factResults&&!factLoading&&<div style={{padding:"10px 16px",display:"flex",flexWrap:"wrap",gap:"6px"}}>
         {placeholders.map((x,i)=>(
-          <span key={i} style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",padding:"3px 9px",color:"#8b949e",fontSize:"11px"}}>{x}</span>
+          <span key={i} style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",padding:"3px 9px",color:"#8b949e",fontSize:"13px"}}>{x}</span>
         ))}
       </div>}
 
-      {factError&&<div style={{margin:"10px 16px",background:"#2d1117",border:"1px solid #da363344",borderRadius:"8px",padding:"10px 12px",color:"#ff7b72",fontSize:"12px"}}>⚠️ {factError}</div>}
+      {factError&&<div style={{margin:"10px 16px",background:"#2d1117",border:"1px solid #da363344",borderRadius:"8px",padding:"10px 12px",color:"#ff7b72",fontSize:"14px"}}>⚠️ {factError}</div>}
 
       {factResults&&<div style={{padding:"12px 16px",display:"flex",flexDirection:"column",gap:"8px"}}>
         {factResults.map((it,i)=>{
           const done=factApplied[it.label];
           return <div key={i} style={{background:"#0d1117",border:`1px solid ${it.found?"#3fb95033":"#30363d"}`,borderRadius:"8px",padding:"10px 12px"}}>
             <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
-              <span style={{color:"#8b949e",fontSize:"11px"}}>{it.label}</span>
+              <span style={{color:"#8b949e",fontSize:"13px"}}>{it.label}</span>
               {it.found
-                ? <span style={{color:"#3fb950",fontWeight:700,fontSize:"13px"}}>{it.value}</span>
-                : <span style={{color:"#f85149",fontSize:"12px"}}>확인 실패 — 직접 채워주세요</span>}
+                ? <span style={{color:"#3fb950",fontWeight:700,fontSize:"15px"}}>{it.value}</span>
+                : <span style={{color:"#f85149",fontSize:"14px"}}>확인 실패 — 직접 채워주세요</span>}
               {it.found&&<button onClick={()=>applyFactValue(it.label,it.value)} disabled={done}
                 style={{marginLeft:"auto",padding:"4px 12px",borderRadius:"6px",
                   border:`1px solid ${done?"#2ea043":"#30363d"}`,
                   background:done?"#2ea043":"#21262d",color:done?"#fff":"#c9d1d9",
-                  fontSize:"11px",fontWeight:700,cursor:done?"default":"pointer",
+                  fontSize:"13px",fontWeight:700,cursor:done?"default":"pointer",
                   fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
                 {done?"✅ 적용됨":"본문에 넣기"}
               </button>}
             </div>
-            {(it.note||it.reason)&&<div style={{color:"#484f58",fontSize:"11px",marginTop:"4px"}}>{it.note||it.reason}</div>}
+            {(it.note||it.reason)&&<div style={{color:"#484f58",fontSize:"13px",marginTop:"4px"}}>{it.note||it.reason}</div>}
             {it.source&&<a href={it.source} target="_blank" rel="noreferrer"
-              style={{color:"#58a6ff",fontSize:"11px",marginTop:"3px",display:"inline-block",textDecoration:"none",wordBreak:"break-all"}}>
+              style={{color:"#58a6ff",fontSize:"13px",marginTop:"3px",display:"inline-block",textDecoration:"none",wordBreak:"break-all"}}>
               🔗 {it.sourceName||it.source}
             </a>}
           </div>;
         })}
-        <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>
+        <div style={{color:"#484f58",fontSize:"13px",marginTop:"2px"}}>
           출처 링크를 눌러 원문을 직접 확인한 뒤 넣으시는 걸 권합니다
         </div>
       </div>}
@@ -1438,15 +1438,15 @@ JSON 형식:
     {/* ── 텍스트 입력 영역 ── */}
     <div style={{position:"relative"}}>
       {autoLoading&&<div style={{background:"#0d2019",border:"1px solid #2ea04333",borderRadius:"10px",padding:"20px",textAlign:"center",marginBottom:"10px"}}>
-        <div style={{color:"#3fb950",fontSize:"14px",fontWeight:700,marginBottom:"8px"}}>✍️ 키워드 기반 글 자동 생성 중...</div>
-        <div style={{color:"#484f58",fontSize:"12px"}}>Sonnet으로 SEO 최적화 글 작성중. 잠시만 기다려주세요.</div>
+        <div style={{color:"#3fb950",fontSize:"16px",fontWeight:700,marginBottom:"8px"}}>✍️ 키워드 기반 글 자동 생성 중...</div>
+        <div style={{color:"#484f58",fontSize:"14px"}}>Sonnet으로 SEO 최적화 글 작성중. 잠시만 기다려주세요.</div>
         <div style={{marginTop:"12px",height:"4px",background:"#21262d",borderRadius:"2px",overflow:"hidden"}}>
           <div style={{height:"100%",background:"linear-gradient(90deg,#2ea043,#3fb950)",animation:"slideBar 1.5s ease infinite",borderRadius:"2px"}}/>
         </div>
         <style>{"@keyframes slideBar{0%{width:0%;marginLeft:0}50%{width:70%}100%{width:0%;marginLeft:100%}}"}</style>
       </div>}
       {!autoLoading&&<Textarea value={text} onChange={t=>{setText(t);}} placeholder="분석할 블로그 글을 입력하세요..." rows={9}/>}
-      <div style={{position:"absolute",bottom:"10px",right:"14px",color:text.length>9000?"#ff7b72":"#484f58",fontSize:"12px"}}>{text.length.toLocaleString()} / 10,000자</div>
+      <div style={{position:"absolute",bottom:"10px",right:"14px",color:text.length>9000?"#ff7b72":"#484f58",fontSize:"14px"}}>{text.length.toLocaleString()} / 10,000자</div>
     </div>
 
 
@@ -1459,9 +1459,9 @@ JSON 형식:
       {/* 초기화 */}
       {(text||aiResult)&&<Btn onClick={resetAll} variant="secondary">🗑️ 초기화</Btn>}
       {/* 상태 메시지 */}
-      {analyzing&&<span style={{color:"#58a6ff",fontSize:"12px"}}>⏳ 분석 중...</span>}
-      {isDirty&&!analyzing&&<span style={{color:"#ffa657",fontSize:"12px"}}>⚠️ 텍스트가 변경됐습니다. 다시 분석해보세요.</span>}
-      {aiResult&&!aiResult.error&&!isDirty&&!analyzing&&<span style={{color:"#3fb950",fontSize:"12px"}}>✅ 분석 완료</span>}
+      {analyzing&&<span style={{color:"#58a6ff",fontSize:"14px"}}>⏳ 분석 중...</span>}
+      {isDirty&&!analyzing&&<span style={{color:"#ffa657",fontSize:"14px"}}>⚠️ 텍스트가 변경됐습니다. 다시 분석해보세요.</span>}
+      {aiResult&&!aiResult.error&&!isDirty&&!analyzing&&<span style={{color:"#3fb950",fontSize:"14px"}}>✅ 분석 완료</span>}
       {/* 제목+본문+해시태그 복사/다운로드 — 분석 완료 후 표시 */}
       {aiResult&&!aiResult.error&&(
         <>
@@ -1469,7 +1469,7 @@ JSON 형식:
             marginLeft:"auto",padding:"8px 16px",
             background:copiedAll?"#2ea043":"#1f6feb",
             color:"#fff",border:"none",borderRadius:"8px",cursor:"pointer",
-            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700,
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700,
             display:"flex",alignItems:"center",gap:"6px",transition:"background .2s",whiteSpace:"nowrap",
           }}>
             {copiedAll?"✅ 복사됨!":"📋 제목+본문+해시태그 복사"}
@@ -1477,7 +1477,7 @@ JSON 형식:
           <button onClick={doDownload} style={{
             padding:"8px 14px",background:"#21262d",color:"#8b949e",
             border:"1px solid #30363d",borderRadius:"8px",cursor:"pointer",
-            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,whiteSpace:"nowrap",
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600,whiteSpace:"nowrap",
           }}>⬇️ TXT 다운로드</button>
         </>
       )}
@@ -1486,14 +1486,14 @@ JSON 형식:
     {/* 로딩 */}
     {analyzing&&<div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
       {["텍스트 파싱 중...","형태소·SEO 분석 중...","저품질·비속어 감지 중...","금칙어 목록 대조 중..."].map((m,i)=>(
-        <div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"10px 14px",color:"#8b949e",fontSize:"13px",animation:`pulse 1.6s ease ${i*0.3}s infinite`}}>⏳ {m}</div>
+        <div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"10px 14px",color:"#8b949e",fontSize:"15px",animation:`pulse 1.6s ease ${i*0.3}s infinite`}}>⏳ {m}</div>
       ))}
     </div>}
 
     {aiResult?.error&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"10px",padding:"16px",display:"flex",flexDirection:"column",gap:"6px"}}>
-      <div style={{color:"#ff7b72",fontWeight:700,fontSize:"14px"}}>⚠️ 오류가 발생했습니다</div>
-      <div style={{color:"#c9d1d9",fontSize:"13px"}}>{aiResult.message||"AI 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."}</div>
-      <div style={{fontSize:"11px",color:"#484f58",marginTop:"4px"}}>문제가 지속되면 API 키 또는 네트워크 상태를 확인해주세요.</div>
+      <div style={{color:"#ff7b72",fontWeight:700,fontSize:"16px"}}>⚠️ 오류가 발생했습니다</div>
+      <div style={{color:"#c9d1d9",fontSize:"15px"}}>{aiResult.message||"AI 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."}</div>
+      <div style={{fontSize:"13px",color:"#484f58",marginTop:"4px"}}>문제가 지속되면 API 키 또는 네트워크 상태를 확인해주세요.</div>
     </div>}
 
     {/* ── 섹션 탭 ── */}
@@ -1504,47 +1504,47 @@ JSON 형식:
           flex:1,padding:"9px 6px",borderRadius:"7px",border:"none",
           background:activeSection===sec.id?"#161b22":"none",
           color:activeSection===sec.id?"#e6edf3":"#8b949e",
-          cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
+          cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600,
           boxShadow:activeSection===sec.id?"0 1px 4px #00000066":"none",transition:"all .15s",
           position:"relative",
         }}>
           {sec.icon} {sec.label}
-          {badge>0&&<span style={{marginLeft:"5px",background:"#f85149",color:"#fff",borderRadius:"10px",padding:"0 6px",fontSize:"10px",fontWeight:700}}>{badge}</span>}
+          {badge>0&&<span style={{marginLeft:"5px",background:"#f85149",color:"#fff",borderRadius:"10px",padding:"0 6px",fontSize:"12px",fontWeight:700}}>{badge}</span>}
         </button>;
       })}
     </div>}
 
     {/* ── 섹션 1: 형태소·SEO ── */}
     {activeSection==="morpheme"&&<div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-      {!aiResult&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 잠시 기다리면 자동으로 분석됩니다</div>}
+      {!aiResult&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"16px",textAlign:"center"}}>글 입력 후 잠시 기다리면 자동으로 분석됩니다</div>}
       {aiResult&&!aiResult.error&&<>
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
           <div style={{display:"flex",alignItems:"center",gap:"14px",marginBottom:"12px"}}>
             <div style={{textAlign:"center"}}>
               <div style={{fontSize:"32px",fontWeight:700,color:aiResult.morpheme.seoScore>=70?"#3fb950":aiResult.morpheme.seoScore>=40?"#ffa657":"#ff7b72"}}>{aiResult.morpheme.seoScore}</div>
-              <div style={{color:"#8b949e",fontSize:"11px"}}>SEO 점수</div>
+              <div style={{color:"#8b949e",fontSize:"13px"}}>SEO 점수</div>
             </div>
             <div style={{flex:1}}>
               <div style={{height:"8px",background:"#21262d",borderRadius:"4px",overflow:"hidden",marginBottom:"8px"}}>
                 <div style={{width:`${aiResult.morpheme.seoScore}%`,height:"100%",background:aiResult.morpheme.seoScore>=70?"#3fb950":aiResult.morpheme.seoScore>=40?"#ffa657":"#ff7b72",borderRadius:"4px",transition:"width .5s"}}/>
               </div>
-              <div style={{color:"#c9d1d9",fontSize:"13px",lineHeight:"1.7"}}>{aiResult.morpheme.seoFeedback}</div>
+              <div style={{color:"#c9d1d9",fontSize:"15px",lineHeight:"1.7"}}>{aiResult.morpheme.seoFeedback}</div>
             </div>
           </div>
           <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
             {aiResult.morpheme.mainKeywords?.map(kw=>(
-              <span key={kw} style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"20px",padding:"3px 12px",fontSize:"12px",fontWeight:600}}>{kw}</span>
+              <span key={kw} style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"20px",padding:"3px 12px",fontSize:"14px",fontWeight:600}}>{kw}</span>
             ))}
           </div>
         </div>
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px 16px"}}>
-          <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"8px",fontWeight:600}}>😊 감정 분석 · {aiResult.morpheme.summary}</div>
+          <div style={{fontSize:"14px",color:"#8b949e",marginBottom:"8px",fontWeight:600}}>😊 감정 분석 · {aiResult.morpheme.summary}</div>
           <div style={{display:"flex",height:"10px",borderRadius:"5px",overflow:"hidden",gap:"2px"}}>
             <div style={{width:`${aiResult.morpheme.sentiment?.positive||33}%`,background:"#3fb950",borderRadius:"3px 0 0 3px"}}/>
             <div style={{width:`${aiResult.morpheme.sentiment?.neutral||33}%`,background:"#8b949e"}}/>
             <div style={{width:`${aiResult.morpheme.sentiment?.negative||34}%`,background:"#ff7b72",borderRadius:"0 3px 3px 0"}}/>
           </div>
-          <div style={{display:"flex",gap:"16px",marginTop:"6px",fontSize:"11px"}}>
+          <div style={{display:"flex",gap:"16px",marginTop:"6px",fontSize:"13px"}}>
             <span style={{color:"#3fb950"}}>😊 긍정 {aiResult.morpheme.sentiment?.positive}%</span>
             <span style={{color:"#8b949e"}}>😐 중립 {aiResult.morpheme.sentiment?.neutral}%</span>
             <span style={{color:"#ff7b72"}}>😟 부정 {aiResult.morpheme.sentiment?.negative}%</span>
@@ -1554,20 +1554,20 @@ JSON 형식:
           <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
             <SectionTitle>🔤 형태소 단어 빈도</SectionTitle>
             <div style={{display:"flex",alignItems:"center",gap:"5px",marginLeft:"auto"}}>
-              <span style={{color:"#8b949e",fontSize:"12px"}}>기준</span>
+              <span style={{color:"#8b949e",fontSize:"14px"}}>기준</span>
               <input type="number" value={threshold} min={1} max={20} onChange={e=>setThreshold(Number(e.target.value))}
-                style={{width:"46px",padding:"4px 6px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"13px",outline:"none",textAlign:"center"}}/>
-              <span style={{color:"#8b949e",fontSize:"12px"}}>회↑</span>
+                style={{width:"46px",padding:"4px 6px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"15px",outline:"none",textAlign:"center"}}/>
+              <span style={{color:"#8b949e",fontSize:"14px"}}>회↑</span>
             </div>
           </div>
           <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginBottom:"8px"}}>
             {Object.entries(typeColor).map(([t,c])=>(
               <div key={t} style={{display:"flex",alignItems:"center",gap:"4px"}}>
                 <div style={{width:"8px",height:"8px",borderRadius:"2px",background:c}}/>
-                <span style={{color:"#8b949e",fontSize:"11px"}}>{t}</span>
+                <span style={{color:"#8b949e",fontSize:"13px"}}>{t}</span>
               </div>
             ))}
-            <span style={{color:"#484f58",fontSize:"11px",marginLeft:"auto"}}>총 {aiResult.morpheme.words?.length}개 추출</span>
+            <span style={{color:"#484f58",fontSize:"13px",marginLeft:"auto"}}>총 {aiResult.morpheme.words?.length}개 추출</span>
           </div>
           {filtered.length>0
             ?<div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
@@ -1575,17 +1575,17 @@ JSON 형식:
                 const isHigh=seo==="high";
                 const tc=typeColor[type]||"#8b949e";
                 return <div key={word} style={{display:"flex",alignItems:"center",gap:"8px",background:"#161b22",borderRadius:"8px",padding:"7px 12px",border:`1px solid ${isHigh?"#2ea04355":"#21262d"}`}}>
-                  <span style={{background:tc+"22",color:tc,border:`1px solid ${tc}33`,borderRadius:"3px",padding:"1px 5px",fontSize:"10px",fontWeight:700,minWidth:"28px",textAlign:"center"}}>{type||"기타"}</span>
-                  <span style={{background:seoColor[seo||"low"]+"22",color:seoColor[seo||"low"],border:`1px solid ${seoColor[seo||"low"]}33`,borderRadius:"3px",padding:"1px 5px",fontSize:"10px",fontWeight:700,minWidth:"24px",textAlign:"center"}}>{seoLabel[seo||"low"]}</span>
-                  <span style={{flex:1,color:isHigh?"#3fb950":"#c9d1d9",fontSize:"13px",fontWeight:isHigh?700:400}}>{word}</span>
-                  <span style={{color:"#8b949e",fontSize:"12px",minWidth:"30px",textAlign:"right"}}>{count}회</span>
+                  <span style={{background:tc+"22",color:tc,border:`1px solid ${tc}33`,borderRadius:"3px",padding:"1px 5px",fontSize:"12px",fontWeight:700,minWidth:"28px",textAlign:"center"}}>{type||"기타"}</span>
+                  <span style={{background:seoColor[seo||"low"]+"22",color:seoColor[seo||"low"],border:`1px solid ${seoColor[seo||"low"]}33`,borderRadius:"3px",padding:"1px 5px",fontSize:"12px",fontWeight:700,minWidth:"24px",textAlign:"center"}}>{seoLabel[seo||"low"]}</span>
+                  <span style={{flex:1,color:isHigh?"#3fb950":"#c9d1d9",fontSize:"15px",fontWeight:isHigh?700:400}}>{word}</span>
+                  <span style={{color:"#8b949e",fontSize:"14px",minWidth:"30px",textAlign:"right"}}>{count}회</span>
                   <div style={{width:"80px",height:"6px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
                     <div style={{height:"100%",background:tc,width:`${Math.round((count/maxCount)*100)}%`,borderRadius:"3px"}}/>
                   </div>
                 </div>;
               })}
             </div>
-            :<div style={{background:"#0d2019",border:"1px solid #2ea043",borderRadius:"10px",padding:"12px",color:"#3fb950",fontSize:"14px"}}>✅ {threshold}회 이상 반복 단어 없음</div>
+            :<div style={{background:"#0d2019",border:"1px solid #2ea043",borderRadius:"10px",padding:"12px",color:"#3fb950",fontSize:"16px"}}>✅ {threshold}회 이상 반복 단어 없음</div>
           }
         </div>
       </>}
@@ -1595,7 +1595,7 @@ JSON 형식:
     {activeSection==="quality"&&<div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
 
       {/* 저품질 감지 결과 */}
-      {!aiResult&&!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"14px",textAlign:"center"}}>글 입력 후 잠시 기다리면 자동으로 분석됩니다</div>}
+      {!aiResult&&!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"16px",textAlign:"center"}}>글 입력 후 잠시 기다리면 자동으로 분석됩니다</div>}
 
       {aiResult&&!aiResult.error&&(()=>{
         const v=aiResult.lowQuality.verdict||"양호";
@@ -1604,10 +1604,10 @@ JSON 형식:
         return <div style={{background:vbg,border:`1px solid ${vc}44`,borderRadius:"12px",padding:"14px 16px",display:"flex",alignItems:"center",gap:"14px"}}>
           <div style={{textAlign:"center",minWidth:"52px"}}>
             <div style={{fontSize:"24px"}}>{vi}</div>
-            <div style={{color:vc,fontWeight:700,fontSize:"13px"}}>{v}</div>
+            <div style={{color:vc,fontWeight:700,fontSize:"15px"}}>{v}</div>
           </div>
           <div style={{flex:1}}>
-            <div style={{color:"#c9d1d9",fontSize:"12px",marginBottom:"6px"}}>저품질 위험도: <strong style={{color:vc}}>{sc}점</strong> <span style={{color:"#484f58",fontSize:"11px"}}>(낮을수록 안전)</span></div>
+            <div style={{color:"#c9d1d9",fontSize:"14px",marginBottom:"6px"}}>저품질 위험도: <strong style={{color:vc}}>{sc}점</strong> <span style={{color:"#484f58",fontSize:"13px"}}>(낮을수록 안전)</span></div>
             <div style={{height:"7px",background:"#21262d",borderRadius:"4px",overflow:"hidden"}}>
               <div style={{width:`${sc}%`,height:"100%",background:sc<30?"#3fb950":sc<60?"#ffa657":"#f85149",borderRadius:"4px",transition:"width .5s"}}/>
             </div>
@@ -1619,8 +1619,8 @@ JSON 형식:
       {aiResult&&!aiResult.error&&aiResult.lowQuality.items?.length>0&&(
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
           <div style={{padding:"10px 14px",borderBottom:"1px solid #30363d",background:"#0d1117",display:"flex",alignItems:"center",gap:"8px"}}>
-            <span style={{color:"#ffa657",fontWeight:700,fontSize:"13px"}}>⚠️ 저품질 요소 {aiResult.lowQuality.items.length}개</span>
-            <span style={{color:"#484f58",fontSize:"11px"}}>· AI 추천 후 바로 수정 가능</span>
+            <span style={{color:"#ffa657",fontWeight:700,fontSize:"15px"}}>⚠️ 저품질 요소 {aiResult.lowQuality.items.length}개</span>
+            <span style={{color:"#484f58",fontSize:"13px"}}>· AI 추천 후 바로 수정 가능</span>
           </div>
           <div style={{display:"flex",flexDirection:"column"}}>
             {aiResult.lowQuality.items.map((item,i)=>{
@@ -1632,12 +1632,12 @@ JSON 형식:
               const suggList=suggRaw?suggRaw.split(",").map(s=>s.trim()).filter(Boolean):[];
               return <div key={i} style={{padding:"12px 14px",borderBottom:i<aiResult.lowQuality.items.length-1?"1px solid #21262d":"none"}}>
                 <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px",flexWrap:"wrap"}}>
-                  <span style={{background:sc2+"22",color:sc2,border:`1px solid ${sc2}44`,borderRadius:"4px",padding:"1px 8px",fontSize:"11px",fontWeight:700}}>{item.category}</span>
-                  <span style={{background:"#21262d",color:sc2,borderRadius:"4px",padding:"1px 7px",fontSize:"10px"}}>{sevLabel}</span>
-                  <span style={{color:"#ff7b72",fontWeight:700,fontSize:"13px"}}>"{item.text}"</span>
-                  {item.count>1&&<span style={{color:"#484f58",fontSize:"11px"}}>({item.count}회)</span>}
+                  <span style={{background:sc2+"22",color:sc2,border:`1px solid ${sc2}44`,borderRadius:"4px",padding:"1px 8px",fontSize:"13px",fontWeight:700}}>{item.category}</span>
+                  <span style={{background:"#21262d",color:sc2,borderRadius:"4px",padding:"1px 7px",fontSize:"12px"}}>{sevLabel}</span>
+                  <span style={{color:"#ff7b72",fontWeight:700,fontSize:"15px"}}>"{item.text}"</span>
+                  {item.count>1&&<span style={{color:"#484f58",fontSize:"13px"}}>({item.count}회)</span>}
                 </div>
-                <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"8px",lineHeight:"1.5"}}>💡 {item.suggestion}</div>
+                <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"8px",lineHeight:"1.5"}}>💡 {item.suggestion}</div>
                 <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
                   <input
                     value={qualReplacements[item.text]||""}
@@ -1646,14 +1646,14 @@ JSON 형식:
                     onKeyDown={e=>e.key==="Enter"&&doQualReplace(item.text)}
                     style={{flex:1,minWidth:"120px",padding:"6px 8px",background:"#0d1117",
                       border:`1px solid ${qualReplacements[item.text]?.trim()?"#1f6feb66":"#30363d"}`,
-                      borderRadius:"6px",color:"#e6edf3",fontSize:"12px",outline:"none",
+                      borderRadius:"6px",color:"#e6edf3",fontSize:"14px",outline:"none",
                       fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
                     onFocus={e=>e.target.style.borderColor="#58a6ff"}
                     onBlur={e=>e.target.style.borderColor=qualReplacements[item.text]?.trim()?"#1f6feb66":"#30363d"}/>
                   <button onClick={()=>aiQualRecommend(item)} disabled={isLoading} title="AI 대체어 추천"
                     style={{padding:"6px 9px",background:isLoading?"#21262d":"#8957e522",
                       color:isLoading?"#484f58":"#d2a8ff",border:`1px solid ${isLoading?"#30363d":"#8957e544"}`,
-                      borderRadius:"6px",cursor:isLoading?"not-allowed":"pointer",fontSize:"13px",flexShrink:0}}>
+                      borderRadius:"6px",cursor:isLoading?"not-allowed":"pointer",fontSize:"15px",flexShrink:0}}>
                     {isLoading?"⏳":"✨"}
                   </button>
                   <button onClick={()=>doQualReplace(item.text)} disabled={!qualReplacements[item.text]?.trim()}
@@ -1661,18 +1661,18 @@ JSON 형식:
                       background:qualReplacements[item.text]?.trim()?"#1f6feb":"#21262d",
                       color:qualReplacements[item.text]?.trim()?"#fff":"#484f58",
                       border:"none",borderRadius:"6px",cursor:qualReplacements[item.text]?.trim()?"pointer":"not-allowed",
-                      fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px",fontWeight:600,flexShrink:0}}>
+                      fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,flexShrink:0}}>
                     바꾸기
                   </button>
                 </div>
                 {suggList.length>0&&<div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginTop:"6px"}}>
-                  <span style={{color:"#484f58",fontSize:"10px",alignSelf:"center"}}>추천:</span>
+                  <span style={{color:"#484f58",fontSize:"12px",alignSelf:"center"}}>추천:</span>
                   {suggList.map((sg,si)=>(
                     <button key={si} onClick={()=>setQualReplacements(p=>({...p,[item.text]:sg}))}
                       style={{padding:"2px 10px",background:qualReplacements[item.text]===sg?"#1f6feb22":"#21262d",
                         color:qualReplacements[item.text]===sg?"#58a6ff":"#8b949e",
                         border:`1px solid ${qualReplacements[item.text]===sg?"#1f6feb55":"#30363d"}`,
-                        borderRadius:"20px",cursor:"pointer",fontSize:"11px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+                        borderRadius:"20px",cursor:"pointer",fontSize:"13px",fontFamily:"'Noto Sans KR',sans-serif"}}>
                       {sg}
                     </button>
                   ))}
@@ -1683,7 +1683,7 @@ JSON 형식:
         </div>
       )}
       {aiResult&&!aiResult.error&&!aiResult.lowQuality.items?.length&&(
-        <div style={{background:"#0d2019",border:"1px solid #2ea043",borderRadius:"10px",padding:"14px",color:"#3fb950",fontSize:"14px",textAlign:"center"}}>✅ 저품질 요소가 감지되지 않았습니다!</div>
+        <div style={{background:"#0d2019",border:"1px solid #2ea043",borderRadius:"10px",padding:"14px",color:"#3fb950",fontSize:"16px",textAlign:"center"}}>✅ 저품질 요소가 감지되지 않았습니다!</div>
       )}
 
 
@@ -1695,7 +1695,7 @@ JSON 형식:
         doReplace={doReplace} doReplaceAll={doReplaceAll}
       />}
       {!workingText&&text&&aiResult&&!aiResult.error&&(
-        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 14px",color:"#8b949e",fontSize:"12px",textAlign:"center"}}>
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px 14px",color:"#8b949e",fontSize:"14px",textAlign:"center"}}>
           ⚠️ 금칙어 검사는 통합 분석 실행 후 나타납니다.
         </div>
       )}
@@ -1779,8 +1779,8 @@ function OcrTab(){
   const fmtSize=n=>n>1024*1024?(n/1024/1024).toFixed(1)+"MB":(n/1024).toFixed(0)+"KB";
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
-    {tesseractLoading&&<div style={{color:"#ffa657",fontSize:"12px"}}>⏳ OCR 엔진 로딩중...</div>}
-    {tesseractReady&&<div style={{color:"#3fb950",fontSize:"12px"}}>✅ OCR 준비됨</div>}
+    {tesseractLoading&&<div style={{color:"#ffa657",fontSize:"14px"}}>⏳ OCR 엔진 로딩중...</div>}
+    {tesseractReady&&<div style={{color:"#3fb950",fontSize:"14px"}}>✅ OCR 준비됨</div>}
 
     <div onClick={()=>fileInputRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileInputRef.current?.click();}}
       onDrop={e=>{e.preventDefault();setDragOver(false);addFiles(e.dataTransfer.files);}}
@@ -1789,12 +1789,12 @@ function OcrTab(){
       style={{border:`2px dashed ${dragOver?"#58a6ff":"#30363d"}`,borderRadius:"12px",padding:"36px 20px",
         textAlign:"center",cursor:"pointer",background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
       <div style={{fontSize:"36px",marginBottom:"10px"}}>🖼️</div>
-      <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:600,marginBottom:"6px"}}>이미지를 드래그하거나 클릭하여 업로드</div>
-      <div style={{color:"#484f58",fontSize:"13px"}}>JPG, PNG, GIF, WEBP · 긴 스크린샷도 가능</div>
+      <div style={{color:"#c9d1d9",fontSize:"17px",fontWeight:600,marginBottom:"6px"}}>이미지를 드래그하거나 클릭하여 업로드</div>
+      <div style={{color:"#484f58",fontSize:"15px"}}>JPG, PNG, GIF, WEBP · 긴 스크린샷도 가능</div>
       <input ref={fileInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>addFiles(e.target.files)}/>
     </div>
 
-    <div style={{background:"#161b22",borderRadius:"8px",padding:"10px 14px",border:"1px solid #30363d",color:"#8b949e",fontSize:"12px"}}>
+    <div style={{background:"#161b22",borderRadius:"8px",padding:"10px 14px",border:"1px solid #30363d",color:"#8b949e",fontSize:"14px"}}>
       💡 <strong style={{color:"#c9d1d9"}}>Ctrl+V</strong> 로 클립보드 이미지(스크린샷)를 바로 붙여넣기 가능
     </div>
 
@@ -1804,19 +1804,19 @@ function OcrTab(){
         {images.filter(i=>i.result).length>0&&<>
           <Btn onClick={()=>navigator.clipboard.writeText(images.filter(i=>i.result).map((i,idx)=>`[이미지 ${idx+1}]\n${i.result}`).join("\n\n---\n\n"))} variant="secondary">📋 전체 복사</Btn>
           <Btn onClick={()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([images.filter(i=>i.result).map((i,idx)=>`[이미지 ${idx+1}]\n${i.result}`).join("\n\n---\n\n")],{type:"text/plain"}));a.download="extracted_text.txt";a.click();}} variant="secondary">⬇️ 전체 다운로드</Btn>
-          {totalChars>0&&<span style={{color:"#8b949e",fontSize:"13px",marginLeft:"auto"}}>총 {totalChars.toLocaleString()}자</span>}
+          {totalChars>0&&<span style={{color:"#8b949e",fontSize:"15px",marginLeft:"auto"}}>총 {totalChars.toLocaleString()}자</span>}
         </>}
         <Btn onClick={()=>setImages([])} variant="secondary">🗑️ 전체 삭제</Btn>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
         {images.map((img,idx)=><div key={img.id} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
           <div style={{display:"flex",alignItems:"center",gap:"12px",padding:"12px 16px",borderBottom:"1px solid #21262d",background:"#0d1117"}}>
-            <span style={{color:"#8b949e",fontSize:"13px",fontWeight:600}}>이미지 {idx+1}</span>
-            <span style={{color:"#484f58",fontSize:"12px",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{img.file.name}</span>
-            <span style={{color:"#484f58",fontSize:"11px"}}>{fmtSize(img.file.size)}</span>
+            <span style={{color:"#8b949e",fontSize:"15px",fontWeight:600}}>이미지 {idx+1}</span>
+            <span style={{color:"#484f58",fontSize:"14px",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{img.file.name}</span>
+            <span style={{color:"#484f58",fontSize:"13px"}}>{fmtSize(img.file.size)}</span>
             <div style={{display:"flex",gap:"6px"}}>
-              {!img.result&&!img.loading&&<button onClick={()=>extractText(img)} style={{padding:"5px 12px",background:"#1f6feb",color:"#fff",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"12px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>추출</button>}
-              <button onClick={()=>setImages(p=>p.filter(i=>i.id!==img.id))} style={{padding:"5px 10px",background:"none",color:"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:"pointer",fontSize:"12px"}}>✕</button>
+              {!img.result&&!img.loading&&<button onClick={()=>extractText(img)} style={{padding:"5px 12px",background:"#1f6feb",color:"#fff",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"14px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>추출</button>}
+              <button onClick={()=>setImages(p=>p.filter(i=>i.id!==img.id))} style={{padding:"5px 10px",background:"none",color:"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:"pointer",fontSize:"14px"}}>✕</button>
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"200px 1fr"}}>
@@ -1826,20 +1826,20 @@ function OcrTab(){
             <div style={{padding:"14px",display:"flex",flexDirection:"column",gap:"8px"}}>
               {img.loading?<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{color:"#8b949e",fontSize:"13px"}}>⏳ 텍스트 인식중...</span>
-                  <span style={{color:"#58a6ff",fontSize:"13px",fontWeight:700}}>{img.progress||0}%</span>
+                  <span style={{color:"#8b949e",fontSize:"15px"}}>⏳ 텍스트 인식중...</span>
+                  <span style={{color:"#58a6ff",fontSize:"15px",fontWeight:700}}>{img.progress||0}%</span>
                 </div>
                 <div style={{background:"#21262d",borderRadius:"4px",height:"6px",overflow:"hidden"}}>
                   <div style={{background:"linear-gradient(90deg,#1f6feb,#58a6ff)",height:"100%",width:`${img.progress||0}%`,transition:"width .3s",borderRadius:"4px"}}/>
                 </div>
               </div>:img.result?<>
                 <div style={{display:"flex",justifyContent:"flex-end",gap:"6px"}}>
-                  <span style={{color:"#484f58",fontSize:"11px",marginRight:"auto"}}>{img.result.length.toLocaleString()}자 추출됨</span>
-                  <button onClick={()=>navigator.clipboard.writeText(img.result)} style={{padding:"4px 10px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"11px"}}>복사</button>
-                  <button onClick={()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([img.result],{type:"text/plain"}));a.download=`image_${idx+1}_text.txt`;a.click();}} style={{padding:"4px 10px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"11px"}}>다운로드</button>
+                  <span style={{color:"#484f58",fontSize:"13px",marginRight:"auto"}}>{img.result.length.toLocaleString()}자 추출됨</span>
+                  <button onClick={()=>navigator.clipboard.writeText(img.result)} style={{padding:"4px 10px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"13px"}}>복사</button>
+                  <button onClick={()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([img.result],{type:"text/plain"}));a.download=`image_${idx+1}_text.txt`;a.click();}} style={{padding:"4px 10px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"13px"}}>다운로드</button>
                 </div>
-                <div style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",padding:"12px",color:"#e6edf3",fontSize:"13px",lineHeight:"1.8",whiteSpace:"pre-wrap",maxHeight:"200px",overflowY:"auto",wordBreak:"break-all"}}>{img.result}</div>
-              </>:<div style={{color:"#484f58",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center",height:"100%",minHeight:"80px"}}>위의 '추출' 버튼을 클릭하세요</div>}
+                <div style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",padding:"12px",color:"#e6edf3",fontSize:"15px",lineHeight:"1.8",whiteSpace:"pre-wrap",maxHeight:"200px",overflowY:"auto",wordBreak:"break-all"}}>{img.result}</div>
+              </>:<div style={{color:"#484f58",fontSize:"15px",display:"flex",alignItems:"center",justifyContent:"center",height:"100%",minHeight:"80px"}}>위의 '추출' 버튼을 클릭하세요</div>}
             </div>
           </div>
         </div>)}
@@ -1919,49 +1919,49 @@ function ConvertTab(){
 
         {/* 출력 포맷 */}
         <div>
-          <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"8px"}}>출력 형식</div>
+          <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"8px"}}>출력 형식</div>
           <div style={{display:"flex",gap:"6px"}}>
             {OUTPUT_FORMATS.map(f=>(
               <button key={f.id} onClick={()=>{setOutputFormat(f.id);setFiles(p=>p.map(i=>({...i,result:null,error:""})));}} style={{
                 padding:"8px 18px",borderRadius:"8px",border:`1px solid ${outputFormat===f.id?"#58a6ff":"#30363d"}`,
                 background:outputFormat===f.id?"#1f6feb":"#21262d",
                 color:outputFormat===f.id?"#fff":"#8b949e",
-                cursor:"pointer",fontWeight:700,fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif",
+                cursor:"pointer",fontWeight:700,fontSize:"16px",fontFamily:"'Noto Sans KR',sans-serif",
               }}>{f.label}</button>
             ))}
           </div>
-          <div style={{marginTop:"6px",fontSize:"11px",color:"#484f58"}}>
+          <div style={{marginTop:"6px",fontSize:"13px",color:"#484f58"}}>
             입력: {INPUT_FORMATS.join(", ")} → 출력: {fmt.label}
           </div>
         </div>
 
         {/* 품질 슬라이더 */}
         {fmt.hasQuality&&<div style={{flex:1,minWidth:"200px"}}>
-          <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"8px"}}>
+          <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"8px"}}>
             품질 <span style={{color:"#58a6ff",fontWeight:700}}>{quality}%</span>
             <span style={{color:"#484f58",marginLeft:"8px"}}>{quality>=85?"높은 품질":quality>=60?"보통 품질":"낮은 품질 (파일 작음)"}</span>
           </div>
           <input type="range" min={10} max={100} value={quality} onChange={e=>{setQuality(Number(e.target.value));setFiles(p=>p.map(i=>({...i,result:null,error:""})));}}
             style={{width:"100%",accentColor:"#1f6feb",cursor:"pointer"}}/>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginTop:"4px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:"12px",color:"#484f58",marginTop:"4px"}}>
             <span>저화질 (작은 파일)</span><span>고화질 (큰 파일)</span>
           </div>
         </div>}
 
         {/* 리사이즈 옵션 */}
         <div>
-          <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"8px"}}>크기 조절</div>
+          <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"8px"}}>크기 조절</div>
           <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
             <button onClick={()=>{setResize(!resize);setFiles(p=>p.map(i=>({...i,result:null,error:""})));}} style={{
               padding:"7px 14px",borderRadius:"6px",border:`1px solid ${resize?"#58a6ff":"#30363d"}`,
               background:resize?"#1f6feb22":"#21262d",color:resize?"#58a6ff":"#8b949e",
-              cursor:"pointer",fontSize:"13px",fontFamily:"'Noto Sans KR',sans-serif",
+              cursor:"pointer",fontSize:"15px",fontFamily:"'Noto Sans KR',sans-serif",
             }}>{resize?"✅ 리사이즈 ON":"리사이즈 OFF"}</button>
             {resize&&<div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-              <span style={{color:"#8b949e",fontSize:"12px"}}>최대 너비</span>
+              <span style={{color:"#8b949e",fontSize:"14px"}}>최대 너비</span>
               <input type="number" value={maxWidth} min={100} max={8000} onChange={e=>{setMaxWidth(Number(e.target.value));setFiles(p=>p.map(i=>({...i,result:null,error:""})));}}
-                style={{width:"80px",padding:"5px 8px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"13px",outline:"none",textAlign:"center"}}/>
-              <span style={{color:"#8b949e",fontSize:"12px"}}>px</span>
+                style={{width:"80px",padding:"5px 8px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"15px",outline:"none",textAlign:"center"}}/>
+              <span style={{color:"#8b949e",fontSize:"14px"}}>px</span>
             </div>}
           </div>
         </div>
@@ -1975,10 +1975,10 @@ function ConvertTab(){
       style={{border:`2px dashed ${dragOver?"#58a6ff":"#30363d"}`,borderRadius:"12px",padding:"32px 20px",
         textAlign:"center",cursor:"pointer",background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
       <div style={{fontSize:"32px",marginBottom:"8px"}}>🔄</div>
-      <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:600,marginBottom:"6px"}}>
+      <div style={{color:"#c9d1d9",fontSize:"17px",fontWeight:600,marginBottom:"6px"}}>
         이미지를 드래그하거나 클릭하여 업로드
       </div>
-      <div style={{color:"#484f58",fontSize:"13px"}}>
+      <div style={{color:"#484f58",fontSize:"15px"}}>
         {INPUT_FORMATS.join(", ")} → <span style={{color:"#58a6ff",fontWeight:600}}>{fmt.label}</span> 변환
       </div>
       <input ref={fileInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>addFiles(e.target.files)}/>
@@ -1994,7 +1994,7 @@ function ConvertTab(){
           <Btn onClick={downloadAll} variant="success">
             ⬇️ 전체 다운로드 ({files.filter(f=>f.result).length}개)
           </Btn>
-          <span style={{color:"#8b949e",fontSize:"13px",marginLeft:"auto"}}>
+          <span style={{color:"#8b949e",fontSize:"15px",marginLeft:"auto"}}>
             {files.filter(f=>f.result).length} / {files.length} 완료
           </span>
         </>}
@@ -2006,7 +2006,7 @@ function ConvertTab(){
         {/* 헤더 */}
         <div style={{display:"grid",gridTemplateColumns:"60px 1fr 120px 120px 90px 80px",gap:"10px",
           padding:"8px 14px",background:"#21262d",borderRadius:"8px",
-          fontSize:"11px",color:"#8b949e",fontWeight:600}}>
+          fontSize:"13px",color:"#8b949e",fontWeight:600}}>
           <span>미리보기</span><span>파일명</span><span>원본 크기</span><span>변환 후 크기</span><span>압축률</span><span>액션</span>
         </div>
 
@@ -2020,31 +2020,31 @@ function ConvertTab(){
             <img src={item.preview} alt="" style={{width:"52px",height:"52px",objectFit:"cover",borderRadius:"6px",border:"1px solid #30363d"}}/>
             {/* 파일명 */}
             <div>
-              <div style={{color:"#e6edf3",fontSize:"13px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.file.name}</div>
-              <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>{item.file.type||"unknown"}</div>
-              {item.error&&<div style={{color:"#ff7b72",fontSize:"11px",marginTop:"2px"}}>⚠️ {item.error}</div>}
+              <div style={{color:"#e6edf3",fontSize:"15px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.file.name}</div>
+              <div style={{color:"#484f58",fontSize:"13px",marginTop:"2px"}}>{item.file.type||"unknown"}</div>
+              {item.error&&<div style={{color:"#ff7b72",fontSize:"13px",marginTop:"2px"}}>⚠️ {item.error}</div>}
             </div>
             {/* 원본 크기 */}
-            <div style={{color:"#8b949e",fontSize:"13px"}}>{fmtSize(item.origSize)}</div>
+            <div style={{color:"#8b949e",fontSize:"15px"}}>{fmtSize(item.origSize)}</div>
             {/* 변환 후 크기 */}
-            <div style={{fontSize:"13px",color:item.result?"#3fb950":"#484f58"}}>
+            <div style={{fontSize:"15px",color:item.result?"#3fb950":"#484f58"}}>
               {item.loading?"변환중...":item.result?fmtSize(item.result.size):"-"}
             </div>
             {/* 압축률 */}
-            <div style={{fontSize:"13px"}}>
+            <div style={{fontSize:"15px"}}>
               {saving!=null?<span style={{color:saving>0?"#3fb950":saving<0?"#ff7b72":"#8b949e",fontWeight:600}}>
                 {saving>0?`▼ ${saving}%`:saving<0?`▲ ${Math.abs(saving)}%`:"동일"}
               </span>:"-"}
             </div>
             {/* 액션 */}
             <div style={{display:"flex",gap:"4px",flexDirection:"column"}}>
-              {item.loading?<span style={{color:"#8b949e",fontSize:"11px"}}>⏳ 처리중</span>
+              {item.loading?<span style={{color:"#8b949e",fontSize:"13px"}}>⏳ 처리중</span>
               :item.result?<>
-                <button onClick={()=>downloadFile(item)} style={{padding:"5px 8px",background:"#2ea043",color:"#fff",border:"none",borderRadius:"5px",cursor:"pointer",fontSize:"11px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>⬇️ 저장</button>
-                <button onClick={()=>convertFile(item)} style={{padding:"4px 8px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"10px",fontFamily:"'Noto Sans KR',sans-serif"}}>재변환</button>
+                <button onClick={()=>downloadFile(item)} style={{padding:"5px 8px",background:"#2ea043",color:"#fff",border:"none",borderRadius:"5px",cursor:"pointer",fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>⬇️ 저장</button>
+                <button onClick={()=>convertFile(item)} style={{padding:"4px 8px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>재변환</button>
               </>:<>
-                <button onClick={()=>convertFile(item)} style={{padding:"5px 8px",background:"#1f6feb",color:"#fff",border:"none",borderRadius:"5px",cursor:"pointer",fontSize:"11px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>변환</button>
-                <button onClick={()=>setFiles(p=>p.filter(f=>f.id!==item.id))} style={{padding:"4px 8px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"10px"}}>✕ 삭제</button>
+                <button onClick={()=>convertFile(item)} style={{padding:"5px 8px",background:"#1f6feb",color:"#fff",border:"none",borderRadius:"5px",cursor:"pointer",fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>변환</button>
+                <button onClick={()=>setFiles(p=>p.filter(f=>f.id!==item.id))} style={{padding:"4px 8px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"12px"}}>✕ 삭제</button>
               </>}
             </div>
           </div>;
@@ -2058,8 +2058,8 @@ function ConvertTab(){
           {files.filter(f=>f.result).map((item,idx)=>(
             <div key={item.id} style={{display:"flex",flexDirection:"column",gap:"6px",alignItems:"center"}}>
               <img src={item.result.url} alt="" style={{width:"100px",height:"80px",objectFit:"contain",borderRadius:"6px",border:"1px solid #30363d",background:"#0d1117"}}/>
-              <div style={{fontSize:"10px",color:"#8b949e",textAlign:"center"}}>{fmtSize(item.result.size)}</div>
-              <button onClick={()=>downloadFile(item)} style={{padding:"4px 12px",background:"#2ea043",color:"#fff",border:"none",borderRadius:"5px",cursor:"pointer",fontSize:"11px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>⬇️ 저장</button>
+              <div style={{fontSize:"12px",color:"#8b949e",textAlign:"center"}}>{fmtSize(item.result.size)}</div>
+              <button onClick={()=>downloadFile(item)} style={{padding:"4px 12px",background:"#2ea043",color:"#fff",border:"none",borderRadius:"5px",cursor:"pointer",fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>⬇️ 저장</button>
             </div>
           ))}
         </div>
@@ -2350,12 +2350,12 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
       <input value={inputVal} onChange={e=>setInputVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&analyze()}
         placeholder="키워드 입력 (예: 강남맛집)"
         style={{flex:1,minWidth:0,padding:"10px 12px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",
-          color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none"}}
+          color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"16px",outline:"none"}}
         onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
       <Btn onClick={()=>analyze()} loading={loading}>🔍 분석</Btn>
       {result&&<button onClick={()=>{setKwResult(null);setInputVal("");setError("");}}
         style={{padding:"10px 10px",background:"#21262d",border:"1px solid #30363d",borderRadius:"10px",
-          color:"#8b949e",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",whiteSpace:"nowrap"}}>
+          color:"#8b949e",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",whiteSpace:"nowrap"}}>
         🗑️
       </button>}
     </div>
@@ -2365,7 +2365,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
     {loading&&<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
       {["📡 네이버 광고 API 검색량 조회 중...","📊 블로그 총 게시물 수 조회 중...","🤖 AI 트렌드 분석 중...","🔗 연관 키워드 검색량 조회 중..."].map((msg,i)=>(
         <div key={i} style={{background:"#161b22",borderRadius:"10px",padding:"12px 16px",border:"1px solid #30363d",
-          color:"#8b949e",fontSize:"13px",animation:`pulse 1.5s ease ${i*0.3}s infinite`}}>
+          color:"#8b949e",fontSize:"15px",animation:`pulse 1.5s ease ${i*0.3}s infinite`}}>
           {msg}
         </div>
       ))}
@@ -2376,7 +2376,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
       {/* ── 키워드 헤더 ── */}
       <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",padding:"4px 0"}}>
         <div style={{fontSize:"18px",fontWeight:700,color:"#fff"}}>🔍 <span style={{color:"#58a6ff"}}>"{result.keyword}"</span></div>
-        <span style={{fontSize:"10px",color:result.naverOk?"#3fb950":"#ffa657",
+        <span style={{fontSize:"12px",color:result.naverOk?"#3fb950":"#ffa657",
           background:result.naverOk?"#0d2019":"#2d1e0a",
           border:`1px solid ${result.naverOk?"#2ea04333":"#ffa65733"}`,
           borderRadius:"20px",padding:"2px 8px",whiteSpace:"nowrap"}}>
@@ -2386,7 +2386,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
           color:result.trend==="상승"?"#3fb950":result.trend==="하락"?"#ff7b72":"#8b949e",
           background:result.trend==="상승"?"#0d201966":result.trend==="하락"?"#2d111766":"#21262d",
           border:`1px solid ${result.trend==="상승"?"#2ea04344":result.trend==="하락"?"#da363344":"#30363d"}`,
-          borderRadius:"20px",padding:"3px 10px",fontSize:"12px",fontWeight:600,whiteSpace:"nowrap"}}>
+          borderRadius:"20px",padding:"3px 10px",fontSize:"14px",fontWeight:600,whiteSpace:"nowrap"}}>
           {result.trend==="상승"?"📈 상승세":result.trend==="하락"?"📉 하락세":"➡️ 유지"}
         </span>
       </div>
@@ -2404,8 +2404,8 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
               ["모바일 검색량", result.mobMonthly!==null?fmtNum(result.mobMonthly)+"회":"-","#d2a8ff"],
             ].map(([l,v,c])=>(
               <div key={l} style={{background:"#0d1117aa",borderRadius:"8px",padding:"10px 8px",border:"1px solid #30363d",textAlign:"center"}}>
-                <div style={{color:c,fontSize:"16px",fontWeight:700,marginBottom:"3px"}}>{v}</div>
-                <div style={{color:"#8b949e",fontSize:"10px"}}>{l}</div>
+                <div style={{color:c,fontSize:"18px",fontWeight:700,marginBottom:"3px"}}>{v}</div>
+                <div style={{color:"#8b949e",fontSize:"12px"}}>{l}</div>
               </div>
             ))}
           </div>
@@ -2416,25 +2416,25 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
               ["클릭(모바일)", result.mobAvgClick!==null?fmtNum(result.mobAvgClick)+"회":"-","#ffa657"],
             ].map(([l,v,c])=>(
               <div key={l} style={{background:"#0d1117aa",borderRadius:"8px",padding:"8px 6px",border:"1px solid #30363d",textAlign:"center"}}>
-                <div style={{color:c,fontSize:"13px",fontWeight:700,marginBottom:"3px"}}>{v}</div>
-                <div style={{color:"#8b949e",fontSize:"10px"}}>{l}</div>
+                <div style={{color:c,fontSize:"15px",fontWeight:700,marginBottom:"3px"}}>{v}</div>
+                <div style={{color:"#8b949e",fontSize:"12px"}}>{l}</div>
               </div>
             ))}
           </div>
-          {result.totalMonthly!==null&&<div style={{marginTop:"7px",fontSize:"10px",color:"#484f58",textAlign:"right"}}>
+          {result.totalMonthly!==null&&<div style={{marginTop:"7px",fontSize:"12px",color:"#484f58",textAlign:"right"}}>
             ※ 네이버 검색광고 API 기준 · 10 이하는 "10 이하"로 표시
           </div>}
         </div>
 
         {/* 연관검색어 */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
-          <SectionTitle>🔗 연관검색어 <span style={{color:"#484f58",fontWeight:400,fontSize:"11px"}}>· 월 검색량</span></SectionTitle>
+          <SectionTitle>🔗 연관검색어 <span style={{color:"#484f58",fontWeight:400,fontSize:"13px"}}>· 월 검색량</span></SectionTitle>
           {result.relKeywords?.length>0?(
             <div style={{maxHeight:"320px",overflowY:"auto"}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 64px 64px",gap:"6px",padding:"5px 8px",borderBottom:"1px solid #21262d",marginBottom:"4px"}}>
-                <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>키워드</span>
-                <span style={{color:"#484f58",fontSize:"10px",fontWeight:700,textAlign:"right"}}>월검색량</span>
-                <span style={{color:"#484f58",fontSize:"10px",fontWeight:700,textAlign:"right"}}>모바일</span>
+                <span style={{color:"#484f58",fontSize:"12px",fontWeight:700}}>키워드</span>
+                <span style={{color:"#484f58",fontSize:"12px",fontWeight:700,textAlign:"right"}}>월검색량</span>
+                <span style={{color:"#484f58",fontSize:"12px",fontWeight:700,textAlign:"right"}}>모바일</span>
               </div>
               {result.relKeywords.map((rk,i)=>(
                 <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 64px 64px",gap:"6px",
@@ -2442,17 +2442,17 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
                   onMouseEnter={e=>e.currentTarget.style.background="#21262d"}
                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}
                   onClick={()=>{setInputVal(rk.keyword);analyze(rk.keyword);}}>
-                  <span style={{color:"#c9d1d9",fontSize:"12px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  <span style={{color:"#c9d1d9",fontSize:"14px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {rk.keyword}
-                    {rk.fromAutoComplete&&<span style={{marginLeft:"5px",fontSize:"9px",color:"#484f58",background:"#21262d",borderRadius:"4px",padding:"1px 5px"}}>자동완성</span>}
+                    {rk.fromAutoComplete&&<span style={{marginLeft:"5px",fontSize:"11px",color:"#484f58",background:"#21262d",borderRadius:"4px",padding:"1px 5px"}}>자동완성</span>}
                   </span>
-                  <span style={{color:"#58a6ff",fontSize:"12px",fontWeight:600,textAlign:"right"}}>{rk.total!==null?fmtNum(rk.total):"-"}</span>
-                  <span style={{color:"#d2a8ff",fontSize:"12px",textAlign:"right"}}>{rk.mob!==null?fmtNum(rk.mob):"-"}</span>
+                  <span style={{color:"#58a6ff",fontSize:"14px",fontWeight:600,textAlign:"right"}}>{rk.total!==null?fmtNum(rk.total):"-"}</span>
+                  <span style={{color:"#d2a8ff",fontSize:"14px",textAlign:"right"}}>{rk.mob!==null?fmtNum(rk.mob):"-"}</span>
                 </div>
               ))}
             </div>
           ):(
-            <div style={{color:"#484f58",fontSize:"12px",textAlign:"center",padding:"16px 0"}}>연관검색어 없음</div>
+            <div style={{color:"#484f58",fontSize:"14px",textAlign:"center",padding:"16px 0"}}>연관검색어 없음</div>
           )}
         </div>
 
@@ -2466,10 +2466,10 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
               <div style={{color:compColor,fontSize:"20px",fontWeight:900,lineHeight:1}}>{result.compLevel}</div>
             </div>
             <div style={{flex:1}}>
-              {result.dailyVisitReq!=null&&<div style={{color:"#e6edf3",fontSize:"13px",fontWeight:600,marginBottom:"2px"}}>
+              {result.dailyVisitReq!=null&&<div style={{color:"#e6edf3",fontSize:"15px",fontWeight:600,marginBottom:"2px"}}>
                 일 방문자 <span style={{color:compColor}}>{fmtNum(result.dailyVisitReq)}명 이상</span> 블로거 추천
               </div>}
-              {result.compComment&&<div style={{color:"#8b949e",fontSize:"12px",lineHeight:"1.4"}}>{result.compComment}</div>}
+              {result.compComment&&<div style={{color:"#8b949e",fontSize:"14px",lineHeight:"1.4"}}>{result.compComment}</div>}
             </div>
           </div>
 
@@ -2478,7 +2478,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
             <div style={{height:"10px",background:"linear-gradient(90deg,#3fb950,#58a6ff,#ffa657,#ff7b72,#f85149)",borderRadius:"5px"}}/>
             <div style={{position:"absolute",top:"-4px",left:`calc(${Math.min(Math.max(result.compScore,2),96)}% - 9px)`,width:"18px",height:"18px",background:"#161b22",borderRadius:"50%",border:`3px solid ${compColor}`,boxShadow:`0 0 8px ${compColor}99`}}/>
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"#484f58",marginBottom:"14px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:"12px",color:"#484f58",marginBottom:"14px"}}>
             <span>매우쉬움</span><span>매우어려움</span>
           </div>
 
@@ -2489,25 +2489,25 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
               {label:"포화도",   value:result.saturation!=null?result.saturation+"%":"—", color:compColor},
             ].map(({label,value,color,badge},i)=>(
               <div key={i} style={{background:"#0d1117",borderRadius:"10px",padding:"10px 8px",textAlign:"center",border:"1px solid #21262d"}}>
-                <div style={{color:"#484f58",fontSize:"10px",marginBottom:"4px"}}>{label}</div>
-                <div style={{color,fontSize:"14px",fontWeight:700}}>
-                  {value}{badge&&<span style={{color:"#3fb950",fontSize:"9px",marginLeft:"2px"}}>{badge}</span>}
+                <div style={{color:"#484f58",fontSize:"12px",marginBottom:"4px"}}>{label}</div>
+                <div style={{color,fontSize:"16px",fontWeight:700}}>
+                  {value}{badge&&<span style={{color:"#3fb950",fontSize:"11px",marginLeft:"2px"}}>{badge}</span>}
                 </div>
               </div>
             ))}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
             <div style={{background:"#0d1117",borderRadius:"10px",padding:"10px 8px",textAlign:"center",border:"1px solid #21262d"}}>
-              <div style={{color:"#484f58",fontSize:"10px",marginBottom:"4px"}}>평균 발행일자</div>
-              <div style={{color:"#79c0ff",fontSize:"14px",fontWeight:700}}>{result.avgPostAgeDays!=null?result.avgPostAgeDays+"일 전":"—"}</div>
-              <div style={{color:"#484f58",fontSize:"9px",marginTop:"2px"}}>상위 10개 글 기준</div>
+              <div style={{color:"#484f58",fontSize:"12px",marginBottom:"4px"}}>평균 발행일자</div>
+              <div style={{color:"#79c0ff",fontSize:"16px",fontWeight:700}}>{result.avgPostAgeDays!=null?result.avgPostAgeDays+"일 전":"—"}</div>
+              <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>상위 10개 글 기준</div>
             </div>
             <div style={{background:"#0d1117",borderRadius:"10px",padding:"10px 8px",textAlign:"center",border:"1px solid #21262d"}}>
-              <div style={{color:"#484f58",fontSize:"10px",marginBottom:"4px"}}>상위 블로그 비율</div>
-              <div style={{color:result.highIndexRatio>=0.7?"#f85149":result.highIndexRatio>=0.4?"#ffa657":"#3fb950",fontSize:"14px",fontWeight:700}}>
+              <div style={{color:"#484f58",fontSize:"12px",marginBottom:"4px"}}>상위 블로그 비율</div>
+              <div style={{color:result.highIndexRatio>=0.7?"#f85149":result.highIndexRatio>=0.4?"#ffa657":"#3fb950",fontSize:"16px",fontWeight:700}}>
                 {result.highIndexRatio!=null?Math.round(result.highIndexRatio*100)+"%":"—"}
               </div>
-              <div style={{color:"#484f58",fontSize:"9px",marginTop:"2px"}}>고지수 블로거 추정</div>
+              <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>고지수 블로거 추정</div>
             </div>
           </div>
         </div>
@@ -2519,54 +2519,54 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
           {/* 직접 주제 입력 */}
           <div style={{background:"#0d1117",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"11px 12px",marginBottom:"14px"}}>
             <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"8px",flexWrap:"wrap"}}>
-              <span style={{color:"#58a6ff",fontSize:"12px",fontWeight:700}}>✏️ 직접 주제 입력</span>
-              <span style={{color:"#484f58",fontSize:"10px"}}>· 아래 추천 주제를 불러와서 고쳐 써도 됩니다</span>
+              <span style={{color:"#58a6ff",fontSize:"14px",fontWeight:700}}>✏️ 직접 주제 입력</span>
+              <span style={{color:"#484f58",fontSize:"12px"}}>· 아래 추천 주제를 불러와서 고쳐 써도 됩니다</span>
             </div>
             <div style={{display:"flex",gap:"7px",flexWrap:"wrap"}}>
               <input value={customTopic} onChange={e=>setCustomTopic(e.target.value)}
                 onKeyDown={e=>{ if(e.key==="Enter") writeTopic(customTopic); }}
                 placeholder={`예: ${result.keyword} 처음 알아볼 때 꼭 확인해야 할 5가지`}
                 style={{flex:"1 1 240px",minWidth:0,padding:"9px 11px",background:"#010409",border:"1px solid #30363d",
-                  borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none"}}
+                  borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",outline:"none"}}
                 onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
               <button onClick={()=>writeTopic(customTopic)} disabled={!customTopic.trim()}
                 style={{background:customTopic.trim()?"linear-gradient(135deg,#1f6feb,#388bfd)":"#21262d",
                   border:"none",color:customTopic.trim()?"#fff":"#484f58",borderRadius:"8px",padding:"9px 16px",
-                  fontSize:"12px",fontWeight:700,cursor:customTopic.trim()?"pointer":"not-allowed",
+                  fontSize:"14px",fontWeight:700,cursor:customTopic.trim()?"pointer":"not-allowed",
                   fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
                 ✍️ 이 주제로 글쓰기
               </button>
               {customTopic&&<button onClick={()=>setCustomTopic("")}
                 style={{background:"#21262d",border:"1px solid #30363d",color:"#8b949e",borderRadius:"8px",
-                  padding:"9px 10px",fontSize:"12px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",flexShrink:0}}>
+                  padding:"9px 10px",fontSize:"14px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",flexShrink:0}}>
                 🗑️
               </button>}
             </div>
             {customTopic.trim()&&!customTopic.replace(/\s/g,"").toLowerCase().includes((result.keyword||"").replace(/\s/g,"").toLowerCase())&&
-              <div style={{color:"#ffa657",fontSize:"10px",marginTop:"7px"}}>
+              <div style={{color:"#ffa657",fontSize:"12px",marginTop:"7px"}}>
                 ⚠️ 제목에 키워드 "{result.keyword}"를 그대로 넣어야 검색 노출에 유리합니다
               </div>}
           </div>
 
           {/* AI 추천 주제 */}
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"7px"}}>
+          <div style={{color:"#8b949e",fontSize:"13px",fontWeight:700,marginBottom:"7px"}}>
             🤖 AI 추천 주제 {result.longtailKeywords?.length>0&&<span style={{color:"#484f58",fontWeight:400}}>· {result.longtailKeywords.length}개 · ✏️ 를 누르면 위 칸으로 가져와 수정할 수 있어요</span>}
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
             {result.longtailKeywords?.map((kw,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",background:"#0d1117",
                 borderRadius:"8px",padding:"8px 10px",border:`1px solid ${customTopic===kw?"#1f6feb":"#21262d"}`}}>
-                <span style={{color:"#484f58",fontSize:"11px",minWidth:"16px",flexShrink:0}}>{i+1}</span>
-                <span style={{flex:1,color:"#c9d1d9",fontSize:"12px",lineHeight:"1.4"}}>{kw}</span>
+                <span style={{color:"#484f58",fontSize:"13px",minWidth:"16px",flexShrink:0}}>{i+1}</span>
+                <span style={{flex:1,color:"#c9d1d9",fontSize:"14px",lineHeight:"1.4"}}>{kw}</span>
                 <button onClick={()=>setCustomTopic(kw)} title="위 입력칸으로 가져와서 수정하기"
                   style={{background:"#21262d",border:"1px solid #30363d",color:"#8b949e",
-                    borderRadius:"6px",padding:"4px 8px",fontSize:"11px",fontWeight:700,cursor:"pointer",
+                    borderRadius:"6px",padding:"4px 8px",fontSize:"13px",fontWeight:700,cursor:"pointer",
                     fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
                   ✏️
                 </button>
                 <button onClick={()=>writeTopic(kw)}
                   style={{background:"linear-gradient(135deg,#1f6feb,#388bfd)",border:"none",color:"#fff",
-                    borderRadius:"6px",padding:"4px 10px",fontSize:"11px",fontWeight:700,cursor:"pointer",
+                    borderRadius:"6px",padding:"4px 10px",fontSize:"13px",fontWeight:700,cursor:"pointer",
                     fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",flexShrink:0}}>
                   ✍️ 자동글쓰기
                 </button>
@@ -3036,7 +3036,7 @@ JSON 배열만 출력:`;
         <button key={id} data-mode-url={id==="url"?"true":undefined} onClick={()=>{setMode(id);setPosts(null);setAnalysis({});setExpanded(null);setFeedError("");setExtraResults({});setExtraKw({});}} style={{
           padding:"13px 8px",border:"none",background:mode===id?"#161b22":"transparent",
           color:mode===id?"#e6edf3":"#8b949e",cursor:"pointer",
-          fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:mode===id?700:400,
+          fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:mode===id?700:400,
           borderBottom:mode===id?"2px solid #1f6feb":"2px solid transparent",transition:"all .15s"}}>
           {lbl}
         </button>
@@ -3046,24 +3046,24 @@ JSON 배열만 출력:`;
     {/* ── 방법1: 블로그 ID ── */}
     {mode==="blogId"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"12px"}}>
       <div>
-        <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700,marginBottom:"4px"}}>블로그 아이디 입력</div>
-        <div style={{color:"#484f58",fontSize:"11px",marginBottom:"10px"}}>blog.naver.com/<strong style={{color:"#8b949e"}}>아이디</strong> 에서 아이디 부분만 입력</div>
+        <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>블로그 아이디 입력</div>
+        <div style={{color:"#484f58",fontSize:"13px",marginBottom:"10px"}}>blog.naver.com/<strong style={{color:"#8b949e"}}>아이디</strong> 에서 아이디 부분만 입력</div>
         <div style={{display:"flex",gap:"8px"}}>
           <div style={{position:"relative",flex:1}}>
-            <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",color:"#484f58",fontSize:"12px",pointerEvents:"none",whiteSpace:"nowrap"}}>blog.naver.com/</span>
+            <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",color:"#484f58",fontSize:"14px",pointerEvents:"none",whiteSpace:"nowrap"}}>blog.naver.com/</span>
             <input value={blogId} onChange={e=>setBlogId(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&!loadingFeed&&fetchByBlogId()}
               placeholder="아이디"
               style={{width:"100%",boxSizing:"border-box",padding:"12px 12px 12px 138px",background:"#0d1117",
                 border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
-                fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none"}}
+                fontFamily:"'Noto Sans KR',sans-serif",fontSize:"16px",outline:"none"}}
               onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
           </div>
           <button onClick={fetchByBlogId} disabled={loadingFeed||!blogId.trim()}
             style={{padding:"12px 20px",background:blogId.trim()&&!loadingFeed?"#1f6feb":"#21262d",
               color:blogId.trim()&&!loadingFeed?"#fff":"#484f58",border:"none",borderRadius:"8px",
               cursor:blogId.trim()&&!loadingFeed?"pointer":"not-allowed",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700,whiteSpace:"nowrap"}}>
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"16px",fontWeight:700,whiteSpace:"nowrap"}}>
             {loadingFeed?"⏳ 불러오는 중...":"🔍 확인"}
           </button>
         </div>
@@ -3072,18 +3072,18 @@ JSON 배열만 출력:`;
       {loadingFeed&&<div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
         {["블로그 글 목록 연결 중...",`${posts?.serverPaged?`${page}페이지`:"1페이지"} 게시글 10개 불러오는 중...`,"목록 구성 중..."].map((m,i)=>(
           <div key={i} style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"7px",padding:"8px 12px",
-            color:"#8b949e",fontSize:"12px",animation:`pulse 1.6s ease ${i*0.3}s infinite`,display:"flex",gap:"8px"}}>
+            color:"#8b949e",fontSize:"14px",animation:`pulse 1.6s ease ${i*0.3}s infinite`,display:"flex",gap:"8px"}}>
             ⏳ {m}
           </div>
         ))}
       </div>}
 
       {feedError&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"8px",padding:"12px 14px",
-        color:"#ff7b72",fontSize:"13px",display:"flex",gap:"8px",alignItems:"flex-start"}}>
+        color:"#ff7b72",fontSize:"15px",display:"flex",gap:"8px",alignItems:"flex-start"}}>
         <span style={{flexShrink:0}}>⚠️</span><span>{feedError}</span>
       </div>}
 
-      <div style={{background:"#0d1117",border:"1px solid #1f6feb22",borderRadius:"8px",padding:"10px 13px",fontSize:"11px",color:"#484f58",lineHeight:"1.7"}}>
+      <div style={{background:"#0d1117",border:"1px solid #1f6feb22",borderRadius:"8px",padding:"10px 13px",fontSize:"13px",color:"#484f58",lineHeight:"1.7"}}>
         💡 게시글을 <strong style={{color:"#8b949e"}}>10개씩</strong> 불러와 누락여부 · 상위노출 키워드를 분석합니다.
         목록 아래 <strong style={{color:"#8b949e"}}>페이지 버튼</strong>으로 과거 글까지 계속 넘겨서 확인할 수 있어요.
       </div>
@@ -3092,40 +3092,40 @@ JSON 배열만 출력:`;
     {/* ── 방법2: URL + 제목 + 본문 직접 입력 ── */}
     {mode==="url"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"12px"}}>
       <div>
-        <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700,marginBottom:"4px"}}>게시글 정보 입력</div>
-        <div style={{color:"#484f58",fontSize:"11px",marginBottom:"12px"}}>특정 글 1개만 확인할 때 · 제목+본문을 직접 붙여넣으면 가장 정확한 분석이 됩니다</div>
+        <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>게시글 정보 입력</div>
+        <div style={{color:"#484f58",fontSize:"13px",marginBottom:"12px"}}>특정 글 1개만 확인할 때 · 제목+본문을 직접 붙여넣으면 가장 정확한 분석이 됩니다</div>
 
         {/* URL */}
         <div style={{marginBottom:"8px"}}>
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>📎 게시글 URL</div>
+          <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"5px"}}>📎 게시글 URL</div>
           <input value={singleUrl} onChange={e=>setSingleUrl(e.target.value)}
             placeholder="https://blog.naver.com/아이디/포스트번호"
             style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",background:"#0d1117",
               border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none"}}
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",outline:"none"}}
             onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
         </div>
 
         {/* 제목 */}
         <div style={{marginBottom:"8px"}}>
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>✏️ 글 제목 <span style={{color:"#ff7b72"}}>*필수</span></div>
+          <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"5px"}}>✏️ 글 제목 <span style={{color:"#ff7b72"}}>*필수</span></div>
           <input value={singleTitle} onChange={e=>setSingleTitle(e.target.value)}
             placeholder="블로그 글 제목을 그대로 붙여넣으세요"
             style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",background:"#0d1117",
               border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none"}}
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",outline:"none"}}
             onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
         </div>
 
         {/* 본문 */}
         <div style={{marginBottom:"12px"}}>
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>📄 본문 내용 <span style={{color:"#484f58"}}>(선택 · 있으면 더 정확)</span></div>
+          <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"5px"}}>📄 본문 내용 <span style={{color:"#484f58"}}>(선택 · 있으면 더 정확)</span></div>
           <textarea value={singleBody} onChange={e=>setSingleBody(e.target.value)}
             placeholder="본문 텍스트를 붙여넣으세요 (일부만 있어도 됩니다)"
             rows={4}
             style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",background:"#0d1117",
               border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none",resize:"vertical",lineHeight:"1.6"}}
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",outline:"none",resize:"vertical",lineHeight:"1.6"}}
             onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
         </div>
 
@@ -3134,7 +3134,7 @@ JSON 배열만 출력:`;
             background:singleUrl.trim()&&singleTitle.trim()?"#1f6feb":"#21262d",
             color:singleUrl.trim()&&singleTitle.trim()?"#fff":"#484f58",
             border:"none",borderRadius:"8px",cursor:singleUrl.trim()&&singleTitle.trim()?"pointer":"not-allowed",
-            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700}}>
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"16px",fontWeight:700}}>
           🔍 누락 확인 · 키워드 분석 시작
         </button>
       </div>
@@ -3143,8 +3143,8 @@ JSON 배열만 출력:`;
     {/* ── 방법3: 엑셀 업로드 ── */}
     {mode==="excel"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"14px"}}>
       <div>
-        <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700,marginBottom:"4px"}}>엑셀 / CSV 파일 업로드</div>
-        <div style={{color:"#484f58",fontSize:"11px",marginBottom:"12px"}}>
+        <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>엑셀 / CSV 파일 업로드</div>
+        <div style={{color:"#484f58",fontSize:"13px",marginBottom:"12px"}}>
           첫 번째 행은 헤더 · URL 컬럼 + 제목 컬럼이 있으면 더 정확합니다 · .xlsx .xls .csv 지원
         </div>
         {/* 파일 드롭존 */}
@@ -3161,8 +3161,8 @@ JSON 배열만 출력:`;
           style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"28px 16px",
             textAlign:"center",cursor:"pointer",transition:"border-color .2s",background:"#0d1117"}}>
           <div style={{fontSize:"28px",marginBottom:"8px"}}>📂</div>
-          <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:600,marginBottom:"4px"}}>파일을 여기에 드래그하거나 클릭해서 선택</div>
-          <div style={{color:"#484f58",fontSize:"11px"}}>.xlsx · .xls · .csv 파일 지원</div>
+          <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:600,marginBottom:"4px"}}>파일을 여기에 드래그하거나 클릭해서 선택</div>
+          <div style={{color:"#484f58",fontSize:"13px"}}>.xlsx · .xls · .csv 파일 지원</div>
           <input ref={excelFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}}
             onChange={e=>{const f=e.target.files?.[0];if(f) parseExcelFile(f);e.target.value="";}}/>
         </div>
@@ -3170,35 +3170,35 @@ JSON 배열만 출력:`;
 
       {/* 파싱 오류 */}
       {excelError&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"8px",padding:"12px 14px",
-        color:"#ff7b72",fontSize:"13px",whiteSpace:"pre-wrap",display:"flex",gap:"8px"}}>
+        color:"#ff7b72",fontSize:"15px",whiteSpace:"pre-wrap",display:"flex",gap:"8px"}}>
         <span>⚠️</span><span>{excelError}</span>
       </div>}
 
       {/* 파싱 완료 — 컬럼 매핑 */}
       {excelParsed&&<div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-        <div style={{background:"#0d1117",border:"1px solid #1f6feb33",borderRadius:"8px",padding:"10px 14px",fontSize:"11px",color:"#58a6ff"}}>
+        <div style={{background:"#0d1117",border:"1px solid #1f6feb33",borderRadius:"8px",padding:"10px 14px",fontSize:"13px",color:"#58a6ff"}}>
           ✅ {excelRows.length}개 행 파싱 완료 · 헤더: {excelHeaders.join(", ")}
         </div>
 
         <div>
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>
+          <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"5px"}}>
             📎 URL 컬럼 선택 <span style={{color:"#ff7b72"}}>*필수</span>
           </div>
           <select value={urlCol} onChange={e=>setUrlCol(e.target.value)}
             style={{width:"100%",padding:"10px 12px",background:"#0d1117",border:"1px solid #30363d",
-              borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none",cursor:"pointer"}}>
+              borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",outline:"none",cursor:"pointer"}}>
             <option value="">— URL이 있는 열을 선택하세요 —</option>
             {excelHeaders.map((h,i)=><option key={i} value={h}>{h||`(열 ${i+1})`}</option>)}
           </select>
         </div>
 
         <div>
-          <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600,marginBottom:"5px"}}>
+          <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"5px"}}>
             ✏️ 제목 컬럼 선택 <span style={{color:"#484f58"}}>(선택 · 없으면 AI가 본문에서 키워드 추출)</span>
           </div>
           <select value={titleCol} onChange={e=>setTitleCol(e.target.value)}
             style={{width:"100%",padding:"10px 12px",background:"#0d1117",border:"1px solid #30363d",
-              borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none",cursor:"pointer"}}>
+              borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",outline:"none",cursor:"pointer"}}>
             <option value="">— 제목 열 없음 —</option>
             {excelHeaders.map((h,i)=><option key={i} value={h}>{h||`(열 ${i+1})`}</option>)}
           </select>
@@ -3211,7 +3211,7 @@ JSON 배열만 출력:`;
           const validCount=excelRows.filter(r=>{const u=String(r[uIdx]||"");return/blog\.naver\.com\/[^/\s?#]+\/\d+/.test(u);}).length;
           return(
             <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-              <div style={{color:"#8b949e",fontSize:"11px",fontWeight:600}}>
+              <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600}}>
                 📋 미리보기 (상위 5개) · 유효한 네이버 블로그 URL: <span style={{color:"#3fb950"}}>{validCount}개</span> / 전체 {excelRows.length}개
               </div>
               {preview.map((row,i)=>{
@@ -3220,10 +3220,10 @@ JSON 배열만 출력:`;
                 const ok=/blog\.naver\.com\/[^/\s?#]+\/\d+/.test(url);
                 return<div key={i} style={{background:"#0d1117",border:`1px solid ${ok?"#1f6feb33":"#da363333"}`,
                   borderRadius:"7px",padding:"8px 12px",display:"flex",gap:"8px",alignItems:"flex-start"}}>
-                  <span style={{color:ok?"#3fb950":"#ff7b72",fontSize:"12px",flexShrink:0,paddingTop:"1px"}}>{ok?"✅":"❌"}</span>
+                  <span style={{color:ok?"#3fb950":"#ff7b72",fontSize:"14px",flexShrink:0,paddingTop:"1px"}}>{ok?"✅":"❌"}</span>
                   <div style={{flex:1,minWidth:0}}>
-                    {title&&<div style={{color:"#c9d1d9",fontSize:"11px",fontWeight:600,marginBottom:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title}</div>}
-                    <div style={{color:ok?"#58a6ff":"#484f58",fontSize:"11px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{url||"(URL 없음)"}</div>
+                    {title&&<div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:600,marginBottom:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title}</div>}
+                    <div style={{color:ok?"#58a6ff":"#484f58",fontSize:"13px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{url||"(URL 없음)"}</div>
                   </div>
                 </div>;
               })}
@@ -3233,8 +3233,8 @@ JSON 배열만 출력:`;
 
         {batchRunning&&<div style={{background:"#0d1117",border:"1px solid #1f6feb33",borderRadius:"8px",padding:"12px 14px"}}>
           <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
-            <div style={{color:"#58a6ff",fontSize:"12px",fontWeight:700}}>⚡ 배치 분석 진행 중...</div>
-            <div style={{marginLeft:"auto",color:"#8b949e",fontSize:"11px"}}>{batchProgress.done} / {batchProgress.total}</div>
+            <div style={{color:"#58a6ff",fontSize:"14px",fontWeight:700}}>⚡ 배치 분석 진행 중...</div>
+            <div style={{marginLeft:"auto",color:"#8b949e",fontSize:"13px"}}>{batchProgress.done} / {batchProgress.total}</div>
           </div>
           <div style={{height:"6px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
             <div style={{height:"100%",background:"#1f6feb",borderRadius:"3px",
@@ -3245,12 +3245,12 @@ JSON 배열만 출력:`;
         {!batchRunning&&<button onClick={runBatchAnalysis} disabled={!urlCol}
           style={{width:"100%",padding:"13px",background:urlCol?"#1f6feb":"#21262d",
             color:urlCol?"#fff":"#484f58",border:"none",borderRadius:"8px",cursor:urlCol?"pointer":"not-allowed",
-            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700}}>
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"16px",fontWeight:700}}>
           📊 {excelRows.length}개 URL 배치 분석 시작
         </button>}
       </div>}
 
-      {!excelParsed&&!excelError&&<div style={{background:"#0d1117",border:"1px solid #1f6feb22",borderRadius:"8px",padding:"10px 13px",fontSize:"11px",color:"#484f58",lineHeight:"1.8"}}>
+      {!excelParsed&&!excelError&&<div style={{background:"#0d1117",border:"1px solid #1f6feb22",borderRadius:"8px",padding:"10px 13px",fontSize:"13px",color:"#484f58",lineHeight:"1.8"}}>
         💡 엑셀 형식 예시 (첫 행 헤더):<br/>
         <span style={{color:"#8b949e"}}>| URL | 제목 |</span><br/>
         <span style={{color:"#8b949e"}}>| https://blog.naver.com/abc/123 | 글 제목 |</span><br/>
@@ -3261,22 +3261,22 @@ JSON 배열만 출력:`;
     {/* ── 게시글 목록 ── */}
     {posts&&<div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
       <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
-        <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:600}}>
+        <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:600}}>
           총 <span style={{color:"#58a6ff"}}>{posts.total}개</span>
           {posts.blogId&&<span style={{color:"#8b949e",marginLeft:"6px"}}>· @{posts.blogId}</span>}
-          {totalPages>1&&<span style={{color:"#484f58",fontSize:"12px",marginLeft:"6px"}}>{page}/{totalPages}p</span>}
-          {posts.serverPaged&&loadingFeed&&<span style={{color:"#58a6ff",fontSize:"12px",marginLeft:"6px"}}>⏳ 페이지 불러오는 중...</span>}
-          {posts.notice&&<span style={{color:"#ffa657",fontSize:"11px",marginLeft:"6px"}}>· {posts.notice}</span>}
+          {totalPages>1&&<span style={{color:"#484f58",fontSize:"14px",marginLeft:"6px"}}>{page}/{totalPages}p</span>}
+          {posts.serverPaged&&loadingFeed&&<span style={{color:"#58a6ff",fontSize:"14px",marginLeft:"6px"}}>⏳ 페이지 불러오는 중...</span>}
+          {posts.notice&&<span style={{color:"#ffa657",fontSize:"13px",marginLeft:"6px"}}>· {posts.notice}</span>}
         </div>
         <div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
           {posts.current.some(p=>!analysis[p.postNo])&&analyzing===-1&&
             <button onClick={analyzeAll} style={{padding:"6px 14px",background:"#1f6feb",color:"#fff",border:"none",
-              borderRadius:"6px",cursor:"pointer",fontSize:"12px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>
+              borderRadius:"6px",cursor:"pointer",fontSize:"14px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>
               ⚡ 전체 분석
             </button>}
           <button onClick={()=>{setPosts(null);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});}}
             style={{padding:"6px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-              borderRadius:"6px",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+              borderRadius:"6px",cursor:"pointer",fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif"}}>
             🗑️ 초기화
           </button>
         </div>
@@ -3287,7 +3287,7 @@ JSON 배열만 출력:`;
         const isAn=analyzing===idx;
         return <div key={post.postNo} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",overflow:"hidden"}}>
           <div style={{padding:"13px 16px",display:"flex",alignItems:"flex-start",gap:"10px"}}>
-            <div style={{color:"#484f58",fontSize:"11px",fontWeight:700,minWidth:"20px",paddingTop:"3px",flexShrink:0,textAlign:"right"}}>
+            <div style={{color:"#484f58",fontSize:"13px",fontWeight:700,minWidth:"20px",paddingTop:"3px",flexShrink:0,textAlign:"right"}}>
               {(page-1)*PER_PAGE+idx+1}
             </div>
             <div style={{flex:1,minWidth:0}}>
@@ -3295,12 +3295,12 @@ JSON 배열만 출력:`;
               <div style={{marginBottom:"5px",display:"flex",gap:"8px",alignItems:"flex-start",flexWrap:"wrap"}}>
                 <a href={`https://search.naver.com/search.naver?where=post&query=${encodeURIComponent(post.title)}`}
                     target="_blank" rel="noreferrer"
-                    style={{color:"#e6edf3",fontSize:"14px",fontWeight:600,textDecoration:"none",lineHeight:"1.5",flex:1,minWidth:"160px",wordBreak:"break-word"}}
+                    style={{color:"#e6edf3",fontSize:"16px",fontWeight:600,textDecoration:"none",lineHeight:"1.5",flex:1,minWidth:"160px",wordBreak:"break-word"}}
                     title="클릭 시 네이버에서 이 제목으로 검색한 결과를 확인합니다"
                     onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#e6edf3"}>
                     {post.title}
                   </a>
-                {post.date&&<span style={{color:"#484f58",fontSize:"11px",flexShrink:0,paddingTop:"2px"}}>{post.date}</span>}
+                {post.date&&<span style={{color:"#484f58",fontSize:"13px",flexShrink:0,paddingTop:"2px"}}>{post.date}</span>}
                 {/* 추가검색 — 원하는 키워드 직접 입력 */}
                 <div style={{display:"flex",gap:"4px",alignItems:"center",flexShrink:0}}>
                   <input
@@ -3310,7 +3310,7 @@ JSON 배열만 출력:`;
                     placeholder="키워드 직접 확인"
                     style={{width:"124px",boxSizing:"border-box",padding:"5px 9px",background:"#0d1117",
                       border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",
-                      fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px",outline:"none"}}
+                      fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none"}}
                     onFocus={e=>e.target.style.borderColor="#d29922"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
                   <button onClick={()=>runExtraKeyword(post)}
                     disabled={!(extraKw[post.postNo]||"").trim()||!!extraLoading[post.postNo]}
@@ -3321,20 +3321,20 @@ JSON 배열만 출력:`;
                       border:`1px solid ${(extraKw[post.postNo]||"").trim()&&!extraLoading[post.postNo]?"#d2992255":"#30363d"}`,
                       borderRadius:"6px",
                       cursor:(extraKw[post.postNo]||"").trim()&&!extraLoading[post.postNo]?"pointer":"not-allowed",
-                      fontSize:"11px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
+                      fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
                     {extraLoading[post.postNo]?"조회 중...":"➕ 추가검색"}
                   </button>
                 </div>
               </div>
               {/* 설명 */}
-              {post.description&&!a&&<div style={{color:"#484f58",fontSize:"12px",marginBottom:"5px",lineHeight:"1.5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{post.description}</div>}
+              {post.description&&!a&&<div style={{color:"#484f58",fontSize:"14px",marginBottom:"5px",lineHeight:"1.5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{post.description}</div>}
               {/* 뱃지 */}
               {a&&!a.error&&<div style={{display:"flex",flexWrap:"wrap",gap:"5px",marginBottom:"8px"}}>
                 <span style={{
                   background:a.missingStatus==="노출"?"#2ea04322":"#f8514922",
                   color:a.missingStatus==="노출"?"#3fb950":"#f85149",
                   border:`1px solid ${a.missingStatus==="노출"?"#2ea04344":"#f8514944"}`,
-                  borderRadius:"20px",padding:"2px 10px",fontSize:"11px",fontWeight:700
+                  borderRadius:"20px",padding:"2px 10px",fontSize:"13px",fontWeight:700
                 }}>
                   {a.missingStatus==="노출"?"✅ 노출":"🚨 누락"}
                 </span>
@@ -3342,17 +3342,17 @@ JSON 배열만 출력:`;
               {/* 분석 중 */}
               {isAn&&<div style={{display:"flex",flexDirection:"column",gap:"3px",marginTop:"4px"}}>
                 {["🤖 AI 키워드 분석 중...","🔍 제목으로 네이버 실제 검색 중...","📊 키워드 블로그탭 순위 조회 중..."].map((msg,i)=>(
-                  <div key={i} style={{color:"#8b949e",fontSize:"11px",animation:`pulse 1.6s ease ${i*0.4}s infinite`}}>{msg}</div>
+                  <div key={i} style={{color:"#8b949e",fontSize:"13px",animation:`pulse 1.6s ease ${i*0.4}s infinite`}}>{msg}</div>
                 ))}
               </div>}
-              {a?.error&&<div style={{color:"#ff7b72",fontSize:"12px",marginTop:"3px"}}>⚠️ 분석 실패: {a.errorMsg||"알 수 없는 오류"}. 재시도 버튼을 눌러주세요.</div>}
+              {a?.error&&<div style={{color:"#ff7b72",fontSize:"14px",marginTop:"3px"}}>⚠️ 분석 실패: {a.errorMsg||"알 수 없는 오류"}. 재시도 버튼을 눌러주세요.</div>}
 
               {/* 키워드 순위 — 분석 완료 시 바로 표시 */}
               {a&&!a.error&&a.topKeywords&&(
                 <div style={{marginTop:"4px"}}>
                   {/* 로딩 중 */}
                   {a.topKeywords.some(kw=>kw.rankLoading)&&(
-                    <div style={{color:"#8b949e",fontSize:"11px",padding:"4px 0"}}>⏳ 키워드 순위 조회 중...</div>
+                    <div style={{color:"#8b949e",fontSize:"13px",padding:"4px 0"}}>⏳ 키워드 순위 조회 중...</div>
                   )}
                   {/* 완료 후 — 노출된 것만 표시 */}
 
@@ -3375,7 +3375,7 @@ JSON 배열만 출력:`;
                           borderRadius:"8px",marginBottom:"5px"}}>
                           <a href={`https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(kw.keyword)}`}
                             target="_blank" rel="noreferrer"
-                            style={{color:"#c9d1d9",fontSize:"12px",fontWeight:600,textDecoration:"none"}}
+                            style={{color:"#c9d1d9",fontSize:"14px",fontWeight:600,textDecoration:"none"}}
                             onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#c9d1d9"}>
                             {kw.keyword} ↗
                           </a>
@@ -3388,13 +3388,13 @@ JSON 배열만 출력:`;
                                 background: r!=null ? ac+"22" : "#161b22",
                                 color: r!=null ? ac : "#484f58",
                                 border:`1px solid ${r!=null?ac+"55":"#30363d"}`,
-                                borderRadius:"6px",padding:"3px 8px",fontSize:"11px",
+                                borderRadius:"6px",padding:"3px 8px",fontSize:"13px",
                                 display:"flex",alignItems:"center",gap:"4px"}}>
                                 <span style={{opacity:0.8}}>{label}</span>
                                 <span style={{fontWeight:800}}>{r!=null?`${r}위`:"—"}</span>
                               </div>;
                             }) : (
-                              <span style={{fontSize:"11px",color:"#484f58"}}>
+                              <span style={{fontSize:"13px",color:"#484f58"}}>
                                 {rankColor(mainRank)&&kw.realRank?.rankSource==="sim"||kw.realRank?.rankSource==="date"
                                   ? `API 기준 ${mainRank}위 (영역 확인 불가)`
                                   : "영역 데이터 없음"}
@@ -3408,13 +3408,13 @@ JSON 배열만 출력:`;
                           </div>
                         </div>;
                       })}
-                      {outOf.length>0&&<div style={{padding:"5px 10px",fontSize:"11px",color:"#484f58",lineHeight:"1.6"}}>
+                      {outOf.length>0&&<div style={{padding:"5px 10px",fontSize:"13px",color:"#484f58",lineHeight:"1.6"}}>
                         <span style={{color:"#30363d",marginRight:"6px"}}>100위↓</span>
                         {outOf.map((kw,i)=>(
                           <span key={i}>
                             <a href={`https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(kw.keyword)}`}
                               target="_blank" rel="noreferrer"
-                              style={{color:"#484f58",textDecoration:"none",fontSize:"11px"}}
+                              style={{color:"#484f58",textDecoration:"none",fontSize:"13px"}}
                               onMouseEnter={e=>e.target.style.color="#8b949e"} onMouseLeave={e=>e.target.style.color="#484f58"}>
                               {kw.keyword}
                             </a>
@@ -3431,13 +3431,13 @@ JSON 배열만 출력:`;
               {(extraResults[post.postNo]||[]).length>0&&(
                 <div style={{marginTop:"8px",paddingTop:"8px",borderTop:"1px dashed #30363d"}}>
                   <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"6px"}}>
-                    <span style={{color:"#e3b341",fontSize:"11px",fontWeight:700}}>➕ 추가 분석</span>
-                    <span style={{color:"#484f58",fontSize:"10px"}}>
+                    <span style={{color:"#e3b341",fontSize:"13px",fontWeight:700}}>➕ 추가 분석</span>
+                    <span style={{color:"#484f58",fontSize:"12px"}}>
                       직접 입력한 키워드 {(extraResults[post.postNo]||[]).length}개
                     </span>
                     <button onClick={()=>setExtraResults(p=>({...p,[post.postNo]:[]}))}
                       style={{marginLeft:"auto",padding:"2px 8px",background:"transparent",color:"#484f58",
-                        border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"10px",
+                        border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"12px",
                         fontFamily:"'Noto Sans KR',sans-serif"}}>전체 지우기</button>
                   </div>
 
@@ -3455,18 +3455,18 @@ JSON 배열만 출력:`;
                       <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
                         <a href={`https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(kw.keyword)}`}
                           target="_blank" rel="noreferrer"
-                          style={{color:"#c9d1d9",fontSize:"12px",fontWeight:600,textDecoration:"none",wordBreak:"break-word"}}
+                          style={{color:"#c9d1d9",fontSize:"14px",fontWeight:600,textDecoration:"none",wordBreak:"break-word"}}
                           onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#c9d1d9"}>
                           {kw.keyword} ↗
                         </a>
                         <button onClick={()=>removeExtraKeyword(post.postNo,kw.keyword)}
                           title="이 키워드 결과 삭제"
                           style={{marginLeft:"auto",padding:"0 5px",background:"transparent",color:"#484f58",
-                            border:"none",cursor:"pointer",fontSize:"13px",lineHeight:1}}>×</button>
+                            border:"none",cursor:"pointer",fontSize:"15px",lineHeight:1}}>×</button>
                       </div>
 
                       {kw.loading
-                        ? <div style={{color:"#8b949e",fontSize:"11px",marginTop:"5px",animation:"pulse 1.6s ease infinite"}}>
+                        ? <div style={{color:"#8b949e",fontSize:"13px",marginTop:"5px",animation:"pulse 1.6s ease infinite"}}>
                             ⏳ 네이버 순위 조회 중...
                           </div>
                         : <div style={{display:"flex",gap:"6px",marginTop:"5px",flexWrap:"wrap",alignItems:"center"}}>
@@ -3478,13 +3478,13 @@ JSON 배열만 출력:`;
                                 background: r!=null ? ac+"22" : "#161b22",
                                 color: r!=null ? ac : "#484f58",
                                 border:`1px solid ${r!=null?ac+"55":"#30363d"}`,
-                                borderRadius:"6px",padding:"3px 8px",fontSize:"11px",
+                                borderRadius:"6px",padding:"3px 8px",fontSize:"13px",
                                 display:"flex",alignItems:"center",gap:"4px"}}>
                                 <span style={{opacity:0.8}}>{label}</span>
                                 <span style={{fontWeight:800}}>{r!=null?`${r}위`:"—"}</span>
                               </div>;
                             }) : (
-                              <span style={{fontSize:"11px",color:"#484f58"}}>
+                              <span style={{fontSize:"13px",color:"#484f58"}}>
                                 {mainRank!=null
                                   ? `API 기준 ${mainRank}위 (영역 확인 불가)`
                                   : "100위 밖 · 미노출"}
@@ -3496,7 +3496,7 @@ JSON 배열만 출력:`;
                               </span>
                             )}
                             {areas&&mainRank==null&&
-                              <span style={{fontSize:"11px",color:"#484f58"}}>100위 밖 · 미노출</span>}
+                              <span style={{fontSize:"13px",color:"#484f58"}}>100위 밖 · 미노출</span>}
                           </div>}
                     </div>;
                   })}
@@ -3507,11 +3507,11 @@ JSON 배열만 출력:`;
             <div style={{display:"flex",flexDirection:"column",gap:"5px",flexShrink:0}}>
               {!a&&!isAn&&<button onClick={()=>runAnalyze(post,idx)}
                 style={{padding:"6px 12px",background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",
-                  borderRadius:"7px",cursor:"pointer",fontSize:"11px",fontWeight:600,
+                  borderRadius:"7px",cursor:"pointer",fontSize:"13px",fontWeight:600,
                   fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>🔍 분석</button>}
               {a?.error&&<button onClick={()=>{setAnalysis(p=>{const n={...p};delete n[post.postNo];return n;});runAnalyze(post,idx);}}
                 style={{padding:"6px 12px",background:"#da363322",color:"#ff7b72",border:"1px solid #da363344",
-                  borderRadius:"7px",cursor:"pointer",fontSize:"11px",fontWeight:600,
+                  borderRadius:"7px",cursor:"pointer",fontSize:"13px",fontWeight:600,
                   fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>🔄 재시도</button>}
             </div>
           </div>
@@ -3520,14 +3520,14 @@ JSON 배열만 출력:`;
 
       {/* 페이지네이션 */}
       {totalPages>1&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"5px",paddingTop:"4px",flexWrap:"wrap"}}>
-        <button onClick={()=>goPage(1)} disabled={page<=1} style={{padding:"6px 10px",background:page<=1?"#0d1117":"#161b22",color:page<=1?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:page<=1?"not-allowed":"pointer",fontSize:"12px"}}>«</button>
-        <button onClick={()=>goPage(page-1)} disabled={page<=1} style={{padding:"6px 12px",background:page<=1?"#0d1117":"#161b22",color:page<=1?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:page<=1?"not-allowed":"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>← 이전</button>
+        <button onClick={()=>goPage(1)} disabled={page<=1} style={{padding:"6px 10px",background:page<=1?"#0d1117":"#161b22",color:page<=1?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:page<=1?"not-allowed":"pointer",fontSize:"14px"}}>«</button>
+        <button onClick={()=>goPage(page-1)} disabled={page<=1} style={{padding:"6px 12px",background:page<=1?"#0d1117":"#161b22",color:page<=1?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:page<=1?"not-allowed":"pointer",fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif"}}>← 이전</button>
         {Array.from({length:Math.min(totalPages,7)},(_,i)=>{
           const pg=totalPages<=7?i+1:page<=4?i+1:page>=totalPages-3?totalPages-6+i:page-3+i;
-          return <button key={pg} onClick={()=>goPage(pg)} style={{padding:"6px 11px",background:pg===page?"#1f6feb":"#161b22",color:pg===page?"#fff":"#8b949e",border:`1px solid ${pg===page?"#1f6feb":"#30363d"}`,borderRadius:"6px",cursor:"pointer",fontSize:"12px",fontWeight:pg===page?700:400,minWidth:"32px",fontFamily:"'Noto Sans KR',sans-serif"}}>{pg}</button>;
+          return <button key={pg} onClick={()=>goPage(pg)} style={{padding:"6px 11px",background:pg===page?"#1f6feb":"#161b22",color:pg===page?"#fff":"#8b949e",border:`1px solid ${pg===page?"#1f6feb":"#30363d"}`,borderRadius:"6px",cursor:"pointer",fontSize:"14px",fontWeight:pg===page?700:400,minWidth:"32px",fontFamily:"'Noto Sans KR',sans-serif"}}>{pg}</button>;
         })}
-        <button onClick={()=>goPage(page+1)} disabled={page>=totalPages} style={{padding:"6px 12px",background:page>=totalPages?"#0d1117":"#161b22",color:page>=totalPages?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:page>=totalPages?"not-allowed":"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>다음 →</button>
-        <button onClick={()=>goPage(totalPages)} disabled={page>=totalPages} style={{padding:"6px 10px",background:page>=totalPages?"#0d1117":"#161b22",color:page>=totalPages?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:page>=totalPages?"not-allowed":"pointer",fontSize:"12px"}}>»</button>
+        <button onClick={()=>goPage(page+1)} disabled={page>=totalPages} style={{padding:"6px 12px",background:page>=totalPages?"#0d1117":"#161b22",color:page>=totalPages?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:page>=totalPages?"not-allowed":"pointer",fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif"}}>다음 →</button>
+        <button onClick={()=>goPage(totalPages)} disabled={page>=totalPages} style={{padding:"6px 10px",background:page>=totalPages?"#0d1117":"#161b22",color:page>=totalPages?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:page>=totalPages?"not-allowed":"pointer",fontSize:"14px"}}>»</button>
       </div>}
 
     </div>}
@@ -3713,8 +3713,8 @@ function VideoTab(){
         padding:"48px 20px",textAlign:"center",cursor:"pointer",
         background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
       <div style={{fontSize:"48px",marginBottom:"12px"}}>🎬</div>
-      <div style={{color:"#c9d1d9",fontSize:"16px",fontWeight:700,marginBottom:"6px"}}>동영상을 드래그하거나 클릭하여 업로드</div>
-      <div style={{color:"#484f58",fontSize:"13px"}}>MP4, MOV, AVI, WEBM, MKV 등 모든 형식</div>
+      <div style={{color:"#c9d1d9",fontSize:"18px",fontWeight:700,marginBottom:"6px"}}>동영상을 드래그하거나 클릭하여 업로드</div>
+      <div style={{color:"#484f58",fontSize:"15px"}}>MP4, MOV, AVI, WEBM, MKV 등 모든 형식</div>
       <input ref={fileInputRef} type="file" accept="video/*" style={{display:"none"}}
         onChange={e=>onFile(e.target.files[0])}/>
     </div>}
@@ -3726,16 +3726,16 @@ function VideoTab(){
 
         {/* 파일 정보 */}
         <div style={{background:"#161b22",borderRadius:"10px",padding:"12px 14px",border:"1px solid #30363d"}}>
-          <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:600,
+          <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:600,
             overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:"4px"}}>
             🎬 {file.name}
           </div>
-          <div style={{color:"#484f58",fontSize:"11px"}}>{fmtSz(origSize)}</div>
+          <div style={{color:"#484f58",fontSize:"13px"}}>{fmtSz(origSize)}</div>
         </div>
 
         {/* 압축 품질 */}
         <div style={{background:"#161b22",borderRadius:"10px",padding:"14px",border:"1px solid #30363d"}}>
-          <div style={{fontSize:"11px",color:"#8b949e",fontWeight:700,marginBottom:"8px"}}>🎯 압축 품질 (CRF)</div>
+          <div style={{fontSize:"13px",color:"#8b949e",fontWeight:700,marginBottom:"8px"}}>🎯 압축 품질 (CRF)</div>
           <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
             {crfOptions.map(o=>(
               <button key={o.val} onClick={()=>setOpts(p=>({...p,crf:o.val}))}
@@ -3743,9 +3743,9 @@ function VideoTab(){
                   padding:"8px 12px",borderRadius:"6px",border:`1px solid ${opts.crf===o.val?"#58a6ff":"#30363d"}`,
                   background:opts.crf===o.val?"#1f6feb22":"transparent",
                   color:opts.crf===o.val?"#58a6ff":"#8b949e",
-                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",textAlign:"left"}}>
+                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",textAlign:"left"}}>
                 <span style={{fontWeight:opts.crf===o.val?700:400}}>{o.label}</span>
-                <span style={{fontSize:"10px",color:"#484f58"}}>{o.desc}</span>
+                <span style={{fontSize:"12px",color:"#484f58"}}>{o.desc}</span>
               </button>
             ))}
           </div>
@@ -3753,14 +3753,14 @@ function VideoTab(){
 
         {/* 해상도 */}
         <div style={{background:"#161b22",borderRadius:"10px",padding:"14px",border:"1px solid #30363d"}}>
-          <div style={{fontSize:"11px",color:"#8b949e",fontWeight:700,marginBottom:"8px"}}>📐 출력 해상도</div>
+          <div style={{fontSize:"13px",color:"#8b949e",fontWeight:700,marginBottom:"8px"}}>📐 출력 해상도</div>
           <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
             {scaleOptions.map(o=>(
               <button key={o.val} onClick={()=>setOpts(p=>({...p,scale:o.val}))}
                 style={{padding:"6px 10px",borderRadius:"6px",border:`1px solid ${opts.scale===o.val?"#3fb950":"#30363d"}`,
                   background:opts.scale===o.val?"#3fb95022":"transparent",
                   color:opts.scale===o.val?"#3fb950":"#8b949e",
-                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px",fontWeight:opts.scale===o.val?700:400}}>
+                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:opts.scale===o.val?700:400}}>
                 {o.label}
               </button>
             ))}
@@ -3770,28 +3770,28 @@ function VideoTab(){
         {/* FPS + 포맷 */}
         <div style={{background:"#161b22",borderRadius:"10px",padding:"14px",border:"1px solid #30363d",display:"flex",flexDirection:"column",gap:"12px"}}>
           <div>
-            <div style={{fontSize:"11px",color:"#8b949e",fontWeight:700,marginBottom:"6px"}}>🎞️ 프레임레이트</div>
+            <div style={{fontSize:"13px",color:"#8b949e",fontWeight:700,marginBottom:"6px"}}>🎞️ 프레임레이트</div>
             <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
               {fpsOptions.map(o=>(
                 <button key={o.val} onClick={()=>setOpts(p=>({...p,fps:o.val}))}
                   style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${opts.fps===o.val?"#ffa657":"#30363d"}`,
                     background:opts.fps===o.val?"#ffa65722":"transparent",
                     color:opts.fps===o.val?"#ffa657":"#8b949e",
-                    cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px"}}>
+                    cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px"}}>
                   {o.label}
                 </button>
               ))}
             </div>
           </div>
           <div>
-            <div style={{fontSize:"11px",color:"#8b949e",fontWeight:700,marginBottom:"6px"}}>📦 출력 포맷</div>
+            <div style={{fontSize:"13px",color:"#8b949e",fontWeight:700,marginBottom:"6px"}}>📦 출력 포맷</div>
             <div style={{display:"flex",gap:"5px"}}>
               {["mp4","webm","mov"].map(f=>(
                 <button key={f} onClick={()=>setOpts(p=>({...p,format:f}))}
                   style={{flex:1,padding:"6px",borderRadius:"6px",border:`1px solid ${opts.format===f?"#d2a8ff":"#30363d"}`,
                     background:opts.format===f?"#d2a8ff22":"transparent",
                     color:opts.format===f?"#d2a8ff":"#8b949e",
-                    cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700}}>
+                    cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700}}>
                   {f.toUpperCase()}
                 </button>
               ))}
@@ -3801,14 +3801,14 @@ function VideoTab(){
 
         {/* 속도 */}
         <div style={{background:"#161b22",borderRadius:"10px",padding:"14px",border:"1px solid #30363d"}}>
-          <div style={{fontSize:"11px",color:"#8b949e",fontWeight:700,marginBottom:"6px"}}>⚡ 인코딩 속도</div>
+          <div style={{fontSize:"13px",color:"#8b949e",fontWeight:700,marginBottom:"6px"}}>⚡ 인코딩 속도</div>
           <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
             {presetOptions.map(o=>(
               <button key={o.val} onClick={()=>setOpts(p=>({...p,preset:o.val}))}
                 style={{flex:1,padding:"5px 4px",borderRadius:"6px",border:`1px solid ${opts.preset===o.val?"#79c0ff":"#30363d"}`,
                   background:opts.preset===o.val?"#79c0ff22":"transparent",
                   color:opts.preset===o.val?"#79c0ff":"#8b949e",
-                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"10px",
+                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",
                   fontWeight:opts.preset===o.val?700:400}}>
                 {o.label}
               </button>
@@ -3820,7 +3820,7 @@ function VideoTab(){
         <button onClick={compress} disabled={isProcessing}
           style={{padding:"13px",background:isProcessing?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",
             border:"none",borderRadius:"10px",color:isProcessing?"#484f58":"#fff",
-            cursor:isProcessing?"not-allowed":"pointer",fontSize:"14px",fontWeight:700,
+            cursor:isProcessing?"not-allowed":"pointer",fontSize:"16px",fontWeight:700,
             fontFamily:"'Noto Sans KR',sans-serif",transition:"all .2s"}}>
           {status==="loading"?"⏳ FFmpeg 로딩 중...":isProcessing?"⏳ 압축 중...":"🎬 압축 시작"}
         </button>
@@ -3829,12 +3829,12 @@ function VideoTab(){
         {status==="done"&&resultUrl&&<>
           <div style={{background:"#0d2019",border:"1px solid #2ea04344",borderRadius:"10px",padding:"12px 14px"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
-              <span style={{color:"#8b949e",fontSize:"12px"}}>원본</span>
-              <span style={{color:"#8b949e",fontSize:"12px",fontWeight:600}}>{fmtSz(origSize)}</span>
+              <span style={{color:"#8b949e",fontSize:"14px"}}>원본</span>
+              <span style={{color:"#8b949e",fontSize:"14px",fontWeight:600}}>{fmtSz(origSize)}</span>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px"}}>
-              <span style={{color:"#3fb950",fontSize:"12px"}}>결과</span>
-              <span style={{color:"#3fb950",fontSize:"12px",fontWeight:700}}>{fmtSz(resultSize)}</span>
+              <span style={{color:"#3fb950",fontSize:"14px"}}>결과</span>
+              <span style={{color:"#3fb950",fontSize:"14px",fontWeight:700}}>{fmtSz(resultSize)}</span>
             </div>
             {saving!=null&&<div style={{textAlign:"center",color:saving>0?"#3fb950":"#ff7b72",fontSize:"18px",fontWeight:700}}>
               {saving>0?`▼ ${saving}% 압축`:saving<0?`▲ ${Math.abs(saving)}% 증가`:"변화 없음"}
@@ -3842,7 +3842,7 @@ function VideoTab(){
           </div>
           <a href={resultUrl} download={`compressed.${opts.format}`}
             style={{display:"block",padding:"11px",background:"#2ea043",borderRadius:"10px",
-              color:"#fff",textDecoration:"none",fontSize:"13px",fontWeight:700,
+              color:"#fff",textDecoration:"none",fontSize:"15px",fontWeight:700,
               textAlign:"center",fontFamily:"'Noto Sans KR',sans-serif"}}>
             ⬇️ 결과 다운로드
           </a>
@@ -3850,7 +3850,7 @@ function VideoTab(){
 
         <button onClick={()=>{setFile(null);setPreview(null);setResultUrl(null);setStatus("idle");setLog("");}}
           style={{padding:"9px",background:"none",border:"1px solid #30363d",borderRadius:"8px",
-            color:"#8b949e",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+            color:"#8b949e",cursor:"pointer",fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif"}}>
           🗑️ 새 파일 업로드
         </button>
       </div>
@@ -3862,7 +3862,7 @@ function VideoTab(){
         <div style={{background:"#0d1117",borderRadius:"12px",overflow:"hidden",border:"1px solid #30363d"}}>
           {preview&&<video src={resultUrl||preview} controls
             style={{width:"100%",maxHeight:"400px",display:"block",background:"#000"}}/>}
-          {resultUrl&&<div style={{padding:"8px 12px",fontSize:"11px",color:"#3fb950",background:"#0d2019",
+          {resultUrl&&<div style={{padding:"8px 12px",fontSize:"13px",color:"#3fb950",background:"#0d2019",
             borderTop:"1px solid #2ea04333"}}>
             ✅ 압축 완료 — 위 영상은 결과물 미리보기입니다
           </div>}
@@ -3871,15 +3871,15 @@ function VideoTab(){
         {/* 진행 상태 */}
         {isProcessing&&<div style={{background:"#161b22",borderRadius:"10px",padding:"16px",border:"1px solid #30363d"}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px"}}>
-            <span style={{color:"#8b949e",fontSize:"13px"}}>⏳ 압축 진행 중...</span>
-            <span style={{color:"#58a6ff",fontWeight:700,fontSize:"13px"}}>{progress}%</span>
+            <span style={{color:"#8b949e",fontSize:"15px"}}>⏳ 압축 진행 중...</span>
+            <span style={{color:"#58a6ff",fontWeight:700,fontSize:"15px"}}>{progress}%</span>
           </div>
           <div style={{height:"6px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
             <div style={{height:"100%",width:`${progress}%`,
               background:"linear-gradient(90deg,#1f6feb,#58a6ff)",
               borderRadius:"3px",transition:"width .3s"}}/>
           </div>
-          <div style={{color:"#484f58",fontSize:"11px",marginTop:"8px",fontFamily:"monospace",
+          <div style={{color:"#484f58",fontSize:"13px",marginTop:"8px",fontFamily:"monospace",
             whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
             {log||"처리 중..."}
           </div>
@@ -3887,16 +3887,16 @@ function VideoTab(){
 
         {/* 에러 */}
         {status==="error"&&<div style={{background:"#2d1117",border:"1px solid #da363333",
-          borderRadius:"10px",padding:"14px",color:"#ff7b72",fontSize:"13px"}}>
+          borderRadius:"10px",padding:"14px",color:"#ff7b72",fontSize:"15px"}}>
           ⚠️ {log}
-          <div style={{marginTop:"8px",fontSize:"11px",color:"#484f58"}}>
+          <div style={{marginTop:"8px",fontSize:"13px",color:"#484f58"}}>
             FFmpeg.wasm은 브라우저 환경에 따라 동작하지 않을 수 있습니다. SharedArrayBuffer가 필요합니다.
           </div>
         </div>}
 
         {/* 안내 */}
         <div style={{background:"#161b22",borderRadius:"8px",padding:"12px 14px",border:"1px solid #30363d",
-          fontSize:"11px",color:"#484f58",lineHeight:"1.8"}}>
+          fontSize:"13px",color:"#484f58",lineHeight:"1.8"}}>
           <div style={{color:"#8b949e",fontWeight:600,marginBottom:"4px"}}>💡 사용 안내</div>
           · 모든 처리는 <strong style={{color:"#c9d1d9"}}>브라우저 내에서만</strong> 이루어져 서버로 업로드되지 않습니다<br/>
           · FFmpeg.wasm 첫 로드 시 약 20MB 다운로드가 필요합니다<br/>
@@ -4073,8 +4073,8 @@ function VideoGifTab(){
         padding:"40px 20px",textAlign:"center",cursor:"pointer",
         background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
       <div style={{fontSize:"40px",marginBottom:"12px"}}>🎞️</div>
-      <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:600,marginBottom:"6px"}}>동영상을 드래그하거나 클릭하여 업로드</div>
-      <div style={{color:"#484f58",fontSize:"13px"}}>MP4, WebM, AVI, MOV, MKV 등 · 브라우저 내 처리 (서버 미업로드)</div>
+      <div style={{color:"#c9d1d9",fontSize:"17px",fontWeight:600,marginBottom:"6px"}}>동영상을 드래그하거나 클릭하여 업로드</div>
+      <div style={{color:"#484f58",fontSize:"15px"}}>MP4, WebM, AVI, MOV, MKV 등 · 브라우저 내 처리 (서버 미업로드)</div>
       <input ref={fileInputRef} type="file" accept="video/*" style={{display:"none"}} onChange={e=>onFile(e.target.files[0])}/>
     </div>}
 
@@ -4084,21 +4084,21 @@ function VideoGifTab(){
         display:"flex",alignItems:"center",gap:"12px"}}>
         <span style={{fontSize:"20px"}}>🎞️</span>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{color:"#e6edf3",fontSize:"13px",fontWeight:600,
+          <div style={{color:"#e6edf3",fontSize:"15px",fontWeight:600,
             overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{file.name}</div>
-          <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>
+          <div style={{color:"#484f58",fontSize:"13px",marginTop:"2px"}}>
             {fmtSize(file.size)}{duration>0&&` · 총 ${fmtTime(duration)}`}
           </div>
         </div>
         <button onClick={()=>{setFile(null);setPreview(null);setResultUrl(null);setStatus("idle");}}
           style={{padding:"6px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-            borderRadius:"6px",cursor:"pointer",fontSize:"12px"}}>🗑️ 초기화</button>
+            borderRadius:"6px",cursor:"pointer",fontSize:"14px"}}>🗑️ 초기화</button>
       </div>
 
       {/* 비디오 미리보기 */}
       <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
         <div style={{padding:"8px 14px",borderBottom:"1px solid #21262d",
-          color:"#8b949e",fontSize:"11px",fontWeight:700}}>🎬 원본 미리보기</div>
+          color:"#8b949e",fontSize:"13px",fontWeight:700}}>🎬 원본 미리보기</div>
         <div style={{padding:"12px",display:"flex",justifyContent:"center"}}>
           <video key={preview} ref={videoRef} src={preview} controls preload="auto" playsInline onLoadedMetadata={onVideoLoaded}
             style={{maxWidth:"100%",maxHeight:"260px",borderRadius:"8px",background:"#000"}}/>
@@ -4106,12 +4106,12 @@ function VideoGifTab(){
         <div style={{padding:"8px 14px",borderTop:"1px solid #21262d",display:"flex",gap:"8px",flexWrap:"wrap"}}>
           <button onClick={()=>useCurrentTime("startTime")}
             style={{padding:"5px 12px",background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",
-              borderRadius:"6px",cursor:"pointer",fontSize:"11px",fontWeight:600}}>
+              borderRadius:"6px",cursor:"pointer",fontSize:"13px",fontWeight:600}}>
             ▶ 현재 위치를 시작점으로
           </button>
           <button onClick={()=>useCurrentTime("endTime")}
             style={{padding:"5px 12px",background:"#2ea04322",color:"#3fb950",border:"1px solid #2ea04344",
-              borderRadius:"6px",cursor:"pointer",fontSize:"11px",fontWeight:600}}>
+              borderRadius:"6px",cursor:"pointer",fontSize:"13px",fontWeight:600}}>
             ⏹ 현재 위치를 종료점으로
           </button>
         </div>
@@ -4119,75 +4119,75 @@ function VideoGifTab(){
 
       {/* 변환 옵션 */}
       <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"16px"}}>
-        <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"14px"}}>⚙️ 변환 옵션</div>
+        <div style={{color:"#8b949e",fontSize:"14px",fontWeight:700,marginBottom:"14px"}}>⚙️ 변환 옵션</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
 
           {/* 시작 시간 */}
           <div>
-            <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"6px"}}>시작 시간 (초)</div>
+            <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"6px"}}>시작 시간 (초)</div>
             <input type="number" value={opts.startTime} min="0" step="0.1"
               onChange={e=>setOpts(o=>({...o,startTime:e.target.value}))}
               style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",background:"#0d1117",
-                border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"13px",outline:"none"}}
+                border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"15px",outline:"none"}}
               onFocus={e=>e.target.style.borderColor="#58a6ff"}
               onBlur={e=>e.target.style.borderColor="#30363d"}/>
           </div>
 
           {/* 종료 시간 */}
           <div>
-            <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"6px"}}>
+            <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"6px"}}>
               종료 시간 (초){duration>0&&<span style={{color:"#484f58",marginLeft:"4px"}}>/ {fmtTime(duration)}</span>}
             </div>
             <input type="number" value={opts.endTime} min="0" step="0.1"
               onChange={e=>setOpts(o=>({...o,endTime:e.target.value}))}
               style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",background:"#0d1117",
-                border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"13px",outline:"none"}}
+                border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"15px",outline:"none"}}
               onFocus={e=>e.target.style.borderColor="#58a6ff"}
               onBlur={e=>e.target.style.borderColor="#30363d"}/>
           </div>
 
           {/* FPS */}
           <div>
-            <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"6px"}}>프레임 (FPS)</div>
+            <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"6px"}}>프레임 (FPS)</div>
             <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
               {["5","10","15","20"].map(v=>(
                 <button key={v} onClick={()=>setOpts(o=>({...o,fps:v}))}
                   style={{padding:"6px 12px",borderRadius:"6px",border:"none",cursor:"pointer",
-                    fontSize:"12px",fontWeight:600,
+                    fontSize:"14px",fontWeight:600,
                     background:opts.fps===v?"#1f6feb":"#21262d",
                     color:opts.fps===v?"#fff":"#8b949e"}}>
                   {v}fps
                 </button>
               ))}
             </div>
-            <div style={{color:"#484f58",fontSize:"10px",marginTop:"5px"}}>높을수록 부드럽지만 파일 용량 증가</div>
+            <div style={{color:"#484f58",fontSize:"12px",marginTop:"5px"}}>높을수록 부드럽지만 파일 용량 증가</div>
           </div>
 
           {/* 가로 크기 */}
           <div>
-            <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"6px"}}>가로 크기 (px)</div>
+            <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"6px"}}>가로 크기 (px)</div>
             <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
               {["320","480","640","original"].map(v=>(
                 <button key={v} onClick={()=>setOpts(o=>({...o,width:v}))}
                   style={{padding:"6px 10px",borderRadius:"6px",border:"none",cursor:"pointer",
-                    fontSize:"12px",fontWeight:600,
+                    fontSize:"14px",fontWeight:600,
                     background:opts.width===v?"#1f6feb":"#21262d",
                     color:opts.width===v?"#fff":"#8b949e"}}>
                   {v==="original"?"원본":v}
                 </button>
               ))}
             </div>
-            <div style={{color:"#484f58",fontSize:"10px",marginTop:"5px"}}>세로는 비율 자동 유지</div>
+            <div style={{color:"#484f58",fontSize:"12px",marginTop:"5px"}}>세로는 비율 자동 유지</div>
           </div>
 
           {/* 루프 */}
           <div style={{gridColumn:"1/-1"}}>
-            <div style={{color:"#8b949e",fontSize:"11px",marginBottom:"6px"}}>반복 횟수</div>
+            <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"6px"}}>반복 횟수</div>
             <div style={{display:"flex",gap:"5px"}}>
               {[["0","무한 반복"],["1","1회"],["2","2회"],["3","3회"]].map(([v,lbl])=>(
                 <button key={v} onClick={()=>setOpts(o=>({...o,loop:v}))}
                   style={{padding:"6px 14px",borderRadius:"6px",border:"none",cursor:"pointer",
-                    fontSize:"12px",fontWeight:600,
+                    fontSize:"14px",fontWeight:600,
                     background:opts.loop===v?"#1f6feb":"#21262d",
                     color:opts.loop===v?"#fff":"#8b949e"}}>
                   {lbl}
@@ -4203,15 +4203,15 @@ function VideoGifTab(){
         style={{padding:"13px",background:isProcessing?"#21262d":"linear-gradient(135deg,#1f6feb,#58a6ff)",
           color:isProcessing?"#484f58":"#fff",border:"none",borderRadius:"10px",
           cursor:isProcessing?"not-allowed":"pointer",fontFamily:"'Noto Sans KR',sans-serif",
-          fontSize:"15px",fontWeight:700,transition:"all .2s"}}>
+          fontSize:"17px",fontWeight:700,transition:"all .2s"}}>
         {status==="loading"?"⏳ FFmpeg 로딩 중...":isProcessing?"⏳ GIF 변환 중...":"🎞️ GIF 변환 시작"}
       </button>
 
       {/* 진행률 */}
       {isProcessing&&<div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span style={{color:"#8b949e",fontSize:"12px",animation:"pulse 1s infinite"}}>{log||"처리 중..."}</span>
-          <span style={{color:"#58a6ff",fontSize:"13px",fontWeight:700}}>{progress}%</span>
+          <span style={{color:"#8b949e",fontSize:"14px",animation:"pulse 1s infinite"}}>{log||"처리 중..."}</span>
+          <span style={{color:"#58a6ff",fontSize:"15px",fontWeight:700}}>{progress}%</span>
         </div>
         <div style={{background:"#21262d",borderRadius:"4px",height:"6px",overflow:"hidden"}}>
           <div style={{background:"linear-gradient(90deg,#1f6feb,#58a6ff)",height:"100%",
@@ -4221,7 +4221,7 @@ function VideoGifTab(){
 
       {/* 에러 */}
       {status==="error"&&<div style={{background:"#2d1117",border:"1px solid #da3633",
-        borderRadius:"10px",padding:"14px",color:"#ff7b72",fontSize:"13px"}}>
+        borderRadius:"10px",padding:"14px",color:"#ff7b72",fontSize:"15px"}}>
         ⚠️ {log}
       </div>}
 
@@ -4231,15 +4231,15 @@ function VideoGifTab(){
         <div style={{padding:"12px 16px",borderBottom:"1px solid #2ea04322",
           display:"flex",alignItems:"center",justifyContent:"space-between",gap:"10px",flexWrap:"wrap"}}>
           <div>
-            <div style={{color:"#3fb950",fontWeight:700,fontSize:"14px"}}>✅ GIF 변환 완료!</div>
-            <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>
+            <div style={{color:"#3fb950",fontWeight:700,fontSize:"16px"}}>✅ GIF 변환 완료!</div>
+            <div style={{color:"#484f58",fontSize:"13px",marginTop:"2px"}}>
               파일 크기: <span style={{color:"#58a6ff",fontWeight:600}}>{fmtSize(resultSize)}</span>
             </div>
           </div>
           <button onClick={download}
             style={{padding:"9px 20px",background:"#2ea043",color:"#fff",border:"none",
               borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
-              fontSize:"13px",fontWeight:700}}>
+              fontSize:"15px",fontWeight:700}}>
             ⬇️ GIF 다운로드
           </button>
         </div>
@@ -4568,10 +4568,10 @@ function RestoreTab(){
           padding:"56px 20px",textAlign:"center",cursor:"pointer",
           background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
         <div style={{fontSize:"56px",marginBottom:"14px"}}>🤖</div>
-        <div style={{color:"#c9d1d9",fontSize:"17px",fontWeight:700,marginBottom:"8px"}}>
+        <div style={{color:"#c9d1d9",fontSize:"19px",fontWeight:700,marginBottom:"8px"}}>
           이미지 드래그 · 클릭 · Ctrl+V
         </div>
-        <div style={{color:"#484f58",fontSize:"13px"}}>AI가 진짜 디테일을 복원합니다 (Real-ESRGAN)</div>
+        <div style={{color:"#484f58",fontSize:"15px"}}>AI가 진짜 디테일을 복원합니다 (Real-ESRGAN)</div>
         <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}}
           onChange={e=>loadFile(e.target.files[0])}/>
       </div>
@@ -4587,11 +4587,11 @@ function RestoreTab(){
             marginLeft:"auto",padding:"11px 28px",
             background:"linear-gradient(135deg,#7928ca,#1f6feb)",
             border:"none",borderRadius:"10px",color:"#fff",cursor:"pointer",
-            fontSize:"14px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",
+            fontSize:"16px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap",
           }}>🤖 AI 복원 시작</button>
           <button onClick={()=>{setOrigUrl(null);setOrigInfo(null);}} style={{
             padding:"11px 14px",background:"none",border:"1px solid #30363d",
-            borderRadius:"10px",color:"#484f58",cursor:"pointer",fontSize:"13px",
+            borderRadius:"10px",color:"#484f58",cursor:"pointer",fontSize:"15px",
           }}>🗑️</button>
         </div>
       </>}
@@ -4599,7 +4599,7 @@ function RestoreTab(){
       {/* 진행 표시 */}
       {processing&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"20px 24px"}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:"10px"}}>
-          <span style={{color:"#8b949e",fontSize:"13px"}}>{statusMsg||"처리 중..."}</span>
+          <span style={{color:"#8b949e",fontSize:"15px"}}>{statusMsg||"처리 중..."}</span>
           <span style={{color:"#58a6ff",fontWeight:700}}>{progress}%</span>
         </div>
         <div style={{height:"6px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
@@ -4610,29 +4610,29 @@ function RestoreTab(){
       {/* 오류 */}
       {errMsg&&<div style={{background:"#2d1117",border:"1px solid #da363333",borderRadius:"8px",
         padding:"14px",display:"flex",flexDirection:"column",gap:"8px"}}>
-        <div style={{color:"#ff7b72",fontSize:"13px",fontWeight:700}}>⚠️ {errMsg}</div>
+        <div style={{color:"#ff7b72",fontSize:"15px",fontWeight:700}}>⚠️ {errMsg}</div>
       </div>}
 
       {/* 결과 */}
       {resultUrl&&<>
         <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
-          {origInfo&&<span style={{color:"#484f58",fontSize:"12px"}}>원본 {fmtPx(origInfo.w,origInfo.h)}</span>}
-          {resultInfo&&<span style={{color:"#3fb950",fontSize:"12px",fontWeight:700}}>
+          {origInfo&&<span style={{color:"#484f58",fontSize:"14px"}}>원본 {fmtPx(origInfo.w,origInfo.h)}</span>}
+          {resultInfo&&<span style={{color:"#3fb950",fontSize:"14px",fontWeight:700}}>
             → {fmtPx(resultInfo.w,resultInfo.h)} · {fmtSz(resultInfo.bytes)}
           </span>}
           <a href={resultUrl} download="restored.jpg" style={{
             marginLeft:"auto",padding:"9px 22px",background:"#2ea043",
             borderRadius:"8px",color:"#fff",textDecoration:"none",
-            fontSize:"13px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
+            fontSize:"15px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
           }}>⬇️ 다운로드</a>
           <button onClick={()=>{setResultUrl(null);setResultInfo(null);setProgress(0);setStatusMsg("");}} style={{
             padding:"9px 14px",background:"none",border:"1px solid #30363d",
-            borderRadius:"8px",color:"#8b949e",cursor:"pointer",fontSize:"12px",
+            borderRadius:"8px",color:"#8b949e",cursor:"pointer",fontSize:"14px",
             fontFamily:"'Noto Sans KR',sans-serif",
           }}>🔄 다시</button>
           <button onClick={()=>{setOrigUrl(null);setResultUrl(null);setOrigInfo(null);setResultInfo(null);}} style={{
             padding:"9px 14px",background:"none",border:"1px solid #30363d",
-            borderRadius:"8px",color:"#484f58",cursor:"pointer",fontSize:"12px",
+            borderRadius:"8px",color:"#484f58",cursor:"pointer",fontSize:"14px",
             fontFamily:"'Noto Sans KR',sans-serif",
           }}>🗑️ 새 이미지</button>
         </div>
@@ -4655,13 +4655,13 @@ function RestoreTab(){
               transform:"translate(-50%,-50%)",width:"36px",height:"36px",
               background:"#fff",borderRadius:"50%",boxShadow:"0 2px 12px #00000066",
               display:"flex",alignItems:"center",justifyContent:"center",
-              color:"#333",fontSize:"14px",fontWeight:700}}>↔</div>
+              color:"#333",fontSize:"16px",fontWeight:700}}>↔</div>
           </div>
           {/* 라벨 */}
           <div style={{position:"absolute",top:"10px",left:"12px",background:"#00000088",
-            color:"#fff",fontSize:"11px",fontWeight:700,padding:"3px 10px",borderRadius:"20px"}}>원본</div>
+            color:"#fff",fontSize:"13px",fontWeight:700,padding:"3px 10px",borderRadius:"20px"}}>원본</div>
           <div style={{position:"absolute",top:"10px",right:"12px",background:"#1f6feb",
-            color:"#fff",fontSize:"11px",fontWeight:700,padding:"3px 10px",borderRadius:"20px"}}>
+            color:"#fff",fontSize:"13px",fontWeight:700,padding:"3px 10px",borderRadius:"20px"}}>
             AI 복원
           </div>
         </div>
@@ -4894,11 +4894,11 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
     <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
-      <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 1</div>
-      <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,marginBottom:"12px"}}>카테고리 선택</div>
+      <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"12px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 1</div>
+      <div style={{color:"#e6edf3",fontSize:"16px",fontWeight:700,marginBottom:"12px"}}>카테고리 선택</div>
       <select value={selCat} onChange={e=>{setSelCat(e.target.value);setKeywords([]);setErr("");setStats({});setDetail({});}}
         style={{width:"100%",padding:"10px 14px",background:"#0d1117",border:"1px solid #30363d",
-          borderRadius:"8px",color:selCat?"#e6edf3":"#484f58",fontSize:"14px",outline:"none",cursor:"pointer",
+          borderRadius:"8px",color:selCat?"#e6edf3":"#484f58",fontSize:"16px",outline:"none",cursor:"pointer",
           fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}>
         <option value="">── 카테고리를 선택하세요 ──</option>
         {NAVER_AUTO_CATEGORIES.map(g=>(
@@ -4911,21 +4911,21 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
         style={{marginTop:"12px",padding:"10px 22px",background:!selCat||loadingKw?"#21262d":"#1f6feb",
           color:!selCat||loadingKw?"#484f58":"#fff",border:"none",borderRadius:"8px",
           cursor:!selCat||loadingKw?"not-allowed":"pointer",
-          fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,transition:"background .2s"}}>
+          fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:700,transition:"background .2s"}}>
         {loadingKw?"⏳ 분석 중...":"🏷️ 추천 글 주제 10개 추출"}
       </button>
     </div>
 
-    {err&&<div style={{background:"#2d1117",border:"1px solid #da363344",borderRadius:"10px",padding:"12px 16px",color:"#ff7b72",fontSize:"13px"}}>⚠️ {err}</div>}
+    {err&&<div style={{background:"#2d1117",border:"1px solid #da363344",borderRadius:"10px",padding:"12px 16px",color:"#ff7b72",fontSize:"15px"}}>⚠️ {err}</div>}
 
     {keywords.length>0&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
-      <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"10px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 2</div>
+      <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"12px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 2</div>
       <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"4px",flexWrap:"wrap"}}>
-        <span style={{color:"#e6edf3",fontSize:"14px",fontWeight:700}}>추천 글 주제 & 메인 키워드</span>
-        {trendingCount>0&&<span style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"10px",padding:"2px 9px",fontSize:"11px",fontWeight:700}}>📡 네이버 인기글 {trendingCount}</span>}
-        {googleCount>0&&<span style={{background:"#3fb95022",color:"#3fb950",border:"1px solid #3fb95044",borderRadius:"10px",padding:"2px 9px",fontSize:"11px",fontWeight:700}}>📈 구글 트렌드 {googleCount}</span>}
+        <span style={{color:"#e6edf3",fontSize:"16px",fontWeight:700}}>추천 글 주제 & 메인 키워드</span>
+        {trendingCount>0&&<span style={{background:"#1f6feb22",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"10px",padding:"2px 9px",fontSize:"13px",fontWeight:700}}>📡 네이버 인기글 {trendingCount}</span>}
+        {googleCount>0&&<span style={{background:"#3fb95022",color:"#3fb950",border:"1px solid #3fb95044",borderRadius:"10px",padding:"2px 9px",fontSize:"13px",fontWeight:700}}>📈 구글 트렌드 {googleCount}</span>}
       </div>
-      <div style={{color:"#484f58",fontSize:"12px",marginBottom:"14px"}}>
+      <div style={{color:"#484f58",fontSize:"14px",marginBottom:"14px"}}>
         월 검색량은 네이버 광고 API 실측값입니다 · <span style={{color:"#58a6ff",fontWeight:700}}>연관검색어 · 난이도</span>를 누르면 이번 달 발행량까지 조회합니다 (월 1,000건 미만은 정확한 실측)
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
@@ -4938,36 +4938,36 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
             <div style={{display:"flex",alignItems:"flex-start",gap:"10px",marginBottom:"8px"}}>
               <span style={{minWidth:"24px",height:"24px",borderRadius:"50%",background:"#1f6feb22",
                 color:"#58a6ff",border:"1px solid #1f6feb44",display:"flex",alignItems:"center",
-                justifyContent:"center",fontSize:"11px",fontWeight:700,flexShrink:0,marginTop:"1px"}}>
+                justifyContent:"center",fontSize:"13px",fontWeight:700,flexShrink:0,marginTop:"1px"}}>
                 {kw.rank}
               </span>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{color:"#e6edf3",fontWeight:600,fontSize:"14px",lineHeight:"1.5"}}>{kw.title||kw.keyword}</div>
-                <div style={{color:"#484f58",fontSize:"11px",marginTop:"2px"}}>{kw.reason}</div>
+                <div style={{color:"#e6edf3",fontWeight:600,fontSize:"16px",lineHeight:"1.5"}}>{kw.title||kw.keyword}</div>
+                <div style={{color:"#484f58",fontSize:"13px",marginTop:"2px"}}>{kw.reason}</div>
               </div>
             </div>
 
             <div style={{display:"flex",alignItems:"center",gap:"8px",paddingLeft:"34px",flexWrap:"wrap"}}>
-              <span style={{fontSize:"11px",color:"#8b949e",flexShrink:0}}>메인 키워드</span>
+              <span style={{fontSize:"13px",color:"#8b949e",flexShrink:0}}>메인 키워드</span>
               <span style={{background:"#1f6feb15",border:"1px solid #1f6feb44",borderRadius:"6px",
-                padding:"3px 10px",color:"#79c0ff",fontSize:"12px",fontWeight:700}}>
+                padding:"3px 10px",color:"#79c0ff",fontSize:"14px",fontWeight:700}}>
                 {mainKw}
               </span>
-              {st&&<span style={{fontSize:"11px",color:"#8b949e"}}>월 검색량 <b style={{color:"#e6edf3"}}>{fmt(st.monthly)}</b></span>}
+              {st&&<span style={{fontSize:"13px",color:"#8b949e"}}>월 검색량 <b style={{color:"#e6edf3"}}>{fmt(st.monthly)}</b></span>}
               {st?.commercial&&<span title={`통합검색 평균 광고 노출 ${st.depth}개`}
-                style={{background:"#f8514915",border:"1px solid #f8514944",borderRadius:"6px",padding:"2px 8px",color:"#ff7b72",fontSize:"10px",fontWeight:700}}>
+                style={{background:"#f8514915",border:"1px solid #f8514944",borderRadius:"6px",padding:"2px 8px",color:"#ff7b72",fontSize:"12px",fontWeight:700}}>
                 💰 상업성 키워드
               </span>}
               <div style={{marginLeft:"auto",display:"flex",gap:"6px",flexShrink:0}}>
                 <button onClick={()=>loadDetail(mainKw)} disabled={dt?.loading}
                   style={{padding:"5px 12px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",
-                    color:dt?.loading?"#484f58":"#c9d1d9",fontSize:"11px",fontWeight:700,
+                    color:dt?.loading?"#484f58":"#c9d1d9",fontSize:"13px",fontWeight:700,
                     cursor:dt?.loading?"wait":"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
                   {dt?.loading?"⏳ 조회 중":dt?"🔄 다시 조회":"📊 연관검색어 · 난이도"}
                 </button>
                 <button onClick={()=>goKeywordSearch(mainKw)}
                   style={{padding:"5px 12px",borderRadius:"6px",border:"none",background:"#1f6feb",color:"#fff",
-                    fontSize:"11px",fontWeight:700,cursor:"pointer",
+                    fontSize:"13px",fontWeight:700,cursor:"pointer",
                     fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}
                   onMouseEnter={e=>e.currentTarget.style.background="#388bfd"}
                   onMouseLeave={e=>e.currentTarget.style.background="#1f6feb"}>
@@ -4978,7 +4978,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
 
             {dt&&!dt.loading&&<div style={{marginTop:"10px",marginLeft:"34px",padding:"10px 12px",background:"#161b22",border:"1px solid #21262d",borderRadius:"8px"}}>
               <div style={{display:"flex",gap:"16px",flexWrap:"wrap",marginBottom:dt.related?.length?"10px":0}}>
-                <span style={{fontSize:"11px",color:"#8b949e"}}>
+                <span style={{fontSize:"13px",color:"#8b949e"}}>
                   이번 달 발행량 <b style={{color:"#e6edf3"}}>
                     {dt.capped?"약 ":""}{fmt(dt.monthlyPosts)}
                   </b>
@@ -4988,17 +4988,17 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
                       : dt.exact ? "(실측)" : ""}
                   </span>
                 </span>
-                {dt.totalPosts!==null&&<span style={{fontSize:"11px",color:"#8b949e"}}>누적 <b style={{color:"#e6edf3"}}>{fmt(dt.totalPosts)}</b></span>}
-                {sat&&<span style={{fontSize:"11px",fontWeight:700,color:sat.color}}>{sat.text}</span>}
+                {dt.totalPosts!==null&&<span style={{fontSize:"13px",color:"#8b949e"}}>누적 <b style={{color:"#e6edf3"}}>{fmt(dt.totalPosts)}</b></span>}
+                {sat&&<span style={{fontSize:"13px",fontWeight:700,color:sat.color}}>{sat.text}</span>}
               </div>
               {dt.related?.length>0&&<div>
-                <div style={{fontSize:"11px",color:"#484f58",marginBottom:"6px",fontWeight:600}}>연관 검색어</div>
+                <div style={{fontSize:"13px",color:"#484f58",marginBottom:"6px",fontWeight:600}}>연관 검색어</div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
                   {dt.related.map((r,i)=>(
                     <button key={i} onClick={()=>goKeywordSearch(r.keyword)}
                       title={r.commercial?"통합검색에서 광고가 먼저 뜨는 상업성 키워드":""}
                       style={{padding:"4px 9px",borderRadius:"6px",cursor:"pointer",
-                        fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px",
+                        fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",
                         background:"#0d1117",
                         border:`1px solid ${r.commercial?"#f8514944":"#30363d"}`,
                         color:r.commercial?"#ff7b72":"#c9d1d9"}}>
@@ -5008,7 +5008,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
                   ))}
                 </div>
               </div>}
-              {!dt.related?.length&&<div style={{fontSize:"11px",color:"#484f58"}}>연관 검색어가 조회되지 않았습니다 (광고 DB에 없는 키워드일 수 있어요)</div>}
+              {!dt.related?.length&&<div style={{fontSize:"13px",color:"#484f58"}}>연관 검색어가 조회되지 않았습니다 (광고 DB에 없는 키워드일 수 있어요)</div>}
             </div>}
           </div>;
         })}
@@ -5269,10 +5269,10 @@ function ExifTab() {
       <input ref={inputRef} type="file" multiple accept="image/*" style={{ display: "none" }}
         onChange={e => addFiles(e.target.files)} />
       <div style={{ fontSize: "28px", marginBottom: "8px" }}>🔒</div>
-      <div style={{ color: "#e6edf3", fontWeight: 700, fontSize: "14px", marginBottom: "4px" }}>
+      <div style={{ color: "#e6edf3", fontWeight: 700, fontSize: "16px", marginBottom: "4px" }}>
         이미지를 드래그하거나 클릭해서 추가
       </div>
-      <div style={{ color: "#484f58", fontSize: "12px" }}>
+      <div style={{ color: "#484f58", fontSize: "14px" }}>
         JPEG · PNG · WebP · GIF 지원 · 최대 20개 · 모든 처리는 브라우저 로컬에서만 진행 (서버 전송 없음)
       </div>
     </div>
@@ -5284,23 +5284,23 @@ function ExifTab() {
         <button onClick={removeAll}
           style={{ padding: "8px 16px", background: "#1f6feb", color: "#fff", border: "none",
             borderRadius: "8px", cursor: "pointer", fontFamily: "'Noto Sans KR',sans-serif",
-            fontSize: "13px", fontWeight: 700 }}>
+            fontSize: "15px", fontWeight: 700 }}>
           🗑️ 일괄 EXIF 제거
         </button>
         <button onClick={saveAll}
           style={{ padding: "8px 16px", background: allSaved ? "#2ea043" : "#21262d",
             color: allSaved ? "#fff" : "#8b949e", border: "1px solid #30363d",
             borderRadius: "8px", cursor: "pointer", fontFamily: "'Noto Sans KR',sans-serif",
-            fontSize: "13px", fontWeight: 600, transition: "all .2s" }}>
+            fontSize: "15px", fontWeight: 600, transition: "all .2s" }}>
           {allSaved ? "✅ 저장됨!" : "⬇️ 모두 저장"}
         </button>
         <button onClick={() => setFiles([])}
           style={{ padding: "8px 14px", background: "#21262d", color: "#8b949e",
             border: "1px solid #30363d", borderRadius: "8px", cursor: "pointer",
-            fontFamily: "'Noto Sans KR',sans-serif", fontSize: "13px" }}>
+            fontFamily: "'Noto Sans KR',sans-serif", fontSize: "15px" }}>
           🗑️ 초기화
         </button>
-        <span style={{ color: "#484f58", fontSize: "12px", marginLeft: "auto" }}>
+        <span style={{ color: "#484f58", fontSize: "14px", marginLeft: "auto" }}>
           {files.filter(f => f.status === "done").length} / {files.length} 완료
         </span>
       </div>
@@ -5321,12 +5321,12 @@ function ExifTab() {
                 background: "#21262d", flexShrink: 0, position: "relative" }}>
                 <img src={f.cleanedUrl || f.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 {f.status === "done" && <div style={{ position: "absolute", bottom: 0, right: 0,
-                  background: "#2ea043", borderRadius: "3px 0 0 0", padding: "1px 3px", fontSize: "9px" }}>✓</div>}
+                  background: "#2ea043", borderRadius: "3px 0 0 0", padding: "1px 3px", fontSize: "11px" }}>✓</div>}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: "#e6edf3", fontSize: "11px", fontWeight: 600,
+                <div style={{ color: "#e6edf3", fontSize: "13px", fontWeight: 600,
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
-                <div style={{ fontSize: "10px", color:
+                <div style={{ fontSize: "12px", color:
                   f.status === "done" ? "#3fb950" :
                   f.status === "cleaning" ? "#ffa657" :
                   f.status === "error" ? "#ff7b72" : "#484f58" }}>
@@ -5349,16 +5349,16 @@ function ExifTab() {
               style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "8px",
                 border: "1px solid #30363d", flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ color: "#e6edf3", fontWeight: 700, fontSize: "14px", marginBottom: "4px",
+              <div style={{ color: "#e6edf3", fontWeight: 700, fontSize: "16px", marginBottom: "4px",
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {files[selected].name}
               </div>
-              <div style={{ color: "#8b949e", fontSize: "12px", marginBottom: "8px" }}>
+              <div style={{ color: "#8b949e", fontSize: "14px", marginBottom: "8px" }}>
                 {fmtSize(files[selected].size)} · {files[selected].type}
               </div>
               {hasGps && files[selected].status !== "done" && (
                 <div style={{ background: "#2d1117", border: "1px solid #f8514944",
-                  borderRadius: "6px", padding: "6px 10px", fontSize: "12px",
+                  borderRadius: "6px", padding: "6px 10px", fontSize: "14px",
                   color: "#ff7b72", marginBottom: "8px" }}>
                   ⚠️ GPS 위치 정보가 포함되어 있습니다. 제거를 권장합니다.
                 </div>
@@ -5370,23 +5370,23 @@ function ExifTab() {
                     style={{ padding: "7px 14px", background: files[selected].status === "cleaning" ? "#21262d" : "#da3633",
                       color: files[selected].status === "cleaning" ? "#484f58" : "#fff",
                       border: "none", borderRadius: "7px", cursor: files[selected].status === "cleaning" ? "not-allowed" : "pointer",
-                      fontFamily: "'Noto Sans KR',sans-serif", fontSize: "12px", fontWeight: 700 }}>
+                      fontFamily: "'Noto Sans KR',sans-serif", fontSize: "14px", fontWeight: 700 }}>
                     {files[selected].status === "cleaning" ? "⏳ 처리중..." : "🗑️ EXIF 제거"}
                   </button>
                 ) : (
-                  <div style={{ color: "#3fb950", fontSize: "13px", fontWeight: 700, alignSelf: "center" }}>
+                  <div style={{ color: "#3fb950", fontSize: "15px", fontWeight: 700, alignSelf: "center" }}>
                     ✅ EXIF 제거 완료
                   </div>
                 )}
                 <button onClick={() => saveFile(selected)}
                   style={{ padding: "7px 14px", background: "#21262d", color: "#8b949e",
                     border: "1px solid #30363d", borderRadius: "7px", cursor: "pointer",
-                    fontFamily: "'Noto Sans KR',sans-serif", fontSize: "12px" }}>
+                    fontFamily: "'Noto Sans KR',sans-serif", fontSize: "14px" }}>
                   ⬇️ {files[selected].status === "done" ? "정리된 파일 저장" : "원본 저장"}
                 </button>
                 <button onClick={() => setFiles(prev => prev.filter((_, i) => i !== selected))}
                   style={{ padding: "7px 10px", background: "#21262d", color: "#8b949e",
-                    border: "1px solid #30363d", borderRadius: "7px", cursor: "pointer", fontSize: "12px" }}>
+                    border: "1px solid #30363d", borderRadius: "7px", cursor: "pointer", fontSize: "14px" }}>
                   ✕
                 </button>
               </div>
@@ -5397,22 +5397,22 @@ function ExifTab() {
           <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: "10px", overflow: "hidden" }}>
             <div style={{ padding: "10px 14px", borderBottom: "1px solid #21262d",
               display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ color: "#8b949e", fontSize: "12px", fontWeight: 700 }}>
+              <span style={{ color: "#8b949e", fontSize: "14px", fontWeight: 700 }}>
                 📋 메타데이터 ({metaRows.length}개)
               </span>
               <input value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="태그 검색 (예: GPS, 날짜)"
                 style={{ flex: 1, padding: "5px 10px", background: "#0d1117",
                   border: "1px solid #30363d", borderRadius: "6px", color: "#e6edf3",
-                  fontSize: "12px", outline: "none", fontFamily: "'Noto Sans KR',sans-serif" }} />
+                  fontSize: "14px", outline: "none", fontFamily: "'Noto Sans KR',sans-serif" }} />
             </div>
             {metaRows.length === 0 ? (
-              <div style={{ padding: "20px", textAlign: "center", color: "#484f58", fontSize: "13px" }}>
+              <div style={{ padding: "20px", textAlign: "center", color: "#484f58", fontSize: "15px" }}>
                 {files[selected] ? (search ? "검색 결과 없음" : "메타데이터 분석 중...") : "파일을 선택하세요"}
               </div>
             ) : (
               <div style={{ maxHeight: "320px", overflowY: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
                   <thead>
                     <tr style={{ background: "#0d1117" }}>
                       <th style={{ padding: "8px 14px", color: "#484f58", fontWeight: 600,
@@ -5438,7 +5438,7 @@ function ExifTab() {
 
           {/* 개인정보 안내 */}
           <div style={{ background: "#0d1a2d", border: "1px solid #1f6feb33",
-            borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#484f58" }}>
+            borderRadius: "8px", padding: "10px 14px", fontSize: "14px", color: "#484f58" }}>
             🔒 <span style={{ color: "#58a6ff" }}>100% 로컬 처리</span> — 파일이 서버로 전송되지 않습니다.
             모든 EXIF 제거는 브라우저 내에서만 실행됩니다.
           </div>
@@ -5449,7 +5449,7 @@ function ExifTab() {
     {/* 빈 상태 안내 */}
     {files.length === 0 && <div style={{ background: "#161b22", border: "1px solid #30363d",
       borderRadius: "12px", padding: "24px 20px" }}>
-      <div style={{ color: "#8b949e", fontSize: "12px", fontWeight: 700, marginBottom: "12px" }}>
+      <div style={{ color: "#8b949e", fontSize: "14px", fontWeight: 700, marginBottom: "12px" }}>
         📌 EXIF란?
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -5460,10 +5460,10 @@ function ExifTab() {
           ["🔢 기기 일련번호", "익명 사진도 기기로 추적 가능합니다"],
         ].map(([icon, desc], i) => (
           <div key={i} style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-            <span style={{ fontSize: "14px" }}>{icon.split(" ")[0]}</span>
+            <span style={{ fontSize: "16px" }}>{icon.split(" ")[0]}</span>
             <div>
-              <span style={{ color: "#e6edf3", fontSize: "13px", fontWeight: 600 }}>{icon.slice(2)}</span>
-              <span style={{ color: "#484f58", fontSize: "12px" }}> — {desc}</span>
+              <span style={{ color: "#e6edf3", fontSize: "15px", fontWeight: 600 }}>{icon.slice(2)}</span>
+              <span style={{ color: "#484f58", fontSize: "14px" }}> — {desc}</span>
             </div>
           </div>
         ))}
@@ -5548,8 +5548,8 @@ function CropTab() {
         cursor:"pointer",background:"#0d1117"}}>
       <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>loadFile(e.target.files[0])}/>
       <div style={{fontSize:"28px",marginBottom:"8px"}}>✂️</div>
-      <div style={{color:"#e6edf3",fontWeight:700,fontSize:"14px",marginBottom:"4px"}}>이미지를 드래그하거나 클릭해서 업로드</div>
-      <div style={{color:"#484f58",fontSize:"12px"}}>JPG · PNG · WebP · GIF 지원</div>
+      <div style={{color:"#e6edf3",fontWeight:700,fontSize:"16px",marginBottom:"4px"}}>이미지를 드래그하거나 클릭해서 업로드</div>
+      <div style={{color:"#484f58",fontSize:"14px"}}>JPG · PNG · WebP · GIF 지원</div>
     </div>}
 
     {img && <>
@@ -5558,45 +5558,45 @@ function CropTab() {
         display:"flex",flexWrap:"wrap",gap:"14px",alignItems:"center"}}>
 
         <div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
-          <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>원본 크기</span>
-          <span style={{color:"#e6edf3",fontSize:"13px",fontWeight:700}}>{img.w} × {img.h}px</span>
+          <span style={{color:"#484f58",fontSize:"12px",fontWeight:700}}>원본 크기</span>
+          <span style={{color:"#e6edf3",fontSize:"15px",fontWeight:700}}>{img.w} × {img.h}px</span>
         </div>
 
         <div style={{width:"1px",height:"32px",background:"#30363d"}}/>
 
         <div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
-          <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>기준 높이 (px)</span>
+          <span style={{color:"#484f58",fontSize:"12px",fontWeight:700}}>기준 높이 (px)</span>
           <input type="number" value={sliceH} min={1} max={img.h}
             onChange={e=>setSliceH(Math.max(1,parseInt(e.target.value)||1))}
             style={{width:"100px",padding:"5px 8px",background:"#0d1117",border:"1px solid #30363d",
-              borderRadius:"6px",color:"#e6edf3",fontSize:"13px",outline:"none",
+              borderRadius:"6px",color:"#e6edf3",fontSize:"15px",outline:"none",
               fontFamily:"'Noto Sans KR',sans-serif"}}/>
         </div>
 
         <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
-          <span style={{color:"#484f58",fontSize:"10px",fontWeight:700}}>분할 결과</span>
+          <span style={{color:"#484f58",fontSize:"12px",fontWeight:700}}>분할 결과</span>
           <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}>
-            {fullCount > 0 && <span style={{fontSize:"12px",fontWeight:700,padding:"2px 10px",
+            {fullCount > 0 && <span style={{fontSize:"14px",fontWeight:700,padding:"2px 10px",
               borderRadius:"99px",background:"#f59e0b22",color:"#f59e0b"}}>
               {fullCount}장 × {sliceH}px
             </span>}
-            {remSlice && <span style={{fontSize:"12px",fontWeight:700,padding:"2px 10px",
+            {remSlice && <span style={{fontSize:"14px",fontWeight:700,padding:"2px 10px",
               borderRadius:"99px",background:"#10b98122",color:"#10b981"}}>
               나머지 1장 × {remSlice.h}px
             </span>}
-            <span style={{fontSize:"11px",color:"#484f58"}}>총 {slices.length}장</span>
+            <span style={{fontSize:"13px",color:"#484f58"}}>총 {slices.length}장</span>
           </div>
         </div>
 
         <div style={{marginLeft:"auto",display:"flex",gap:"8px",alignItems:"center"}}>
           <button onClick={()=>setImg(null)}
             style={{padding:"6px 10px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-              borderRadius:"7px",cursor:"pointer",fontSize:"12px"}}>✕ 취소</button>
+              borderRadius:"7px",cursor:"pointer",fontSize:"14px"}}>✕ 취소</button>
           <button onClick={downloadAll} disabled={downloading || slices.length===0}
             style={{padding:"7px 18px",background:downloading?"#21262d":"#1f6feb",
               color:downloading?"#484f58":"#fff",border:"none",borderRadius:"7px",
               cursor:downloading?"not-allowed":"pointer",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700}}>
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:700}}>
             {downloading ? `⬇️ ${dlProgress}/${slices.length} 저장 중...` : `⬇️ 전체 다운로드 (${slices.length}장)`}
           </button>
         </div>
@@ -5606,7 +5606,7 @@ function CropTab() {
       <div style={{display:"flex",gap:"16px",flexWrap:"wrap",alignItems:"flex-start"}}>
         {/* 이미지 + 분할선 */}
         <div>
-          <div style={{color:"#484f58",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>
+          <div style={{color:"#484f58",fontSize:"13px",marginBottom:"6px",fontWeight:600}}>
             미리보기 — 점선이 분할 위치
           </div>
           <div ref={canvasWrapRef} style={{position:"relative",display:"inline-block",
@@ -5618,7 +5618,7 @@ function CropTab() {
               return <div key={i} style={{position:"absolute",left:0,right:0,
                 top: Math.round(s.y * scale),
                 borderTop:`2px dashed ${color}`,pointerEvents:"none"}}>
-                <span style={{fontSize:"10px",fontWeight:700,padding:"1px 5px",
+                <span style={{fontSize:"12px",fontWeight:700,padding:"1px 5px",
                   background:`${color}cc`,color:"#fff",borderRadius:"0 3px 3px 0",display:"inline-block"}}>
                   {img.name}-{i+1} · {s.h}px
                 </span>
@@ -5629,7 +5629,7 @@ function CropTab() {
 
         {/* 조각 목록 */}
         <div style={{flex:1,minWidth:"180px"}}>
-          <div style={{color:"#484f58",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>조각 목록</div>
+          <div style={{color:"#484f58",fontSize:"13px",marginBottom:"6px",fontWeight:600}}>조각 목록</div>
           <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
             {slices.map((s, i) => {
               const color = COLORS[i % COLORS.length];
@@ -5638,13 +5638,13 @@ function CropTab() {
                 background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"7px 10px"}}>
                 <span style={{width:"10px",height:"10px",borderRadius:"50%",
                   background:color,flexShrink:0,display:"inline-block"}}/>
-                <span style={{fontSize:"12px",color:"#c9d1d9",fontWeight:700,minWidth:"80px"}}>
+                <span style={{fontSize:"14px",color:"#c9d1d9",fontWeight:700,minWidth:"80px"}}>
                   {img.name}-{i+1}
                 </span>
-                <span style={{fontSize:"12px",color:"#8b949e"}}>
+                <span style={{fontSize:"14px",color:"#8b949e"}}>
                   {img.w} × {s.h}px
                 </span>
-                {isRem && <span style={{fontSize:"10px",padding:"1px 7px",borderRadius:"99px",
+                {isRem && <span style={{fontSize:"12px",padding:"1px 7px",borderRadius:"99px",
                   background:"#10b98122",color:"#10b981",marginLeft:"auto"}}>나머지</span>}
               </div>;
             })}
@@ -5727,14 +5727,14 @@ function ResizeTab() {
       style={{border:"2px dashed #30363d",borderRadius:"12px",padding:"32px",textAlign:"center",cursor:"pointer",background:"#0d1117"}}>
       <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>loadFile(e.target.files[0])}/>
       <div style={{fontSize:"28px",marginBottom:"8px"}}>↔️</div>
-      <div style={{color:"#e6edf3",fontWeight:700,fontSize:"14px",marginBottom:"4px"}}>이미지를 드래그하거나 클릭해서 업로드</div>
-      <div style={{color:"#484f58",fontSize:"12px"}}>JPG · PNG · WebP · GIF 지원</div>
+      <div style={{color:"#e6edf3",fontWeight:700,fontSize:"16px",marginBottom:"4px"}}>이미지를 드래그하거나 클릭해서 업로드</div>
+      <div style={{color:"#484f58",fontSize:"14px"}}>JPG · PNG · WebP · GIF 지원</div>
     </div>}
 
     {img && <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
       {/* 옵션 패널 */}
       <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px 16px"}}>
-        <div style={{color:"#8b949e",fontSize:"11px",fontWeight:700,marginBottom:"12px"}}>↔️ 크기 설정</div>
+        <div style={{color:"#8b949e",fontSize:"13px",fontWeight:700,marginBottom:"12px"}}>↔️ 크기 설정</div>
 
         {/* 모드 선택 */}
         <div style={{display:"flex",gap:"6px",marginBottom:"14px"}}>
@@ -5742,7 +5742,7 @@ function ResizeTab() {
             <button key={v} onClick={()=>setMode(v)}
               style={{padding:"6px 14px",background:mode===v?"#1f6feb":"#21262d",
                 color:mode===v?"#fff":"#8b949e",border:`1px solid ${mode===v?"#1f6feb":"#30363d"}`,
-                borderRadius:"7px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600}}>
+                borderRadius:"7px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600}}>
               {l}
             </button>
           ))}
@@ -5751,34 +5751,34 @@ function ResizeTab() {
         <div style={{display:"flex",gap:"12px",alignItems:"center",flexWrap:"wrap"}}>
           {mode === "px" ? <>
             <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
-              <span style={{color:"#484f58",fontSize:"10px"}}>너비 (px)</span>
+              <span style={{color:"#484f58",fontSize:"12px"}}>너비 (px)</span>
               <input type="number" value={w} min={1} onChange={e=>handleW(e.target.value)}
                 style={{width:"100px",padding:"7px 10px",background:"#0d1117",border:"1px solid #30363d",
-                  borderRadius:"7px",color:"#e6edf3",fontSize:"14px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif"}}/>
+                  borderRadius:"7px",color:"#e6edf3",fontSize:"16px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif"}}/>
             </div>
             <div style={{color:"#484f58",fontSize:"18px",paddingTop:"14px"}}>×</div>
             <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
-              <span style={{color:"#484f58",fontSize:"10px"}}>높이 (px)</span>
+              <span style={{color:"#484f58",fontSize:"12px"}}>높이 (px)</span>
               <input type="number" value={h} min={1} onChange={e=>handleH(e.target.value)}
                 style={{width:"100px",padding:"7px 10px",background:"#0d1117",border:"1px solid #30363d",
-                  borderRadius:"7px",color:"#e6edf3",fontSize:"14px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif"}}/>
+                  borderRadius:"7px",color:"#e6edf3",fontSize:"16px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif"}}/>
             </div>
             <div style={{paddingTop:"14px"}}>
               <button onClick={()=>setLockRatio(!lockRatio)}
                 style={{padding:"7px 12px",background:lockRatio?"#1f6feb22":"#21262d",
                   color:lockRatio?"#58a6ff":"#484f58",border:`1px solid ${lockRatio?"#1f6feb44":"#30363d"}`,
-                  borderRadius:"7px",cursor:"pointer",fontSize:"13px"}}>
+                  borderRadius:"7px",cursor:"pointer",fontSize:"15px"}}>
                 {lockRatio?"🔒 비율 고정":"🔓 비율 해제"}
               </button>
             </div>
           </> : <>
             <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
-              <span style={{color:"#484f58",fontSize:"10px"}}>비율 (%)</span>
+              <span style={{color:"#484f58",fontSize:"12px"}}>비율 (%)</span>
               <input type="number" value={w} min={1} max={300} onChange={e=>handlePct(e.target.value)}
                 style={{width:"100px",padding:"7px 10px",background:"#0d1117",border:"1px solid #30363d",
-                  borderRadius:"7px",color:"#e6edf3",fontSize:"14px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif"}}/>
+                  borderRadius:"7px",color:"#e6edf3",fontSize:"16px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif"}}/>
             </div>
-            <div style={{color:"#8b949e",fontSize:"13px",paddingTop:"14px"}}>
+            <div style={{color:"#8b949e",fontSize:"15px",paddingTop:"14px"}}>
               → {Math.round(img.w*w/100)} × {Math.round(img.h*w/100)} px
             </div>
           </>}
@@ -5788,7 +5788,7 @@ function ResizeTab() {
             {[[640,480],[800,600],[1280,720],[1920,1080]].map(([pw,ph])=>(
               <button key={pw} onClick={()=>{setMode("px");setW(pw);setH(lockRatio?Math.round(pw/ratio):ph);}}
                 style={{padding:"4px 8px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-                  borderRadius:"5px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"10px"}}>
+                  borderRadius:"5px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px"}}>
                 {pw}×{ph}
               </button>
             ))}
@@ -5799,31 +5799,31 @@ function ResizeTab() {
           <button onClick={doResize} disabled={processing||w<1||h<1}
             style={{padding:"8px 20px",background:processing?"#21262d":"#1f6feb",color:processing?"#484f58":"#fff",
               border:"none",borderRadius:"8px",cursor:processing?"not-allowed":"pointer",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700}}>
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:700}}>
             {processing?"⏳ 처리중...":"↔️ 크기 조절"}
           </button>
           {result && <button onClick={doSave}
             style={{padding:"8px 16px",background:"#2ea043",color:"#fff",border:"none",
-              borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700}}>
+              borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:700}}>
             ⬇️ 저장
           </button>}
           <button onClick={()=>{setImg(null);setResult(null);}}
             style={{padding:"8px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-              borderRadius:"8px",cursor:"pointer",fontSize:"13px"}}>✕ 초기화</button>
+              borderRadius:"8px",cursor:"pointer",fontSize:"15px"}}>✕ 초기화</button>
         </div>
       </div>
 
       {/* 비교 프리뷰 */}
       <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{color:"#484f58",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>
+          <div style={{color:"#484f58",fontSize:"13px",marginBottom:"6px",fontWeight:600}}>
             원본 ({img.w}×{img.h}px)
           </div>
           <img src={img.src} style={{maxWidth:"100%",maxHeight:"280px",borderRadius:"8px",
             border:"1px solid #30363d",objectFit:"contain"}} alt=""/>
         </div>
         {result && <div style={{flex:1,minWidth:0}}>
-          <div style={{color:"#3fb950",fontSize:"11px",marginBottom:"6px",fontWeight:600}}>
+          <div style={{color:"#3fb950",fontSize:"13px",marginBottom:"6px",fontWeight:600}}>
             ✅ 결과 ({result.w}×{result.h}px · {fmtSize(result.size)})
           </div>
           <img src={result.url} style={{maxWidth:"100%",maxHeight:"280px",borderRadius:"8px",
@@ -5909,8 +5909,8 @@ function ImgCompressTab() {
         cursor:"pointer",background:"#0d1117"}}>
       <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>loadFiles(e.target.files)}/>
       <div style={{fontSize:"26px",marginBottom:"6px"}}>🗜️</div>
-      <div style={{color:"#e6edf3",fontWeight:700,fontSize:"14px",marginBottom:"3px"}}>이미지를 드래그하거나 클릭해서 업로드</div>
-      <div style={{color:"#484f58",fontSize:"12px"}}>JPG · PNG · WebP · GIF · 최대 20개</div>
+      <div style={{color:"#e6edf3",fontWeight:700,fontSize:"16px",marginBottom:"3px"}}>이미지를 드래그하거나 클릭해서 업로드</div>
+      <div style={{color:"#484f58",fontSize:"14px"}}>JPG · PNG · WebP · GIF · 최대 20개</div>
     </div>
 
     {/* 품질 슬라이더 + 액션 */}
@@ -5919,36 +5919,36 @@ function ImgCompressTab() {
         <div style={{display:"flex",alignItems:"center",gap:"14px",flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:"180px"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
-              <span style={{color:"#8b949e",fontSize:"12px",fontWeight:700}}>압축 품질</span>
-              <span style={{color:quality>=80?"#3fb950":quality>=50?"#ffa657":"#ff7b72",fontSize:"14px",fontWeight:700}}>
+              <span style={{color:"#8b949e",fontSize:"14px",fontWeight:700}}>압축 품질</span>
+              <span style={{color:quality>=80?"#3fb950":quality>=50?"#ffa657":"#ff7b72",fontSize:"16px",fontWeight:700}}>
                 {quality}% {quality>=80?"(고품질)":quality>=50?"(균형)":"(고압축)"}
               </span>
             </div>
             <input type="range" min={10} max={100} value={quality} onChange={e=>setQuality(+e.target.value)}
               style={{width:"100%",accentColor:"#1f6feb"}}/>
             <div style={{display:"flex",justifyContent:"space-between",marginTop:"3px"}}>
-              <span style={{color:"#484f58",fontSize:"10px"}}>최대 압축</span>
-              <span style={{color:"#484f58",fontSize:"10px"}}>최고 품질</span>
+              <span style={{color:"#484f58",fontSize:"12px"}}>최대 압축</span>
+              <span style={{color:"#484f58",fontSize:"12px"}}>최고 품질</span>
             </div>
           </div>
           <div style={{display:"flex",gap:"8px",flexShrink:0}}>
             <button onClick={compressAll} disabled={processing}
               style={{padding:"9px 18px",background:processing?"#21262d":"#1f6feb",color:processing?"#484f58":"#fff",
                 border:"none",borderRadius:"8px",cursor:processing?"not-allowed":"pointer",
-                fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700}}>
+                fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:700}}>
               {processing?"⏳ 압축중...":"🗜️ 일괄 압축"}
             </button>
             {files.some(f=>f.status==="done") && <>
               <button onClick={saveAll}
                 style={{padding:"9px 14px",background:allSaved?"#2ea043":"#21262d",
                   color:allSaved?"#fff":"#8b949e",border:"1px solid #30363d",borderRadius:"8px",
-                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,transition:"all .2s"}}>
+                  cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:600,transition:"all .2s"}}>
                 {allSaved?"✅ 저장됨!":"⬇️ 모두 저장"}
               </button>
             </>}
             <button onClick={()=>setFiles([])}
               style={{padding:"9px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-                borderRadius:"8px",cursor:"pointer",fontSize:"13px"}}>🗑️ 초기화</button>
+                borderRadius:"8px",cursor:"pointer",fontSize:"15px"}}>🗑️ 초기화</button>
           </div>
         </div>
 
@@ -5960,8 +5960,8 @@ function ImgCompressTab() {
             ["절약", `${totalSaved}%`, totalSaved>0?"#3fb950":"#484f58"],
           ].map(([l,v,c])=>(
             <div key={l} style={{textAlign:"center"}}>
-              <div style={{color:c,fontSize:"16px",fontWeight:700}}>{v}</div>
-              <div style={{color:"#484f58",fontSize:"10px",marginTop:"2px"}}>{l}</div>
+              <div style={{color:c,fontSize:"18px",fontWeight:700}}>{v}</div>
+              <div style={{color:"#484f58",fontSize:"12px",marginTop:"2px"}}>{l}</div>
             </div>
           ))}
         </div>}
@@ -5975,14 +5975,14 @@ function ImgCompressTab() {
             <img src={f.url} alt="" style={{width:"40px",height:"40px",objectFit:"cover",
               borderRadius:"6px",flexShrink:0,border:"1px solid #30363d"}}/>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{color:"#e6edf3",fontSize:"13px",fontWeight:600,
+              <div style={{color:"#e6edf3",fontSize:"15px",fontWeight:600,
                 overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</div>
               <div style={{display:"flex",gap:"8px",marginTop:"3px",flexWrap:"wrap"}}>
-                <span style={{color:"#484f58",fontSize:"11px"}}>{fmtSize(f.origSize)}</span>
+                <span style={{color:"#484f58",fontSize:"13px"}}>{fmtSize(f.origSize)}</span>
                 {f.result && <>
-                  <span style={{color:"#484f58",fontSize:"11px"}}>→</span>
-                  <span style={{color:"#58a6ff",fontSize:"11px",fontWeight:600}}>{fmtSize(f.result.size)}</span>
-                  <span style={{color:f.result.saved>0?"#3fb950":"#ffa657",fontSize:"11px",fontWeight:700}}>
+                  <span style={{color:"#484f58",fontSize:"13px"}}>→</span>
+                  <span style={{color:"#58a6ff",fontSize:"13px",fontWeight:600}}>{fmtSize(f.result.size)}</span>
+                  <span style={{color:f.result.saved>0?"#3fb950":"#ffa657",fontSize:"13px",fontWeight:700}}>
                     {f.result.saved>0?`-${f.result.saved}%`:"변화없음"}
                   </span>
                 </>}
@@ -5990,16 +5990,16 @@ function ImgCompressTab() {
             </div>
             {/* 진행 상태 */}
             <div style={{flexShrink:0,display:"flex",gap:"6px",alignItems:"center"}}>
-              {f.status==="processing"&&<span style={{color:"#ffa657",fontSize:"12px"}}>⏳</span>}
-              {f.status==="done"&&<span style={{color:"#3fb950",fontSize:"12px"}}>✅</span>}
+              {f.status==="processing"&&<span style={{color:"#ffa657",fontSize:"14px"}}>⏳</span>}
+              {f.status==="done"&&<span style={{color:"#3fb950",fontSize:"14px"}}>✅</span>}
               {f.status==="done"&&<button onClick={()=>saveOne(f)}
                 style={{padding:"5px 10px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-                  borderRadius:"6px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"11px"}}>
+                  borderRadius:"6px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px"}}>
                 ⬇️ 저장
               </button>}
               <button onClick={()=>setFiles(prev=>prev.filter((_,idx)=>idx!==i))}
                 style={{padding:"5px 8px",background:"#21262d",color:"#484f58",border:"1px solid #30363d",
-                  borderRadius:"6px",cursor:"pointer",fontSize:"11px"}}>✕</button>
+                  borderRadius:"6px",cursor:"pointer",fontSize:"13px"}}>✕</button>
             </div>
           </div>
         ))}
@@ -6072,19 +6072,19 @@ function EmojiTab() {
 
     {/* 검색창 */}
     <div style={{position:"relative"}}>
-      <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",fontSize:"15px",pointerEvents:"none"}}>🔍</span>
+      <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",fontSize:"17px",pointerEvents:"none"}}>🔍</span>
       <input
         value={search} onChange={e=>setSearch(e.target.value)}
         placeholder="이모지 검색..."
         style={{width:"100%",padding:"10px 14px 10px 36px",background:"#0d1117",
           border:"1px solid #30363d",borderRadius:"10px",color:"#e6edf3",
-          fontSize:"14px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
+          fontSize:"16px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
         onFocus={e=>e.target.style.borderColor="#58a6ff"}
         onBlur={e=>e.target.style.borderColor="#30363d"}
       />
       {search && <button onClick={()=>setSearch("")} style={{
         position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",
-        background:"none",border:"none",color:"#484f58",cursor:"pointer",fontSize:"16px",padding:"2px 6px",
+        background:"none",border:"none",color:"#484f58",cursor:"pointer",fontSize:"18px",padding:"2px 6px",
       }}>✕</button>}
     </div>
 
@@ -6094,7 +6094,7 @@ function EmojiTab() {
         style={{padding:"7px 12px",border:"none",borderRadius:"8px",cursor:"pointer",
           background:activeGroup==="recent"?"#1f6feb22":"#161b22",
           color:activeGroup==="recent"?"#58a6ff":"#8b949e",
-          fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
+          fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600,
           border:`1px solid ${activeGroup==="recent"?"#1f6feb44":"#30363d"}`,whiteSpace:"nowrap",flexShrink:0}}>
         🕐 최근
       </button>}
@@ -6103,7 +6103,7 @@ function EmojiTab() {
           style={{padding:"7px 12px",border:"none",borderRadius:"8px",cursor:"pointer",
             background:activeGroup===g.id?"#1f6feb22":"#161b22",
             color:activeGroup===g.id?"#58a6ff":"#8b949e",
-            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600,
             border:`1px solid ${activeGroup===g.id?"#1f6feb44":"#30363d"}`,whiteSpace:"nowrap",flexShrink:0}}>
           {g.label}
         </button>
@@ -6112,11 +6112,11 @@ function EmojiTab() {
 
     {/* 이모지 그리드 */}
     <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px"}}>
-      {search && <div style={{color:"#484f58",fontSize:"11px",marginBottom:"10px",fontWeight:600}}>
+      {search && <div style={{color:"#484f58",fontSize:"13px",marginBottom:"10px",fontWeight:600}}>
         전체 이모지에서 검색 중
       </div>}
       {!search && activeGroup==="recent" && recentList.length===0 && (
-        <div style={{color:"#484f58",fontSize:"13px",textAlign:"center",padding:"20px"}}>
+        <div style={{color:"#484f58",fontSize:"15px",textAlign:"center",padding:"20px"}}>
           이모지를 클릭하면 최근 사용 목록에 추가됩니다.
         </div>
       )}
@@ -6140,7 +6140,7 @@ function EmojiTab() {
       </div>
     </div>
 
-    <div style={{color:"#484f58",fontSize:"11px",textAlign:"center"}}>
+    <div style={{color:"#484f58",fontSize:"13px",textAlign:"center"}}>
       이모지 클릭 시 클립보드에 자동 복사됩니다 · 클릭 후 붙여넣기(Ctrl+V)로 사용하세요
     </div>
   </div>;
@@ -6261,14 +6261,14 @@ ${text.slice(0, 4000)}
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
     {/* URL 입력 */}
     <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px"}}>
-      <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"10px"}}>🔗 기사 URL 입력</div>
+      <div style={{color:"#8b949e",fontSize:"14px",fontWeight:700,marginBottom:"10px"}}>🔗 기사 URL 입력</div>
       <div style={{display:"flex",gap:"8px"}}>
         <input value={url} onChange={e=>setUrl(e.target.value)}
           onKeyDown={e=>e.key==="Enter"&&!isRunning&&run()}
           placeholder="https://news.example.com/article/..."
           disabled={isRunning}
           style={{flex:1,padding:"10px 14px",background:"#0d1117",border:"1px solid #30363d",
-            borderRadius:"8px",color:"#e6edf3",fontSize:"13px",outline:"none",
+            borderRadius:"8px",color:"#e6edf3",fontSize:"15px",outline:"none",
             fontFamily:"'Noto Sans KR',sans-serif",opacity:isRunning?0.6:1}}
           onFocus={e=>e.target.style.borderColor="#58a6ff"}
           onBlur={e=>e.target.style.borderColor="#30363d"}/>
@@ -6276,12 +6276,12 @@ ${text.slice(0, 4000)}
           style={{padding:"10px 20px",background:isRunning||!url.trim()?"#21262d":"linear-gradient(135deg,#1f6feb,#8957e5)",
             color:isRunning||!url.trim()?"#484f58":"#fff",border:"none",borderRadius:"8px",
             cursor:isRunning||!url.trim()?"not-allowed":"pointer",
-            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,whiteSpace:"nowrap"}}>
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:700,whiteSpace:"nowrap"}}>
           {isRunning?"⏳ 처리중...":"🚀 시작"}
         </button>
         {step!=="idle"&&<button onClick={reset}
           style={{padding:"10px 14px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-            borderRadius:"8px",cursor:"pointer",fontSize:"13px"}}>🗑️</button>}
+            borderRadius:"8px",cursor:"pointer",fontSize:"15px"}}>🗑️</button>}
       </div>
     </div>
 
@@ -6294,8 +6294,8 @@ ${text.slice(0, 4000)}
           {label:"AI 리라이팅", done:step==="done", active:step==="rewriting"&&!!scraped},
         ].map((s,i)=>(
           <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:i<2?"8px":"0"}}>
-            <span style={{fontSize:"14px"}}>{s.done?"✅":s.active?"⏳":"⬜"}</span>
-            <span style={{color:s.done?"#3fb950":s.active?"#ffa657":"#484f58",fontSize:"13px",fontWeight:s.active?700:400}}>
+            <span style={{fontSize:"16px"}}>{s.done?"✅":s.active?"⏳":"⬜"}</span>
+            <span style={{color:s.done?"#3fb950":s.active?"#ffa657":"#484f58",fontSize:"15px",fontWeight:s.active?700:400}}>
               {s.label}
             </span>
           </div>
@@ -6305,7 +6305,7 @@ ${text.slice(0, 4000)}
 
     {/* 에러 */}
     {step==="error"&&(
-      <div style={{background:"#2d0b0b",border:"1px solid #f8514944",borderRadius:"12px",padding:"14px",color:"#f85149",fontSize:"13px"}}>
+      <div style={{background:"#2d0b0b",border:"1px solid #f8514944",borderRadius:"12px",padding:"14px",color:"#f85149",fontSize:"15px"}}>
         ❌ {errorMsg}
       </div>
     )}
@@ -6315,29 +6315,29 @@ ${text.slice(0, 4000)}
       <>
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
-            <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700}}>✍️ 리라이팅 결과</div>
+            <div style={{color:"#8b949e",fontSize:"14px",fontWeight:700}}>✍️ 리라이팅 결과</div>
             <button onClick={copyText}
               style={{padding:"6px 14px",background:copiedText?"#2ea043":"#21262d",
                 color:copiedText?"#fff":"#8b949e",border:"1px solid #30363d",
-                borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600}}>
+                borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600}}>
               {copiedText?"✅ 복사됨!":"📋 전체 복사"}
             </button>
           </div>
           <div style={{marginBottom:"10px"}}>
-            <div style={{color:"#484f58",fontSize:"11px",marginBottom:"4px"}}>제목</div>
+            <div style={{color:"#484f58",fontSize:"13px",marginBottom:"4px"}}>제목</div>
             <input value={rewrittenTitle} onChange={e=>setRewrittenTitle(e.target.value)}
               style={{width:"100%",padding:"10px 12px",background:"#0d1117",border:"1px solid #30363d",
-                borderRadius:"8px",color:"#e6edf3",fontSize:"14px",fontWeight:700,outline:"none",
+                borderRadius:"8px",color:"#e6edf3",fontSize:"16px",fontWeight:700,outline:"none",
                 fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
               onFocus={e=>e.target.style.borderColor="#58a6ff"}
               onBlur={e=>e.target.style.borderColor="#30363d"}/>
           </div>
           <div>
-            <div style={{color:"#484f58",fontSize:"11px",marginBottom:"4px"}}>본문 ({rewrittenText.length.toLocaleString()}자)</div>
+            <div style={{color:"#484f58",fontSize:"13px",marginBottom:"4px"}}>본문 ({rewrittenText.length.toLocaleString()}자)</div>
             <textarea value={rewrittenText} onChange={e=>setRewrittenText(e.target.value)} rows={14}
               style={{width:"100%",boxSizing:"border-box",padding:"12px 14px",background:"#0d1117",
                 border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
-                fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",lineHeight:"1.7",
+                fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",lineHeight:"1.7",
                 resize:"vertical",outline:"none"}}
               onFocus={e=>e.target.style.borderColor="#58a6ff"}
               onBlur={e=>e.target.style.borderColor="#30363d"}/>
@@ -6346,7 +6346,7 @@ ${text.slice(0, 4000)}
 
         {processedImages.length>0&&(
           <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
-            <div style={{color:"#8b949e",fontSize:"12px",fontWeight:700,marginBottom:"10px"}}>
+            <div style={{color:"#8b949e",fontSize:"14px",fontWeight:700,marginBottom:"10px"}}>
               🖼️ 대표 이미지 — EXIF 제거 + 자동보정 완료
             </div>
             <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
@@ -6358,7 +6358,7 @@ ${text.slice(0, 4000)}
                 a.download=`article_img_${Date.now()}.jpg`;
                 a.click();
               }} style={{padding:"8px 16px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
-                borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px"}}>
+                borderRadius:"8px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px"}}>
                 ⬇️ 이미지 저장
               </button>
             </div>
@@ -6367,7 +6367,7 @@ ${text.slice(0, 4000)}
 
         {scraped&&(
           <div style={{background:"#161b22",border:"1px solid #21262d",borderRadius:"10px",padding:"12px"}}>
-            <div style={{color:"#484f58",fontSize:"11px"}}>
+            <div style={{color:"#484f58",fontSize:"13px"}}>
               📄 원문: {scraped.title} · {scraped.text.length.toLocaleString()}자 · 이미지 {scraped.images.length}개
             </div>
           </div>
@@ -6520,20 +6520,20 @@ function VideoMakeAiTab() {
 
   const S = {
     card: { background:"#0d1117", border:"1px solid #21262d", borderRadius:"12px", padding:"16px", marginBottom:"14px" },
-    label: { fontSize:"11px", color:"#8b949e", fontWeight:600, marginBottom:"5px", display:"block" },
-    input: { width:"100%", background:"#161b22", border:"1px solid #30363d", borderRadius:"8px", padding:"9px 12px", color:"#e6edf3", fontFamily:"'Noto Sans KR',sans-serif", fontSize:"13px", outline:"none", boxSizing:"border-box" },
-    btn: (c="#1f6feb") => ({ padding:"10px 20px", border:"none", borderRadius:"8px", background:c, color:c==="#1f6feb"?"#fff":"#0d1117", fontFamily:"'Noto Sans KR',sans-serif", fontSize:"13px", fontWeight:700, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:"7px" }),
+    label: { fontSize:"13px", color:"#8b949e", fontWeight:600, marginBottom:"5px", display:"block" },
+    input: { width:"100%", background:"#161b22", border:"1px solid #30363d", borderRadius:"8px", padding:"9px 12px", color:"#e6edf3", fontFamily:"'Noto Sans KR',sans-serif", fontSize:"15px", outline:"none", boxSizing:"border-box" },
+    btn: (c="#1f6feb") => ({ padding:"10px 20px", border:"none", borderRadius:"8px", background:c, color:c==="#1f6feb"?"#fff":"#0d1117", fontFamily:"'Noto Sans KR',sans-serif", fontSize:"15px", fontWeight:700, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:"7px" }),
     grid2: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px" },
   };
 
   return <div>
-    {toast && <div style={{ position:"fixed", bottom:"20px", right:"20px", background:"#161b22", border:`1px solid ${toast.type==="err"?"#f85149":"#3fb950"}`, borderRadius:"10px", padding:"12px 18px", fontSize:"13px", color:toast.type==="err"?"#f85149":"#3fb950", zIndex:9999 }}>{toast.msg}</div>}
+    {toast && <div style={{ position:"fixed", bottom:"20px", right:"20px", background:"#161b22", border:`1px solid ${toast.type==="err"?"#f85149":"#3fb950"}`, borderRadius:"10px", padding:"12px 18px", fontSize:"15px", color:toast.type==="err"?"#f85149":"#3fb950", zIndex:9999 }}>{toast.msg}</div>}
 
 
 
     {/* 이미지 업로드 */}
     <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>📸 이미지 업로드 <span style={{color:"#484f58",fontWeight:400}}>(핵심 장면 3~4개 권장)</span></div>
+      <div style={{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>📸 이미지 업로드 <span style={{color:"#484f58",fontWeight:400}}>(핵심 장면 3~4개 권장)</span></div>
       <div onClick={()=>fileRef.current.click()}
         style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"28px",textAlign:"center",cursor:"pointer",background:"#161b22"}}
         onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="#58a6ff";}}
@@ -6541,22 +6541,22 @@ function VideoMakeAiTab() {
         onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="#30363d";addImages(e.dataTransfer.files);}}>
         <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>addImages(e.target.files)} />
         <div style={{fontSize:"32px",marginBottom:"8px"}}>📸</div>
-        <div style={{fontSize:"13px",color:"#8b949e"}}>클릭하거나 드래그해서 업로드</div>
+        <div style={{fontSize:"15px",color:"#8b949e"}}>클릭하거나 드래그해서 업로드</div>
       </div>
       {images.length > 0 && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:"10px",marginTop:"12px"}}>
         {images.map((img,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden",position:"relative"}}>
-          <button onClick={()=>setImages(prev=>prev.filter((_,j)=>j!==i))} style={{position:"absolute",top:"5px",right:"5px",background:"rgba(0,0,0,.7)",border:"none",borderRadius:"50%",width:"20px",height:"20px",color:"#fff",cursor:"pointer",fontSize:"11px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+          <button onClick={()=>setImages(prev=>prev.filter((_,j)=>j!==i))} style={{position:"absolute",top:"5px",right:"5px",background:"rgba(0,0,0,.7)",border:"none",borderRadius:"50%",width:"20px",height:"20px",color:"#fff",cursor:"pointer",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
           <img src={img.dataUrl} alt={img.name} style={{width:"100%",height:"90px",objectFit:"cover",display:"block"}} />
           <input value={img.prompt} onChange={e=>setImages(prev=>prev.map((p,j)=>j===i?{...p,prompt:e.target.value}:p))}
             placeholder="개별 프롬프트 (선택)"
-            style={{width:"100%",background:"transparent",border:"none",borderTop:"1px solid #30363d",padding:"6px 8px",color:"#8b949e",fontSize:"11px",outline:"none",boxSizing:"border-box"}} />
+            style={{width:"100%",background:"transparent",border:"none",borderTop:"1px solid #30363d",padding:"6px 8px",color:"#8b949e",fontSize:"13px",outline:"none",boxSizing:"border-box"}} />
         </div>)}
       </div>}
     </div>
 
     {/* 생성 설정 */}
     <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>⚙️ 생성 설정</div>
+      <div style={{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>⚙️ 생성 설정</div>
       <div style={{...S.grid2, marginBottom:"10px"}}>
         <div><label style={S.label}>영상 길이</label>
           <select style={S.input} value={duration} onChange={e=>setDuration(e.target.value)}>
@@ -6581,11 +6581,11 @@ function VideoMakeAiTab() {
 
     {/* 진행 상황 */}
     {progresses.length > 0 && <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>⏳ 생성 진행</div>
+      <div style={{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>⏳ 생성 진행</div>
       {progresses.map((p,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"12px",marginBottom:"8px"}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
-          <span style={{fontSize:"12px",fontWeight:600,color:"#e6edf3"}}>{p.name}</span>
-          <span style={{fontSize:"11px",color:p.err?"#f85149":p.pct===100?"#3fb950":"#8b949e"}}>{p.msg}</span>
+          <span style={{fontSize:"14px",fontWeight:600,color:"#e6edf3"}}>{p.name}</span>
+          <span style={{fontSize:"13px",color:p.err?"#f85149":p.pct===100?"#3fb950":"#8b949e"}}>{p.msg}</span>
         </div>
         <div style={{background:"#30363d",borderRadius:"4px",height:"4px"}}>
           <div style={{width:`${p.pct}%`,height:"100%",borderRadius:"4px",background:p.err?"#f85149":p.pct===100?"#3fb950":"linear-gradient(90deg,#1f6feb,#58a6ff)",transition:"width .4s"}} />
@@ -6595,13 +6595,13 @@ function VideoMakeAiTab() {
 
     {/* 결과 */}
     {results.length > 0 && <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#3fb950",marginBottom:"12px"}}>✅ 생성 완료 ({results.length}개)</div>
+      <div style={{fontSize:"15px",fontWeight:700,color:"#3fb950",marginBottom:"12px"}}>✅ 생성 완료 ({results.length}개)</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:"12px"}}>
         {results.map((v,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
           <video src={v.url} controls muted style={{width:"100%",display:"block",maxHeight:"180px",objectFit:"cover"}} />
           <div style={{padding:"8px"}}>
             <a href={v.url} download={v.name} target="_blank" rel="noreferrer"
-              style={{display:"block",textAlign:"center",padding:"7px",background:"#21262d",color:"#58a6ff",borderRadius:"6px",textDecoration:"none",fontSize:"12px",fontWeight:600}}>⬇️ 다운로드</a>
+              style={{display:"block",textAlign:"center",padding:"7px",background:"#21262d",color:"#58a6ff",borderRadius:"6px",textDecoration:"none",fontSize:"14px",fontWeight:600}}>⬇️ 다운로드</a>
           </div>
         </div>)}
       </div>
@@ -6710,9 +6710,9 @@ function VideoMakeKenTab() {
 
   const S = {
     card:{background:"#0d1117",border:"1px solid #21262d",borderRadius:"12px",padding:"16px",marginBottom:"14px"},
-    label:{fontSize:"11px",color:"#8b949e",fontWeight:600,marginBottom:"4px",display:"block"},
-    select:{width:"100%",background:"#161b22",border:"1px solid #30363d",borderRadius:"6px",padding:"7px 10px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",outline:"none"},
-    btn:(c="#1f6feb")=>({padding:"10px 20px",border:"none",borderRadius:"8px",background:c,color:c==="#1f6feb"?"#fff":"#0d1117",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:700,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:"7px"}),
+    label:{fontSize:"13px",color:"#8b949e",fontWeight:600,marginBottom:"4px",display:"block"},
+    select:{width:"100%",background:"#161b22",border:"1px solid #30363d",borderRadius:"6px",padding:"7px 10px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none"},
+    btn:(c="#1f6feb")=>({padding:"10px 20px",border:"none",borderRadius:"8px",background:c,color:c==="#1f6feb"?"#fff":"#0d1117",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:700,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:"7px"}),
   };
 
   return <div>
@@ -6720,8 +6720,8 @@ function VideoMakeKenTab() {
 
     {/* 업로드 */}
     <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>🖼️ 이미지 업로드</div>
-      <div style={{background:"rgba(31,111,235,.08)",border:"1px solid rgba(31,111,235,.2)",borderRadius:"8px",padding:"10px 14px",fontSize:"12px",color:"#8b949e",marginBottom:"10px",lineHeight:"1.6"}}>
+      <div style={{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>🖼️ 이미지 업로드</div>
+      <div style={{background:"rgba(31,111,235,.08)",border:"1px solid rgba(31,111,235,.2)",borderRadius:"8px",padding:"10px 14px",fontSize:"14px",color:"#8b949e",marginBottom:"10px",lineHeight:"1.6"}}>
         <strong style={{color:"#58a6ff"}}>켄번스 효과</strong>: 이미지에 줌인/아웃/패닝 등 카메라 움직임을 적용해 영상 생성 · <strong style={{color:"#3fb950"}}>완전 무료 · API 불필요</strong>
       </div>
       <div onClick={()=>fileRef.current.click()}
@@ -6731,13 +6731,13 @@ function VideoMakeKenTab() {
         onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="#30363d";addImages(e.dataTransfer.files);}}>
         <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>addImages(e.target.files)} />
         <div style={{fontSize:"32px",marginBottom:"8px"}}>🖼️</div>
-        <div style={{fontSize:"13px",color:"#8b949e"}}>클릭하거나 드래그해서 업로드</div>
+        <div style={{fontSize:"15px",color:"#8b949e"}}>클릭하거나 드래그해서 업로드</div>
       </div>
     </div>
 
     {/* 개별 설정 */}
     {images.length > 0 && <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>⚙️ 각 이미지별 설정</div>
+      <div style={{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>⚙️ 각 이미지별 설정</div>
       {/* 전체 일괄 적용 */}
       <div style={{display:"flex",gap:"8px",marginBottom:"14px",flexWrap:"wrap",background:"#161b22",padding:"10px 12px",borderRadius:"8px",border:"1px solid #30363d",alignItems:"flex-end"}}>
         <div style={{flex:1,minWidth:"120px"}}>
@@ -6762,7 +6762,7 @@ function VideoMakeKenTab() {
           return <div key={img.id} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
             <img src={img.dataUrl} alt={img.name} style={{width:"100%",height:"100px",objectFit:"cover",display:"block"}} />
             <div style={{padding:"10px"}}>
-              <div style={{fontSize:"11px",color:"#8b949e",marginBottom:"6px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{img.name}</div>
+              <div style={{fontSize:"13px",color:"#8b949e",marginBottom:"6px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{img.name}</div>
               <label style={S.label}>효과</label>
               <select style={{...S.select,marginBottom:"6px"}} value={s.effect} onChange={e=>setSetting(img.id,"effect",e.target.value)}>
                 {EFFECTS.map(ef=><option key={ef.v} value={ef.v}>{ef.l}</option>)}
@@ -6773,12 +6773,12 @@ function VideoMakeKenTab() {
               </select>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:"3px"}}>
                 <label style={{...S.label,margin:0}}>줌 강도</label>
-                <span style={{fontSize:"11px",color:"#58a6ff",fontWeight:700}}>{s.zoom?.toFixed(1)}x</span>
+                <span style={{fontSize:"13px",color:"#58a6ff",fontWeight:700}}>{s.zoom?.toFixed(1)}x</span>
               </div>
               <input type="range" min="1.1" max="2.0" step="0.1" value={s.zoom} style={{width:"100%",accentColor:"#1f6feb"}}
                 onChange={e=>setSetting(img.id,"zoom",parseFloat(e.target.value))} />
               <button onClick={()=>setImages(prev=>prev.filter(p=>p.id!==img.id))}
-                style={{width:"100%",marginTop:"6px",padding:"5px",border:"none",background:"#21262d",color:"#f85149",borderRadius:"5px",cursor:"pointer",fontSize:"11px"}}>✕ 제거</button>
+                style={{width:"100%",marginTop:"6px",padding:"5px",border:"none",background:"#21262d",color:"#f85149",borderRadius:"5px",cursor:"pointer",fontSize:"13px"}}>✕ 제거</button>
             </div>
           </div>;
         })}
@@ -6793,7 +6793,7 @@ function VideoMakeKenTab() {
 
     {/* 진행바 */}
     {(rendering||progress.msg) && <div style={S.card}>
-      <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"8px"}}>{progress.msg}</div>
+      <div style={{fontSize:"14px",color:"#8b949e",marginBottom:"8px"}}>{progress.msg}</div>
       <div style={{background:"#30363d",borderRadius:"4px",height:"6px"}}>
         <div style={{width:`${progress.total?Math.round(progress.cur/progress.total*100):0}%`,height:"100%",borderRadius:"4px",background:"linear-gradient(90deg,#1f6feb,#3fb950)",transition:"width .4s"}} />
       </div>
@@ -6801,12 +6801,12 @@ function VideoMakeKenTab() {
 
     {/* 결과 */}
     {results.length > 0 && <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#3fb950",marginBottom:"12px"}}>✅ 렌더링 완료 ({results.length}개)</div>
+      <div style={{fontSize:"15px",fontWeight:700,color:"#3fb950",marginBottom:"12px"}}>✅ 렌더링 완료 ({results.length}개)</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:"12px"}}>
         {results.map((v,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
           <video src={v.url} controls muted loop style={{width:"100%",display:"block",maxHeight:"180px",objectFit:"cover"}} />
           <div style={{padding:"8px"}}>
-            <a href={v.url} download={v.name} style={{display:"block",textAlign:"center",padding:"7px",background:"#21262d",color:"#58a6ff",borderRadius:"6px",textDecoration:"none",fontSize:"12px",fontWeight:600}}>⬇️ 다운로드</a>
+            <a href={v.url} download={v.name} style={{display:"block",textAlign:"center",padding:"7px",background:"#21262d",color:"#58a6ff",borderRadius:"6px",textDecoration:"none",fontSize:"14px",fontWeight:600}}>⬇️ 다운로드</a>
           </div>
         </div>)}
       </div>
@@ -6920,9 +6920,9 @@ function VideoMakeSubTab() {
 
   const S = {
     card:{background:"#0d1117",border:"1px solid #21262d",borderRadius:"12px",padding:"16px",marginBottom:"14px"},
-    label:{fontSize:"11px",color:"#8b949e",fontWeight:600,marginBottom:"4px",display:"block"},
-    input:{width:"100%",background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"8px 12px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",outline:"none",boxSizing:"border-box"},
-    btn:(c="#1f6feb")=>({padding:"9px 18px",border:"none",borderRadius:"7px",background:c,color:c==="#1f6feb"?"#fff":"#c9d1d9",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:700,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:"6px"}),
+    label:{fontSize:"13px",color:"#8b949e",fontWeight:600,marginBottom:"4px",display:"block"},
+    input:{width:"100%",background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"8px 12px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",outline:"none",boxSizing:"border-box"},
+    btn:(c="#1f6feb")=>({padding:"9px 18px",border:"none",borderRadius:"7px",background:c,color:c==="#1f6feb"?"#fff":"#c9d1d9",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:"6px"}),
     grid2:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"},
   };
 
@@ -6931,13 +6931,13 @@ function VideoMakeSubTab() {
 
     {/* 자막 위치 */}
     <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>📍 자막 위치 선택</div>
+      <div style={{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>📍 자막 위치 선택</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px",marginBottom:"14px"}}>
         {POS_OPTIONS.map(opt=><div key={opt.val} onClick={()=>setPosition(opt.val)}
           style={{border:`2px solid ${position===opt.val?"#1f6feb":"#30363d"}`,borderRadius:"10px",padding:"12px 8px",textAlign:"center",cursor:"pointer",background:position===opt.val?"rgba(31,111,235,.1)":"#161b22",transition:"all .15s"}}>
           <div style={{fontSize:"24px",marginBottom:"5px"}}>{opt.icon}</div>
-          <div style={{fontSize:"12px",fontWeight:700,color:position===opt.val?"#58a6ff":"#e6edf3"}}>{opt.label}</div>
-          <div style={{fontSize:"10px",color:"#484f58",marginTop:"2px"}}>{opt.desc}</div>
+          <div style={{fontSize:"14px",fontWeight:700,color:position===opt.val?"#58a6ff":"#e6edf3"}}>{opt.label}</div>
+          <div style={{fontSize:"12px",color:"#484f58",marginTop:"2px"}}>{opt.desc}</div>
         </div>)}
       </div>
       <div style={S.grid2}>
@@ -6957,7 +6957,7 @@ function VideoMakeSubTab() {
 
     {/* TTS */}
     <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>🔊 음성(TTS) 설정 <span style={{fontSize:"11px",color:"#3fb950",fontWeight:400}}>완전 무료</span></div>
+      <div style={{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>🔊 음성(TTS) 설정 <span style={{fontSize:"13px",color:"#3fb950",fontWeight:400}}>완전 무료</span></div>
       <div style={S.grid2}>
         <div><label style={S.label}>음성 선택</label>
           <select style={S.input} value={voiceName} onChange={e=>setVoiceName(e.target.value)}>
@@ -6976,7 +6976,7 @@ function VideoMakeSubTab() {
 
     {/* 영상 업로드 */}
     <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>🎥 영상 업로드 & 자막 입력</div>
+      <div style={{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>🎥 영상 업로드 & 자막 입력</div>
       <div onClick={()=>fileRef.current.click()}
         style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"24px",textAlign:"center",cursor:"pointer",background:"#161b22",marginBottom:"12px"}}
         onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="#58a6ff";}}
@@ -6984,16 +6984,16 @@ function VideoMakeSubTab() {
         onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="#30363d";addVideos(e.dataTransfer.files);}}>
         <input ref={fileRef} type="file" accept="video/*" multiple style={{display:"none"}} onChange={e=>addVideos(e.target.files)} />
         <div style={{fontSize:"28px",marginBottom:"6px"}}>🎥</div>
-        <div style={{fontSize:"13px",color:"#8b949e"}}>영상 파일 업로드 (MP4, WebM 등)</div>
+        <div style={{fontSize:"15px",color:"#8b949e"}}>영상 파일 업로드 (MP4, WebM 등)</div>
       </div>
       {videos.map((v,idx)=><div key={v.id} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",marginBottom:"10px"}}>
         <div style={{display:"flex",gap:"12px",alignItems:"flex-start"}}>
           <video src={v.url} muted style={{width:"80px",height:"56px",objectFit:"cover",borderRadius:"6px",background:"#000",flexShrink:0}} />
           <div style={{flex:1}}>
-            <div style={{fontSize:"12px",fontWeight:600,color:"#e6edf3",marginBottom:"6px"}}>{v.name}</div>
+            <div style={{fontSize:"14px",fontWeight:600,color:"#e6edf3",marginBottom:"6px"}}>{v.name}</div>
             <textarea value={v.subtitle} onChange={e=>setSubtitle(v.id,e.target.value)}
               placeholder="자막 텍스트 입력 (줄바꿈으로 여러 줄 가능)"
-              style={{...S.input,resize:"vertical",minHeight:"52px",lineHeight:"1.5",fontSize:"12px"}} rows={2} />
+              style={{...S.input,resize:"vertical",minHeight:"52px",lineHeight:"1.5",fontSize:"14px"}} rows={2} />
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:"5px",flexShrink:0}}>
             <button style={S.btn("#21262d")} onClick={()=>previewSubtitle(v,idx)}>👁 미리보기</button>
@@ -7006,9 +7006,9 @@ function VideoMakeSubTab() {
 
     {/* 자막 미리보기 결과 */}
     {previewIdx !== null && <div style={S.card}>
-      <div style={{fontSize:"13px",fontWeight:700,color:"#3fb950",marginBottom:"10px"}}>👁 자막 미리보기 (프레임)</div>
+      <div style={{fontSize:"15px",fontWeight:700,color:"#3fb950",marginBottom:"10px"}}>👁 자막 미리보기 (프레임)</div>
       <canvas ref={canvasRef} style={{width:"100%",maxWidth:"360px",display:"block",borderRadius:"8px",border:"1px solid #30363d"}} />
-      <div style={{marginTop:"10px",fontSize:"12px",color:"#484f58"}}>
+      <div style={{marginTop:"10px",fontSize:"14px",color:"#484f58"}}>
         💡 실제 영상+자막 합성은 CapCut, Premiere 등 영상편집 툴을 사용하거나, 위 켄번스/AI 생성 영상에 직접 자막을 넣으세요.<br/>
         아래 버튼으로 자막 프레임 이미지를 저장할 수 있어요.
       </div>
@@ -7510,7 +7510,7 @@ function PasswordGate({children}){
   };
 
   if(auth===null) return(
-    <div style={{minHeight:"100vh",background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"center",color:"#484f58",fontSize:"13px"}}>
+    <div style={{minHeight:"100vh",background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"center",color:"#484f58",fontSize:"15px"}}>
       확인 중...
     </div>
   );
@@ -7522,21 +7522,21 @@ function PasswordGate({children}){
       <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"16px",padding:"48px 40px",width:"100%",maxWidth:"380px",textAlign:"center"}}>
         <div style={{fontSize:"32px",marginBottom:"16px"}}>🔒</div>
         <div style={{fontSize:"20px",fontWeight:700,color:"#e6edf3",marginBottom:"8px"}}>비밀번호를 입력해주세요</div>
-        <div style={{fontSize:"14px",color:"#8b949e",marginBottom:"32px"}}>접근 권한이 필요합니다.</div>
+        <div style={{fontSize:"16px",color:"#8b949e",marginBottom:"32px"}}>접근 권한이 필요합니다.</div>
         <input
           type="password"
           value={pw}
           onChange={e=>setPw(e.target.value)}
           onKeyDown={e=>e.key==="Enter"&&submit()}
           placeholder="비밀번호"
-          style={{width:"100%",padding:"12px 16px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",fontSize:"15px",outline:"none",boxSizing:"border-box",marginBottom:"12px"}}
+          style={{width:"100%",padding:"12px 16px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",fontSize:"17px",outline:"none",boxSizing:"border-box",marginBottom:"12px"}}
           autoFocus
         />
-        {err&&<div style={{color:"#f85149",fontSize:"13px",marginBottom:"12px"}}>{err}</div>}
+        {err&&<div style={{color:"#f85149",fontSize:"15px",marginBottom:"12px"}}>{err}</div>}
         <button
           onClick={submit}
           disabled={loading}
-          style={{width:"100%",padding:"12px",background:"#238636",border:"none",borderRadius:"8px",color:"#fff",fontSize:"15px",fontWeight:700,cursor:"pointer",opacity:loading?0.7:1}}
+          style={{width:"100%",padding:"12px",background:"#238636",border:"none",borderRadius:"8px",color:"#fff",fontSize:"17px",fontWeight:700,cursor:"pointer",opacity:loading?0.7:1}}
         >{loading?"확인 중...":"입력"}</button>
       </div>
     </div>
@@ -7898,12 +7898,12 @@ ${bodyText.slice(0, 2500)}
     {/* 헤더 */}
     <div style={{borderBottom:"1px solid #21262d",background:"#0d1117"}}>
       <div style={{padding:"10px 12px",display:"flex",alignItems:"center",gap:"10px"}}>
-        <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"17px"}}>✍️</div>
-        <div style={{fontSize:"16px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div>
+        <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"19px"}}>✍️</div>
+        <div style={{fontSize:"18px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div>
         <button onClick={doLogout} title="자리를 뜰 때 눌러주세요"
           style={{marginLeft:"auto",padding:"5px 12px",borderRadius:"6px",
             border:"1px solid #30363d",background:"#161b22",color:"#8b949e",
-            fontSize:"11px",fontWeight:600,cursor:"pointer",
+            fontSize:"13px",fontWeight:600,cursor:"pointer",
             fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}
           onMouseEnter={e=>{e.currentTarget.style.color="#f85149";e.currentTarget.style.borderColor="#f8514966";}}
           onMouseLeave={e=>{e.currentTarget.style.color="#8b949e";e.currentTarget.style.borderColor="#30363d";}}>
@@ -7924,7 +7924,7 @@ ${bodyText.slice(0, 2500)}
               padding:"11px 16px",border:"none",background:"none",
               borderBottom:`2px solid ${isAct?"#1f6feb":"transparent"}`,
               color:isAct?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,flexShrink:0,
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:600,flexShrink:0,
             }}>{t.icon} {t.label}</button>
           }
           // ── 글쓰기 드롭다운 ──
@@ -7940,10 +7940,10 @@ ${bodyText.slice(0, 2500)}
                   style={{padding:"11px 16px",border:"none",background:"none",
                     borderBottom:`2px solid ${isAct?"#1f6feb":"transparent"}`,
                     color:isAct?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
-                    fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,
+                    fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:600,
                     display:"flex",alignItems:"center",gap:"5px"}}>
                   {t.icon} {t.label}
-                  <span style={{fontSize:"9px",opacity:.7,display:"inline-block",
+                  <span style={{fontSize:"11px",opacity:.7,display:"inline-block",
                     transform:writeMenuOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform .2s"}}>▼</span>
                 </button>
                 {writeMenuOpen&&!isMobile&&(
@@ -7951,7 +7951,7 @@ ${bodyText.slice(0, 2500)}
                     background:"#161b22",border:"1px solid #444c56",borderRadius:"0 0 12px 12px",
                     minWidth:"180px",boxShadow:"0 16px 48px rgba(0,0,0,.9)",zIndex:99999,overflow:"hidden"}}>
                     <div style={{padding:"8px 16px 7px",borderBottom:"1px solid #30363d",
-                      color:"#58a6ff",fontSize:"11px",fontWeight:700,background:"#0d1117"}}>
+                      color:"#58a6ff",fontSize:"13px",fontWeight:700,background:"#0d1117"}}>
                       ✍️ 글쓰기 도구
                     </div>
                     {WRITE_SUBTABS.filter(sub=>!sub.hidden).map(sub=>{
@@ -7962,12 +7962,12 @@ ${bodyText.slice(0, 2500)}
                         style={{width:"100%",padding:"11px 18px",border:"none",
                           background:isSel?"#1f6feb22":"transparent",
                           color:isSel?"#58a6ff":"#c9d1d9",cursor:"pointer",textAlign:"left",
-                          fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:isSel?700:400,
+                          fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:isSel?700:400,
                           display:"flex",alignItems:"center",gap:"10px",
                           borderLeft:`3px solid ${isSel?"#1f6feb":"transparent"}`,transition:"background .1s"}}
                         onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background="#21262d";}}
                         onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background="transparent";}}>
-                        <span style={{fontSize:"17px"}}>{sub.icon}</span>
+                        <span style={{fontSize:"19px"}}>{sub.icon}</span>
                         <span>{sub.label}</span>
                         {isSel&&<span style={{marginLeft:"auto",color:"#1f6feb"}}>✓</span>}
                       </button>
@@ -7993,11 +7993,11 @@ ${bodyText.slice(0, 2500)}
                   padding:"11px 16px",border:"none",background:"none",
                   borderBottom:`2px solid ${isAct?"#1f6feb":"transparent"}`,
                   color:isAct?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
-                  fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,
+                  fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:600,
                   display:"flex",alignItems:"center",gap:"5px",
                 }}>
                 {t.icon} {t.label}
-                <span style={{fontSize:"9px",opacity:.7,display:"inline-block",
+                <span style={{fontSize:"11px",opacity:.7,display:"inline-block",
                   transform:imgMenuOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform .2s"}}>▼</span>
               </button>
               {imgMenuOpen&&!isMobile&&(
@@ -8014,7 +8014,7 @@ ${bodyText.slice(0, 2500)}
                   overflow:"hidden",
                 }}>
                   <div style={{padding:"8px 16px 7px",borderBottom:"1px solid #30363d",
-                    color:"#58a6ff",fontSize:"11px",fontWeight:700,background:"#0d1117"}}>
+                    color:"#58a6ff",fontSize:"13px",fontWeight:700,background:"#0d1117"}}>
                     🖼️ 이미지 편집 도구
                   </div>
                   {IMAGE_SUBTABS.map(sub=>{
@@ -8027,7 +8027,7 @@ ${bodyText.slice(0, 2500)}
                         background:isSel?"#1f6feb22":"transparent",
                         color:isSel?"#58a6ff":"#c9d1d9",
                         cursor:"pointer",textAlign:"left",
-                        fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",
+                        fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",
                         fontWeight:isSel?700:400,
                         display:"flex",alignItems:"center",gap:"10px",
                         borderLeft:`3px solid ${isSel?"#1f6feb":"transparent"}`,
@@ -8035,7 +8035,7 @@ ${bodyText.slice(0, 2500)}
                       }}
                       onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background="#21262d";}}
                       onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background="transparent";}}>
-                      <span style={{fontSize:"17px"}}>{sub.icon}</span>
+                      <span style={{fontSize:"19px"}}>{sub.icon}</span>
                       <span>{sub.label}</span>
                       {isSel&&<span style={{marginLeft:"auto",color:"#1f6feb"}}>✓</span>}
                     </button>
@@ -8060,11 +8060,11 @@ ${bodyText.slice(0, 2500)}
               padding:"11px 16px",border:"none",background:"none",
               borderBottom:`2px solid ${isVideoSub?"#1f6feb":"transparent"}`,
               color:isVideoSub?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
-              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:600,
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:600,
               display:"flex",alignItems:"center",gap:"5px",
             }}>
             🎬 동영상 편집
-            <span style={{fontSize:"9px",opacity:.7,display:"inline-block",
+            <span style={{fontSize:"11px",opacity:.7,display:"inline-block",
               transform:videoMenuOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform .2s"}}>▼</span>
           </button>
           {videoMenuOpen&&!isMobile&&(
@@ -8074,7 +8074,7 @@ ${bodyText.slice(0, 2500)}
               minWidth:"190px",boxShadow:"0 16px 48px rgba(0,0,0,.9)",zIndex:99999,overflow:"hidden",
             }}>
               <div style={{padding:"8px 16px 7px",borderBottom:"1px solid #30363d",
-                color:"#58a6ff",fontSize:"11px",fontWeight:700,background:"#0d1117"}}>
+                color:"#58a6ff",fontSize:"13px",fontWeight:700,background:"#0d1117"}}>
                 🎬 동영상 편집 도구
               </div>
               {VIDEO_SUBTABS.map(sub=>{
@@ -8086,13 +8086,13 @@ ${bodyText.slice(0, 2500)}
                     width:"100%",padding:"11px 18px",border:"none",
                     background:isSel?"#1f6feb22":"transparent",
                     color:isSel?"#58a6ff":"#c9d1d9",cursor:"pointer",textAlign:"left",
-                    fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:isSel?700:400,
+                    fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:isSel?700:400,
                     display:"flex",alignItems:"center",gap:"10px",
                     borderLeft:`3px solid ${isSel?"#1f6feb":"transparent"}`,transition:"background .1s",
                   }}
                   onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background="#21262d";}}
                   onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background="transparent";}}>
-                  <span style={{fontSize:"17px"}}>{sub.icon}</span>
+                  <span style={{fontSize:"19px"}}>{sub.icon}</span>
                   <span>{sub.label}</span>
                   {isSel&&<span style={{marginLeft:"auto",color:"#1f6feb"}}>✓</span>}
                 </button>
@@ -8112,7 +8112,7 @@ ${bodyText.slice(0, 2500)}
             padding:"8px 13px",border:"none",background:"none",
             borderBottom:`2px solid ${active===sub.id?"#58a6ff":"transparent"}`,
             color:active===sub.id?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
-            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600,
           }}>{sub.icon} {sub.label}</button>
         ))}
       </div>
@@ -8127,7 +8127,7 @@ ${bodyText.slice(0, 2500)}
             padding:"8px 13px",border:"none",background:"none",
             borderBottom:`2px solid ${active===sub.id?"#58a6ff":"transparent"}`,
             color:active===sub.id?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
-            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600,
           }}>{sub.icon} {sub.label}</button>
         ))}
         </div>
@@ -8142,7 +8142,7 @@ ${bodyText.slice(0, 2500)}
             padding:"8px 13px",border:"none",background:"none",
             borderBottom:`2px solid ${active===sub.id?"#58a6ff":"transparent"}`,
             color:active===sub.id?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
-            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",fontWeight:600,
+            fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600,
           }}>{sub.icon} {sub.label}</button>
         ))}
       </div>
@@ -8156,7 +8156,7 @@ ${bodyText.slice(0, 2500)}
         const isActive=active===t.id;
         const meta=WRITE_SUBTABS.find(s=>s.id===t.id)||IMAGE_SUBTABS.find(s=>s.id===t.id)||t;
         return <div key={t.id} style={{display:isActive?"block":"none"}}>
-          <h2 style={{margin:"0 0 16px",fontSize:"15px",fontWeight:700,color:"#e6edf3",display:isActive?"block":"none"}}>{meta.icon} {meta.label}</h2>
+          <h2 style={{margin:"0 0 16px",fontSize:"17px",fontWeight:700,color:"#e6edf3",display:isActive?"block":"none"}}>{meta.icon} {meta.label}</h2>
           <TabComp {...sharedProps}/>
         </div>
       })}
