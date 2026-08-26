@@ -12,7 +12,10 @@
 import crypto from "crypto";
 
 const COOKIE_NAME = "bp_session";
-const MAX_AGE = 60 * 60 * 24 * 7;   // 7일
+// 공용 PC에서 쓰므로 브라우저를 닫으면 세션이 끝나야 한다.
+// 쿠키에는 Max-Age를 주지 않아(세션 쿠키) 브라우저 종료 시 사라지고,
+// 서버 토큰에도 짧은 유효기간을 둬서 창을 계속 열어둬도 무한정 유지되지 않게 한다.
+const MAX_AGE = 60 * 60 * 8;   // 토큰 유효기간 8시간
 
 // AUTH_SECRET을 따로 두면 비밀번호를 바꿔도 로그인이 유지된다.
 // 없으면 SITE_PASSWORD로 대체 (이 경우 비밀번호 변경 시 전원 재로그인)
@@ -64,6 +67,7 @@ function parseCookies(req) {
 }
 
 export function sessionCookie(token) {
+  // Max-Age / Expires 없음 = 세션 쿠키 → 브라우저를 닫으면 사라진다.
   // Secure는 https에서만 유효. Vercel은 항상 https이므로 그대로 둔다.
   return [
     `${COOKIE_NAME}=${token}`,
@@ -71,7 +75,6 @@ export function sessionCookie(token) {
     "HttpOnly",
     "Secure",
     "SameSite=Lax",
-    `Max-Age=${MAX_AGE}`,
   ].join("; ");
 }
 
