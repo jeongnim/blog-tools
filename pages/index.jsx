@@ -4781,14 +4781,14 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
         : "";
 
       const prompt=`카테고리: "${selCat}"
-${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각각의 메인 키워드를 추천해줘.${trendingBlock}${googleBlock}
+${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각각의 메인 키워드를 추천해줘.${trendingBlock}${googleBlock}
 
 선정 기준:
 1. 실제 블로거가 쓸 법한 완성된 제목 형태 (경험·후기·정보·비교 등 독자가 클릭하고 싶은 구체적 제목)
 2. ${yearMonth} 최신 트렌드와 시의성 반영${trendingTitles.length > 0 ? " (위 실시간 인기글 소재를 참고해 유사하거나 파생된 주제 우선)" : ""}
 3. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. 네이버에서 실제로 많이 검색되는 단어
 4. 인기글과 너무 똑같은 제목은 피하고, 소재만 참고해서 차별화된 새 주제로 발전시킬 것
-5. 10개의 메인 키워드는 서로 겹치지 않게 분산시킬 것 (같은 단어를 변형만 해서 반복하지 말 것)
+5. 20개의 메인 키워드는 서로 겹치지 않게 분산시킬 것 (같은 단어를 변형만 해서 반복하지 말 것)
 
 ※ 검색량과 경쟁도는 추측하지 말 것. 추천 후 실제 데이터로 따로 조회한다.
 
@@ -4796,7 +4796,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
 {"keywords":[{"rank":1,"title":"추천 글 주제 제목","mainKeyword":"메인 키워드 (1~2형태소, 예:옷장정리)","reason":"선정 이유 한 줄 (유행성 포함)"},...]}`
 
       const raw=await callClaude([{role:"user",content:prompt}],
-        "You are a Naver blog SEO expert. Output ONLY valid JSON, no markdown.",1500,"claude-haiku-4-5-20251001");
+        "You are a Naver blog SEO expert. Output ONLY valid JSON, no markdown.",3000,"claude-haiku-4-5-20251001");
       const parsed=safeParseJson(raw);
       const list=parsed.keywords||[];
       setKeywords(list);
@@ -4805,7 +4805,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
     setLoadingKw(false);
   };
 
-  // ── 추천된 10개의 월 검색량·상업성을 실제 광고 API로 조회 (5개씩 2회) ──
+  // ── 추천된 20개의 월 검색량·상업성을 실제 광고 API로 조회 (5개씩 4회) ──
   const fetchBulkStats=async(list)=>{
     const kws=list.map(k=>k.mainKeyword||k.keyword).filter(Boolean);
     const flat=s=>String(s||"").replace(/\s+/g,"").toUpperCase();
@@ -4912,7 +4912,7 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 10개와 각
           color:!selCat||loadingKw?"#484f58":"#fff",border:"none",borderRadius:"8px",
           cursor:!selCat||loadingKw?"not-allowed":"pointer",
           fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:700,transition:"background .2s"}}>
-        {loadingKw?"⏳ 분석 중...":"🏷️ 추천 글 주제 10개 추출"}
+        {loadingKw?"⏳ 분석 중...":"🏷️ 추천 글 주제 20개 추출"}
       </button>
     </div>
 
