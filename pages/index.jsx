@@ -810,14 +810,39 @@ const IMG_STYLES=[
 ];
 const IMG_RATIOS=["16:9","4:3","1:1","3:4"];
 
+const IMG_TYPE_META={
+  scene:{label:"장면",icon:"🎨",color:"#1f6feb"},
+  ui:{label:"실제 화면",icon:"🖥️",color:"#8957e5"},
+  product:{label:"실제 제품",icon:"📦",color:"#d29922"},
+};
+
 function buildFullPrompt(item,styleId,ratio,lang){
   const st=IMG_STYLES.find(s=>s.id===styleId)||IMG_STYLES[0];
-  if(lang==="ko"){
-    const scene=(item.sceneKo||item.scene||"").trim();
-    return `${scene} ${st.ko}. ${ratio} 비율. 이미지 안에 글자·문자·로고·워터마크는 넣지 말 것.`;
+  const type=item.imageType||"scene";
+  const sceneEn=(item.scene||"").trim();
+  const sceneKo=(item.sceneKo||item.scene||"").trim();
+
+  // ── 실제 프로그램/앱 화면 재현: 스타일 프리셋을 적용하지 않고 UI 텍스트를 허용 ──
+  if(type==="ui"){
+    if(lang==="ko"){
+      return `${sceneKo} 실제 프로그램 화면을 그대로 캡처한 듯한 스크린샷 스타일. 실제 소프트웨어의 창 구성·메뉴·대화상자·버튼 배치를 정확하게 재현할 것. 화면 안의 메뉴명과 옵션명은 한글로 또렷하고 정확하게 표기할 것. ${ratio} 비율. 워터마크나 화면 밖 장식 문구는 넣지 말 것.`;
+    }
+    return `${sceneEn} Rendered as a faithful screenshot of the real application: reproduce the actual window layout, menu bar, dialog structure, tabs, checkboxes and buttons of that program as accurately as possible. UI labels inside the screen must be rendered clearly and spelled correctly in Korean. Clean, crisp, high-resolution UI. ${ratio} aspect ratio. No watermarks and no decorative text outside the interface.`;
   }
-  const scene=(item.scene||"").trim();
-  return `${scene} ${st.en}. ${ratio} aspect ratio. No text, letters, watermarks or logos in the image.`;
+
+  // ── 특정 브랜드의 실제 제품: 브랜드·모델 디자인을 정확히 재현 ──
+  if(type==="product"){
+    if(lang==="ko"){
+      return `${sceneKo} ${st.ko}. 언급된 브랜드의 실제 제품 디자인(형태·색상·비율·버튼 위치)을 정확하게 재현할 것. 제품 자체에 원래 있는 로고 외에 별도의 글자·워터마크는 넣지 말 것. ${ratio} 비율.`;
+    }
+    return `${sceneEn} ${st.en}. Reproduce the real product design of the named brand and model accurately — exact form factor, colors, proportions and button placement. Apart from branding that exists on the real product, no extra text or watermarks. ${ratio} aspect ratio.`;
+  }
+
+  // ── 일반 장면 (기존 방식) ──
+  if(lang==="ko"){
+    return `${sceneKo} ${st.ko}. ${ratio} 비율. 이미지 안에 글자·문자·로고·워터마크는 넣지 말 것.`;
+  }
+  return `${sceneEn} ${st.en}. ${ratio} aspect ratio. No text, letters, watermarks or logos in the image.`;
 }
 
 function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading,setImgLoading,imgError,setImgError,imgSections,setImgSections}){
@@ -852,45 +877,66 @@ function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading
 
     try{
       // ── Claude가 본문을 5개 단락으로 나누고 각 단락의 '장면'을 묘사 ──
-      const analysisReq=`You are a blog image art director. Read the Korean blog post below and split it into exactly 5 key sections, following the flow of the post from beginning to end. For each section, describe ONE concrete visual scene that would illustrate it well.
+      const analysisReq=`You are a blog image art director. Read the Korean blog post below and split it into exactly 5 key sections, following the flow of the post from beginning to end. For each section, describe ONE concrete visual that would illustrate it well.
 
 Blog Title: ${postMeta.title||""}
 Main Keyword: ${postMeta.main_keyword||""}
 Tags: ${(postMeta.tags||[]).join(", ")}
 
 Blog Content:
-${postContent.slice(0,3000)}
+${postContent.slice(0,6000)}
 
-Rules:
-- GROUNDING (most important): every section and every scene must come STRICTLY from what the post actually says. Follow the post's real order. Do not add objects, places, activities, situations or facts that do not appear in the post.
+STEP 1 — Decide the "imageType" of each section. Pick exactly one:
+- "ui": the section explains something that happens INSIDE a specific named program, app, website or device menu — settings, options, menu paths, dialog boxes, toolbars, step-by-step instructions on a screen. (e.g. a post about 한글/Hancom Office explaining 화면 설정, a post about 카카오톡 explaining an in-app setting, a Windows/iPhone settings screen.)
+- "product": the section is about a specific named brand's product (a phone model, appliance, device, package) and showing the real product accurately matters.
+- "scene": everything else — general situations, people, places, concepts.
+
+STEP 2 — Write the scene according to its imageType.
+
+For "ui" (MOST IMPORTANT — accuracy is the whole point):
+- Name the actual program and the actual screen (e.g. "Hancom Office 한글 word processor, the [보기] menu open and the 화면 설정 dialog").
+- Recreate that real screen from your knowledge of the software: window title bar, menu bar with the real menu names, the tab/dialog structure, the real option labels, checkboxes, dropdowns and buttons that exist on that screen, and where they sit. List the key Korean UI labels exactly as they appear in the real program.
+- Show the exact option the post is talking about — e.g. the relevant menu item highlighted, the checkbox the post mentions ticked, the mouse cursor hovering over it.
+- Keep values shown on screen neutral/default unless the post states them.
+- Korean text inside the UI IS allowed and required. Do not describe photographs of a person at a desk — describe the screen itself.
+
+For "product":
+- Use the real brand and model name from the post and describe its accurate real-world design: form factor, size, colors, materials, where the buttons/ports/camera are. Only show features the post actually mentions.
+- No readable text other than branding that exists on the real product.
+
+For "scene":
+- Describe the SCENE ONLY: subject, setting, composition, mood, colors.
+- No readable text, no logos, no recognizable real people or celebrity faces.
+- Never visualise prices, numbers, charts or graphs.
+
+General rules:
+- GROUNDING: every section and every scene must come STRICTLY from what the post actually says. Follow the post's real order. Do not add objects, places, activities, situations or facts that do not appear in the post.
 - "sectionDesc" must summarise an actual passage of the post — never a topic the post does not cover.
-- Exactly 5 sections, each covering a DIFFERENT aspect of the post
-- Each scene must be visually distinct from the others (different subject, setting, angle)
-- Describe the SCENE ONLY: subject, setting, composition, mood, colors. Do NOT include style keywords, camera specs, aspect ratio, or "no text" instructions — those are appended later
-- If the post is about a specific product, brand or service, depict it accurately at CATEGORY level — correct form factor, scale and usage context (e.g. "a modern foldable smartphone held open in both hands"). Never depict a shape, feature or usage that contradicts the post, and never guess at details the post does not state.
-- Never visualise prices, numbers, charts, graphs, screens or UI text — an image must not assert a fact the post has not stated.
-- 25-50 words per scene, plain descriptive English
-- No real brand names, no logos, no brand marks, no readable text, no recognizable real people or celebrity faces
+- Exactly 5 sections, each covering a DIFFERENT aspect of the post; each scene visually distinct (different subject, setting, angle, or different screen/step).
+- If the whole post is about a specific program or product, most sections will naturally be "ui" or "product" — that is expected. Do NOT downgrade a specific program screen into a generic "laptop on a desk" scene.
+- Do NOT include style keywords, camera specs, aspect ratio, or "no text" instructions — those are appended later.
+- 30-70 words per scene, plain descriptive English (Korean UI labels / brand names may be written in Korean inside the English text)
 - "sceneKo" = natural Korean rendering of the exact same scene
 - "sectionTitle" = short Korean title, "sectionDesc" = one-line Korean summary of that section
 
 Return ONLY valid JSON, no markdown:
 {"sections":[
-  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","scene":"English scene description","sceneKo":"같은 장면의 한글 묘사"},
-  {"sectionTitle":"...","sectionDesc":"...","scene":"...","sceneKo":"..."},
-  {"sectionTitle":"...","sectionDesc":"...","scene":"...","sceneKo":"..."},
-  {"sectionTitle":"...","sectionDesc":"...","scene":"...","sceneKo":"..."},
-  {"sectionTitle":"...","sectionDesc":"...","scene":"...","sceneKo":"..."}
+  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","imageType":"ui | product | scene","scene":"English scene description","sceneKo":"같은 장면의 한글 묘사"},
+  {"sectionTitle":"...","sectionDesc":"...","imageType":"...","scene":"...","sceneKo":"..."},
+  {"sectionTitle":"...","sectionDesc":"...","imageType":"...","scene":"...","sceneKo":"..."},
+  {"sectionTitle":"...","sectionDesc":"...","imageType":"...","scene":"...","sceneKo":"..."},
+  {"sectionTitle":"...","sectionDesc":"...","imageType":"...","scene":"...","sceneKo":"..."}
 ]}`;
 
       const raw=await callClaude([{role:"user",content:analysisReq}],
-        "You are an expert at analyzing blog posts and writing image generation prompts. Base every section and scene strictly on the given post content — never invent details, products, brands or facts the post does not contain. Depict named products only at an accurate category level, with no logos or readable text. Output ONLY valid JSON.",2500,"claude-haiku-4-5-20251001");
+        "You are an expert at analyzing blog posts and writing image generation prompts. Base every section and scene strictly on the given post content — never invent details or facts the post does not contain. When the post is about a specific named program, app or product, name it explicitly and reproduce its real screen or real design as accurately as you can from your knowledge; only fall back to a generic scene when the section is not about a specific product/program. Output ONLY valid JSON.",3500,"claude-haiku-4-5-20251001");
 
       if(!raw||raw.trim()==="") throw new Error("단락 분석 응답이 비어있습니다.");
       const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
       if(s===-1||e===-1) throw new Error("단락 분석 JSON 형식 오류: "+raw.slice(0,100));
       const parsed=safeParseJson(raw);
-      const sections=(parsed.sections||[]).filter(x=>x&&(x.scene||x.sceneKo)).slice(0,5);
+      const sections=(parsed.sections||[]).filter(x=>x&&(x.scene||x.sceneKo)).slice(0,5)
+        .map(x=>({...x,imageType:["ui","product","scene"].includes(x.imageType)?x.imageType:"scene"}));
       if(sections.length===0) throw new Error("단락 분석 실패");
 
       setImgSections(sections);
@@ -994,6 +1040,7 @@ Return ONLY valid JSON, no markdown:
       <div style={{color:"#8b949e",fontSize:"15px",fontWeight:600,marginBottom:"6px"}}>글 내용을 분석해서 5개 단락에 맞는 이미지 프롬프트를 만들어줍니다</div>
       <div style={{color:"#484f58",fontSize:"13px",lineHeight:"1.7"}}>
         · 각 단락마다 서로 다른 장면 프롬프트 1개씩 총 5개<br/>
+        · 특정 프로그램의 설정 화면이나 특정 브랜드 제품 이야기면 실제 화면·실제 제품을 재현하는 프롬프트로 자동 전환<br/>
         · 복사해서 ChatGPT · Gemini · Midjourney 등에 그대로 붙여넣기<br/>
         · 스타일 · 비율 · 언어는 재생성 없이 바로 바꿔서 복사 가능
       </div>
@@ -1007,7 +1054,10 @@ Return ONLY valid JSON, no markdown:
           <div style={{padding:"9px 12px",borderBottom:"1px solid #21262d",display:"flex",alignItems:"center",gap:"8px"}}>
             <span style={{background:"#1f6feb",color:"#fff",borderRadius:"4px",padding:"1px 7px",fontSize:"12px",fontWeight:700,flexShrink:0}}>{i+1}</span>
             <div style={{minWidth:0,flex:1}}>
-              <div style={{color:"#c9d1d9",fontSize:"14px",fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sectionTitle||`단락 ${i+1}`}</div>
+              <div style={{display:"flex",alignItems:"center",gap:"6px",minWidth:0}}>
+                {(()=>{const m=IMG_TYPE_META[item.imageType||"scene"];return <span title={m.label} style={{background:m.color,color:"#fff",borderRadius:"4px",padding:"0 6px",fontSize:"11px",fontWeight:700,flexShrink:0,lineHeight:"18px"}}>{m.icon} {m.label}</span>;})()}
+                <div style={{color:"#c9d1d9",fontSize:"14px",fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sectionTitle||`단락 ${i+1}`}</div>
+              </div>
               {item.sectionDesc&&<div style={{color:"#484f58",fontSize:"13px",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sectionDesc}</div>}
             </div>
             <button onClick={()=>copyText(full,i)} style={{
