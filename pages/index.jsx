@@ -1478,31 +1478,7 @@ JSON 형식:
             ))}
           </span>}
         </span></>}
-        {postMeta.factSheet?.length>0&&<><span style={{color:"#484f58"}}>사전확인</span>
-        <span style={{color:"#8b949e",lineHeight:"1.6"}}>
-          확인됨 <b style={{color:"#3fb950"}}>{postMeta.factSheet.filter(x=>x.verdict==="confirmed").length}</b>
-          {postMeta.factSheet.filter(x=>x.verdict==="outdated").length>0&&<> · 갱신 <b style={{color:"#d29922"}}>{postMeta.factSheet.filter(x=>x.verdict==="outdated").length}</b></>}
-          {postMeta.factSheet.filter(x=>x.verdict==="unconfirmed").length>0&&<> · 미확인 <b style={{color:"#f85149"}}>{postMeta.factSheet.filter(x=>x.verdict==="unconfirmed").length}</b></>}
-          <span style={{display:"block",marginTop:"3px"}}>
-            {postMeta.factSheet.filter(x=>x.source).slice(0,4).map((src,i)=>(
-              <a key={i} href={src.source} target="_blank" rel="noreferrer"
-                style={{color:"#58a6ff",textDecoration:"none",marginRight:"8px",fontSize:"13px"}}>🔗 {src.sourceName||src.source}</a>
-            ))}
-          </span>
-        </span></>}
       </div>
-      {postMeta.factSheet?.length>0&&
-      <div style={{borderTop:"1px solid #21262d",padding:"10px 16px",display:"flex",flexDirection:"column",gap:"6px"}}>
-        {postMeta.factSheet.map((it,i)=>(
-          <div key={i} style={{fontSize:"13px",lineHeight:"1.6",color:"#8b949e"}}>
-            <span style={{color:it.verdict==="confirmed"?"#3fb950":it.verdict==="outdated"?"#d29922":"#f85149",fontWeight:700,marginRight:"6px"}}>
-              {it.verdict==="confirmed"?"확인":it.verdict==="outdated"?"갱신":"미확인"}
-            </span>
-            <span style={{color:"#c9d1d9"}}>{it.fact||it.claim||it.topic}</span>
-            {it.note&&<span style={{display:"block",color:"#484f58"}}>{it.note}</span>}
-          </div>
-        ))}
-      </div>}
     </div>}
 
     {/* ── [확인필요:] 항목 웹 조사 ── */}
@@ -7599,7 +7575,7 @@ async function buildFactSheet({ kw, mainKw, bodies, today }) {
 ${refs || "(없음)"}
 
 할 일:
-1. 이 주제로 글을 쓸 때 들어갈 법한 "확인이 필요한 사실"을 최대 8개 고른다.
+1. 이 주제로 글을 쓸 때 들어갈 법한 "확인이 필요한 사실"을 최대 6개 고른다. 글의 핵심에 가까운 것부터.
    - 가격·요금·할인·지원금 / 출시일·시행일·마감일 / 모델명·스펙·기능 / 제도·정책·약관 조건 / 절차·자격 요건
    - 참고자료에 나온 것 + 참고자료엔 없어도 이 주제의 글에 꼭 필요한 것
    - 경험담·의견·일반 상식은 제외
@@ -7622,8 +7598,8 @@ ${refs || "(없음)"}
     [{ role: "user", content: prompt }],
     `You prepare a verified fact sheet before a Korean blog post is written.
 
-Search before marking anything confirmed; if the search does not settle it, mark it unconfirmed. Prefer official primary sources over blogs. Write each confirmed fact as one complete sentence that includes its conditions and the date it applies to. Never invent a value that neither the reference material nor a search supports. Output ONLY valid JSON.`,
-    3000, "claude-sonnet-4-5-20250929", 6
+Search before marking anything confirmed; if the search does not settle it, mark it unconfirmed. You have at most 4 searches, so prefer official pages that settle several items at once and put the most important items first. Prefer official primary sources over blogs. Write each confirmed fact as one complete sentence that includes its conditions and the date it applies to. Never invent a value that neither the reference material nor a search supports. Output ONLY valid JSON.`,
+    3000, "claude-sonnet-4-5-20250929", 4
   );
 
   return (safeParseJson(raw)?.items || [])
@@ -7665,6 +7641,53 @@ function extractEmbeddedQA(text) {
     if (ans.length > 0) out.push({ q, a: ans.join(" ") });
   }
   return out.slice(0, 5);
+}
+
+// ─── 남은 [확인필요:] 정리 ──────────────────────────────────────────────
+// 검색으로도 못 채운 값이 든 문장을 Haiku에게 넘겨, 확인처 안내로 바꾸거나 삭제하게 한다.
+// 원문이 본문에 그대로 있을 때만 교체하므로 다른 문장은 건드리지 않는다.
+async function settleUnresolvedPlaceholders(text, factItems) {
+  const lines = String(text || "").split("\n");
+  const targets = lines.filter(l => /\[확인필요:[^\]]*\]/.test(l));
+  if (targets.length === 0) return text;
+
+  const hints = (factItems || [])
+    .filter(x => x && x.label && x.checkAt)
+    .map(x => `- ${x.label}: ${x.checkAt}`).join("\n");
+
+  const prompt = `블로그 글에 검색으로도 확인하지 못한 값이 [확인필요: 항목명] 자리로 남아 있습니다. 이 자리를 없애야 합니다.
+
+대상 문장 (한 줄 = 한 문장, 본문에 이 글자 그대로 있음):
+${targets.map((l, i) => `${i + 1}. ${l}`).join("\n")}
+
+항목별 확인처 (있는 경우):
+${hints || "(없음)"}
+
+각 문장을 둘 중 하나로 처리:
+(a) 고치기 — 구체적인 값 없이도 뜻이 통하면, 값 부분을 빼고 "정확한 ~은 [확인처]에서 확인하는 게 좋습니다" 식으로 독자가 직접 확인할 곳을 안내하는 문장으로 바꾼다.
+    확인처가 없으면 "공식 홈페이지", "해당 통신사 고객센터"처럼 일반적인 곳을 쓴다.
+    문체·어조·길이는 원문과 비슷하게. 새로운 수치나 날짜를 넣지 말 것.
+(b) 삭제 — 그 값이 문장의 전부라서 값을 빼면 남는 게 없으면 replacement를 빈 문자열로.
+
+고친 문장에 [확인필요:]가 남아 있으면 실패다.
+
+순수 JSON만: {"edits":[{"original":"원문 그대로","replacement":"고친 문장 또는 빈 문자열"}]}`;
+
+  const raw = await callClaude(
+    [{ role: "user", content: prompt }],
+    "You clean up unverified placeholders in Korean blog drafts. Output ONLY valid JSON.",
+    1200, "claude-haiku-4-5-20251001"
+  );
+  const edits = safeParseJson(raw)?.edits || [];
+  let out = String(text || "");
+  edits.forEach(e => {
+    if (!e || typeof e.original !== "string") return;
+    const orig = e.original.trim();
+    const rep = String(e.replacement || "").trim();
+    if (/\[확인필요:/.test(rep)) return; // 실패한 수정은 무시 → 아래 줄 삭제 단계로 넘어감
+    if (orig && out.includes(orig)) out = out.replace(orig, rep);
+  });
+  return out.replace(/\n{3,}/g, "\n\n");
 }
 
 // ─── 생성된 제목 검증 ──────────────────────────────────────────────────────
@@ -7946,7 +7969,21 @@ Output ONLY valid JSON, no markdown.`;
             unresolved: applied.unresolved,
             sources: applied.sources,
           };
-        } catch(e) { /* 조사 실패해도 본문은 살린다 — [확인필요:]가 그대로 남는다 */ }
+        } catch(e) { /* 조사 실패해도 본문은 살린다 — 아래에서 남은 자리는 정리한다 */ }
+      }
+
+      // ── 끝내 못 채운 [확인필요:]는 문장을 고쳐서 없앤다 ──
+      // 값 대신 "어디서 확인하면 되는지"로 바꾸거나, 그 값이 없으면 의미가 없는 문장은 지운다.
+      if (extractPlaceholders(bodyText).length > 0) {
+        try {
+          setPendingAnalyzeText("__loading__:확인 안 된 수치 정리 중");
+          bodyText = await settleUnresolvedPlaceholders(bodyText, factItems);
+        } catch(e) {}
+        // 그래도 남으면 그 줄을 통째로 뺀다 (문장 단위 줄바꿈 규칙이라 줄 = 문장)
+        bodyText = bodyText.split("\n")
+          .filter(l => !/\[확인필요:[^\]]*\]/.test(l))
+          .join("\n").replace(/\n{3,}/g, "\n\n");
+        if (factSummary) factSummary.unresolved = [];
       }
 
       let finalTitle = parsed.title || "";
