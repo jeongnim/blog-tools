@@ -625,10 +625,11 @@ function SectionTitle({children}){
 function ForbiddenSection({workingText,forbidden,hp,replacements,setReplacements,doReplace,doReplaceAll}){
   const [aiLoading,setAiLoading]=useState(false);
   const [perLoading,setPerLoading]=useState({});
+  const [aiError,setAiError]=useState("");
 
   const aiRecommendAll=async()=>{
     if(!forbidden.length||aiLoading) return;
-    setAiLoading(true);
+    setAiLoading(true); setAiError("");
     try{
       const contexts=forbidden.map(({word})=>{
         const idx=workingText.indexOf(word);
@@ -668,7 +669,7 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
       });
       setReplacements(prev=>({...prev,...updates}));
       setPerLoading(prev=>({...prev,...suggMap}));
-    }catch(err){}
+    }catch(err){ setAiError("AI 추천 실패: "+(err?.message||String(err))); }
     setAiLoading(false);
   };
 
@@ -697,6 +698,7 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
       setPerLoading(p=>({...p,[word]:false,[`${word}__suggestions`]:suggestions}));
     }catch(err){
       setPerLoading(p=>({...p,[word]:false}));
+      setAiError("AI 추천 실패: "+(err?.message||String(err)));
     }
   };
 
@@ -711,6 +713,7 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
   return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
     {!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"16px",textAlign:"center"}}>글 입력 후 잠시 기다리면 자동으로 분석됩니다</div>}
     {workingText&&<>
+      {aiError&&<div style={{background:"#2d0b0b",border:"1px solid #f8514944",borderRadius:"8px",padding:"8px 12px",color:"#f85149",fontSize:"13px",wordBreak:"break-all"}}>⚠️ {aiError}</div>}
       {/* 요약 헤더 */}
       <div style={{background:highCount>0?"#2d0b0b":"#0d2019",border:`1px solid ${highCount>0?"#f8514944":"#2ea04344"}`,borderRadius:"12px",padding:"14px 16px",display:"flex",alignItems:"center",gap:"14px"}}>
         <div style={{fontSize:"28px"}}>{highCount>0?"🔞":forbidden.length>0?"⚠️":"✅"}</div>
@@ -1150,6 +1153,7 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
   const postMeta=analyzePostMeta; const setPostMeta=setAnalyzePostMeta;
   const [qualReplacements,setQualReplacements]=useState({});
   const [qualLoading,setQualLoading]=useState({});
+  const [qualError,setQualError]=useState("");
   const [copiedAll,setCopiedAll]=useState(false);
   const [genImages,setGenImages]=useState([]); // [{sectionTitle, sectionDesc, scene, sceneKo}]
   const [imgLoading,setImgLoading]=useState(false);
@@ -1347,7 +1351,7 @@ JSON 형식:
   // 저품질 AI 대체어 추천 (개별)
   const aiQualRecommend=async(item)=>{
     const key=item.text;
-    setQualLoading(p=>({...p,[key]:true}));
+    setQualLoading(p=>({...p,[key]:true})); setQualError("");
     try{
       const prompt=`블로그 글에서 저품질/스팸으로 감지된 표현이 있습니다.
 감지된 표현: "${item.text}" (카테고리: ${item.category})
@@ -1363,8 +1367,10 @@ JSON 형식:
       setQualLoading(p=>({...p,[key]:false,[key+"__sugg"]:suggs}));
       // 첫 번째 추천어를 자동으로 입력창에 채워주기
       if(firstSugg) setQualReplacements(p=>({...p,[key]:firstSugg}));
+      if(!firstSugg) setQualError("AI가 추천 표현을 돌려주지 않았습니다: "+raw.slice(0,120));
     }catch(e){
       setQualLoading(p=>({...p,[key]:false}));
+      setQualError("AI 추천 실패: "+(e?.message||String(e)));
     }
   };
 
@@ -1472,28 +1478,27 @@ JSON 형식:
             ))}
           </span>}
         </span></>}
-        {postMeta.verifySummary&&<><span style={{color:"#484f58"}}>사실검증</span>
+        {postMeta.factSheet?.length>0&&<><span style={{color:"#484f58"}}>사전확인</span>
         <span style={{color:"#8b949e",lineHeight:"1.6"}}>
-          확인됨 <b style={{color:"#3fb950"}}>{postMeta.verifySummary.confirmed}</b>
-          {postMeta.verifySummary.corrected>0&&<> · 수정됨 <b style={{color:"#d29922"}}>{postMeta.verifySummary.corrected}</b></>}
-          {postMeta.verifySummary.unverified>0&&<> · 미확인 <b style={{color:"#f85149"}}>{postMeta.verifySummary.unverified}</b></>}
-          {postMeta.verifySummary.sources?.length>0&&<span style={{display:"block",marginTop:"3px"}}>
-            {postMeta.verifySummary.sources.slice(0,4).map((src,i)=>(
-              <a key={i} href={src.url} target="_blank" rel="noreferrer"
-                style={{color:"#58a6ff",textDecoration:"none",marginRight:"8px",fontSize:"13px"}}>🔗 {src.name}</a>
+          확인됨 <b style={{color:"#3fb950"}}>{postMeta.factSheet.filter(x=>x.verdict==="confirmed").length}</b>
+          {postMeta.factSheet.filter(x=>x.verdict==="outdated").length>0&&<> · 갱신 <b style={{color:"#d29922"}}>{postMeta.factSheet.filter(x=>x.verdict==="outdated").length}</b></>}
+          {postMeta.factSheet.filter(x=>x.verdict==="unconfirmed").length>0&&<> · 미확인 <b style={{color:"#f85149"}}>{postMeta.factSheet.filter(x=>x.verdict==="unconfirmed").length}</b></>}
+          <span style={{display:"block",marginTop:"3px"}}>
+            {postMeta.factSheet.filter(x=>x.source).slice(0,4).map((src,i)=>(
+              <a key={i} href={src.source} target="_blank" rel="noreferrer"
+                style={{color:"#58a6ff",textDecoration:"none",marginRight:"8px",fontSize:"13px"}}>🔗 {src.sourceName||src.source}</a>
             ))}
-          </span>}
+          </span>
         </span></>}
       </div>
-      {(postMeta.verifyItems||[]).filter(x=>x.verdict==="wrong"||x.verdict==="unverified").length>0&&
+      {postMeta.factSheet?.length>0&&
       <div style={{borderTop:"1px solid #21262d",padding:"10px 16px",display:"flex",flexDirection:"column",gap:"6px"}}>
-        {(postMeta.verifyItems||[]).filter(x=>x.verdict==="wrong"||x.verdict==="unverified").map((it,i)=>(
+        {postMeta.factSheet.map((it,i)=>(
           <div key={i} style={{fontSize:"13px",lineHeight:"1.6",color:"#8b949e"}}>
-            <span style={{color:it.verdict==="wrong"?"#d29922":"#f85149",fontWeight:700,marginRight:"6px"}}>
-              {it.verdict==="wrong"?(it.applied?"수정":"수정 못함"):"미확인"}
+            <span style={{color:it.verdict==="confirmed"?"#3fb950":it.verdict==="outdated"?"#d29922":"#f85149",fontWeight:700,marginRight:"6px"}}>
+              {it.verdict==="confirmed"?"확인":it.verdict==="outdated"?"갱신":"미확인"}
             </span>
-            <span style={{color:"#c9d1d9"}}>{it.original}</span>
-            {it.verdict==="wrong"&&it.fixed&&<span style={{display:"block",color:"#3fb950"}}>→ {it.fixed}</span>}
+            <span style={{color:"#c9d1d9"}}>{it.fact||it.claim||it.topic}</span>
             {it.note&&<span style={{display:"block",color:"#484f58"}}>{it.note}</span>}
           </div>
         ))}
@@ -1750,6 +1755,7 @@ JSON 형식:
             <span style={{color:"#ffa657",fontWeight:700,fontSize:"15px"}}>⚠️ 저품질 요소 {aiResult.lowQuality.items.length}개</span>
             <span style={{color:"#484f58",fontSize:"13px"}}>· AI 추천 후 바로 수정 가능</span>
           </div>
+          {qualError&&<div style={{padding:"8px 14px",background:"#2d0b0b",borderBottom:"1px solid #f8514944",color:"#f85149",fontSize:"13px",wordBreak:"break-all"}}>⚠️ {qualError}</div>}
           <div style={{display:"flex",flexDirection:"column"}}>
             {aiResult.lowQuality.items.map((item,i)=>{
               const sev=item.severity;
@@ -7302,7 +7308,7 @@ function isCommercialStat(item) {
 // ─── 글쓰기 프롬프트 빌더 ──────────────────────────────────────────────────
 function buildWritePrompt({
   kw, yearMonth, today, category, smartBlockType, blogStrategy, bodies, mainKeyword,
-  topTitles, commercialWords, avoidWords, pattern,
+  topTitles, commercialWords, avoidWords, pattern, factSheetBlock = "",
 }) {
   const mainKw = mainKeyword || kw;
   const ctx = category
@@ -7330,7 +7336,7 @@ function buildWritePrompt({
     : "";
 
   return `오늘 날짜: ${today || yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
-${refBlock}${titleBlock}${commercialBlock}${avoidBlock}
+${factSheetBlock}${refBlock}${titleBlock}${commercialBlock}${avoidBlock}
 네이버 블로그 홈판 노출 + AI 브리핑(AEO) 인용 최적화 글을 작성해줘:
 
 [주제 원칙 — 글의 범위를 정하는 기준. 사실 원칙 다음으로 우선한다]
@@ -7576,90 +7582,71 @@ function applyResolvedValues(text, items) {
   return { text: out, approxUsed, unresolved, sources };
 }
 
-// ─── 본문 사실 검증 (웹 검색) ───────────────────────────────────────────────
-// 글이 완성된 뒤 단정 문장을 검색으로 대조한다.
-// 틀린 문장은 모델이 돌려준 고친 문장으로 바꾸고(원문이 본문에 정확히 있을 때만),
-// 확인이 안 되는 문장은 손대지 않고 목록으로만 알려준다.
+// ─── 사전 사실표 (웹 검색) ───────────────────────────────────────────────
+// 글을 쓰기 전에, 주제와 참고자료(상위 노출 글)에서 글에 들어갈 만한 수치·날짜·정책·스펙을
+// 뽑아 공식 출처로 확인한다. 확인된 것만 본문 프롬프트에 [확인된 사실]로 넣고,
+// 참고자료가 주장하지만 확인 안 된 것은 "쓰지 말 것" 목록으로 넘긴다.
 
-async function verifyDraftFacts({ title, mainKw, text, today }) {
-  const prompt = `아래 블로그 글의 사실 관계를 웹 검색으로 검증해주세요.
+async function buildFactSheet({ kw, mainKw, bodies, today }) {
+  const refs = (bodies || []).slice(0, 3).map((b, i) => `(${i + 1})\n${String(b).slice(0, 1500)}`).join("\n\n");
+  const prompt = `블로그 글을 쓰기 전에 사실 확인을 해주세요.
 
-글 제목: ${title || ""}
-메인 키워드: ${mainKw || ""}
+주제: "${kw}"
+메인 키워드: "${mainKw}"
 오늘 날짜: ${today || new Date().toLocaleDateString("ko-KR")}
 
-본문:
-${String(text || "").slice(0, 3500)}
+참고자료 (같은 키워드로 상위 노출된 블로그 글 — 출처가 약하므로 그대로 믿지 말 것):
+${refs || "(없음)"}
 
-검증 대상 — 아래에 해당하는 "단정 문장"만 고르세요 (최대 8개):
-- 가격·요금·할인·지원금 액수
-- 출시일·시행일·마감일, "N월부터" 같은 시점
-- 제품 모델명·스펙·기능·옵션
-- 법령·제도·정책·약관의 조건
-- 기업·기관의 정책, 절차, 공식 입장
-- 브랜드에 붙인 기능·혜택 (A사 기능을 B사 것처럼 쓴 경우 포함)
-- 통계·퍼센트·순위
-
-검증 대상 아님 — 절대 고르지 말 것:
-- 작성자의 경험담, 체감, 의견 ("개인적으로", "제 기준에서는", "저는 ~했습니다")
-- 일반 상식 수준의 설명, 절차 안내 중 논쟁 여지가 없는 부분
-- 이미 "달라질 수 있으니 확인하세요"처럼 열어둔 문장
-
-각 문장을 검색해서 하나로 판정:
-- confirmed: 검색으로 사실 확인됨 → source에 URL
-- wrong: 검색 결과와 어긋남 → fixed에 고친 문장. 원문의 문체·길이·어조를 그대로 유지하고 틀린 부분만 바꿀 것.
-         새 수치를 넣을 때는 반드시 출처가 확인된 값만. 확인 안 되면 그 부분을 [확인필요: 항목명]으로 비울 것.
-- unverified: 검색해도 확인·반박 어느 쪽도 안 됨 → 손대지 말고 note에 이유
+할 일:
+1. 이 주제로 글을 쓸 때 들어갈 법한 "확인이 필요한 사실"을 최대 8개 고른다.
+   - 가격·요금·할인·지원금 / 출시일·시행일·마감일 / 모델명·스펙·기능 / 제도·정책·약관 조건 / 절차·자격 요건
+   - 참고자료에 나온 것 + 참고자료엔 없어도 이 주제의 글에 꼭 필요한 것
+   - 경험담·의견·일반 상식은 제외
+2. 각 항목을 웹에서 검색해 공식 출처(제조사·통신사·정부·기관 사이트)로 확인한다.
+3. 판정:
+   - confirmed: 공식 출처로 확인됨 → fact에 글에 바로 쓸 수 있는 한 문장, source에 URL
+   - unconfirmed: 참고자료나 인터넷에 떠돌지만 공식 확인 안 됨 → claim에 그 주장, note에 이유
+   - outdated: 참고자료 내용이 현재와 다름 → fact에 현재 맞는 내용, note에 무엇이 바뀌었는지
 
 지켜야 할 것:
-- original에는 본문 문장을 한 글자도 바꾸지 말고 그대로 복사할 것 (줄바꿈 단위 한 문장). 이게 틀리면 수정이 적용되지 않는다.
-- 검색하지 않고 기억으로 판정하지 말 것. 검색이 안 됐으면 unverified.
-- 공식 출처(제조사·통신사·정부·기관 사이트)를 우선할 것.
-- 검색으로 확실히 반박된 경우에만 wrong. 애매하면 unverified.
+- 검색하지 않고 기억으로 confirmed 처리하지 말 것. 검색이 안 되면 unconfirmed.
+- fact는 조건·기준 시점까지 포함한 완결 문장으로 ("2026년 9월 기준, ~은 ~입니다")
+- 하나로 단정 못 하는 값은 범위로 쓰고 note에 "조건별 상이" 표시
+- 참고자료에 없는 값을 지어내지 말 것. 빈 목록이 틀린 목록보다 낫다.
 
 순수 JSON만 출력:
-{"items":[{"original":"본문 문장 그대로","verdict":"confirmed","source":"https://...","sourceName":"출처명","note":"기준 시점·조건"},{"original":"본문 문장 그대로","verdict":"wrong","fixed":"고친 문장","source":"https://...","sourceName":"출처명","note":"무엇이 틀렸는지 한 줄"},{"original":"본문 문장 그대로","verdict":"unverified","note":"확인 못한 이유"}]}`;
+{"items":[{"topic":"항목명","verdict":"confirmed","fact":"글에 쓸 문장","source":"https://...","sourceName":"출처명","note":"기준 시점·조건"},{"topic":"항목명","verdict":"unconfirmed","claim":"참고자료의 주장","note":"확인 못한 이유"},{"topic":"항목명","verdict":"outdated","fact":"현재 맞는 내용","source":"https://...","sourceName":"출처명","note":"무엇이 바뀌었는지"}]}`;
 
   const raw = await callClaudeSearch(
     [{ role: "user", content: prompt }],
-    `You fact-check Korean blog drafts with web search before publication.
+    `You prepare a verified fact sheet before a Korean blog post is written.
 
-Search before judging every item. Never mark a sentence wrong or confirmed from memory; if the search does not settle it, mark it unverified.
-Only mark wrong when a search result clearly contradicts the sentence. When rewriting, keep the author's voice and sentence shape, change only the incorrect part, and never introduce a new figure that the search did not confirm — leave it as a [확인필요: ...] placeholder instead.
-Copy original sentences verbatim. Skip personal experience, opinions, and hedged statements. Prefer official primary sources. Output ONLY valid JSON.`,
-    4000, "claude-sonnet-4-5-20250929", 10
+Search before marking anything confirmed; if the search does not settle it, mark it unconfirmed. Prefer official primary sources over blogs. Write each confirmed fact as one complete sentence that includes its conditions and the date it applies to. Never invent a value that neither the reference material nor a search supports. Output ONLY valid JSON.`,
+    3000, "claude-sonnet-4-5-20250929", 6
   );
 
   return (safeParseJson(raw)?.items || [])
-    .filter(x => x && x.original && ["confirmed", "wrong", "unverified"].includes(x.verdict));
+    .filter(x => x && x.topic && ["confirmed", "unconfirmed", "outdated"].includes(x.verdict));
 }
 
-function applyVerification(text, items) {
-  let out = String(text || "");
-  const sources = [];
-  let confirmed = 0, corrected = 0, unverified = 0;
-
-  (items || []).forEach(it => {
-    if (it.verdict === "confirmed") {
-      confirmed++;
-      if (it.source) sources.push({ name: it.sourceName || it.source, url: it.source });
-      return;
-    }
-    if (it.verdict === "unverified") { unverified++; return; }
-    // wrong: 원문이 본문에 그대로 있을 때만 교체
-    const orig = String(it.original).trim();
-    const fixed = String(it.fixed || "").trim();
-    if (fixed && orig && out.includes(orig)) {
-      out = out.replace(orig, fixed);
-      it.applied = true;
-      corrected++;
-      if (it.source) sources.push({ name: it.sourceName || it.source, url: it.source });
-    } else {
-      it.applied = false;
-    }
-  });
-
-  return { text: out, summary: { confirmed, corrected, unverified, sources } };
+// 사실표를 본문 프롬프트에 넣을 블록으로 만든다
+function formatFactSheetBlock(items) {
+  const ok = (items || []).filter(x => (x.verdict === "confirmed" || x.verdict === "outdated") && x.fact);
+  const no = (items || []).filter(x => x.verdict === "unconfirmed");
+  if (ok.length === 0 && no.length === 0) return "";
+  let out = "\n[확인된 사실 — 검색으로 공식 출처를 확인한 내용. 수치·날짜·조건은 이 목록에 있는 것만 쓸 것]\n";
+  if (ok.length > 0) {
+    out += ok.map((x, i) => `${i + 1}. ${x.fact}${x.note ? ` (${x.note})` : ""}${x.sourceName ? ` — 출처: ${x.sourceName}` : ""}`).join("\n") + "\n";
+  } else {
+    out += "(확인된 항목 없음)\n";
+  }
+  if (no.length > 0) {
+    out += "\n[확인 안 된 주장 — 참고자료에는 있지만 공식 확인이 안 됐다. 사실처럼 쓰지 말 것. 꼭 필요하면 [확인필요: 항목명]으로 비워둘 것]\n";
+    out += no.map((x, i) => `${i + 1}. ${x.claim || x.topic}${x.note ? ` (${x.note})` : ""}`).join("\n") + "\n";
+  }
+  out += "※ 이 두 목록에 없는 수치·날짜·가격·스펙은 절대 만들어내지 말 것. 모르면 [확인필요: 항목명].\n";
+  return out;
 }
 
 // 본문 안에 녹아 있는 "질문 줄 + 답변" 묶음을 뽑는다 (meta.faq 호환용)
@@ -7864,10 +7851,21 @@ export default function BlogTools(){
 
       const pattern = pickTitlePattern();
 
+      // ── 사전 사실표: 참고자료의 수치·정책을 공식 출처로 확인해 프롬프트에 넣는다 ──
+      let factSheet = [];
+      try {
+        setPendingAnalyzeText("__loading__:사실 확인 중 — 참고자료의 수치·정책을 공식 출처로 검색하고 있습니다");
+        factSheet = await withTimeout(
+          buildFactSheet({ kw, mainKw, bodies, today: todayStr }), 90000, []
+        );
+      } catch(e) { factSheet = []; /* 실패해도 글쓰기는 진행 */ }
+      setPendingAnalyzeText("__loading__:본문 작성 중");
+
       const prompt = buildWritePrompt({
         kw, yearMonth, today: todayStr, smartBlockType, blogStrategy,
         bodies, mainKeyword: mainKw,
         topTitles, commercialWords: banWords, avoidWords, pattern,
+        factSheetBlock: formatFactSheetBlock(factSheet),
       });
 
       const sysPrompt = `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation (AEO).
@@ -7879,7 +7877,7 @@ FACTUAL DISCIPLINE — this overrides every stylistic instruction in the user me
 - When you are unsure of a specific figure, DO NOT vague the whole sentence away. Keep the sentence concrete and specific, and leave only the unknown value as a [확인필요: ...] placeholder for the author to fill in (max 3 per post). Falling back to qualitative phrasing is a last resort, reserved for details too peripheral to be worth a placeholder.
 - Do NOT claim anything is "current as of ${yearMonth}" unless you genuinely know it. Prefer hedged or timeless phrasing over confident but unverified recency.
 - Opinions, judgments, preferences and narrative experience are encouraged — but write them as opinions, not as verified facts. Make experience concrete through process and reasoning, not through fabricated measurements.
-- A shorter, less specific post that is true is better than a specific post that is false. If reference material is provided, restrict factual claims to what it supports (without copying its wording).
+- A shorter, less specific post that is true is better than a specific post that is false. If a [확인된 사실] list is provided, figures, dates and conditions must come from that list; treat anything under [확인 안 된 주장] as unverified. Reference material may inform structure and context but is not a source of figures on its own (never copy its wording).
 
 BRAND ACCURACY:
 - When a specific brand, product line or service is named, everything you write about it must be accurate. Use official naming exactly as it is written; never invent model names, generation numbers, product tiers or spec details.
@@ -8003,18 +8001,6 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
 
       recordTitleUse(pattern.id, finalTitle);
 
-      // ── 2단계: 사실 검증 (웹 검색) ──
-      // 본문에 남은 단정 문장을 검색으로 대조해 틀린 건 고치고, 확인 안 되는 건 표시한다.
-      let verifySummary = null;
-      let verifyItems = [];
-      try {
-        setPendingAnalyzeText("__loading__:사실 검증 중 — 본문 내용을 웹에서 대조하고 있습니다");
-        verifyItems = await verifyDraftFacts({ title: finalTitle, mainKw, text: bodyText, today: todayStr });
-        const applied = applyVerification(bodyText, verifyItems);
-        bodyText = applied.text;
-        verifySummary = applied.summary;
-      } catch(e) { /* 검증 실패해도 본문은 살린다 */ }
-
       // 본문에 녹아 있는 질문 줄을 뽑아 meta.faq로 남긴다 (기존 화면 호환용)
       const faq = extractEmbeddedQA(bodyText);
 
@@ -8035,8 +8021,7 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
         titleNotice,
         factSummary,
         factItems,
-        verifySummary,
-        verifyItems,
+        factSheet,
         _source: "keyword",
       };
       setAnalyzePostMeta(meta);
