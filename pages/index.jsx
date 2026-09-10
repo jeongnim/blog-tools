@@ -273,7 +273,56 @@ function safeParseJson(raw) {
   const si = raw.indexOf("{"), ei = raw.lastIndexOf("}");
   const jsonStr = si !== -1 && ei !== -1 ? raw.slice(si, ei + 1) : raw;
   try { return JSON.parse(jsonStr); }
-  catch (_) { return JSON.parse(fixRawControlChars(jsonStr)); }
+  catch (_) {
+    try { return JSON.parse(fixRawControlChars(jsonStr)); }
+    catch (e2) {
+      // 출력이 max_tokens에 잘려 JSON이 안 닫힌 경우 — 받은 데까지 살린다
+      const salvaged = salvageTruncatedJson(raw);
+      if (salvaged) return salvaged;
+      throw e2;
+    }
+  }
+}
+
+// 잘린 JSON에서 "키":"값" 문자열 필드만 뽑아 객체로 만든다. content처럼 긴 필드는
+// 닫는 따옴표가 없어도 끝까지 가져오고, 배열 필드(tags)는 파싱 가능할 때만 포함한다.
+function salvageTruncatedJson(raw) {
+  const s = String(raw || "");
+  const si = s.indexOf("{");
+  if (si === -1) return null;
+  const body = s.slice(si);
+  const out = {};
+  const re = /"([A-Za-z_][A-Za-z0-9_]*)"\s*:\s*/g;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    const key = m[1];
+    const rest = body.slice(re.lastIndex);
+    if (rest[0] === '"') {
+      // 문자열: 이스케이프 처리하며 닫는 따옴표까지, 없으면 끝까지
+      let i = 1, val = "";
+      while (i < rest.length) {
+        const c = rest[i];
+        if (c === "\\" && i + 1 < rest.length) {
+          const n = rest[i + 1];
+          val += n === "n" ? "\n" : n === "t" ? "\t" : n === "r" ? "" : n;
+          i += 2; continue;
+        }
+        if (c === '"') break;
+        val += c; i++;
+      }
+      out[key] = val;
+      re.lastIndex += i + 1;
+    } else if (rest[0] === "[") {
+      const close = rest.indexOf("]");
+      if (close !== -1) {
+        try { out[key] = JSON.parse(rest.slice(0, close + 1)); } catch (_) {}
+        re.lastIndex += close + 1;
+      }
+    }
+  }
+  if (!out.content && !out.title) return null;
+  out._truncated = true;
+  return out;
 }
 
 async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5-20251001"){
@@ -7862,7 +7911,7 @@ Output ONLY valid JSON, no markdown.`;
       const raw = await callClaudeStream(
         [{ role: "user", content: prompt }],
         sysPrompt,
-        4000, "claude-sonnet-4-5-20250929"
+        7000, "claude-sonnet-4-5-20250929"
       );
       const parsed = safeParseJson(raw);
       const cleanContent = (str="") =>
@@ -7876,6 +7925,11 @@ Output ONLY valid JSON, no markdown.`;
         .trimEnd();
 
       let bodyText = stripAppendix(cleanContent(parsed.content||""));
+      if (parsed._truncated) {
+        // 마지막 줄은 잘렸을 가능성이 크므로 마지막 문장 경계까지만 남긴다
+        const cut = Math.max(bodyText.lastIndexOf(".\n"), bodyText.lastIndexOf("다.\n"));
+        if (cut > bodyText.length * 0.6) bodyText = bodyText.slice(0, cut + 2).trimEnd();
+      }
 
       // ── [확인필요:] 항목을 웹 검색으로 자동 해결 ──
       let factItems = [];
@@ -7941,6 +7995,10 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
         } catch(e) {
           titleNotice = check.reasons.join(" · ");
         }
+      }
+
+      if (parsed._truncated) {
+        titleNotice = (titleNotice ? titleNotice + " · " : "") + "본문이 길어 출력이 잘렸습니다 — 끝부분을 확인하세요";
       }
 
       recordTitleUse(pattern.id, finalTitle);
