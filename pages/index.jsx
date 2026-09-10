@@ -1097,6 +1097,7 @@ function AnalyzeTab({pendingAnalyzeText="",setPendingAnalyzeText,
   const activeSection=analyzeActiveSection; const setActiveSection=setAnalyzeActiveSection;
   const [analyzing,setAnalyzing]=useState(false);
   const [autoLoading,setAutoLoading]=useState(false);
+  const [autoStep,setAutoStep]=useState("");
   const postMeta=analyzePostMeta; const setPostMeta=setAnalyzePostMeta;
   const [qualReplacements,setQualReplacements]=useState({});
   const [qualLoading,setQualLoading]=useState({});
@@ -1190,11 +1191,14 @@ Output ONLY valid JSON.`,
 
   // pendingAnalyzeText: 로딩 신호 처리
   useEffect(()=>{
-    if(pendingAnalyzeText==="__loading__"){
+    if(typeof pendingAnalyzeText==="string" && pendingAnalyzeText.startsWith("__loading__")){
+      const step = pendingAnalyzeText.split(":").slice(1).join(":").trim();
+      setAutoStep(step);
       setAutoLoading(true);
       setPostMeta(null);
       setAnalyzeText("");
     } else if(pendingAnalyzeText===""){
+      setAutoStep("");
       // goAutoWrite 완료 or 에러 시 loading 해제
       setAutoLoading(false);
     }
@@ -1419,7 +1423,32 @@ JSON 형식:
             ))}
           </span>}
         </span></>}
+        {postMeta.verifySummary&&<><span style={{color:"#484f58"}}>사실검증</span>
+        <span style={{color:"#8b949e",lineHeight:"1.6"}}>
+          확인됨 <b style={{color:"#3fb950"}}>{postMeta.verifySummary.confirmed}</b>
+          {postMeta.verifySummary.corrected>0&&<> · 수정됨 <b style={{color:"#d29922"}}>{postMeta.verifySummary.corrected}</b></>}
+          {postMeta.verifySummary.unverified>0&&<> · 미확인 <b style={{color:"#f85149"}}>{postMeta.verifySummary.unverified}</b></>}
+          {postMeta.verifySummary.sources?.length>0&&<span style={{display:"block",marginTop:"3px"}}>
+            {postMeta.verifySummary.sources.slice(0,4).map((src,i)=>(
+              <a key={i} href={src.url} target="_blank" rel="noreferrer"
+                style={{color:"#58a6ff",textDecoration:"none",marginRight:"8px",fontSize:"13px"}}>🔗 {src.name}</a>
+            ))}
+          </span>}
+        </span></>}
       </div>
+      {(postMeta.verifyItems||[]).filter(x=>x.verdict==="wrong"||x.verdict==="unverified").length>0&&
+      <div style={{borderTop:"1px solid #21262d",padding:"10px 16px",display:"flex",flexDirection:"column",gap:"6px"}}>
+        {(postMeta.verifyItems||[]).filter(x=>x.verdict==="wrong"||x.verdict==="unverified").map((it,i)=>(
+          <div key={i} style={{fontSize:"13px",lineHeight:"1.6",color:"#8b949e"}}>
+            <span style={{color:it.verdict==="wrong"?"#d29922":"#f85149",fontWeight:700,marginRight:"6px"}}>
+              {it.verdict==="wrong"?(it.applied?"수정":"수정 못함"):"미확인"}
+            </span>
+            <span style={{color:"#c9d1d9"}}>{it.original}</span>
+            {it.verdict==="wrong"&&it.fixed&&<span style={{display:"block",color:"#3fb950"}}>→ {it.fixed}</span>}
+            {it.note&&<span style={{display:"block",color:"#484f58"}}>{it.note}</span>}
+          </div>
+        ))}
+      </div>}
     </div>}
 
     {/* ── [확인필요:] 항목 웹 조사 ── */}
@@ -1489,7 +1518,7 @@ JSON 형식:
     <div style={{position:"relative"}}>
       {autoLoading&&<div style={{background:"#0d2019",border:"1px solid #2ea04333",borderRadius:"10px",padding:"20px",textAlign:"center",marginBottom:"10px"}}>
         <div style={{color:"#3fb950",fontSize:"16px",fontWeight:700,marginBottom:"8px"}}>✍️ 키워드 기반 글 자동 생성 중...</div>
-        <div style={{color:"#484f58",fontSize:"14px"}}>Sonnet으로 SEO 최적화 글 작성중. 잠시만 기다려주세요.</div>
+        <div style={{color:"#484f58",fontSize:"14px"}}>{autoStep||"Sonnet으로 SEO 최적화 글 작성중. 잠시만 기다려주세요."}</div>
         <div style={{marginTop:"12px",height:"4px",background:"#21262d",borderRadius:"2px",overflow:"hidden"}}>
           <div style={{height:"100%",background:"linear-gradient(90deg,#2ea043,#3fb950)",animation:"slideBar 1.5s ease infinite",borderRadius:"2px"}}/>
         </div>
@@ -7339,8 +7368,18 @@ AEO3. 정보를 설명하는 문단은 자기완결형으로 쓸 것. 앞 문단
       읽었을 때 뜻이 통해야 한다. "이것", "그건", "위에서 말한" 같은 앞뒤 의존 표현 금지.
       ※ 단, 경험을 서술하는 문단에는 이 규칙을 적용하지 않는다. 경험은 흐름이 있어야 읽히므로
         자연스럽게 이어 쓸 것. 다만 그 문단만 읽어도 무슨 상황인지는 알 수 있어야 한다.
-AEO4. "자주 묻는 질문" 블록은 여기서 쓰지 말 것 — 다음 단계에서 따로 붙인다.
-      대신 본문이 그 블록으로 자연스럽게 이어지도록 마무리할 것.
+AEO4. 소제목 3~4개 중 최소 3개 안에는 "질문 한 줄 + 답변 2~3문장" 묶음을 하나씩 넣을 것.
+      글 끝에 "자주 묻는 질문"으로 따로 모으지 말고, 그 소제목의 설명이 진행되다가
+      독자가 막힐 만한 지점에 넣는다. AI 브리핑이 가장 잘 물어가는 형태가 이것이다.
+      - 질문은 독자가 네이버 검색창에 그대로 칠 법한 완성 문장으로, 한 줄을 통째로 차지하게 쓸 것.
+        (O) "유심을 먼저 사도 개통이 되나요?"
+        (X) "많은 분들이 유심을 먼저 사도 되는지 궁금해하시는데요" ← 질문이 문장 속에 녹으면 실패
+      - 답변은 질문 바로 다음 줄부터 시작하고, 첫 문장에서 결론을 말할 것. 2~3문장으로 끝낼 것.
+      - 질문+답변 묶음은 그 부분만 떼어내도 뜻이 통해야 한다. "위에서 말한", "이것" 금지.
+      - 질문 앞에 "Q.", "A.", "자주 묻는 질문" 같은 라벨은 붙이지 말 것. 질문 문장 자체가 라벨이다.
+      - 답변이 끝나면 한 줄 띄우고 원래 설명 흐름으로 돌아갈 것. 답변이 소제목 전체를 대체하면 안 된다.
+      - 3개 질문은 서로 다른 것을 물을 것. 소제목 자체가 이미 질문형이면 그 아래 질문은
+        소제목과 다른 각도여야 한다.
 AEO5. 조건·절차·기준처럼 항목이 나뉘는 내용은 줄바꿈으로 한 줄씩 끊어서 쓸 것.
       한 문단에 여러 조건을 뭉쳐 넣지 말 것.
 AEO6. 사실 원칙 C를 지키되, 인용 가치가 있는 문장 구조는 반드시 유지할 것.
@@ -7486,6 +7525,110 @@ function applyResolvedValues(text, items) {
   }
 
   return { text: out, approxUsed, unresolved, sources };
+}
+
+// ─── 본문 사실 검증 (웹 검색) ───────────────────────────────────────────────
+// 글이 완성된 뒤 단정 문장을 검색으로 대조한다.
+// 틀린 문장은 모델이 돌려준 고친 문장으로 바꾸고(원문이 본문에 정확히 있을 때만),
+// 확인이 안 되는 문장은 손대지 않고 목록으로만 알려준다.
+
+async function verifyDraftFacts({ title, mainKw, text, today }) {
+  const prompt = `아래 블로그 글의 사실 관계를 웹 검색으로 검증해주세요.
+
+글 제목: ${title || ""}
+메인 키워드: ${mainKw || ""}
+오늘 날짜: ${today || new Date().toLocaleDateString("ko-KR")}
+
+본문:
+${String(text || "").slice(0, 3500)}
+
+검증 대상 — 아래에 해당하는 "단정 문장"만 고르세요 (최대 8개):
+- 가격·요금·할인·지원금 액수
+- 출시일·시행일·마감일, "N월부터" 같은 시점
+- 제품 모델명·스펙·기능·옵션
+- 법령·제도·정책·약관의 조건
+- 기업·기관의 정책, 절차, 공식 입장
+- 브랜드에 붙인 기능·혜택 (A사 기능을 B사 것처럼 쓴 경우 포함)
+- 통계·퍼센트·순위
+
+검증 대상 아님 — 절대 고르지 말 것:
+- 작성자의 경험담, 체감, 의견 ("개인적으로", "제 기준에서는", "저는 ~했습니다")
+- 일반 상식 수준의 설명, 절차 안내 중 논쟁 여지가 없는 부분
+- 이미 "달라질 수 있으니 확인하세요"처럼 열어둔 문장
+
+각 문장을 검색해서 하나로 판정:
+- confirmed: 검색으로 사실 확인됨 → source에 URL
+- wrong: 검색 결과와 어긋남 → fixed에 고친 문장. 원문의 문체·길이·어조를 그대로 유지하고 틀린 부분만 바꿀 것.
+         새 수치를 넣을 때는 반드시 출처가 확인된 값만. 확인 안 되면 그 부분을 [확인필요: 항목명]으로 비울 것.
+- unverified: 검색해도 확인·반박 어느 쪽도 안 됨 → 손대지 말고 note에 이유
+
+지켜야 할 것:
+- original에는 본문 문장을 한 글자도 바꾸지 말고 그대로 복사할 것 (줄바꿈 단위 한 문장). 이게 틀리면 수정이 적용되지 않는다.
+- 검색하지 않고 기억으로 판정하지 말 것. 검색이 안 됐으면 unverified.
+- 공식 출처(제조사·통신사·정부·기관 사이트)를 우선할 것.
+- 검색으로 확실히 반박된 경우에만 wrong. 애매하면 unverified.
+
+순수 JSON만 출력:
+{"items":[{"original":"본문 문장 그대로","verdict":"confirmed","source":"https://...","sourceName":"출처명","note":"기준 시점·조건"},{"original":"본문 문장 그대로","verdict":"wrong","fixed":"고친 문장","source":"https://...","sourceName":"출처명","note":"무엇이 틀렸는지 한 줄"},{"original":"본문 문장 그대로","verdict":"unverified","note":"확인 못한 이유"}]}`;
+
+  const raw = await callClaudeSearch(
+    [{ role: "user", content: prompt }],
+    `You fact-check Korean blog drafts with web search before publication.
+
+Search before judging every item. Never mark a sentence wrong or confirmed from memory; if the search does not settle it, mark it unverified.
+Only mark wrong when a search result clearly contradicts the sentence. When rewriting, keep the author's voice and sentence shape, change only the incorrect part, and never introduce a new figure that the search did not confirm — leave it as a [확인필요: ...] placeholder instead.
+Copy original sentences verbatim. Skip personal experience, opinions, and hedged statements. Prefer official primary sources. Output ONLY valid JSON.`,
+    4000, "claude-sonnet-4-5-20250929", 10
+  );
+
+  return (safeParseJson(raw)?.items || [])
+    .filter(x => x && x.original && ["confirmed", "wrong", "unverified"].includes(x.verdict));
+}
+
+function applyVerification(text, items) {
+  let out = String(text || "");
+  const sources = [];
+  let confirmed = 0, corrected = 0, unverified = 0;
+
+  (items || []).forEach(it => {
+    if (it.verdict === "confirmed") {
+      confirmed++;
+      if (it.source) sources.push({ name: it.sourceName || it.source, url: it.source });
+      return;
+    }
+    if (it.verdict === "unverified") { unverified++; return; }
+    // wrong: 원문이 본문에 그대로 있을 때만 교체
+    const orig = String(it.original).trim();
+    const fixed = String(it.fixed || "").trim();
+    if (fixed && orig && out.includes(orig)) {
+      out = out.replace(orig, fixed);
+      it.applied = true;
+      corrected++;
+      if (it.source) sources.push({ name: it.sourceName || it.source, url: it.source });
+    } else {
+      it.applied = false;
+    }
+  });
+
+  return { text: out, summary: { confirmed, corrected, unverified, sources } };
+}
+
+// 본문 안에 녹아 있는 "질문 줄 + 답변" 묶음을 뽑는다 (meta.faq 호환용)
+function extractEmbeddedQA(text) {
+  const lines = String(text || "").split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const q = lines[i].trim();
+    if (!/[?？]$/.test(q) || q.startsWith("▶") || q.length < 8 || q.length > 60) continue;
+    const ans = [];
+    for (let j = i + 1; j < lines.length && ans.length < 3; j++) {
+      const l = lines[j].trim();
+      if (!l || l.startsWith("▶") || /[?？]$/.test(l)) break;
+      ans.push(l);
+    }
+    if (ans.length > 0) out.push({ q, a: ans.join(" ") });
+  }
+  return out.slice(0, 5);
 }
 
 // ─── 생성된 제목 검증 ──────────────────────────────────────────────────────
@@ -7710,7 +7853,8 @@ CITATION READINESS (AEO) — apply this within the limits of factual discipline 
 - Lead with the answer. The opening lines and the first sentence under every subheading must state the conclusion before any background.
 - Write self-contained paragraphs. Each paragraph must make sense when lifted out of the post on its own; avoid pronouns and back-references that depend on earlier paragraphs.
 - Preserve quotable sentence structure. A sentence with a [확인필요:] placeholder is still quotable; a sentence that hedges away its own subject is not.
-- Do not write the closing Q&A block or hashtags in this step; they are generated separately afterward.
+- Embed at least three question-and-answer pairs inside the sections, never as a closing FAQ block. Each question must be a complete, search-query-shaped sentence standing alone on its own line, followed immediately by a 2-3 sentence answer that leads with the conclusion. Do not soften the question into narrative prose, and do not prefix it with "Q." or any label. After the answer, return to the explanation.
+- Do not write hashtags in the body; they belong only in the tags array.
 - Never write engagement bait: no requests for comments, likes, subscriptions, and no sign-off pleasantries. End on the summary.
 
 Output ONLY valid JSON, no markdown.`;
@@ -7718,14 +7862,14 @@ Output ONLY valid JSON, no markdown.`;
       const raw = await callClaudeStream(
         [{ role: "user", content: prompt }],
         sysPrompt,
-        3500, "claude-sonnet-4-5-20250929"
+        4000, "claude-sonnet-4-5-20250929"
       );
       const parsed = safeParseJson(raw);
       const cleanContent = (str="") =>
         str.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/\n{3,}/g, "\n\n");
 
-      // 모델이 규칙을 어기고 해시태그나 FAQ를 본문에 넣는 경우가 있어 먼저 잘라낸다
-      // (코드에서 따로 붙이므로 그대로 두면 중복된다)
+      // 모델이 규칙을 어기고 해시태그나 하단 FAQ 블록을 붙이는 경우가 있어 잘라낸다
+      // (해시태그는 코드에서 따로 붙이고, Q&A는 본문 안에 녹여 쓰는 게 원칙이다)
       const stripAppendix = (t="") => t
         .replace(/\n+▶\s*자주\s*묻는\s*질문[\s\S]*$/g, "")
         .replace(/(?:\n+#[^\n]*)+\s*$/g, "")
@@ -7801,44 +7945,27 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
 
       recordTitleUse(pattern.id, finalTitle);
 
-      // ── 2단계: 자주 묻는 질문 3개 (AEO 인용률이 가장 높은 블록) ──
-      // 본문 생성과 한 번에 처리하면 함수 실행 시간이 한계를 넘어 통째로 날아간다.
-      let faq = [];
+      // ── 2단계: 사실 검증 (웹 검색) ──
+      // 본문에 남은 단정 문장을 검색으로 대조해 틀린 건 고치고, 확인 안 되는 건 표시한다.
+      let verifySummary = null;
+      let verifyItems = [];
       try {
-        const faqPrompt = `아래 블로그 글을 읽고, 독자가 네이버 검색창에 실제로 칠 법한 질문 3개와 답변을 만들어줘.
+        setPendingAnalyzeText("__loading__:사실 검증 중 — 본문 내용을 웹에서 대조하고 있습니다");
+        verifyItems = await verifyDraftFacts({ title: finalTitle, mainKw, text: bodyText, today: todayStr });
+        const applied = applyVerification(bodyText, verifyItems);
+        bodyText = applied.text;
+        verifySummary = applied.summary;
+      } catch(e) { /* 검증 실패해도 본문은 살린다 */ }
 
-제목: ${finalTitle}
-메인 키워드: ${mainKw}
+      // 본문에 녹아 있는 질문 줄을 뽑아 meta.faq로 남긴다 (기존 화면 호환용)
+      const faq = extractEmbeddedQA(bodyText);
 
-본문:
-${bodyText.slice(0, 2500)}
-
-규칙:
-- 질문은 완성된 문장으로 (예: "유심을 먼저 사도 개통되나요?")
-- 답변은 2~3문장. 첫 문장에서 바로 결론을 말할 것
-- 답변만 따로 떼어 읽어도 뜻이 통해야 함 ("위에서 말한", "이것" 같은 표현 금지)
-- 본문에 없는 가격·날짜·수치를 새로 지어내지 말 것. 본문에 [확인필요:]가 있으면 그대로 유지
-- 3개는 서로 다른 것을 물을 것
-
-순수 JSON만: {"faq":[{"q":"질문","a":"답변"},{"q":"질문","a":"답변"},{"q":"질문","a":"답변"}]}`;
-
-        const faqRaw = await callClaude(
-          [{ role: "user", content: faqPrompt }],
-          "You write Korean blog FAQ blocks. Output ONLY valid JSON.",
-          1200, "claude-haiku-4-5-20251001"
-        );
-        faq = (safeParseJson(faqRaw)?.faq || []).filter(x => x && x.q && x.a).slice(0, 3);
-      } catch(e) { /* FAQ 실패해도 본문은 살린다 */ }
-
-      // ── 본문 + FAQ + 해시태그 조립 ──
+      // ── 본문 + 해시태그 조립 ──
       const tags = parsed.tags || [];
-      const faqBlock = faq.length > 0
-        ? "\n\n▶ 자주 묻는 질문\n\n" + faq.map(f => `Q. ${f.q}\nA. ${f.a}`).join("\n\n")
-        : "";
       const tagBlock = tags.length > 0
         ? "\n\n" + tags.map(t => "#" + String(t).replace(/^#/, "")).join(" ")
         : "";
-      const fullContent = (bodyText + faqBlock + tagBlock).replace(/\n{3,}/g, "\n\n");
+      const fullContent = (bodyText + tagBlock).replace(/\n{3,}/g, "\n\n");
 
       const meta = {
         title: finalTitle,
@@ -7850,6 +7977,8 @@ ${bodyText.slice(0, 2500)}
         titleNotice,
         factSummary,
         factItems,
+        verifySummary,
+        verifyItems,
         _source: "keyword",
       };
       setAnalyzePostMeta(meta);
