@@ -1269,7 +1269,12 @@ Output ONLY valid JSON.`,
     setAnalyzing(true); setAiResult(null);
     setWorkingText(text); setReplacements({}); setQualReplacements({});
 
+    const _now=new Date();
+    const todayStr=`${_now.getFullYear()}년 ${_now.getMonth()+1}월 ${_now.getDate()}일`;
     const prompt=`다음 블로그 글을 두 가지 관점에서 분석해줘. 반드시 순수 JSON만 출력해. 마크다운 없이.
+
+[오늘 날짜] ${todayStr}
+※ 네가 학습한 시점이 아니라 위 날짜가 실제 현재다. 글 속 날짜가 오늘 또는 그 이전이면 "미래 날짜"가 아니다. 네 지식에 없는 최신 제품·사건·날짜가 나와도 틀렸다고 단정하지 마라.
 
 === 분석할 글 ===
 ${text.slice(0,4000)}
@@ -1304,6 +1309,7 @@ JSON 형식:
   * 광고/협찬: 협찬·체험단·대가성 표현 → category="광고·협찬" severity="mid"
   * 키워드 도배: 동일 단어 15회 이상 반복 → category="키워드도배" severity="mid"
   * 스팸 패턴: 과도한 상업성·어뷰징 표현 → category="스팸·어뷰징" severity="low"
+- lowQuality.items에는 위 감지 대상만 넣는다. 날짜·수치·사실관계의 진위 검증(예: "사실성 검증 필요", "미래 날짜")은 이 분석의 범위가 아니므로 항목으로 만들지 마라.
 - lowQuality.score: 낮을수록 저품질 위험 적음 (0=완전 안전, 100=매우 위험)
 - 19금 단어나 성인 구문이 하나라도 있으면 score 80 이상, verdict="위험"`;
 
