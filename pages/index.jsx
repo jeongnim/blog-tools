@@ -2957,6 +2957,27 @@ async function exportInsightPdf(d,meta){
   }
 }
 
+// ── AI에게 구조화된 결과를 받기 — tool 강제 호출이라 따옴표/줄바꿈 때문에 JSON이 깨질 일이 없다 ──
+async function callClaudeJson(prompt,fields,maxTokens=3000,model="claude-sonnet-4-5-20250929"){
+  const props={};
+  Object.entries(fields).forEach(([k,t])=>{
+    props[k]=t==="string"?{type:"string"}
+      :t==="string[]"?{type:"array",items:{type:"string"}}
+      :{type:"array",items:{type:"object",properties:{keyword:{type:"string"},reason:{type:"string"}},required:["keyword","reason"]}};
+  });
+  const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({model,max_tokens:maxTokens,messages:[{role:"user",content:prompt}],
+      tools:[{name:"report",description:"분석 결과를 제출한다",input_schema:{type:"object",properties:props,required:Object.keys(fields)}}],
+      tool_choice:{type:"tool",name:"report"}})});
+  const data=await res.json();
+  if(data?.error) throw new Error(data.error?.message||(typeof data.error==="string"?data.error:"AI 오류"));
+  const tu=(data.content||[]).find(c=>c.type==="tool_use");
+  if(tu?.input&&Object.keys(tu.input).length) return tu.input;
+  const raw=(data.content||[]).find(c=>c.type==="text")?.text||"";
+  if(raw) return safeParseJson(raw.replace(/```json|```/g,"").trim());
+  throw new Error(data.stop_reason==="max_tokens"?"AI 응답이 너무 길어 잘렸습니다. 다시 시도해주세요.":"AI 응답이 비어 있습니다.");
+}
+
 // ── 누락 확인 > 실제 유입 비교 (네이버 블로그 통계 "지표 다운로드" 엑셀) ──
 const ifNorm=k=>String(k||"").replace(/\s+/g,"").toLowerCase();
 // 시트(2차원 배열) 1개 → {type:"inflow"|"views", period:"2026.08", ...}
@@ -3046,7 +3067,8 @@ function InflowPanel({inflow,setInflow,rows,insightAi,topN,postDates,blogId,scop
   const [busy,setBusy]=useState("");
   const [err,setErr]=useState("");
   const agg=inflow?.agg||null;
-  const cmp=useMemo(()=>agg&&rows?.length?compareInsightInflow(rows,agg,topN,postDates):null,[agg,rows,topN,postDates]);
+  const cmpReal=useMemo(()=>agg&&rows?.length?compareInsightInflow(rows,agg,topN,postDates):null,[agg,rows,topN,postDates]);
+  const cmp=cmpReal;
   const unit=agg?.hasViews?"회":"%";
   const fmt=n=>n==null?"—":Number(n).toLocaleString();
   const box={background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",padding:"10px 12px"};
@@ -3090,7 +3112,11 @@ function InflowPanel({inflow,setInflow,rows,insightAi,topN,postDates,blogId,scop
   };
 
   const runAi=async()=>{
-    if(!cmp||busy) return;
+    if(!agg||busy) return;
+    // 인사이트를 아직 안 돌렸으면 유입 데이터만으로 분석 (비교 항목은 비워서 보냄)
+    const cmp=cmpReal||{winners:[],hollow:[],push:[],tooNew:0,
+      hidden:agg.keywords.slice(0,40).map(k=>({keyword:k.keyword,score:agg.hasViews?k.est:k.ratio,main:k.main,blog:k.blog,months:k.months.length,variantOf:null}))};
+    const noInsight=!cmpReal;
     setBusy("AI가 실제 유입과 비교 분석 중...");setErr("");
     try{
       // 숨은 키워드 상위 15개는 월 검색량을 붙여서 "검색량 대비 유입"을 보게 한다
@@ -3127,16 +3153,11 @@ ${L(hid,h=>`${h.keyword} | ${h.score} | ${h.monthly??"?"} | ${h.variantOf||"-"}`
 
 [기존 인사이트의 추정] ${insightAi?.sweetSpot||"(없음)"}
 
-기존 인사이트는 "순위"만 보고 추정한 것이고, 위 데이터는 실제 유입이다. 둘의 차이를 짚고 앞으로 어떻게 바꿔야 하는지 분석해라. 데이터에 없는 수치는 지어내지 마라.
-아래 JSON만 출력:
+${noInsight?"※ 순위 기반 인사이트는 아직 실행하지 않아 A·B·C는 비어 있고 D는 실제 유입 상위 키워드 전체다. gap/hollow 항목은 빈 문자열로 두고, 실제 유입 데이터만으로 분석해라.\n":""}기존 인사이트는 "순위"만 보고 추정한 것이고, 위 데이터는 실제 유입이다. 둘의 차이를 짚고 앞으로 어떻게 바꿔야 하는지 분석해라. 데이터에 없는 수치는 지어내지 마라.
+아래 항목을 채워 report 도구로 제출:
 {"gap":"순위 기반 추정과 실제 유입의 가장 큰 차이 2~3문장","realSweetSpot":"실제로 유입을 만드는 키워드의 형태·검색량 구간 1~2문장","hollow":"허수 키워드의 공통점과 그만해야 할 것 1~2문장","hidden":"인사이트가 놓친 유입 키워드에서 보이는 패턴(사람들이 실제로 붙여 검색하는 수식어 등) 1~2문장","channel":"통합검색 vs 블로그탭 비중 변화가 의미하는 것 1문장","actions":["바로 할 일 (구체적 글/키워드 지목)"],"recommend":[{"keyword":"추천 키워드","reason":"실제 유입 근거 1문장"}]}
 actions 5개, recommend 8개.`;
-      const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-5-20250929",max_tokens:1800,messages:[{role:"user",content:prompt}]})});
-      const data=await res.json();
-      if(data?.error) throw new Error(data.error?.message||"AI 오류");
-      const raw=(data.content||[]).find(c=>c.type==="text")?.text||"";
-      const ai=safeParseJson(raw.replace(/```json|```/g,"").trim());
+      const ai=await callClaudeJson(prompt,{gap:"string",realSweetSpot:"string",hollow:"string",hidden:"string",channel:"string",actions:"string[]",recommend:"kw[]"});
       if(!ai) throw new Error("AI 응답을 해석하지 못했습니다. 다시 시도해주세요.");
       const rec=(ai.recommend||[]).filter(x=>x?.keyword).slice(0,10);
       for(let i=0;i<rec.length;i+=5){
@@ -3145,7 +3166,7 @@ actions 5개, recommend 8개.`;
           (d.keywordList||[]).forEach(it=>{const h=ch.find(c=>ifNorm(c.keyword)===ifNorm(it.relKeyword));if(h)h.monthly=qc(it.monthlyPcQcCnt)+qc(it.monthlyMobileQcCnt);});}catch(e){}
       }
       ai.recommend=rec;
-      setInflow(p=>({...p,ai,aiScope:scopeLabel}));
+      setInflow(p=>({...p,ai,aiScope:noInsight?"유입 데이터만":scopeLabel}));
     }catch(ex){setErr(ex?.message||"AI 분석 실패");}
     setBusy("");
   };
@@ -3178,7 +3199,7 @@ actions 5개, recommend 8개.`;
       <div style={{marginLeft:"auto",display:"flex",gap:"6px",flexWrap:"wrap"}}>
         {agg&&<button onClick={()=>{if(confirm("올린 유입 데이터를 지울까요?"))setInflow(null);}} style={btn(false)}>🗑</button>}
         <button onClick={()=>fileRef.current?.click()} disabled={!!busy} style={btn(!!busy)}>{agg?"📂 파일 다시 올리기":"📂 통계 엑셀 올리기"}</button>
-        {cmp&&<button onClick={runAi} disabled={!!busy} style={{...btn(!!busy),background:busy?"#21262d":"#1f6feb",color:busy?"#484f58":"#fff",border:"none"}}>{inflow?.ai?"🔄 AI 다시 분석":"🤖 AI 비교 분석"}</button>}
+        {agg&&<button onClick={runAi} disabled={!!busy} style={{...btn(!!busy),background:busy?"#21262d":"#1f6feb",color:busy?"#484f58":"#fff",border:"none"}}>{inflow?.ai?"🔄 AI 다시 분석":cmp?"🤖 AI 비교 분석":"🤖 AI 유입 분석"}</button>}
       </div>
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.zip" multiple onChange={onFiles} style={{display:"none"}}/>
     </div>
@@ -3190,7 +3211,7 @@ actions 5개, recommend 8개.`;
     </div>}
     {busy&&<div style={{color:"#58a6ff",fontSize:"13px"}}>⏳ {busy}</div>}
     {err&&<div style={{color:"#ff7b72",fontSize:"13px"}}>⚠️ {err}</div>}
-    {agg&&!rows?.length&&<div style={{color:"#ffa657",fontSize:"13px"}}>유입 데이터는 준비됐어요. 위 🧠 키워드 인사이트를 먼저 돌리면 비교 결과가 나옵니다.</div>}
+    {agg&&!rows?.length&&<div style={{color:"#ffa657",fontSize:"13px"}}>유입 데이터는 준비됐어요. 지금도 🤖 AI 유입 분석은 돌릴 수 있고, 위 🧠 키워드 인사이트(⚡ 전체 분석)를 돌리면 순위와 맞댄 4분류 비교 + 비교 분석까지 나옵니다.</div>}
 
     {agg&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:"8px"}}>
       {agg.months.map(m=>(
@@ -3920,17 +3941,12 @@ ${rows.slice().sort(byVol).slice(0,300).map(line).join("\n")}
 
 이 블로그가 실제로 상위에 올린 키워드의 주제·형태(단어 수, 수식어 패턴)·검색량 구간을 근거로, 앞으로 어떤 키워드를 노려야 하는지 분석해라. 데이터에 없는 수치는 지어내지 마라. 추천 키워드의 검색량은 모르면 적지 마라.
 
-아래 JSON만 출력:
+아래 항목을 채워 report 도구로 제출:
 {"diagnosis":"현재 블로그 체급 진단 2~3문장","sweetSpot":"이 블로그가 먹히는 월검색량 구간과 키워드 형태 1~2문장","mainPattern":"통합검색에서 잘 뜨는 키워드의 공통점 1문장","blogPattern":"블로그탭에서 잘 뜨는 키워드의 공통점 1문장","avoid":"피해야 할 키워드 유형 1~2문장","recommend":[{"keyword":"추천 키워드","reason":"근거 1문장"}]}
 recommend는 8개.`;
       let ai=null,aiError="";
       try{
-        const aiRes=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({model:"claude-sonnet-4-5-20250929",max_tokens:1500,messages:[{role:"user",content:prompt}]})});
-        const aiData=await aiRes.json();
-        if(aiData?.error) throw new Error(aiData.error?.message||"AI 오류");
-        const raw=(aiData.content||[]).find(c=>c.type==="text")?.text||"";
-        ai=safeParseJson(raw.replace(/```json|```/g,"").trim());
+        ai=await callClaudeJson(prompt,{diagnosis:"string",sweetSpot:"string",mainPattern:"string",blogPattern:"string",avoid:"string",recommend:"kw[]"},2500);
       }catch(e){aiError=e?.message||"AI 분석 실패";}
 
       // 5) 추천 키워드의 실제 월 검색량을 붙여서 검증
