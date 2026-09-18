@@ -2957,6 +2957,46 @@ async function exportInsightPdf(d,meta){
   }
 }
 
+// ── 블로그 맞춤 프로필 — 누락확인의 인사이트·실제 유입 분석을 글쓰기 프롬프트에 얹는다 ──
+const BP_PREFIX="mt_blog_profile_", BP_ACTIVE="mt_blog_profile_active";
+const bpKey=id=>BP_PREFIX+String(id||"").toLowerCase();
+function bpLoad(id){ try{return JSON.parse(localStorage.getItem(bpKey(id))||"null");}catch(e){return null;} }
+function bpSave(profile){ try{localStorage.setItem(bpKey(profile.blogId),JSON.stringify(profile));return true;}catch(e){return false;} }
+function bpDelete(id){ try{localStorage.removeItem(bpKey(id)); if(bpGetActiveId().toLowerCase()===String(id).toLowerCase()) localStorage.removeItem(BP_ACTIVE);}catch(e){} }
+function bpList(){
+  const out=[];
+  try{ for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(k&&k.startsWith(BP_PREFIX)&&k!==BP_ACTIVE){const p=JSON.parse(localStorage.getItem(k)||"null"); if(p?.blogId) out.push(p);} } }catch(e){}
+  return out.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+}
+function bpGetActiveId(){ try{return localStorage.getItem(BP_ACTIVE)||"";}catch(e){return "";} }
+function bpSetActiveId(id){ try{ if(id) localStorage.setItem(BP_ACTIVE,id); else localStorage.removeItem(BP_ACTIVE);}catch(e){} }
+function bpGetActive(){ const id=bpGetActiveId(); return id?bpLoad(id):null; }
+
+// kind: "keyword"(주제·키워드 추천용) | "write"(본문 작성용)
+function buildProfileBlock(profile,kind){
+  if(!profile) return "";
+  const li=a=>(a||[]).filter(Boolean).map(x=>`- ${x}`).join("\n");
+  const kws=a=>(a||[]).filter(Boolean).slice(0,15).join(", ");
+  const head=`\n[내 블로그 맞춤 기준 — @${profile.blogId} 의 실제 ${profile.hasInflow?"검색 유입·":""}순위 데이터 분석 결과 (${profile.basis||""})]\n${profile.summary||""}\n`;
+  if(kind==="keyword"){
+    return `${head}
+키워드·주제를 고르는 규칙:
+${li(profile.keywordRules)}
+${profile.avoid?.length?`\n피할 것:\n${li(profile.avoid)}\n`:""}${profile.proven?.length?`\n이 블로그에서 실제로 유입·상위노출이 검증된 키워드 (같은 결의 주제를 우선하되 똑같은 건 다시 쓰지 말 것): ${kws(profile.proven)}\n`:""}${profile.modifiers?.length?`\n방문자가 실제 검색할 때 붙여 쓰는 수식어: ${kws(profile.modifiers)}\n`:""}${profile.seedKeywords?.length?`\n분석에서 도출된 공략 후보 키워드 (선택한 카테고리에 맞는 것만 참고): ${kws(profile.seedKeywords.map(x=>x.keyword))}\n`:""}
+※ 위 기준은 "어떤 크기·형태의 키워드를 고를지"에 대한 것이다. 카테고리와 무관한 주제를 억지로 끌어오지 말 것.
+`;
+  }
+  return `${head}
+제목 규칙 (이 블로그에서 실제로 먹힌 형태):
+${li(profile.titleRules)}
+
+본문 규칙:
+${li(profile.writingRules)}
+${profile.modifiers?.length?`\n방문자가 실제 검색할 때 붙여 쓰는 수식어 (주제와 자연스럽게 맞을 때만 소제목·본문에 반영): ${kws(profile.modifiers)}\n`:""}
+※ 이 맞춤 기준은 사실 원칙·주제 원칙보다 아래 순위다. 충돌하면 사실·주제 원칙을 따를 것. 맞춤 기준을 지키려고 없는 사실을 만들지 말 것.
+`;
+}
+
 // ── AI에게 구조화된 결과를 받기 — tool 강제 호출이라 따옴표/줄바꿈 때문에 JSON이 깨질 일이 없다 ──
 async function callClaudeJson(prompt,fields,maxTokens=3000,model="claude-sonnet-4-5-20250929"){
   const props={};
@@ -3062,8 +3102,11 @@ function compareInsightInflow(rows,agg,topN,postDates){
 }
 
 // ── 누락 확인 > 실제 유입 비교 패널 ──
-function InflowPanel({inflow,setInflow,rows,insightAi,topN,postDates,blogId,scopeLabel}){
+function InflowPanel({inflow,setInflow,rows,insightAi,topN,postDates,blogId,scopeLabel,insightSummary}){
   const fileRef=useRef(null);
+  const [profile,setProfile]=useState(null);
+  const [profOpen,setProfOpen]=useState(false);
+  useEffect(()=>{setProfile(blogId?bpLoad(blogId):null);},[blogId]);
   const [busy,setBusy]=useState("");
   const [err,setErr]=useState("");
   const agg=inflow?.agg||null;
@@ -3167,7 +3210,74 @@ actions 5개, recommend 8개.`;
       }
       ai.recommend=rec;
       setInflow(p=>({...p,ai,aiScope:noInsight?"유입 데이터만":scopeLabel}));
+      // 비교 분석이 끝나면 글쓰기 맞춤 프로필까지 자동으로 갱신 (따로 누를 필요 없음). 인사이트가 있어야 만들 수 있다.
+      if(!noInsight&&rows?.length){ await makeProfile(ai,true); return; }
     }catch(ex){setErr(ex?.message||"AI 분석 실패");}
+    setBusy("");
+  };
+
+  // ── 글쓰기 맞춤 프로필 만들기: 인사이트(+실제 유입) → 카테고리·키워드·제목·본문 규칙 ──
+  const makeProfile=async(aiOverride,force)=>{
+    if((busy&&!force)||!rows?.length) return;
+    const inflowAi=aiOverride||inflow?.ai||null;
+    setBusy("글쓰기 맞춤 프로필 만드는 중...");setErr("");
+    try{
+      const cats=NAVER_AUTO_CATEGORIES.flatMap(g=>g.items.map(i=>i.value));
+      const best=r=>Math.min(r.mainRank??999,r.blogRank??999);
+      const topRows=rows.filter(r=>best(r)<=topN).sort((a,b)=>(b.monthly||0)-(a.monthly||0));
+      // 실검색 수식어: 유입 키워드에서 자주 붙는 단어
+      const modCount={};
+      (agg?.keywords||[]).slice(0,200).forEach(k=>String(k.keyword).split(/\s+/).slice(1).forEach(t=>{if(t.length>=2)modCount[t]=(modCount[t]||0)+1;}));
+      const modifiers=Object.keys(modCount).filter(k=>modCount[k]>=3).sort((a,b)=>modCount[b]-modCount[a]).slice(0,15);
+      const proven=cmp?[...cmp.winners.map(r=>r.keyword),...cmp.hidden.slice(0,12).map(h=>h.keyword)]:topRows.slice(0,15).map(r=>r.keyword);
+      const L=(arr,f)=>arr.length?arr.map(f).join("\n"):"(없음)";
+      const prompt=`네이버 블로그 @${blogId}의 분석 데이터다. 이 블로그 전용 "글쓰기 맞춤 기준"을 만들어라. 이 기준은 앞으로 AI가 이 블로그의 글 주제·키워드를 추천하고 본문을 쓸 때 프롬프트에 그대로 추가된다.
+
+[분석 범위] ${scopeLabel} / 상위 = ${topN}위 이내${agg?` / 실제 유입 데이터: ${agg.months.map(m=>m.period).join(", ")}`:" / 실제 유입 데이터 없음(순위 기반 추정만 있음)"}
+${insightSummary?`[순위 집계] 상위노출 키워드 ${insightSummary.topCount}/${insightSummary.kwCount}개 · 상위 키워드 월검색량 중앙값 ${insightSummary.medTop??"?"} · 상위 못 든 키워드 중앙값 ${insightSummary.medNotTop??"?"}`:""}
+
+[상위노출 키워드] (키워드 | 최고순위 | 월검색량)
+${L(topRows.slice(0,30),r=>`${r.keyword} | ${best(r)}위 | ${r.monthly??"?"}`)}
+
+[순위 기반 AI 인사이트]
+- 먹히는 구간: ${insightAi?.sweetSpot||"-"}
+- 통합검색 패턴: ${insightAi?.mainPattern||"-"}
+- 블로그탭 패턴: ${insightAi?.blogPattern||"-"}
+- 피할 것: ${insightAi?.avoid||"-"}
+${agg?`
+[실제 유입 상위 키워드 25] (키워드 | ${agg.hasViews?"추정 유입수":"유입%"})
+${L(agg.keywords.slice(0,25),k=>`${k.keyword} | ${agg.hasViews?k.est:k.ratio}`)}
+
+[조회수 상위 글] ${L(agg.topPosts.slice(0,10),p=>`${p.title} (${p.views})`)}
+[월별 채널] ${agg.months.map(m=>`${m.period}: 통합 ${m.mainRatio}% · 블로그탭 ${m.blogRatio}%`).join(" / ")}
+${cmp?`[상위인데 유입 0인 허수 키워드] ${cmp.hollow.slice(0,15).map(r=>r.keyword).join(", ")||"(없음)"}
+[순위 11~30위인데 유입 있는 키워드] ${cmp.push.slice(0,10).map(r=>r.keyword).join(", ")||"(없음)"}`:""}
+${inflowAi?`[실제 유입 비교 AI 분석]
+- 추정 vs 실제: ${inflowAi.gap||"-"}
+- 실제 먹히는 구간: ${inflowAi.realSweetSpot||"-"}
+- 허수: ${inflowAi.hollow||"-"}
+- 놓친 패턴: ${inflowAi.hidden||"-"}`:""}`:""}
+[실검색 수식어 빈도 상위] ${modifiers.join(", ")||"(없음)"}
+
+작성 지침:
+- 실제 유입 데이터가 있으면 순위 기반 추정보다 실제 유입을 우선 근거로 삼아라.
+- 규칙은 다른 AI가 읽고 바로 따를 수 있게 구체적인 명령문으로 써라. "좋은 키워드를 고를 것" 같은 일반론 금지. 검색량 구간, 단어 수, 붙일 수식어 유형, 주제 영역을 데이터에서 읽히는 대로 명시해라.
+- 데이터에 없는 수치는 지어내지 마라.
+- categories는 반드시 다음 목록의 값 그대로 3개: ${cats.join(", ")}
+  (keyword 필드에 카테고리 값, reason에 이 블로그 데이터에서의 근거)
+- seedKeywords는 다음에 쓸 만한 공략 키워드 10개 (keyword, reason).
+
+항목: summary(이 블로그의 체급과 강점 2문장), categories, keywordRules(4~6개), titleRules(3~5개), writingRules(3~5개), avoid(3~5개), seedKeywords`;
+      const ai=await callClaudeJson(prompt,{summary:"string",categories:"kw[]",keywordRules:"string[]",titleRules:"string[]",writingRules:"string[]",avoid:"string[]",seedKeywords:"kw[]"},3500);
+      if(!ai?.keywordRules?.length) throw new Error("프로필 생성 결과가 비어 있습니다. 다시 시도해주세요.");
+      const p={blogId,createdAt:Date.now(),hasInflow:!!agg,basis:`${scopeLabel}${agg?` + 유입 ${agg.months.map(m=>m.period).join("·")}`:""}`,
+        summary:ai.summary||"",categories:(ai.categories||[]).filter(c=>cats.includes(c.keyword)).slice(0,3),
+        keywordRules:ai.keywordRules||[],titleRules:ai.titleRules||[],writingRules:ai.writingRules||[],avoid:ai.avoid||[],
+        seedKeywords:(ai.seedKeywords||[]).slice(0,10),proven:[...new Set(proven)].slice(0,20),modifiers};
+      if(!bpSave(p)) throw new Error("브라우저 저장소에 저장하지 못했습니다.");
+      bpSetActiveId(blogId);
+      setProfile(p);setProfOpen(true);
+    }catch(ex){setErr(ex?.message||"프로필 생성 실패");}
     setBusy("");
   };
 
@@ -3251,6 +3361,31 @@ actions 5개, recommend 8개.`;
         ))}
       </div>}
     </div>}
+
+    {/* ── 글쓰기 맞춤 프로필 ── */}
+    <div style={{...box,borderColor:profile?"#2ea04366":"#21262d",display:"flex",flexDirection:"column",gap:"8px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+        <span style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>✍️ 글쓰기 맞춤 프로필</span>
+        <span style={{color:"#484f58",fontSize:"12px"}}>
+          {profile?`${bhAgo(profile.createdAt)} 생성 · ${profile.basis}`:"🤖 AI 비교 분석을 돌리면 자동으로 만들어져서 글쓰기 탭에 바로 적용됩니다"}
+        </span>
+        <div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
+          {profile&&<button onClick={()=>setProfOpen(o=>!o)} style={btn(false)}>{profOpen?"접기":"내용 보기"}</button>}
+          <button onClick={()=>makeProfile()} disabled={!!busy||!rows?.length} style={btn(!!busy||!rows?.length)}>{profile?"🔄 다시 만들기":"✨ 프로필 만들기"}</button>
+        </div>
+      </div>
+      {!rows?.length&&<div style={{color:"#484f58",fontSize:"12px"}}>먼저 위 🧠 키워드 인사이트를 돌려주세요. 실제 유입 파일까지 올린 뒤에 만들면 더 정확해요.</div>}
+      {rows?.length>0&&!agg&&!profile&&<div style={{color:"#ffa657",fontSize:"12px"}}>유입 파일 없이도 만들 수 있지만, 순위 기반 추정만 반영됩니다.</div>}
+      {profile&&profOpen&&<div style={{display:"flex",flexDirection:"column",gap:"8px",fontSize:"13px",color:"#8b949e",lineHeight:1.7}}>
+        <div style={{color:"#c9d1d9"}}>{profile.summary}</div>
+        {profile.categories?.length>0&&<div><b style={{color:"#58a6ff"}}>추천 카테고리</b> {profile.categories.map(c=><span key={c.keyword} title={c.reason} style={{display:"inline-block",margin:"0 4px 4px 0",padding:"2px 8px",border:"1px solid #1f6feb66",borderRadius:"10px",color:"#c9d1d9"}}>{c.keyword}</span>)}</div>}
+        {[["키워드 규칙",profile.keywordRules],["제목 규칙",profile.titleRules],["본문 규칙",profile.writingRules],["피할 것",profile.avoid]].map(([l,arr])=>arr?.length>0&&(
+          <div key={l}><b style={{color:"#58a6ff"}}>{l}</b>{arr.map((x,i)=><div key={i} style={{paddingLeft:"10px"}}>· {x}</div>)}</div>
+        ))}
+        {profile.seedKeywords?.length>0&&<div><b style={{color:"#58a6ff"}}>공략 후보</b> {profile.seedKeywords.map(x=>x.keyword).join(", ")}</div>}
+        <div style={{color:"#484f58",fontSize:"12px"}}>글쓰기 › 자동 글쓰기 탭 상단에서 이 프로필을 켜고 끌 수 있어요. 지금은 <b style={{color:"#3fb950"}}>{bpGetActiveId()===blogId?"적용 중":"꺼짐"}</b>.</div>
+      </div>}
+    </div>
   </div>;
 }
 
@@ -4171,7 +4306,7 @@ recommend는 8개.`;
         totalCount={isAll?cumDone:posts.current.length} busy={analyzing!==-1}
         onRun={()=>isAll?runInsight(cumulativeList(),"all"):runInsight(posts.current,page)}/>
       <InflowPanel inflow={inflow} setInflow={setInflow} rows={insights[isAll?"all":page]?.rows||null}
-        insightAi={insights[isAll?"all":page]?.ai||null} topN={TOP_N} postDates={postDates} blogId={posts.blogId} scopeLabel={scopeLabel}/>
+        insightAi={insights[isAll?"all":page]?.ai||null} insightSummary={insights[isAll?"all":page]?.summary||null} topN={TOP_N} postDates={postDates} blogId={posts.blogId} scopeLabel={scopeLabel}/>
       </>;
     })()}
 
@@ -5829,6 +5964,11 @@ const NAVER_AUTO_CATEGORIES=[
 
 function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   const [selCat,setSelCat]=useState("");
+  const [profiles,setProfiles]=useState([]);
+  const [activeProfId,setActiveProfId]=useState("");
+  useEffect(()=>{setProfiles(bpList());setActiveProfId(bpGetActiveId());},[]);
+  const activeProf=profiles.find(p=>p.blogId===activeProfId)||null;
+  const pickProfile=(id)=>{setActiveProfId(id);bpSetActiveId(id);};
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
   const [err,setErr]=useState("");
@@ -5868,7 +6008,7 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
 
       const prompt=`카테고리: "${selCat}"
 ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각각의 메인 키워드를 추천해줘.${trendingBlock}${googleBlock}
-
+${buildProfileBlock(activeProf,"keyword")}
 선정 기준:
 1. 실제 블로거가 쓸 법한 완성된 제목 형태 (경험·후기·정보·비교 등 독자가 클릭하고 싶은 구체적 제목)
 2. ${yearMonth} 최신 트렌드와 시의성 반영${trendingTitles.length > 0 ? " (위 실시간 인기글 소재를 참고해 유사하거나 파생된 주제 우선)" : ""}
@@ -5979,6 +6119,32 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+    <div style={{background:"#161b22",border:`1px solid ${activeProf?"#2ea04366":"#30363d"}`,borderRadius:"12px",padding:"16px 20px",display:"flex",flexDirection:"column",gap:"10px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+        <div style={{color:"#e6edf3",fontSize:"15px",fontWeight:700}}>✍️ 블로그 맞춤 프로필</div>
+        <select value={activeProfId} onChange={e=>pickProfile(e.target.value)}
+          style={{padding:"7px 12px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",fontSize:"14px",outline:"none",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"}}>
+          <option value="">사용 안 함 (기본 프롬프트)</option>
+          {profiles.map(p=><option key={p.blogId} value={p.blogId}>@{p.blogId}{p.hasInflow?" · 유입 반영":" · 순위만"}</option>)}
+        </select>
+        {activeProf&&<span style={{color:"#3fb950",fontSize:"13px"}}>● 키워드 추천 + 본문 작성에 적용 중</span>}
+      </div>
+      {profiles.length===0&&<div style={{color:"#484f58",fontSize:"13px",lineHeight:1.7}}>아직 만든 프로필이 없어요. 누락 확인 탭에서 블로그 분석 → 🧠 인사이트 → (📥 유입 파일) → <b style={{color:"#8b949e"}}>✨ 프로필 만들기</b>를 누르면 여기에 나타납니다.</div>}
+      {activeProf&&<>
+        <div style={{color:"#8b949e",fontSize:"13px",lineHeight:1.7}}>{activeProf.summary}</div>
+        {activeProf.categories?.length>0&&<div style={{display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap"}}>
+          <span style={{color:"#8b949e",fontSize:"13px"}}>추천 카테고리</span>
+          {activeProf.categories.map(c=>(
+            <button key={c.keyword} title={c.reason} onClick={()=>{setSelCat(c.keyword);setKeywords([]);setErr("");setStats({});setDetail({});}}
+              style={{padding:"5px 12px",borderRadius:"14px",cursor:"pointer",fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",
+                border:`1px solid ${selCat===c.keyword?"#1f6feb":"#30363d"}`,background:selCat===c.keyword?"#1f6feb":"#0d1117",color:selCat===c.keyword?"#fff":"#c9d1d9"}}>{c.keyword}</button>
+          ))}
+        </div>}
+        {activeProf.categories?.find(c=>c.keyword===selCat)&&<div style={{color:"#484f58",fontSize:"12px"}}>↳ {activeProf.categories.find(c=>c.keyword===selCat).reason}</div>}
+        <div style={{color:"#484f58",fontSize:"12px"}}>{bhAgo(activeProf.createdAt)} 생성 · {activeProf.basis} · 다른 카테고리를 골라도 키워드 크기·형태 기준은 그대로 적용됩니다</div>
+      </>}
+    </div>
+
     <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"12px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 1</div>
       <div style={{color:"#e6edf3",fontSize:"16px",fontWeight:700,marginBottom:"12px"}}>카테고리 선택</div>
@@ -8149,7 +8315,7 @@ async function fetchCommercialWords(mainKw) {
 // 누락확인 탭에서 조회한 적 있는 블로그 ID가 있으면 실제 글 제목을 쓰고,
 // 없으면 이 도구로 생성했던 제목들로 대체한다.
 async function fetchAvoidWords() {
-  const bid = lsGet(LS_BLOGID, "");
+  const bid = bpGetActiveId() || lsGet(LS_BLOGID, "");   // 맞춤 프로필이 켜져 있으면 그 블로그 기준
   if (bid) {
     try {
       const r = await fetch(`/api/blog-posts?blogId=${encodeURIComponent(bid)}&page=1&size=30`);
@@ -8260,7 +8426,7 @@ function isCommercialStat(item) {
 // ─── 글쓰기 프롬프트 빌더 ──────────────────────────────────────────────────
 function buildWritePrompt({
   kw, yearMonth, today, category, smartBlockType, blogStrategy, bodies, mainKeyword,
-  topTitles, commercialWords, avoidWords, pattern, factSheetBlock = "",
+  topTitles, commercialWords, avoidWords, pattern, factSheetBlock = "", profileBlock = "",
 }) {
   const mainKw = mainKeyword || kw;
   const ctx = category
@@ -8288,7 +8454,7 @@ function buildWritePrompt({
     : "";
 
   return `오늘 날짜: ${today || yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
-${factSheetBlock}${refBlock}${titleBlock}${commercialBlock}${avoidBlock}
+${factSheetBlock}${refBlock}${titleBlock}${commercialBlock}${avoidBlock}${profileBlock}
 네이버 블로그 홈판 노출 + AI 브리핑(AEO) 인용 최적화 글을 작성해줘:
 
 [주제 원칙 — 글의 범위를 정하는 기준. 사실 원칙 다음으로 우선한다]
@@ -8880,6 +9046,7 @@ export default function BlogTools(){
         bodies, mainKeyword: mainKw,
         topTitles, commercialWords: banWords, avoidWords, pattern,
         factSheetBlock: formatFactSheetBlock(factSheet),
+        profileBlock: buildProfileBlock(bpGetActive(), "write"),
       });
 
       const sysPrompt = `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation (AEO).
