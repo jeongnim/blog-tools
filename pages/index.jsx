@@ -2957,6 +2957,265 @@ async function exportInsightPdf(d,meta){
   }
 }
 
+// ── 누락 확인 > 실제 유입 비교 (네이버 블로그 통계 "지표 다운로드" 엑셀) ──
+const ifNorm=k=>String(k||"").replace(/\s+/g,"").toLowerCase();
+// 시트(2차원 배열) 1개 → {type:"inflow"|"views", period:"2026.08", ...}
+function parseNaverStatSheet(rows){
+  const meta={};
+  rows.slice(0,8).forEach(r=>{if(r&&r[0])meta[String(r[0]).trim()]=String(r[1]??"").trim();});
+  const name=meta["데이터명"]||"";
+  const pm=(meta["데이터 기간"]||"").match(/(\d{4})\.(\d{2})\.(\d{2})/);
+  const period=pm?`${pm[1]}.${pm[2]}`:"";
+  const periodStart=pm?new Date(+pm[1],+pm[2]-1,+pm[3]).getTime():0;
+  const unit=meta["데이터 단위"]||"";
+  const hi=rows.findIndex(r=>r&&(r[0]==="유입경로"||r[0]==="순위"));
+  if(hi<0) return null;
+  const body=rows.slice(hi+1);
+  if(name.includes("유입분석")){
+    let ch="",chRatio=0; const channels=[],kws=[];
+    body.forEach(r=>{
+      if(!r) return;
+      if(r[0]&&String(r[0]).trim()!==ch){ch=String(r[0]).trim();chRatio=parseFloat(r[1])||0;channels.push({name:ch,ratio:chRatio});}
+      const d=String(r[2]??"").trim(); const ratio=parseFloat(r[3])||0;
+      if(!d||/^https?:\/\//i.test(d)||d==="기타"||!ratio) return;
+      const type=ch.includes("통합검색")?"main":ch.includes("블로그검색")?"blog":/검색|bing|google|daum|zum/i.test(ch)?"etc":null;
+      if(!type) return;
+      kws.push({keyword:d,ratio,type,channel:ch});
+    });
+    return {type:"inflow",period,periodStart,unit,channels,kws};
+  }
+  if(name.includes("조회수 순위")){
+    const posts=body.filter(r=>r&&r[1]&&r[2]!==""&&r[2]!=null).map(r=>({title:String(r[1]).trim(),views:parseInt(String(r[2]).replace(/,/g,""))||0,date:String(r[3]||"").slice(0,10)}));
+    return {type:"views",period,periodStart,unit,posts,totalViews:posts.reduce((a,b)=>a+b.views,0)};
+  }
+  return null;
+}
+// 여러 달 파일 합치기 → 키워드별 추정 유입수
+function aggregateInflow(parsed){
+  const inflows=parsed.filter(x=>x?.type==="inflow").sort((a,b)=>a.periodStart-b.periodStart);
+  const views=parsed.filter(x=>x?.type==="views");
+  const viewsBy={};views.forEach(v=>{viewsBy[v.period]=v;});
+  const map={};
+  const months=inflows.map(f=>{
+    const tv=viewsBy[f.period]?.totalViews||0;
+    const sum=t=>f.channels.filter(c=>t(c.name)).reduce((a,b)=>a+b.ratio,0);
+    f.kws.forEach(k=>{
+      const key=ifNorm(k.keyword);
+      const m=map[key]||(map[key]={keyword:k.keyword,ratio:0,est:0,main:0,blog:0,months:new Set()});
+      m.ratio+=k.ratio; m.est+=tv?k.ratio/100*tv:0; m[k.type==="blog"?"blog":"main"]+=k.ratio; m.months.add(f.period);
+    });
+    return {period:f.period,totalViews:tv,mainRatio:+sum(n=>n.includes("통합검색")).toFixed(1),blogRatio:+sum(n=>n.includes("블로그검색")).toFixed(1)};
+  });
+  const hasViews=months.some(m=>m.totalViews>0);
+  const keywords=Object.values(map).map(m=>({...m,est:Math.round(m.est*10)/10,ratio:+m.ratio.toFixed(2),main:+m.main.toFixed(2),blog:+m.blog.toFixed(2),months:[...m.months]}))
+    .sort((a,b)=>hasViews?(b.est-a.est):(b.ratio-a.ratio));
+  const topPosts={};views.forEach(v=>v.posts.forEach(p=>{const t=topPosts[p.title]||(topPosts[p.title]={title:p.title,views:0,date:p.date});t.views+=p.views;}));
+  const last=inflows[inflows.length-1];
+  const periodEnd=last?new Date(new Date(last.periodStart).getFullYear(),new Date(last.periodStart).getMonth()+1,0,23,59).getTime():0;
+  return {months,keywords,hasViews,periodEnd,topPosts:Object.values(topPosts).sort((a,b)=>b.views-a.views).slice(0,15)};
+}
+// 인사이트(순위 키워드) vs 실제 유입 비교
+function compareInsightInflow(rows,agg,topN,postDates){
+  const score=k=>agg.hasViews?k.est:k.ratio;
+  const inflow=agg.keywords.map(k=>({...k,n:ifNorm(k.keyword)}));
+  const best=r=>Math.min(r.mainRank??999,r.blogRank??999);
+  const parseD=t=>{const m=String(t||"").match(/(\d{4})\.(\d{1,2})\.(\d{1,2})/);return m?new Date(+m[1],+m[2]-1,+m[3]).getTime():(t?Date.now():0);};
+  const out=(rows||[]).map(r=>{
+    const n=ifNorm(r.keyword);
+    const hits=n.length>=2?inflow.filter(k=>k.n===n||(n.length>=4&&k.n.includes(n))):[];
+    const dates=(r.posts||[]).map(t=>parseD(postDates?.[t])).filter(Boolean);
+    const afterPeriod=dates.length>0&&Math.min(...dates)>agg.periodEnd;
+    return {...r,best:best(r),inflow:+hits.reduce((a,b)=>a+score(b),0).toFixed(1),variants:hits.filter(h=>h.n!==n).slice(0,3).map(h=>h.keyword),afterPeriod};
+  });
+  const rowNorms=new Set(out.map(r=>ifNorm(r.keyword)));
+  const bySc=(a,b)=>b.inflow-a.inflow;
+  return {
+    winners:out.filter(r=>r.best<=topN&&r.inflow>0).sort(bySc),                         // 상위 + 실제 유입 O
+    hollow:out.filter(r=>r.best<=topN&&r.inflow===0&&!r.afterPeriod).sort((a,b)=>(b.monthly||0)-(a.monthly||0)), // 상위인데 유입 0
+    push:out.filter(r=>r.best>topN&&r.best<=30&&r.inflow>0).sort(bySc),                 // 순위 낮은데 유입 O → 보강
+    tooNew:out.filter(r=>r.best<=topN&&r.inflow===0&&r.afterPeriod).length,
+    hidden:inflow.filter(k=>!rowNorms.has(k.n)).slice(0,40)                             // 인사이트에 없던 실제 유입 키워드
+      .map(k=>({keyword:k.keyword,score:+score(k).toFixed(1),main:k.main,blog:k.blog,months:k.months.length,
+        variantOf:out.find(r=>ifNorm(r.keyword).length>=4&&k.n.includes(ifNorm(r.keyword)))?.keyword||null})),
+  };
+}
+
+// ── 누락 확인 > 실제 유입 비교 패널 ──
+function InflowPanel({inflow,setInflow,rows,insightAi,topN,postDates,blogId,scopeLabel}){
+  const fileRef=useRef(null);
+  const [busy,setBusy]=useState("");
+  const [err,setErr]=useState("");
+  const agg=inflow?.agg||null;
+  const cmp=useMemo(()=>agg&&rows?.length?compareInsightInflow(rows,agg,topN,postDates):null,[agg,rows,topN,postDates]);
+  const unit=agg?.hasViews?"회":"%";
+  const fmt=n=>n==null?"—":Number(n).toLocaleString();
+  const box={background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",padding:"10px 12px"};
+  const btn=(dis)=>({padding:"6px 12px",background:"#21262d",color:dis?"#484f58":"#58a6ff",border:"1px solid #30363d",borderRadius:"6px",
+    cursor:dis?"not-allowed":"pointer",fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"});
+
+  const onFiles=async(e)=>{
+    const files=[...(e.target.files||[])]; e.target.value="";
+    if(!files.length) return;
+    setBusy("파일 읽는 중...");setErr("");
+    try{
+      const XLSX=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js","XLSX");
+      const parsed=[];
+      for(const f of files){
+        const wb=XLSX.read(await f.arrayBuffer());
+        const p=parseNaverStatSheet(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""}));
+        if(p) parsed.push(p);
+      }
+      if(!parsed.some(x=>x.type==="inflow")) throw new Error("유입분석 파일을 찾지 못했어요. 지표 다운로드에서 '유입분석'을 받아 올려주세요.");
+      const a=aggregateInflow(parsed);
+      setInflow({agg:{...a,keywords:a.keywords.slice(0,400)},fileCount:parsed.length,uploadedAt:Date.now(),ai:null});
+    }catch(ex){setErr(ex?.message||"파일을 읽지 못했습니다.");}
+    setBusy("");
+  };
+
+  const runAi=async()=>{
+    if(!cmp||busy) return;
+    setBusy("AI가 실제 유입과 비교 분석 중...");setErr("");
+    try{
+      // 숨은 키워드 상위 15개는 월 검색량을 붙여서 "검색량 대비 유입"을 보게 한다
+      const hid=cmp.hidden.slice(0,15).map(h=>({...h}));
+      const qc=v=>{const t=String(v??"");if(t.includes("<"))return 5;return Number(t.replace(/,/g,""))||0;};
+      for(let i=0;i<hid.length;i+=5){
+        const ch=hid.slice(i,i+5);
+        try{const r=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(ch.map(c=>c.keyword).join(","))}`);const d=await r.json();
+          (d.keywordList||[]).forEach(it=>{const h=ch.find(c=>ifNorm(c.keyword)===ifNorm(it.relKeyword));if(h)h.monthly=qc(it.monthlyPcQcCnt)+qc(it.monthlyMobileQcCnt);});}catch(e){}
+      }
+      const L=(arr,f)=>arr.length?arr.map(f).join("\n"):"(없음)";
+      const prompt=`네이버 블로그 @${blogId}의 "순위 기반 키워드 인사이트"와 "네이버 통계의 실제 검색 유입"을 비교한 데이터다.
+유입 단위: ${agg.hasViews?"추정 유입 횟수(유입비율×월 조회수 합)":"유입 비율(%)"} / 기간: ${agg.months.map(m=>m.period).join(", ")} / 인사이트 범위: ${scopeLabel}
+
+[월별 채널 비중] ${agg.months.map(m=>`${m.period}: 조회수 ${m.totalViews||"?"} · 통합검색 ${m.mainRatio}% · 블로그탭 ${m.blogRatio}%`).join(" / ")}
+
+[실제 유입 상위 키워드 30] (키워드 | 유입 | 통합% | 블로그탭% | 유입된 개월수)
+${L(agg.keywords.slice(0,30),k=>`${k.keyword} | ${agg.hasViews?k.est:k.ratio} | ${k.main} | ${k.blog} | ${k.months.length}`)}
+
+[A. 상위노출 + 실제 유입 있음] (키워드 | 최고순위 | 월검색량 | 유입 | 실제 검색된 변형어)
+${L(cmp.winners.slice(0,20),r=>`${r.keyword} | ${r.best}위 | ${r.monthly??"?"} | ${r.inflow} | ${r.variants.join(", ")||"-"}`)}
+
+[B. 상위노출인데 유입 0 = 허수] (키워드 | 최고순위 | 월검색량)
+${L(cmp.hollow.slice(0,25),r=>`${r.keyword} | ${r.best}위 | ${r.monthly??"?"}`)}
+(기간 이후 발행이라 판단 보류한 키워드 ${cmp.tooNew}개는 제외함)
+
+[C. 순위 11~30위인데 유입 있음 = 보강 후보]
+${L(cmp.push.slice(0,15),r=>`${r.keyword} | ${r.best}위 | 유입 ${r.inflow}`)}
+
+[D. 인사이트에 없던 실제 유입 키워드] (키워드 | 유입 | 월검색량 | 어떤 분석 키워드의 변형인지)
+${L(hid,h=>`${h.keyword} | ${h.score} | ${h.monthly??"?"} | ${h.variantOf||"-"}`)}
+
+[조회수 상위 글] ${L(agg.topPosts.slice(0,10),p=>`${p.title} (${p.views})`)}
+
+[기존 인사이트의 추정] ${insightAi?.sweetSpot||"(없음)"}
+
+기존 인사이트는 "순위"만 보고 추정한 것이고, 위 데이터는 실제 유입이다. 둘의 차이를 짚고 앞으로 어떻게 바꿔야 하는지 분석해라. 데이터에 없는 수치는 지어내지 마라.
+아래 JSON만 출력:
+{"gap":"순위 기반 추정과 실제 유입의 가장 큰 차이 2~3문장","realSweetSpot":"실제로 유입을 만드는 키워드의 형태·검색량 구간 1~2문장","hollow":"허수 키워드의 공통점과 그만해야 할 것 1~2문장","hidden":"인사이트가 놓친 유입 키워드에서 보이는 패턴(사람들이 실제로 붙여 검색하는 수식어 등) 1~2문장","channel":"통합검색 vs 블로그탭 비중 변화가 의미하는 것 1문장","actions":["바로 할 일 (구체적 글/키워드 지목)"],"recommend":[{"keyword":"추천 키워드","reason":"실제 유입 근거 1문장"}]}
+actions 5개, recommend 8개.`;
+      const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({model:"claude-sonnet-4-5-20250929",max_tokens:1800,messages:[{role:"user",content:prompt}]})});
+      const data=await res.json();
+      if(data?.error) throw new Error(data.error?.message||"AI 오류");
+      const raw=(data.content||[]).find(c=>c.type==="text")?.text||"";
+      const ai=safeParseJson(raw.replace(/```json|```/g,"").trim());
+      if(!ai) throw new Error("AI 응답을 해석하지 못했습니다. 다시 시도해주세요.");
+      const rec=(ai.recommend||[]).filter(x=>x?.keyword).slice(0,10);
+      for(let i=0;i<rec.length;i+=5){
+        const ch=rec.slice(i,i+5);
+        try{const r=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(ch.map(c=>c.keyword).join(","))}`);const d=await r.json();
+          (d.keywordList||[]).forEach(it=>{const h=ch.find(c=>ifNorm(c.keyword)===ifNorm(it.relKeyword));if(h)h.monthly=qc(it.monthlyPcQcCnt)+qc(it.monthlyMobileQcCnt);});}catch(e){}
+      }
+      ai.recommend=rec;
+      setInflow(p=>({...p,ai,aiScope:scopeLabel}));
+    }catch(ex){setErr(ex?.message||"AI 분석 실패");}
+    setBusy("");
+  };
+
+  const list=(title,color,arr,render,empty,note)=>(
+    <div style={box}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:"8px",marginBottom:"4px"}}>
+        <span style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>{title} <span style={{color}}>{arr.length}</span></span>
+        {note&&<span style={{color:"#484f58",fontSize:"12px"}}>{note}</span>}
+      </div>
+      {arr.length?arr.slice(0,10).map(render):<div style={{color:"#484f58",fontSize:"13px",padding:"6px 0"}}>{empty}</div>}
+      {arr.length>10&&<div style={{color:"#484f58",fontSize:"12px",paddingTop:"4px"}}>외 {arr.length-10}개</div>}
+    </div>
+  );
+  const row=(k,left,leftColor,name,right,sub)=>(
+    <div key={k} style={{display:"flex",alignItems:"baseline",gap:"8px",padding:"5px 0",borderBottom:"1px solid #161b22",fontSize:"13px"}}>
+      <span style={{color:leftColor,fontWeight:800,minWidth:"44px",whiteSpace:"nowrap"}}>{left}</span>
+      <span style={{flex:1,minWidth:0}}>
+        <a href={`https://search.naver.com/search.naver?query=${encodeURIComponent(name)}`} target="_blank" rel="noreferrer" style={{color:"#c9d1d9",textDecoration:"none"}}>{name}</a>
+        {sub&&<span style={{color:"#484f58",fontSize:"12px",marginLeft:"6px"}}>{sub}</span>}
+      </span>
+      <span style={{color:"#8b949e",whiteSpace:"nowrap"}}>{right}</span>
+    </div>
+  );
+
+  return <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px 18px",display:"flex",flexDirection:"column",gap:"12px"}}>
+    <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+      <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:700}}>📥 실제 유입 비교</div>
+      {agg&&<span style={{color:"#484f58",fontSize:"13px"}}>{agg.months.map(m=>m.period).join(" · ")} · 유입 키워드 {agg.keywords.length}개{!agg.hasViews&&" · 조회수 순위 파일 없음(비율로 표시)"}</span>}
+      <div style={{marginLeft:"auto",display:"flex",gap:"6px",flexWrap:"wrap"}}>
+        {agg&&<button onClick={()=>{if(confirm("올린 유입 데이터를 지울까요?"))setInflow(null);}} style={btn(false)}>🗑</button>}
+        <button onClick={()=>fileRef.current?.click()} disabled={!!busy} style={btn(!!busy)}>{agg?"📂 파일 다시 올리기":"📂 통계 엑셀 올리기"}</button>
+        {cmp&&<button onClick={runAi} disabled={!!busy} style={{...btn(!!busy),background:busy?"#21262d":"#1f6feb",color:busy?"#484f58":"#fff",border:"none"}}>{inflow?.ai?"🔄 AI 다시 분석":"🤖 AI 비교 분석"}</button>}
+      </div>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls" multiple onChange={onFiles} style={{display:"none"}}/>
+    </div>
+
+    {!agg&&!busy&&<div style={{color:"#484f58",fontSize:"13px",lineHeight:1.8}}>
+      내 블로그일 때만 쓸 수 있어요. 네이버 블로그 관리 → 내 블로그 통계 → <b style={{color:"#8b949e"}}>지표 다운로드</b>에서
+      <b style={{color:"#8b949e"}}> 유입분석</b>(월간)과 <b style={{color:"#8b949e"}}>조회수 순위</b>(월간)를 받아서, 여러 달 치를 <b style={{color:"#8b949e"}}>한 번에 선택</b>해 올리면 됩니다.
+      조회수 순위를 같이 올리면 유입이 %가 아니라 추정 횟수로 계산돼요. 파일은 브라우저 안에서만 읽습니다.
+    </div>}
+    {busy&&<div style={{color:"#58a6ff",fontSize:"13px"}}>⏳ {busy}</div>}
+    {err&&<div style={{color:"#ff7b72",fontSize:"13px"}}>⚠️ {err}</div>}
+    {agg&&!rows?.length&&<div style={{color:"#ffa657",fontSize:"13px"}}>유입 데이터는 준비됐어요. 위 🧠 키워드 인사이트를 먼저 돌리면 비교 결과가 나옵니다.</div>}
+
+    {agg&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:"8px"}}>
+      {agg.months.map(m=>(
+        <div key={m.period} style={box}>
+          <div style={{color:"#8b949e",fontSize:"12px"}}>{m.period}</div>
+          <div style={{color:"#e6edf3",fontSize:"17px",fontWeight:800,margin:"2px 0"}}>{m.totalViews?fmt(m.totalViews)+"회":"—"}</div>
+          <div style={{color:"#484f58",fontSize:"11px"}}>통합검색 {m.mainRatio}% · 블로그탭 {m.blogRatio}%</div>
+        </div>
+      ))}
+    </div>}
+
+    {cmp&&<>
+      <div style={{color:"#484f58",fontSize:"12px"}}>비교 대상: 키워드 인사이트 <b style={{color:"#8b949e"}}>{scopeLabel}</b> 의 키워드 {rows.length}개 · 상위 = {topN}위 이내 · 유입 {agg.hasViews?"= 유입비율 × 월 조회수(추정)":"= 비율 합계"}</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:"8px"}}>
+        {list("✅ 상위노출 + 실제 유입","#3fb950",cmp.winners,r=>row(r.keyword,`${r.inflow}${unit}`,"#3fb950",r.keyword,`${r.best}위`,r.variants.length?`실검색: ${r.variants.join(", ")}`:""),"해당 없음","진짜 효자 키워드")}
+        {list("🫥 상위노출인데 유입 0","#ff7b72",cmp.hollow,r=>row(r.keyword,`${r.best}위`,"#ff7b72",r.keyword,`월 ${fmt(r.monthly)}`),"해당 없음",cmp.tooNew?`기간 이후 발행 ${cmp.tooNew}개 제외`:"순위만 높은 허수")}
+        {list("🔧 11~30위인데 유입 있음","#ffa657",cmp.push,r=>row(r.keyword,`${r.inflow}${unit}`,"#ffa657",r.keyword,`${r.best}위`),"해당 없음","보강하면 유입 늘 글")}
+        {list("💎 인사이트에 없던 유입 키워드","#58a6ff",cmp.hidden,h=>row(h.keyword,`${h.score}${unit}`,"#58a6ff",h.keyword,h.months>1?`${h.months}개월`:"",h.variantOf?`← ${h.variantOf}`:""),"해당 없음","다음 글 제목 후보")}
+      </div>
+    </>}
+
+    {inflow?.ai&&<div style={{...box,display:"flex",flexDirection:"column",gap:"8px"}}>
+      <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>🤖 AI 비교 분석 <span style={{color:"#484f58",fontWeight:400,fontSize:"12px"}}>· {inflow.aiScope} 기준</span></div>
+      {[["추정 vs 실제",inflow.ai.gap],["실제 먹히는 구간",inflow.ai.realSweetSpot],["허수",inflow.ai.hollow],["놓친 패턴",inflow.ai.hidden],["채널 변화",inflow.ai.channel]].filter(x=>x[1]).map(([l,t])=>(
+        <div key={l} style={{fontSize:"13px",lineHeight:1.7,color:"#8b949e"}}><span style={{color:"#58a6ff",fontWeight:700,marginRight:"6px"}}>{l}</span>{t}</div>
+      ))}
+      {inflow.ai.actions?.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
+        {inflow.ai.actions.map((a,i)=><div key={i} style={{fontSize:"13px",color:"#c9d1d9",lineHeight:1.6}}><span style={{color:"#ffa657",fontWeight:700,marginRight:"6px"}}>{i+1}.</span>{a}</div>)}
+      </div>}
+      {inflow.ai.recommend?.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
+        {inflow.ai.recommend.map((r,i)=>(
+          <div key={i} style={{display:"flex",gap:"8px",alignItems:"baseline",fontSize:"13px",padding:"5px 8px",background:"#161b22",borderRadius:"6px",flexWrap:"wrap"}}>
+            <span style={{color:"#e6edf3",fontWeight:700}}>{r.keyword}</span>
+            <span style={{color:r.monthly!=null?"#3fb950":"#484f58",whiteSpace:"nowrap"}}>월 {fmt(r.monthly)}</span>
+            <span style={{color:"#8b949e",flex:1,minWidth:"180px"}}>{r.reason}</span>
+          </div>
+        ))}
+      </div>}
+    </div>}
+  </div>;
+}
+
 // ── 누락 확인 > 블로그 ID별 마지막 조회 결과 저장 (브라우저 localStorage) ──
 // ID 하나당 스냅샷 1개만 유지 → 같은 ID를 다시 분석하면 덮어쓴다.
 const BH_INDEX="mt_blog_hist_index", BH_PREFIX="mt_blog_hist_", BH_MAX=20;
@@ -3133,6 +3392,7 @@ function MissingTab(){
   const [insights,setInsights]=useState({});          // {page: {loading,step,rows,summary,ai,error}}
   const [history,setHistory]=useState([]);            // 저장된 블로그 목록 (최근 조회순)
   const [histOpen,setHistOpen]=useState(false);
+  const [inflow,setInflow]=useState(null);             // 네이버 통계 엑셀(유입분석) — 블로그별로 저장본에 같이 묶인다
   const [restored,setRestored]=useState(null);         // {blogId,savedAt,count} — 저장본을 불러온 상태 표시
   useEffect(()=>{setHistory(bhList());},[]);
   const [insightScope,setInsightScope]=useState("page"); // "page" | "all"(지금까지 분석한 페이지 누적)
@@ -3168,7 +3428,7 @@ function MissingTab(){
   const applySnapshot=(snap,withPosts)=>{
     const a=cleanSavedAnalysis(snap.analysis);
     setAnalysis(a);setExtraResults(cleanSavedExtra(snap.extraResults));setExtraKw({});
-    setInsights(snap.insights||{});seenRef.current={...(snap.seen||{})};
+    setInsights(snap.insights||{});setInflow(snap.inflow||null);seenRef.current={...(snap.seen||{})};
     if(withPosts&&snap.posts){setPosts(snap.posts);setPage(snap.posts.page||1);}
     setRestored({blogId:snap.blogId,savedAt:snap.savedAt,count:Object.keys(a).length});
   };
@@ -3186,7 +3446,7 @@ function MissingTab(){
     if(!posts?.blogId) return;
     if(!confirm(`@${posts.blogId} 의 저장된 분석 결과를 지우고 새로 시작할까요?`)) return;
     setHistory(bhDelete(posts.blogId));setRestored(null);
-    setAnalysis({});setExtraResults({});setExtraKw({});setInsights({});setExpanded(null);
+    setAnalysis({});setExtraResults({});setExtraKw({});setInsights({});setInflow(null);setExpanded(null);
     const keepSeen={};(posts.current||[]).forEach(p=>{keepSeen[p.postNo]={...p,_page:posts.page||1};});seenRef.current=keepSeen;
   };
 
@@ -3204,21 +3464,21 @@ function MissingTab(){
       const seenMine={};Object.entries(seen).forEach(([k,v])=>{if(mine(k))seenMine[k]=v;});
       let topKw=0;done.forEach(v=>(v.topKeywords||[]).forEach(kw=>{
         const ar=kw.realRank?.areas;const r=Math.min(ar?.main_search?.rank??999,ar?.blog?.rank??999,ar?999:(kw.realRank?.myRank??999));if(r<=10)topKw++;}));
-      const snap=bhSlim({blogId:bid,savedAt:Date.now(),posts:{...posts,all:posts.current},analysis:a,extraResults:x,insights:ins,seen:seenMine});
+      const snap=bhSlim({blogId:bid,savedAt:Date.now(),posts:{...posts,all:posts.current},analysis:a,extraResults:x,insights:ins,inflow:inflow||null,seen:seenMine});
       const meta={blogId:bid,savedAt:snap.savedAt,total:posts.total||0,analyzed:done.length,
-        missing:done.filter(v=>v.missingStatus==="누락").length,topKw,hasInsight:Object.keys(ins).length>0};
+        missing:done.filter(v=>v.missingStatus==="누락").length,topKw,hasInsight:Object.keys(ins).length>0,hasInflow:!!inflow?.agg};
       const idx=bhSave(snap,meta);
       if(idx) setHistory(idx);
     },800);
     return ()=>clearTimeout(t);
-  },[analysis,extraResults,insights,posts,mode]);
+  },[analysis,extraResults,insights,inflow,posts,mode]);
 
   const fetchBlogPage=async(id,pg=1,keep=false)=>{
     const bid=(id||"").trim();
     if(!bid){alert("블로그 아이디를 입력해주세요.");return;}
     lsSet(LS_BLOGID, bid);   // 글쓰기 탭에서 제목 반복 단어를 분석할 때 사용
     setLoadingFeed(true);setFeedError("");setExpanded(null);
-    if(!keep){setPosts(null);setAnalysis({});setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};setRestored(null);}
+    if(!keep){setPosts(null);setAnalysis({});setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};setRestored(null);setInflow(null);}
     try{
       const res=await fetch(`/api/blog-posts?blogId=${encodeURIComponent(bid)}&page=${pg}&size=${PER_PAGE}`);
       let data=null;
@@ -3841,7 +4101,7 @@ recommend는 8개.`;
               return <div key={h.blogId} onClick={()=>openHistory(h.blogId)}
                 style={{display:"grid",gridTemplateColumns:"1.6fr .7fr .7fr .7fr .9fr .9fr 32px",gap:"8px",padding:"8px 12px",fontSize:"13px",alignItems:"center",
                   borderTop:"1px solid #161b22",cursor:"pointer",background:cur?"#1f6feb18":"transparent",color:"#c9d1d9"}}>
-                <span style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>@{h.blogId}{h.hasInsight&&<span title="키워드 인사이트 저장됨" style={{marginLeft:"6px"}}>🧠</span>}</span>
+                <span style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>@{h.blogId}{h.hasInsight&&<span title="키워드 인사이트 저장됨" style={{marginLeft:"6px"}}>🧠</span>}{h.hasInflow&&<span title="실제 유입 데이터 저장됨" style={{marginLeft:"4px"}}>📥</span>}</span>
                 <span style={{color:"#8b949e"}}>{(h.total||0).toLocaleString()}</span>
                 <span style={{color:"#58a6ff"}}>{h.analyzed}</span>
                 <span style={{color:h.missing?"#ff7b72":"#8b949e"}}>{h.missing}</span>
@@ -3868,12 +4128,18 @@ recommend는 8개.`;
       const cumDone=okCnt(cum);
       const cumPages=[...new Set(cum.filter(p=>analysis[p.postNo]&&!analysis[p.postNo].error).map(p=>p._page))].sort((a,b)=>a-b);
       const isAll=insightScope==="all";
-      return <InsightPanel
+      const postDates={};cum.forEach(p=>{postDates[p.title]=p.date;});
+      const scopeLabel=isAll?`누적 ${cumDone}개`:`${page}페이지`;
+      return <>
+      <InsightPanel
         data={insights[isAll?"all":page]} page={page} topN={TOP_N}
         blogId={posts.blogId} scope={insightScope} setScope={setInsightScope} cumDone={cumDone} cumPages={cumPages}
         analyzedCount={isAll?cumDone:okCnt(posts.current)}
         totalCount={isAll?cumDone:posts.current.length} busy={analyzing!==-1}
-        onRun={()=>isAll?runInsight(cumulativeList(),"all"):runInsight(posts.current,page)}/>;
+        onRun={()=>isAll?runInsight(cumulativeList(),"all"):runInsight(posts.current,page)}/>
+      <InflowPanel inflow={inflow} setInflow={setInflow} rows={insights[isAll?"all":page]?.rows||null}
+        insightAi={insights[isAll?"all":page]?.ai||null} topN={TOP_N} postDates={postDates} blogId={posts.blogId} scopeLabel={scopeLabel}/>
+      </>;
     })()}
 
     {/* ── 방법2: URL + 제목 + 본문 직접 입력 ── */}
