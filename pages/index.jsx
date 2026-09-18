@@ -5969,6 +5969,9 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   useEffect(()=>{setProfiles(bpList());setActiveProfId(bpGetActiveId());},[]);
   const activeProf=profiles.find(p=>p.blogId===activeProfId)||null;
   const pickProfile=(id)=>{setActiveProfId(id);bpSetActiveId(id);};
+  const [costMode,setCostModeState]=useState("save");
+  useEffect(()=>{setCostModeState(getCostMode());},[]);
+  const pickCost=(m)=>{setCostModeState(m);setCostMode(m);};
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
   const [err,setErr]=useState("");
@@ -6128,6 +6131,20 @@ ${buildProfileBlock(activeProf,"keyword")}
           {profiles.map(p=><option key={p.blogId} value={p.blogId}>@{p.blogId}{p.hasInflow?" · 유입 반영":" · 순위만"}</option>)}
         </select>
         {activeProf&&<span style={{color:"#3fb950",fontSize:"13px"}}>● 키워드 추천 + 본문 작성에 적용 중</span>}
+        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:"6px"}}>
+          <span style={{color:"#8b949e",fontSize:"13px"}}>글쓰기 비용</span>
+          <div style={{display:"flex",border:"1px solid #30363d",borderRadius:"6px",overflow:"hidden"}}>
+            {[["save","💰 절약"],["full","🔬 정밀"]].map(([k,l])=>(
+              <button key={k} onClick={()=>pickCost(k)} style={{padding:"5px 11px",border:"none",cursor:"pointer",fontSize:"13px",fontWeight:600,
+                fontFamily:"'Noto Sans KR',sans-serif",background:costMode===k?"#1f6feb":"#0d1117",color:costMode===k?"#fff":"#8b949e"}}>{l}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{color:"#484f58",fontSize:"12px",lineHeight:1.6}}>
+        {costMode==="save"
+          ?"절약: 수치·정책이 핵심인 주제만 웹검색으로 사실 확인하고, 그 확인 작업은 Haiku로 처리합니다. 본문 작성은 그대로 Sonnet. (편당 대략 130~280원)"
+          :"정밀: 모든 글에 Sonnet으로 사전 사실 확인 + 확인필요 항목 재검색. (편당 대략 330~550원)"}
       </div>
       {profiles.length===0&&<div style={{color:"#484f58",fontSize:"13px",lineHeight:1.7}}>아직 만든 프로필이 없어요. 누락 확인 탭에서 블로그 분석 → 🧠 인사이트 → (📥 유입 파일) → <b style={{color:"#8b949e"}}>✨ 프로필 만들기</b>를 누르면 여기에 나타납니다.</div>}
       {activeProf&&<>
@@ -8445,6 +8462,15 @@ function buildWritePrompt({
 
   const pat = pattern || TITLE_PATTERNS[0];
 
+  // 차별화 앵글 — 상위 글을 이미 보고 있으니, 별도 호출 없이 "남들이 안 다룬 각도"를 먼저 정하게 한다
+  const angleBlock = ((bodies && bodies.length > 0) || (topTitles && topTitles.length > 0))
+    ? `\n[차별화 원칙 — 쓰기 전에 먼저 정할 것]
+D1. 위 참고자료·상위 제목들이 공통으로 다루는 내용과 접근 방식을 먼저 파악할 것.
+D2. 그 글들이 빠뜨렸거나 얕게 넘어간 각도를 하나 정해서 이 글의 중심 관점으로 삼을 것. (예: 다들 "방법"만 나열했다면 "어디서 막히는지와 그때 해결법", 다들 장점만 썼다면 "쓰다 보면 드러나는 한계와 대처")
+D3. 도입부·소제목 구성·비유·판단과 의견은 상위 글과 달라야 한다. 같은 순서, 같은 소제목 이름을 따라가지 말 것.
+D4. 차별화는 관점·구성·표현에서만 한다. 사실(수치·날짜·가격·스펙·정책)은 차별화 대상이 아니다 — 남다르게 보이려고 새로운 사실을 만들지 말 것. 주제 원칙(S1~S3)의 범위도 벗어나지 말 것.\n`
+    : "";
+
   const commercialBlock = (commercialWords && commercialWords.length > 0)
     ? `\n[제목에 쓰면 안 되는 상업성 단어]\n${commercialWords.join(", ")}\n※ 이 단어들은 통합검색에서 광고가 먼저 뜨는 상업성 키워드입니다. 제목에 넣으면 저품질로 분류될 확률이 올라갑니다. 본문에서 꼭 필요하면 최소한으로만 쓰고, 제목에는 절대 쓰지 마세요.\n`
     : "";
@@ -8454,7 +8480,7 @@ function buildWritePrompt({
     : "";
 
   return `오늘 날짜: ${today || yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
-${factSheetBlock}${refBlock}${titleBlock}${commercialBlock}${avoidBlock}${profileBlock}
+${factSheetBlock}${refBlock}${titleBlock}${commercialBlock}${avoidBlock}${profileBlock}${angleBlock}
 네이버 블로그 홈판 노출 + AI 브리핑(AEO) 인용 최적화 글을 작성해줘:
 
 [주제 원칙 — 글의 범위를 정하는 기준. 사실 원칙 다음으로 우선한다]
@@ -8669,7 +8695,8 @@ ${String(text || "").slice(0, 2000)}
 순수 JSON만 출력:
 {"items":[{"label":"항목명(위 목록과 똑같이)","found":true,"value":"찾은 값","source":"https://...","sourceName":"출처 사이트명","note":"조건·기준 시점","checkAt":"확인할 곳"},{"label":"...","found":false,"approx":"대략 범위 또는 빈 문자열","checkAt":"확인할 곳","reason":"찾지 못한 이유"}]}`;
 
-  const raw = await callClaudeSearch(
+  const _save = getCostMode() === "save";
+  const _run = (model) => callClaudeSearch(
     [{ role: "user", content: prompt }],
     `You verify factual placeholders in Korean blog drafts using web search.
 
@@ -8677,8 +8704,11 @@ Search before answering every item. Never fill value from memory or from what se
 When the search fails but a commonly published range exists, put a hedged range in approx. Never state a single figure there.
 When there is no basis at all, leave approx empty. An empty value is better than a wrong one.
 Prefer official primary sources. Output ONLY valid JSON.`,
-    4000, "claude-sonnet-4-5-20250929", Math.min(placeholders.length * 2 + 2, 10)
+    4000, model, _save ? Math.min(placeholders.length + 1, 5) : Math.min(placeholders.length * 2 + 2, 10)
   );
+  let raw;
+  try { raw = await _run(_save ? MODEL_HAIKU : MODEL_SONNET); }
+  catch (e) { if (!_save) throw e; raw = await _run(MODEL_SONNET); }
 
   return (safeParseJson(raw)?.items || []).filter(x => x && x.label);
 }
@@ -8720,7 +8750,37 @@ function applyResolvedValues(text, items) {
 // 뽑아 공식 출처로 확인한다. 확인된 것만 본문 프롬프트에 [확인된 사실]로 넣고,
 // 참고자료가 주장하지만 확인 안 된 것은 "쓰지 말 것" 목록으로 넘긴다.
 
+// ── 비용 모드: "save"(절약, 기본) | "full"(정밀) ──
+// 절약: 사실표·[확인필요] 해결을 Haiku로, 검색 횟수 축소, 수치가 안 걸린 주제는 사실표 생략. 본문 작성은 항상 Sonnet.
+const LS_COST_MODE = "mt_cost_mode";
+function getCostMode() { try { return localStorage.getItem(LS_COST_MODE) === "full" ? "full" : "save"; } catch(e) { return "save"; } }
+function setCostMode(m) { try { localStorage.setItem(LS_COST_MODE, m === "full" ? "full" : "save"); } catch(e) {} }
+const MODEL_SONNET = "claude-sonnet-4-5-20250929", MODEL_HAIKU = "claude-haiku-4-5-20251001";
+
+// 이 주제가 "틀리면 안 되는 수치·정책"에 기대는 글인지 판정 → 아니면 사실표(웹검색)를 건너뛴다
+const FACT_HEAVY_RE = /요금|가격|얼마|비용|지원금|보조금|할인|혜택|환급|수수료|금리|이자|세금|연말정산|보험|대출|연금|청약|정책|제도|법률|법령|개정|규정|신청 ?자격|지원 ?조건|일정|출시|스펙|사양|성능|용량|배터리|순위|통계|최신|20\d\d/;
+async function needsFactSheet({ kw, mainKw, bodies }) {
+  if (FACT_HEAVY_RE.test(`${kw} ${mainKw}`)) return { need: true, reason: "주제에 수치·정책 관련 단어 포함" };
+  try {
+    const refs = (bodies || []).slice(0, 3).map((b, i) => `(${i + 1}) ${String(b).slice(0, 500)}`).join("\n");
+    const raw = await callClaude([{ role: "user", content:
+`블로그 글 주제: "${kw}" (키워드: "${mainKw}")
+상위 노출 글 발췌:
+${refs || "(없음)"}
+
+이 글을 쓸 때 가격·요금·날짜·정책·스펙·통계처럼 "틀리면 독자에게 피해가 가고 시간이 지나면 바뀌는 사실"이 글의 핵심인가?
+- 핵심이다 (예: 요금제 비교, 지원금 조건, 제품 스펙 비교, 신청 방법·자격) → need=true
+- 아니다 (예: 사용법, 설정 방법, 경험담, 관리 요령, 감상·추천 이유) → need=false
+순수 JSON만: {"need":true,"reason":"한 줄"}` }],
+      "Output ONLY valid JSON.", 150, MODEL_HAIKU);
+    const j = safeParseJson(raw);
+    return { need: j?.need !== false, reason: j?.reason || "" };
+  } catch (e) { return { need: true, reason: "판정 실패 — 안전하게 확인 진행" }; }
+}
+
 async function buildFactSheet({ kw, mainKw, bodies, today }) {
+  const save = getCostMode() === "save";
+  const maxSearch = save ? 3 : 4;
   const refs = (bodies || []).slice(0, 3).map((b, i) => `(${i + 1})\n${String(b).slice(0, 1500)}`).join("\n\n");
   const prompt = `블로그 글을 쓰기 전에 사실 확인을 해주세요.
 
@@ -8751,13 +8811,17 @@ ${refs || "(없음)"}
 순수 JSON만 출력:
 {"items":[{"topic":"항목명","verdict":"confirmed","fact":"글에 쓸 문장","source":"https://...","sourceName":"출처명","note":"기준 시점·조건"},{"topic":"항목명","verdict":"unconfirmed","claim":"참고자료의 주장","note":"확인 못한 이유"},{"topic":"항목명","verdict":"outdated","fact":"현재 맞는 내용","source":"https://...","sourceName":"출처명","note":"무엇이 바뀌었는지"}]}`;
 
-  const raw = await callClaudeSearch(
+  const run = (model) => callClaudeSearch(
     [{ role: "user", content: prompt }],
     `You prepare a verified fact sheet before a Korean blog post is written.
 
-Search before marking anything confirmed; if the search does not settle it, mark it unconfirmed. You have at most 4 searches, so prefer official pages that settle several items at once and put the most important items first. Prefer official primary sources over blogs. Write each confirmed fact as one complete sentence that includes its conditions and the date it applies to. Never invent a value that neither the reference material nor a search supports. Output ONLY valid JSON.`,
-    3000, "claude-sonnet-4-5-20250929", 4
+Search before marking anything confirmed; if the search does not settle it, mark it unconfirmed. You have at most ${maxSearch} searches, so prefer official pages that settle several items at once and put the most important items first. Prefer official primary sources over blogs. Write each confirmed fact as one complete sentence that includes its conditions and the date it applies to. Never invent a value that neither the reference material nor a search supports. Output ONLY valid JSON.`,
+    3000, model, maxSearch
   );
+  // 절약 모드는 Haiku로 먼저, 실패하면 Sonnet으로 한 번 더
+  let raw;
+  try { raw = await run(save ? MODEL_HAIKU : MODEL_SONNET); }
+  catch (e) { if (!save) throw e; raw = await run(MODEL_SONNET); }
 
   return (safeParseJson(raw)?.items || [])
     .filter(x => x && x.topic && ["confirmed", "unconfirmed", "outdated"].includes(x.verdict));
@@ -9034,10 +9098,18 @@ export default function BlogTools(){
       // ── 사전 사실표: 참고자료의 수치·정책을 공식 출처로 확인해 프롬프트에 넣는다 ──
       let factSheet = [];
       try {
-        setPendingAnalyzeText("__loading__:사실 확인 중 — 참고자료의 수치·정책을 공식 출처로 검색하고 있습니다");
-        factSheet = await withTimeout(
-          buildFactSheet({ kw, mainKw, bodies, today: todayStr }), 90000, []
-        );
+        // 절약 모드: 수치·정책이 핵심이 아닌 주제(사용법·경험담 등)는 웹검색 사실표를 건너뛴다
+        let needFacts = { need: true };
+        if (getCostMode() === "save") {
+          setPendingAnalyzeText("__loading__:사실 확인이 필요한 주제인지 판단 중");
+          needFacts = await withTimeout(needsFactSheet({ kw, mainKw, bodies }), 10000, { need: true });
+        }
+        if (needFacts.need) {
+          setPendingAnalyzeText("__loading__:사실 확인 중 — 참고자료의 수치·정책을 공식 출처로 검색하고 있습니다");
+          factSheet = await withTimeout(
+            buildFactSheet({ kw, mainKw, bodies, today: todayStr }), 90000, []
+          );
+        }
       } catch(e) { factSheet = []; /* 실패해도 글쓰기는 진행 */ }
       setPendingAnalyzeText("__loading__:본문 작성 중");
 
