@@ -2699,9 +2699,179 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
 
 
 // ─── TAB 4: 누락 확인 & 포스팅 분석 ─────────────────────────────────────
+// ── 키워드 인사이트 내보내기 (엑셀 / PDF) — 라이브러리는 CDN 런타임 로드 ──
+function loadCdnScript(src,globalName){
+  if(typeof window==="undefined") return Promise.reject(new Error("브라우저 전용"));
+  if(window[globalName]) return Promise.resolve(window[globalName]);
+  return new Promise((resolve,reject)=>{
+    const el=document.createElement("script");
+    el.src=src;
+    el.onload=()=>window[globalName]?resolve(window[globalName]):reject(new Error(globalName+" 로드 실패"));
+    el.onerror=()=>reject(new Error("라이브러리 로드 실패 — 인터넷 연결을 확인해주세요."));
+    document.head.appendChild(el);
+  });
+}
+function insightFileName(meta,ext){
+  const t=new Date(),z=n=>String(n).padStart(2,"0");
+  return `키워드인사이트_${meta.blogId||"blog"}_${meta.scope==="all"?"누적":meta.page+"p"}_${t.getFullYear()}${z(t.getMonth()+1)}${z(t.getDate())}.${ext}`;
+}
+function saveBlob(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
+async function exportInsightXlsx(d,meta){
+  const ExcelJS=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js","ExcelJS");
+  const S=d.summary, ai=d.ai, rows=d.rows||[];
+  const wb=new ExcelJS.Workbook();
+  const FONT="맑은 고딕";
+  const NAVY="FF1F3A5F", LIGHT="FFEAF1FB", GREEN="FFE3F5E6", GRAY="FFF4F6F8", BORDER="FFD0D7DE";
+  const border={top:{style:"thin",color:{argb:BORDER}},bottom:{style:"thin",color:{argb:BORDER}},left:{style:"thin",color:{argb:BORDER}},right:{style:"thin",color:{argb:BORDER}}};
+  const fill=c=>({type:"pattern",pattern:"solid",fgColor:{argb:c}});
+  const head=(ws,rowNo)=>{ws.getRow(rowNo).eachCell(c=>{c.font={name:FONT,bold:true,color:{argb:"FFFFFFFF"},size:10};c.fill=fill(NAVY);c.alignment={vertical:"middle",horizontal:"center"};c.border=border;});ws.getRow(rowNo).height=22;};
+  const body=(ws,from,to,wrapCols=[])=>{for(let r=from;r<=to;r++){ws.getRow(r).eachCell({includeEmpty:true},(c,col)=>{c.font={...(c.font||{}),name:FONT,size:10};c.border=border;c.alignment={vertical:"middle",wrapText:wrapCols.includes(col),horizontal:typeof c.value==="number"?"right":"left"};if(typeof c.value==="number")c.numFmt="#,##0";});}};
+  const title=(ws,text,span)=>{ws.mergeCells(1,1,1,span);const c=ws.getCell(1,1);c.value=text;c.font={name:FONT,bold:true,size:15,color:{argb:NAVY}};ws.getRow(1).height=30;c.alignment={vertical:"middle"};
+    ws.mergeCells(2,1,2,span);const m=ws.getCell(2,1);m.value=`@${meta.blogId} · ${meta.scopeLabel} · 글 ${S.postCount}개 · 키워드 ${S.kwCount}개 · 상위 기준 ${meta.topN}위 이내 · ${new Date().toLocaleString("ko-KR")}`;m.font={name:FONT,size:9,color:{argb:"FF6B7785"}};};
+  const rankCell=(c)=>{if(typeof c.value==="number"&&c.value<=meta.topN){c.fill=fill(GREEN);c.font={...(c.font||{}),name:FONT,size:10,bold:true,color:{argb:"FF1A7F37"}};}c.alignment={vertical:"middle",horizontal:"center"};};
+
+  // ── 시트1: 요약 ──
+  const ws=wb.addWorksheet("요약",{views:[{showGridLines:false}]});
+  ws.columns=[{width:30},{width:16},{width:16},{width:16},{width:60}];
+  title(ws,"키워드 인사이트 리포트",5);
+  let r=4;
+  ws.getRow(r).values=["지표","값","중앙값(월검색)","평균(월검색)","비고"];head(ws,r);r++;
+  const st=r;
+  [
+    ["상위노출 키워드",`${S.topCount} / ${S.kwCount}개`,S.medTop,S.avgTop,`통합검색 또는 블로그탭 ${meta.topN}위 이내`],
+    ["통합검색 상위 키워드",`${S.mainTop.length}개`,S.medMainTop,S.avgMainTop,""],
+    ["블로그탭 상위 키워드",`${S.blogTop.length}개`,S.medBlogTop,S.avgBlogTop,""],
+    ["상위 못 든 키워드",`${S.kwCount-S.topCount}개`,S.medNotTop,S.avgNotTop,""],
+    ["제목검색 누락 글",`${S.missingCount} / ${S.postCount}개`,null,null,"글 제목 그대로 검색했을 때 안 나오는 글"],
+  ].forEach(v=>{ws.getRow(r).values=v;r++;});
+  body(ws,st,r-1,[5]);
+  for(let i=st;i<r;i++){ws.getCell(i,1).font={name:FONT,size:10,bold:true};ws.getCell(i,1).fill=fill(GRAY);ws.getCell(i,2).alignment={horizontal:"center",vertical:"middle"};}
+
+  if(ai){
+    r+=1;ws.mergeCells(r,1,r,5);ws.getCell(r,1).value="AI 분석";ws.getCell(r,1).font={name:FONT,bold:true,size:12,color:{argb:NAVY}};r++;
+    [["진단",ai.diagnosis],["먹히는 구간",ai.sweetSpot],["통합검색 패턴",ai.mainPattern],["블로그탭 패턴",ai.blogPattern],["피할 것",ai.avoid]].filter(x=>x[1]).forEach(([l,t])=>{
+      ws.mergeCells(r,2,r,5);
+      const a=ws.getCell(r,1),b=ws.getCell(r,2);
+      a.value=l;a.font={name:FONT,size:10,bold:true};a.fill=fill(LIGHT);a.alignment={vertical:"top"};a.border=border;
+      b.value=t;b.font={name:FONT,size:10};b.alignment={wrapText:true,vertical:"top"};
+      for(let c=2;c<=5;c++)ws.getCell(r,c).border=border;
+      ws.getRow(r).height=Math.max(20,Math.ceil(String(t).length/52)*16+4);
+      r++;
+    });
+  }
+
+  // ── 시트2: AI 추천 키워드 ──
+  if(ai?.recommend?.length){
+    const w2=wb.addWorksheet("추천 키워드",{views:[{showGridLines:false,state:"frozen",ySplit:4}]});
+    w2.columns=[{width:6},{width:30},{width:14},{width:10},{width:70}];
+    title(w2,"AI 추천 키워드",5);
+    w2.getRow(4).values=["No","키워드","월 검색량","상업성","추천 근거"];head(w2,4);
+    ai.recommend.forEach((x,i)=>{w2.getRow(5+i).values=[i+1,x.keyword,x.monthly??"—",x.commercial?"상업성":"",x.reason||""];w2.getRow(5+i).height=Math.max(20,Math.ceil(String(x.reason||"").length/48)*16+4);});
+    body(w2,5,4+ai.recommend.length,[5]);
+    for(let i=5;i<5+ai.recommend.length;i++){w2.getCell(i,1).alignment={horizontal:"center",vertical:"middle"};w2.getCell(i,2).font={name:FONT,size:10,bold:true};w2.getCell(i,4).alignment={horizontal:"center",vertical:"middle"};if(w2.getCell(i,4).value)w2.getCell(i,4).font={name:FONT,size:10,color:{argb:"FFB35900"}};}
+    w2.getCell(6+ai.recommend.length,1).value="※ 월 검색량은 AI 추정이 아니라 네이버 키워드도구 실측값입니다.";
+    w2.getCell(6+ai.recommend.length,1).font={name:FONT,size:9,color:{argb:"FF6B7785"}};
+  }
+
+  // ── 시트3: 키워드 전체 ──
+  const w3=wb.addWorksheet("키워드 전체",{views:[{showGridLines:false,state:"frozen",ySplit:4}]});
+  w3.columns=[{width:6},{width:30},{width:12},{width:12},{width:14},{width:10},{width:10},{width:60}];
+  title(w3,"분석 키워드 전체",8);
+  w3.getRow(4).values=["No","키워드","통합검색","블로그탭","월 검색량","상위",  "상업성","해당 글"];head(w3,4);
+  const isTop=x=>x!=null&&x<=meta.topN;
+  const sorted=rows.slice().sort((a,b)=>(b.monthly||0)-(a.monthly||0));
+  sorted.forEach((x,i)=>{
+    w3.getRow(5+i).values=[i+1,x.keyword,x.mainRank??"—",x.blogRank??"—",x.monthly??"—",(isTop(x.mainRank)||isTop(x.blogRank))?"●":"",x.commercial?"상업성":"",[...new Set(x.posts||[])].join(" / ")];
+  });
+  body(w3,5,4+sorted.length,[8]);
+  for(let i=5;i<5+sorted.length;i++){[1,6,7].forEach(c=>w3.getCell(i,c).alignment={horizontal:"center",vertical:"middle"});rankCell(w3.getCell(i,3));rankCell(w3.getCell(i,4));if(w3.getCell(i,6).value)w3.getCell(i,6).font={name:FONT,size:10,color:{argb:"FF1A7F37"}};}
+  w3.autoFilter={from:{row:4,column:1},to:{row:4,column:8}};
+
+  const buf=await wb.xlsx.writeBuffer();
+  saveBlob(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),insightFileName(meta,"xlsx"));
+}
+
+function buildInsightReportHtml(d,meta){
+  const S=d.summary, ai=d.ai;
+  const esc=t=>String(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const fmt=n=>n==null?"—":Number(n).toLocaleString();
+  const card=(l,v,sub)=>`<td style="width:25%;padding:0 5px"><div style="border:1px solid #d8dee4;border-radius:8px;padding:10px 12px;background:#f6f8fa">
+    <div style="font-size:11px;color:#57606a">${l}</div><div style="font-size:19px;font-weight:800;color:#1f2328;margin:3px 0">${v}</div><div style="font-size:10px;color:#8c959f">${sub}</div></div></td>`;
+  const list=(titleTxt,arr,key,av,md)=>`<td style="width:50%;padding:0 5px;vertical-align:top"><div style="border:1px solid #d8dee4;border-radius:8px;padding:10px 12px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px"><b style="font-size:12px;color:#1f2328">${titleTxt} <span style="color:#0969da">${arr.length}</span></b><span style="font-size:10px;color:#8c959f">중앙값 ${fmt(md)} · 평균 ${fmt(av)}</span></div>
+    ${arr.length?arr.slice(0,15).map(x=>`<div style="display:flex;gap:8px;font-size:11px;padding:4px 0;border-top:1px solid #eef1f4"><span style="color:#1a7f37;font-weight:800;min-width:30px">${x[key]}위</span><span style="flex:1;color:#1f2328">${esc(x.keyword)}</span><span style="color:#57606a">월 ${fmt(x.monthly)}</span></div>`).join(""):`<div style="font-size:11px;color:#8c959f">${meta.topN}위 이내 키워드 없음</div>`}
+    ${arr.length>15?`<div style="font-size:10px;color:#8c959f;padding-top:4px">외 ${arr.length-15}개 (엑셀에서 전체 확인)</div>`:""}
+  </div></td>`;
+  const sec='page-break-inside:avoid;break-inside:avoid;';
+  return `<div style="font-family:'Noto Sans KR','Malgun Gothic',sans-serif;color:#1f2328;background:#fff;width:760px;padding:6px 4px;box-sizing:border-box">
+    <div style="border-bottom:3px solid #1f3a5f;padding-bottom:8px;margin-bottom:14px">
+      <div style="font-size:21px;font-weight:800;color:#1f3a5f">키워드 인사이트 리포트</div>
+      <div style="font-size:11px;color:#57606a;margin-top:4px">@${esc(meta.blogId)} · ${esc(meta.scopeLabel)} · 글 ${S.postCount}개 · 키워드 ${S.kwCount}개 · 상위 기준 ${meta.topN}위 이내 · ${new Date().toLocaleString("ko-KR")}</div>
+    </div>
+    <table style="width:calc(100% + 10px);border-collapse:collapse;margin:0 -5px 12px;${sec}"><tr>
+      ${card("상위노출 키워드",`${S.topCount} / ${S.kwCount}개`,`${meta.topN}위 이내`)}
+      ${card("상위 키워드 검색량 (중앙값)",fmt(S.medTop),`평균 ${fmt(S.avgTop)}`)}
+      ${card("상위 못 든 키워드 (중앙값)",fmt(S.medNotTop),`평균 ${fmt(S.avgNotTop)}`)}
+      ${card("제목검색 누락",`${S.missingCount} / ${S.postCount}개`,"글 기준")}
+    </tr></table>
+    <table style="width:calc(100% + 10px);border-collapse:collapse;margin:0 -5px 12px"><tr>
+      ${list("통합검색 상위 키워드",S.mainTop,"mainRank",S.avgMainTop,S.medMainTop)}
+      ${list("블로그탭 상위 키워드",S.blogTop,"blogRank",S.avgBlogTop,S.medBlogTop)}
+    </tr></table>
+    ${ai?`<div style="border:1px solid #d8dee4;border-radius:8px;padding:12px 14px;margin-bottom:12px;${sec}">
+      <div style="font-size:13px;font-weight:800;color:#1f3a5f;margin-bottom:6px">AI 분석</div>
+      ${[["진단",ai.diagnosis],["먹히는 구간",ai.sweetSpot],["통합검색 패턴",ai.mainPattern],["블로그탭 패턴",ai.blogPattern],["피할 것",ai.avoid]].filter(x=>x[1]).map(([l,t])=>`<div style="font-size:11.5px;line-height:1.7;margin-bottom:4px"><b style="color:#0969da;margin-right:6px">${l}</b>${esc(t)}</div>`).join("")}
+    </div>`:""}
+    ${ai?.recommend?.length?`<div style="border:1px solid #d8dee4;border-radius:8px;padding:12px 14px">
+      <div style="font-size:13px;font-weight:800;color:#1f3a5f;margin-bottom:6px">추천 키워드</div>
+      ${ai.recommend.map((x,i)=>`<div style="display:flex;gap:10px;font-size:11.5px;padding:6px 0;border-top:1px solid #eef1f4;${sec}"><span style="color:#8c959f;min-width:16px">${i+1}</span><b style="min-width:150px">${esc(x.keyword)}</b><span style="min-width:70px;color:${x.monthly!=null?"#1a7f37":"#8c959f"}">월 ${fmt(x.monthly)}</span><span style="flex:1;color:#57606a;line-height:1.6">${x.commercial?'<span style="color:#b35900">[상업성] </span>':""}${esc(x.reason)}</span></div>`).join("")}
+      <div style="font-size:10px;color:#8c959f;margin-top:6px">※ 월 검색량은 네이버 키워드도구 실측값 · "—"는 데이터 없음</div>
+    </div>`:""}
+  </div>`;
+}
+
+async function exportInsightPdf(d,meta){
+  const html=buildInsightReportHtml(d,meta);
+  try{
+    const html2pdf=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js","html2pdf");
+    try{ if(document.fonts?.ready) await document.fonts.ready; }catch(e){}
+    const el=document.createElement("div");
+    el.innerHTML=html;
+    await html2pdf().set({
+      margin:[10,8,10,8], filename:insightFileName(meta,"pdf"),
+      image:{type:"jpeg",quality:0.96},
+      html2canvas:{scale:2,backgroundColor:"#ffffff",useCORS:true},
+      jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},
+      pagebreak:{mode:["css","legacy"]},
+    }).from(el.firstElementChild).save();
+  }catch(e){
+    // 라이브러리 로드 실패 시 — 인쇄 창을 열어 "PDF로 저장"
+    const w=window.open("","_blank");
+    if(!w){alert("PDF 생성 실패: "+(e?.message||e)+"\n팝업 차단을 해제하면 인쇄 창으로 저장할 수 있어요.");return;}
+    w.document.write(`<html><head><title>${insightFileName(meta,"pdf")}</title><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;800&display=swap" rel="stylesheet"></head><body style="margin:20px;-webkit-print-color-adjust:exact;print-color-adjust:exact">${html}</body></html>`);
+    w.document.close();
+    setTimeout(()=>{w.focus();w.print();},700);
+  }
+}
+
 // ── 누락 확인 > 키워드 인사이트 패널 ──
-function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun}){
+function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun,scope,setScope,cumDone,cumPages,blogId}){
   const d=data||{};
+  const [exporting,setExporting]=useState("");
+  const doExport=async(kind)=>{
+    if(exporting||!d.summary) return;
+    setExporting(kind);
+    const meta={blogId,scope,page,topN,scopeLabel:scope==="all"?`누적 (${cumPages.join("·")}페이지)`:`${page}페이지`};
+    try{ if(kind==="xlsx") await exportInsightXlsx(d,meta); else await exportInsightPdf(d,meta); }
+    catch(e){ alert("다운로드 실패: "+(e?.message||e)); }
+    setExporting("");
+  };
   const fmt=n=>n==null?"—":Number(n).toLocaleString();
   const box={background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",padding:"10px 12px"};
   const chip=(r,rankKey)=>(
@@ -2715,28 +2885,50 @@ function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun}){
   const S=d.summary;
   return <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px 18px",display:"flex",flexDirection:"column",gap:"12px"}}>
     <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
-      <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:700}}>🧠 키워드 인사이트 <span style={{color:"#484f58",fontSize:"13px",fontWeight:400}}>· {page}페이지 {totalCount}개 기준</span></div>
-      <span style={{color:"#484f58",fontSize:"13px"}}>분석 완료 {analyzedCount}/{totalCount}</span>
+      <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:700}}>🧠 키워드 인사이트</div>
+      <div style={{display:"flex",border:"1px solid #30363d",borderRadius:"6px",overflow:"hidden"}}>
+        {[["page",`이 페이지 (${page}p)`],["all",`누적 (${cumDone}개)`]].map(([k,l])=>(
+          <button key={k} onClick={()=>setScope(k)} style={{padding:"4px 10px",border:"none",cursor:"pointer",fontSize:"12px",fontWeight:600,
+            fontFamily:"'Noto Sans KR',sans-serif",background:scope===k?"#1f6feb":"#0d1117",color:scope===k?"#fff":"#8b949e"}}>{l}</button>
+        ))}
+      </div>
+      <span style={{color:"#484f58",fontSize:"13px"}}>
+        {scope==="all"?(cumPages.length?`${cumPages.join("·")}페이지 분석분 합산`:"아직 분석한 글 없음"):`분석 완료 ${analyzedCount}/${totalCount}`}
+      </span>
+      <div style={{marginLeft:"auto",display:"flex",gap:"6px",flexWrap:"wrap"}}>
+      {d.summary&&!d.loading&&[["xlsx","📊 엑셀"],["pdf","📄 PDF"]].map(([k,l])=>(
+        <button key={k} onClick={()=>doExport(k)} disabled={!!exporting}
+          style={{padding:"6px 12px",background:"#21262d",color:exporting?"#484f58":"#c9d1d9",border:"1px solid #30363d",borderRadius:"6px",
+            cursor:exporting?"not-allowed":"pointer",fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>
+          {exporting===k?"⏳ 만드는 중...":l}
+        </button>
+      ))}
       <button onClick={onRun} disabled={busy||d.loading||analyzedCount===0}
-        style={{marginLeft:"auto",padding:"6px 12px",background:"#21262d",color:busy||d.loading||analyzedCount===0?"#484f58":"#58a6ff",
+        style={{padding:"6px 12px",background:"#21262d",color:busy||d.loading||analyzedCount===0?"#484f58":"#58a6ff",
           border:"1px solid #30363d",borderRadius:"6px",cursor:busy||d.loading||analyzedCount===0?"not-allowed":"pointer",
           fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>
         {d.loading?"⏳ 분석 중...":S?"🔄 다시 분석":"🧠 인사이트 분석"}
       </button>
+      </div>
     </div>
 
     {!S&&!d.loading&&!d.error&&<div style={{color:"#484f58",fontSize:"13px",lineHeight:1.7}}>
-      ⚡ 전체 분석이 끝나면 자동으로 채워집니다. 일부 글만 분석한 상태에서도 위 버튼으로 돌릴 수 있어요 (분석된 글만 집계).
+      {scope==="all"
+        ?"여러 페이지를 ⚡ 전체 분석한 뒤 돌리면, 지금까지 분석한 글 전부를 합쳐서 집계합니다. 순위는 이미 조회한 값을 재사용해요."
+        :"⚡ 전체 분석이 끝나면 자동으로 채워집니다. 일부 글만 분석한 상태에서도 위 버튼으로 돌릴 수 있어요 (분석된 글만 집계)."}
     </div>}
     {d.loading&&<div style={{color:"#58a6ff",fontSize:"13px"}}>⏳ {d.step}</div>}
     {d.error&&<div style={{color:"#ff7b72",fontSize:"13px"}}>⚠️ {d.error}</div>}
 
+    {S&&scope==="all"&&S.postCount!==cumDone&&!d.loading&&<div style={{color:"#ffa657",fontSize:"13px"}}>
+      ⚠️ 아래 결과는 {S.postCount}개 기준입니다. 이후 분석한 글이 더 있어요 ({cumDone}개) — 🔄 다시 분석을 눌러 갱신하세요.
+    </div>}
     {S&&<>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:"8px"}}>
         {[
           ["상위노출 키워드",`${S.topCount} / ${S.kwCount}개`,`${topN}위 이내`],
-          ["상위 키워드 평균 검색량",fmt(S.avgTop),"월 PC+모바일"],
-          ["상위 못 든 키워드 평균",fmt(S.avgNotTop),"월 PC+모바일"],
+          ["상위 키워드 검색량 (중앙값)",fmt(S.medTop),`평균 ${fmt(S.avgTop)}`],
+          ["상위 못 든 키워드 (중앙값)",fmt(S.medNotTop),`평균 ${fmt(S.avgNotTop)}`],
           ["제목검색 누락",`${S.missingCount} / ${S.postCount}개`,"글 기준"],
         ].map(([l,v,sub])=>(
           <div key={l} style={box}>
@@ -2748,11 +2940,11 @@ function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun}){
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:"8px"}}>
-        {[["통합검색 상위 키워드",S.mainTop,"mainRank",S.avgMainTop],["블로그탭 상위 키워드",S.blogTop,"blogRank",S.avgBlogTop]].map(([title,list,key,av])=>(
+        {[["통합검색 상위 키워드",S.mainTop,"mainRank",S.avgMainTop,S.medMainTop],["블로그탭 상위 키워드",S.blogTop,"blogRank",S.avgBlogTop,S.medBlogTop]].map(([title,list,key,av,md])=>(
           <div key={title} style={box}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
               <span style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>{title} <span style={{color:"#58a6ff"}}>{list.length}</span></span>
-              <span style={{color:"#484f58",fontSize:"12px"}}>평균 월 {fmt(av)}</span>
+              <span style={{color:"#484f58",fontSize:"12px"}}>중앙값 {fmt(md)} · 평균 {fmt(av)}</span>
             </div>
             {list.length?list.slice(0,10).map(r=>chip(r,key)):<div style={{color:"#484f58",fontSize:"13px",padding:"6px 0"}}>{topN}위 이내 키워드 없음</div>}
             {list.length>10&&<div style={{color:"#484f58",fontSize:"12px",paddingTop:"4px"}}>외 {list.length-10}개</div>}
@@ -2804,6 +2996,9 @@ function MissingTab(){
   const PER_PAGE=20;
   // 키워드 인사이트 — 페이지(20개) 단위 집계 + AI 추천
   const [insights,setInsights]=useState({});          // {page: {loading,step,rows,summary,ai,error}}
+  const [insightScope,setInsightScope]=useState("page"); // "page" | "all"(지금까지 분석한 페이지 누적)
+  const scopeRef=useRef("page");
+  const seenRef=useRef({});                            // {postNo: post} — 페이지를 넘겨도 분석한 글 정보를 유지
   const analysisRef=useRef({});
   const extraRef=useRef({});
   // 방법3 — 엑셀 업로드
@@ -2822,6 +3017,8 @@ function MissingTab(){
   const [extraLoading,setExtraLoading]=useState({});  // {postNo: bool}
 
   useEffect(()=>{analysisRef.current=analysis;},[analysis]);
+  useEffect(()=>{scopeRef.current=insightScope;},[insightScope]);
+  useEffect(()=>{(posts?.current||[]).forEach(p=>{seenRef.current[p.postNo]={...p,_page:posts.page||1};});},[posts]);
   useEffect(()=>{extraRef.current=extraResults;},[extraResults]);
 
   // ── 방법1: 블로그 전체 글 목록을 20개씩 페이지 단위로 조회 (과거 글까지) ──
@@ -2830,7 +3027,7 @@ function MissingTab(){
     if(!bid){alert("블로그 아이디를 입력해주세요.");return;}
     lsSet(LS_BLOGID, bid);   // 글쓰기 탭에서 제목 반복 단어를 분석할 때 사용
     setLoadingFeed(true);setFeedError("");setExpanded(null);
-    if(!keep){setPosts(null);setAnalysis({});setExtraResults({});setExtraKw({});setInsights({});}
+    if(!keep){setPosts(null);setAnalysis({});setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};}
     try{
       const res=await fetch(`/api/blog-posts?blogId=${encodeURIComponent(bid)}&page=${pg}&size=${PER_PAGE}`);
       let data=null;
@@ -2875,7 +3072,7 @@ function MissingTab(){
     const postNo=m[2];
     const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual",_blogId:m[1]};
     setPosts({all:[post],current:[post],total:1,page:1,blogId:m[1]});
-    setPage(1);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});setInsights({});
+    setPage(1);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};
     setTimeout(()=>runAnalyze(post,0),80);
   };
 
@@ -3155,8 +3352,13 @@ JSON 배열만 출력:`;
     }
     // 이 페이지(최대 20개) 분석이 끝나면 키워드 인사이트까지 이어서 실행
     await new Promise(r=>setTimeout(r,150));
-    runInsight(list,pg);
+    if(scopeRef.current==="all") runInsight(cumulativeList(),"all");
+    else runInsight(list,pg);
   };
+
+  // 지금까지 분석을 마친 글 전부 (페이지 누적)
+  const cumulativeList=()=>Object.values(seenRef.current)
+    .filter(p=>analysisRef.current[p.postNo]&&!analysisRef.current[p.postNo].error);
 
   // ── 키워드 인사이트: 현재 페이지에서 분석된 글들의 키워드 순위 + 월 검색량 집계 → AI 추천 ──
   const TOP_N=10; // 이 순위 이내면 "상위노출"로 본다
@@ -3212,6 +3414,8 @@ JSON 배열만 출력:`;
       // 3) 집계
       const isTop=r=>r!=null&&r<=TOP_N;
       const avg=arr=>{const v=arr.filter(x=>x.monthly!=null);return v.length?Math.round(v.reduce((a,b)=>a+b.monthly,0)/v.length):null;};
+      const med=arr=>{const v=arr.filter(x=>x.monthly!=null).map(x=>x.monthly).sort((a,b)=>a-b);
+        if(!v.length)return null;const m=Math.floor(v.length/2);return v.length%2?v[m]:Math.round((v[m-1]+v[m])/2);};
       const byVol=(a,b)=>(b.monthly||0)-(a.monthly||0);
       const mainTop=rows.filter(r=>isTop(r.mainRank)).sort(byVol);
       const blogTop=rows.filter(r=>isTop(r.blogRank)).sort(byVol);
@@ -3223,6 +3427,7 @@ JSON 배열만 출력:`;
         missingCount:missing.length,
         mainTop,blogTop,
         avgTop:avg(anyTop),avgMainTop:avg(mainTop),avgBlogTop:avg(blogTop),avgNotTop:avg(notTop),
+        medTop:med(anyTop),medMainTop:med(mainTop),medBlogTop:med(blogTop),medNotTop:med(notTop),
         topCount:anyTop.length,
       };
       setInsights(s=>({...s,[pg]:{loading:true,step:"AI가 다음 키워드 전략 분석 중...",rows,summary}}));
@@ -3232,14 +3437,15 @@ JSON 배열만 출력:`;
       const prompt=`네이버 블로그 @${posts?.blogId||""}의 최근 글 ${done.length}개를 분석한 데이터다. (순위 "-" = 100위 밖, 상위 = ${TOP_N}위 이내)
 
 [글 제목]
-${done.map(p=>`- ${p.title}${A[p.postNo].missingStatus==="누락"?" (제목검색 누락)":""}`).join("\n")}
+${done.slice(0,80).map(p=>`- ${p.title}${A[p.postNo].missingStatus==="누락"?" (제목검색 누락)":""}`).join("\n")}
 
 [키워드 | 통합검색 순위 | 블로그탭 순위 | 월 검색량]
-${rows.slice().sort(byVol).map(line).join("\n")}
+${rows.slice().sort(byVol).slice(0,300).map(line).join("\n")}
 
 [집계]
-- 상위노출 키워드 ${anyTop.length}/${rows.length}개, 평균 월검색량 ${summary.avgTop??"?"}
-- 상위 못 든 키워드 평균 월검색량 ${summary.avgNotTop??"?"}
+- 상위노출 키워드 ${anyTop.length}/${rows.length}개, 월검색량 평균 ${summary.avgTop??"?"} / 중앙값 ${summary.medTop??"?"}
+- 상위 못 든 키워드 월검색량 평균 ${summary.avgNotTop??"?"} / 중앙값 ${summary.medNotTop??"?"}
+- 평균은 검색량 큰 키워드 하나에 튀므로 "먹히는 구간" 판단은 중앙값을 우선해라
 - 제목검색 누락 글 ${missing.length}/${done.length}개
 
 이 블로그가 실제로 상위에 올린 키워드의 주제·형태(단어 수, 수식어 패턴)·검색량 구간을 근거로, 앞으로 어떤 키워드를 노려야 하는지 분석해라. 데이터에 없는 수치는 지어내지 마라. 추천 키워드의 검색량은 모르면 적지 마라.
@@ -3426,11 +3632,19 @@ recommend는 8개.`;
     </div>}
 
     {/* ── 키워드 인사이트 (페이지 20개 단위) ── */}
-    {mode==="blogId"&&posts&&<InsightPanel
-      data={insights[page]} page={page} topN={TOP_N}
-      analyzedCount={posts.current.filter(p=>analysis[p.postNo]&&!analysis[p.postNo].error).length}
-      totalCount={posts.current.length} busy={analyzing!==-1}
-      onRun={()=>runInsight(posts.current,page)}/>}
+    {mode==="blogId"&&posts&&(()=>{
+      const okCnt=l=>l.filter(p=>analysis[p.postNo]&&!analysis[p.postNo].error).length;
+      const cum=Object.values(seenRef.current);
+      const cumDone=okCnt(cum);
+      const cumPages=[...new Set(cum.filter(p=>analysis[p.postNo]&&!analysis[p.postNo].error).map(p=>p._page))].sort((a,b)=>a-b);
+      const isAll=insightScope==="all";
+      return <InsightPanel
+        data={insights[isAll?"all":page]} page={page} topN={TOP_N}
+        blogId={posts.blogId} scope={insightScope} setScope={setInsightScope} cumDone={cumDone} cumPages={cumPages}
+        analyzedCount={isAll?cumDone:okCnt(posts.current)}
+        totalCount={isAll?cumDone:posts.current.length} busy={analyzing!==-1}
+        onRun={()=>isAll?runInsight(cumulativeList(),"all"):runInsight(posts.current,page)}/>;
+    })()}
 
     {/* ── 방법2: URL + 제목 + 본문 직접 입력 ── */}
     {mode==="url"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"12px"}}>
@@ -3617,7 +3831,7 @@ recommend는 8개.`;
               borderRadius:"6px",cursor:"pointer",fontSize:"14px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>
               ⚡ 전체 분석
             </button>}
-          <button onClick={()=>{setPosts(null);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});setInsights({});}}
+          <button onClick={()=>{setPosts(null);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};}}
             style={{padding:"6px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
               borderRadius:"6px",cursor:"pointer",fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif"}}>
             🗑️ 초기화
