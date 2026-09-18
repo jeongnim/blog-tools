@@ -3059,11 +3059,28 @@ function InflowPanel({inflow,setInflow,rows,insightAi,topN,postDates,blogId,scop
     setBusy("파일 읽는 중...");setErr("");
     try{
       const XLSX=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js","XLSX");
-      const parsed=[];
+      // zip이면 풀어서 안의 엑셀을 전부 꺼낸다 (파일 종류·기간은 이름이 아니라 내용으로 구분하므로 한글 파일명 깨져도 무관)
+      const buffers=[];
       for(const f of files){
-        const wb=XLSX.read(await f.arrayBuffer());
-        const p=parseNaverStatSheet(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""}));
-        if(p) parsed.push(p);
+        if(/\.(alz|egg|7z|rar)$/i.test(f.name)) throw new Error("알집 전용 형식(.alz/.egg)이나 7z·rar은 못 읽어요. 압축할 때 형식을 ZIP으로 선택해주세요.");
+        if(/\.zip$/i.test(f.name)){
+          const JSZip=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js","JSZip");
+          const zip=await JSZip.loadAsync(await f.arrayBuffer());
+          for(const entry of Object.values(zip.files)){
+            if(entry.dir) continue;
+            const ab=await entry.async("arraybuffer");
+            const h=new Uint8Array(ab.slice(0,2));
+            if(h[0]===0x50&&h[1]===0x4B) buffers.push(ab);   // xlsx는 내부적으로 zip(PK) — 확장자 대신 시그니처로 판별
+          }
+        }else buffers.push(await f.arrayBuffer());
+      }
+      const parsed=[];
+      for(const ab of buffers){
+        try{
+          const wb=XLSX.read(ab);
+          const p=parseNaverStatSheet(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""}));
+          if(p) parsed.push(p);
+        }catch(e){}
       }
       if(!parsed.some(x=>x.type==="inflow")) throw new Error("유입분석 파일을 찾지 못했어요. 지표 다운로드에서 '유입분석'을 받아 올려주세요.");
       const a=aggregateInflow(parsed);
@@ -3163,12 +3180,12 @@ actions 5개, recommend 8개.`;
         <button onClick={()=>fileRef.current?.click()} disabled={!!busy} style={btn(!!busy)}>{agg?"📂 파일 다시 올리기":"📂 통계 엑셀 올리기"}</button>
         {cmp&&<button onClick={runAi} disabled={!!busy} style={{...btn(!!busy),background:busy?"#21262d":"#1f6feb",color:busy?"#484f58":"#fff",border:"none"}}>{inflow?.ai?"🔄 AI 다시 분석":"🤖 AI 비교 분석"}</button>}
       </div>
-      <input ref={fileRef} type="file" accept=".xlsx,.xls" multiple onChange={onFiles} style={{display:"none"}}/>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls,.zip" multiple onChange={onFiles} style={{display:"none"}}/>
     </div>
 
     {!agg&&!busy&&<div style={{color:"#484f58",fontSize:"13px",lineHeight:1.8}}>
       내 블로그일 때만 쓸 수 있어요. 네이버 블로그 관리 → 내 블로그 통계 → <b style={{color:"#8b949e"}}>지표 다운로드</b>에서
-      <b style={{color:"#8b949e"}}> 유입분석</b>(월간)과 <b style={{color:"#8b949e"}}>조회수 순위</b>(월간)를 받아서, 여러 달 치를 <b style={{color:"#8b949e"}}>한 번에 선택</b>해 올리면 됩니다.
+      <b style={{color:"#8b949e"}}> 유입분석</b>(월간)과 <b style={{color:"#8b949e"}}>조회수 순위</b>(월간)를 받아서, 여러 달 치를 <b style={{color:"#8b949e"}}>한 번에 선택</b>하거나 <b style={{color:"#8b949e"}}>ZIP으로 묶어서</b> 올리면 됩니다.
       조회수 순위를 같이 올리면 유입이 %가 아니라 추정 횟수로 계산돼요. 파일은 브라우저 안에서만 읽습니다.
     </div>}
     {busy&&<div style={{color:"#58a6ff",fontSize:"13px"}}>⏳ {busy}</div>}
