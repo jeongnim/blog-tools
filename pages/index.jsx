@@ -17,7 +17,13 @@ const FORBIDDEN_CATEGORIES = [
       // 성인용품/콘텐츠
       "성인용품","성인샵","러브샵","섹스샵","딜도샵","바이브샵","성인몰",
       "애널","SM","BDSM","bondage","페티시","코스프레야동","성인코스프레",
-      "유흥알바","조건알바","만남알바","성인알바","밤알바","룸알바","노래방도우미"
+      "유흥알바","조건알바","만남알바","성인알바","밤알바","룸알바","노래방도우미",
+      // 핵심 2~3글자 (다른 단어 속에 우연히 끼기 쉬운 것들 — 예: 전성기/성기, 사정상/사정, 개발기간/발기, 일정액/정액)
+      "성인","섹시","유흥","정사","애무","발기","사정","정액","성교","체위","알몸","나체","음모","유두","젖꼭지",
+      "창녀","창부","매음","윤락","불륜","조루","콘돔","피임","낙태","성병","성희롱","성추행","성범죄","성노예",
+      "야짤","야애니","망가","헨타이","벗방","노콘","질내","후장","빠구리","떡치","걸레년","쓰리섬","갱뱅",
+      "출장마사지","출장안마","출장샵","안마방","대딸","립카페","풀싸롱","룸살롱","룸싸롱","텐프로","호빠","호스트바",
+      "보도방","티켓다방","휴게텔","핸플","유흥업소","화류계","스폰만남","조건녀","원조"
     ]
   },
   {
@@ -28,7 +34,10 @@ const FORBIDDEN_CATEGORIES = [
       "카지노","도박","슬롯","배팅","토토","먹튀","스포츠토토","불법도박",
       "사설토토","온라인도박","배당률","핸디캡","불법카지노","해외카지노",
       "강원랜드꿀팁","블랙잭","룰렛","포커머니","홀덤머니","바카라",
-      "복권당첨비법","로또조작","경마베팅","개경주","투견","소싸움베팅"
+      "복권당첨비법","로또조작","경마베팅","개경주","투견","소싸움베팅",
+      "베팅","홀덤","잭팟","파워볼","사다리게임","릴게임","바다이야기","황금성","경마","경륜","경정",
+      "화투","고스톱","섯다","맞고머니","포커","놀이터추천","안전놀이터","메이저놀이터","꽁머니","총판모집","픽스터",
+      "토토사이트","카지노사이트","바카라사이트","슬롯사이트","먹튀검증","판돈","노름","타짜","불법스포츠"
     ]
   },
   {
@@ -76,7 +85,11 @@ const FORBIDDEN_CATEGORIES = [
       "폰테크","대포폰","폰개통대리","명의도용개통","소액결제현금화",
       // 핀테크 사기
       "상품권현금화","상품권깡","카드깡","카드현금화불법","신용카드깡",
-      "피싱","보이스피싱","스미싱","파밍","해킹","개인정보판매","개인정보불법"
+      "피싱","보이스피싱","스미싱","파밍","해킹","개인정보판매","개인정보불법",
+      // 핵심어 (주사기/사기, 회사채/사채, 고가일수록/일수 처럼 우연히 걸리는 것 포함)
+      "사기","대출","급전","깡통전세","대포통장","대포차","몸캠","리딩방","주식리딩","코인리딩","고수익보장","원금보장",
+      "환치기","돈세탁","자금세탁","탈세","뇌물","횡령","비자금","불법환전","내구제","휴대폰깡","폰깡","가개통","유심매입",
+      "불법","편법","먹튀사이트","디도스","랜섬웨어","계정판매","아이디판매","아이디구매"
     ]
   },
   {
@@ -115,6 +128,35 @@ const FORBIDDEN_CATEGORIES = [
       "불법왁싱","무자격왁싱시술",
       // 누수
       "누수사기","누수허위수리","누수바가지"
+    ]
+  },
+  {
+    id:"crime", icon:"🔪", label:"범죄·폭력·자해",
+    color:"#f85149", bg:"#2d0b0b", border:"#f8514944",
+    severity:"mid", desc:"폭력·범죄·자해 관련 — 검색 제한·유해글 분류 가능",
+    words:[
+      "살인","살해","자살","자해","동반자살","극단적선택","시체","시신유기","암매장","토막","학살","테러","폭탄",
+      "납치","유괴","감금","폭행","구타","고문","협박","청부","흥신소","심부름센터","뒷조사","도청","위치추적불법",
+      "스토킹","성착취","아동학대","인신매매","장기매매","밀입국","밀수","절도","강도","방화","칼부림","묻지마"
+    ]
+  },
+  {
+    id:"profanity", icon:"🤬", label:"욕설·비하",
+    color:"#ffa657", bg:"#2d1e0a", border:"#ffa65744",
+    severity:"mid", desc:"욕설·비하 표현 — 시발점/시발, 새끼손가락/새끼 같은 우연 포함",
+    words:[
+      "시발","씨발","씨팔","씨바","ㅅㅂ","병신","ㅂㅅ","개새끼","새끼","좆","존나","졸라","지랄","염병","썅","쌍놈","쌍년",
+      "미친놈","미친년","닥쳐","꺼져","등신","또라이","찐따","빡대가리","니미","엿먹","개같","개소리","개돼지",
+      "한남충","김치녀","된장녀","맘충","틀딱","급식충","짱깨","쪽바리","깜둥이","흑형","똥남아","조센징","홍어","통구이"
+    ]
+  },
+  {
+    id:"medical_sensitive", icon:"🏥", label:"의료 민감어",
+    color:"#79c0ff", bg:"#0d1e33", border:"#79c0ff44",
+    severity:"low", desc:"의료 업종어 — 비의료 글에서는 피하는 편이 안전",
+    words:[
+      "병원","의원","시술","수술","처방","치료","완치","성형","보톡스","필러","임플란트","한의원","약국","진료",
+      "부작용없","효과보장","특효","만병통치"
     ]
   },
   {
@@ -193,6 +235,7 @@ const FORBIDDEN_CATEGORIES = [
 ];
 
 // 금칙어 전체 목록 (detectForbidden에서 사용)
+(()=>{const seen=new Set();FORBIDDEN_CATEGORIES.forEach(c=>{c.words=c.words.filter(w=>{if(seen.has(w))return false;seen.add(w);return true;});});})();
 const FORBIDDEN_WORDS = FORBIDDEN_CATEGORIES.flatMap(c=>c.words);
 
 // 카테고리 매핑
@@ -218,35 +261,50 @@ function hostRange(text,idx,len){
   return [st,en];
 }
 // word가 target 어절 안에 있는 자리만 골라 r로 교체 (다른 어절의 같은 글자는 건드리지 않음)
+// 금칙어 패턴: 3글자 이상은 글자 사이 공백 1칸까지 허용 → "성인 용품", "불법 도박", "처방전 없이"도 잡는다.
+// 2글자는 붙어 있을 때만 ("회사 기준"이 "사기"로 걸리는 식의 오탐 방지).
+const _patCache=new Map();
+function wordPatternSrc(w){
+  const chars=[...w];
+  if(chars.length<3||/\s/.test(w)) return escapeRegex(w);
+  return chars.map(escapeRegex).join("[ \\t]?");
+}
+function findMatches(text,w){
+  let src=_patCache.get(w); if(!src){src=wordPatternSrc(w);_patCache.set(w,src);}
+  const re=new RegExp(src,"g"); const out=[]; let m;
+  while((m=re.exec(text))!==null){ out.push({idx:m.index,len:m[0].length}); if(m[0].length===0) re.lastIndex++; }
+  return out;
+}
+// word가 target 어절 안에 있는 자리만 골라 r로 교체 (다른 어절의 같은 글자는 건드리지 않음)
 function replaceHost(text,word,target,r){
-  let out="",last=0,from=0,idx;
-  while((idx=text.indexOf(word,from))!==-1){
-    const [st,en]=hostRange(text,idx,word.length);
-    if(text.slice(st,en)===target&&st>=last){out+=text.slice(last,st)+r;last=en;from=en;}
-    else from=idx+word.length;
-  }
+  let out="",last=0;
+  findMatches(text,word).forEach(({idx,len})=>{
+    const [st,en]=hostRange(text,idx,len);
+    if(st>=last&&text.slice(st,en)===target){out+=text.slice(last,st)+r;last=en;}
+  });
   return out+text.slice(last);
 }
 function detectForbidden(text){
-  const results=[];
-  FORBIDDEN_CATEGORIES.forEach(cat=>{
-    cat.words.forEach(w=>{
-      const hosts={}; let from=0,idx;
-      while((idx=text.indexOf(w,from))!==-1){
-        const [st,en]=hostRange(text,idx,w.length);
-        const target=text.slice(st,en);
-        if(!hosts[target]){
-          const ps=Math.max(0,st-12),pe=Math.min(text.length,en+12);
-          hosts[target]={count:0,phrase:text.slice(ps,pe).replace(/\n/g," "),idx};
-        }
-        hosts[target].count++;
-        from=idx+w.length;
-      }
-      Object.entries(hosts).forEach(([target,h])=>{
-        results.push({word:w,target,embedded:target!==w,count:h.count,idx:h.idx,catId:cat.id,catIcon:cat.icon,catLabel:cat.label,catColor:cat.color,catBg:cat.bg,catBorder:cat.border,severity:cat.severity,phrase:h.phrase});
-      });
-    });
+  // 1) 전체 매치 수집 → 긴 금칙어에 완전히 포함된 짧은 금칙어 매치는 버린다 ("불법 도박"이 불법도박·불법·도박 3건으로 뜨지 않게)
+  const all=[];
+  FORBIDDEN_CATEGORIES.forEach(cat=>cat.words.forEach(w=>findMatches(text,w).forEach(m=>all.push({...m,w,cat}))));
+  all.sort((a,b)=>b.len-a.len);
+  const kept=[];
+  all.forEach(m=>{ if(!kept.some(k=>k.w!==m.w&&k.idx<=m.idx&&m.idx+m.len<=k.idx+k.len&&k.len>m.len)) kept.push(m); });
+  // 2) (금칙어, 어절) 단위로 묶기
+  const groups=new Map();
+  kept.forEach(({idx,len,w,cat})=>{
+    const [st,en]=hostRange(text,idx,len);
+    const target=text.slice(st,en), key=w+"\u0001"+target;
+    let g=groups.get(key);
+    if(!g){
+      const ps=Math.max(0,st-12),pe=Math.min(text.length,en+12);
+      g={word:w,target,embedded:target!==w,count:0,idx,catId:cat.id,catIcon:cat.icon,catLabel:cat.label,catColor:cat.color,catBg:cat.bg,catBorder:cat.border,severity:cat.severity,phrase:text.slice(ps,pe).replace(/\n/g," ")};
+      groups.set(key,g);
+    }
+    g.count++; if(idx<g.idx) g.idx=idx;
   });
+  const results=[...groups.values()].sort((a,b)=>a.idx-b.idx);
   // 심각도 순 정렬: high → mid → low
   const sevOrder={high:0,mid:1,low:2};
   return results.sort((a,b)=>(sevOrder[a.severity]??2)-(sevOrder[b.severity]??2));
@@ -254,7 +312,7 @@ function detectForbidden(text){
 function highlightText(text,list,repl){
   const active=[...new Set(list.filter(({target,word})=>!repl[target??word]?.trim()).map(({word})=>word))];
   if(!active.length) return text;
-  const pat=new RegExp(`(${active.map(escapeRegex).join("|")})`, "g");
+  const pat=new RegExp(`(${active.slice().sort((a,b)=>b.length-a.length).map(wordPatternSrc).join("|")})`, "g");
   const parts=[]; let last=0,m;
   while((m=pat.exec(text))!==null){
     if(m.index>last) parts.push({text:text.slice(last,m.index),h:false});
@@ -666,7 +724,7 @@ function ForbiddenSection({workingText,forbidden,hp,replacements,setReplacements
   · 우연히 겹친 경우: 어절의 원래 뜻을 그대로 살린 다른 표현으로 바꾼다. 예) 어절 "처음부터" → "애초부터", "시작부터", "맨 앞부터"
   · 실제 그 뜻으로 쓰인 경우: 같은 뜻의 순화된 표현으로 바꾼다.
 - 추천은 금칙어 글자만이 아니라 **어절 전체를 통째로 대체**하는 표현이다. 조사·어미(부터, 를, 에서, 했습니다 등)는 원래대로 붙여서 문장에 그대로 끼워 넣을 수 있어야 한다.
-- 추천 표현 안에 금칙어 목록의 글자열이 (띄어쓰기 없이) 다시 나타나면 안 된다.
+- 추천 표현 안에 해당 금칙어 글자열이 다시 나타나면 안 되고, 성인·도박·사기·욕설로 읽힐 수 있는 다른 글자 조합도 피해라.
 - 문맥과 무관한 단어를 지어내지 마라. 문장의 원래 의미가 바뀌면 안 된다.`;
 
   const aiRecommendAll=async()=>{
@@ -677,7 +735,6 @@ function ForbiddenSection({workingText,forbidden,hp,replacements,setReplacements
 반드시 순수 JSON 배열만 출력. 마크다운 없이.
 
 ${RULES}
-- 금칙어 목록: ${FORBIDDEN_WORDS.join(",")}
 
 발견 항목:
 ${forbidden.map((it,i)=>`${i+1}. 금칙어: "${it.word}" / 어절: "${it.target}" / 문맥: "...${ctxOf(it,40)}..."`).join("\n")}
@@ -713,7 +770,6 @@ ${forbidden.map((it,i)=>`${i+1}. 금칙어: "${it.word}" / 어절: "${it.target}
     try{
       const prompt=`블로그 글에서 네이버 금칙어 글자열 "${item.word}"이(가) 어절 "${item.target}" 안에서 발견됐습니다. 이 어절을 대체할 표현을 추천해주세요.
 문맥: "...${ctxOf(item,60)}..."
-금칙어 목록(사용 금지): ${FORBIDDEN_WORDS.join(",")}
 
 ${RULES}
 
@@ -2901,6 +2957,44 @@ async function exportInsightPdf(d,meta){
   }
 }
 
+// ── 누락 확인 > 블로그 ID별 마지막 조회 결과 저장 (브라우저 localStorage) ──
+// ID 하나당 스냅샷 1개만 유지 → 같은 ID를 다시 분석하면 덮어쓴다.
+const BH_INDEX="mt_blog_hist_index", BH_PREFIX="mt_blog_hist_", BH_MAX=20;
+const bhKey=id=>BH_PREFIX+String(id||"").toLowerCase();
+// 순위조회 응답에 딸려오는 100개짜리 items 등 큰 배열은 저장하지 않는다 (용량 절약, 화면에서도 안 씀)
+function bhSlim(v,inRank=false){
+  if(Array.isArray(v)) return inRank&&v.length>12&&typeof v[0]==="object"?undefined:v.map(x=>bhSlim(x,inRank));
+  if(v&&typeof v==="object"){const o={};Object.entries(v).forEach(([k,x])=>{
+    const rank=inRank||k==="realRank"||k==="titleRank";
+    if(rank&&k==="items")return;
+    const y=bhSlim(x,rank);if(y!==undefined)o[k]=y;});return o;}
+  return v;
+}
+function bhList(){ try{return JSON.parse(localStorage.getItem(BH_INDEX)||"[]")||[];}catch(e){return [];} }
+function bhLoad(id){ try{return JSON.parse(localStorage.getItem(bhKey(id))||"null");}catch(e){return null;} }
+function bhDelete(id){
+  try{localStorage.removeItem(bhKey(id));
+    const idx=bhList().filter(x=>x.blogId.toLowerCase()!==String(id).toLowerCase());
+    localStorage.setItem(BH_INDEX,JSON.stringify(idx));return idx;}catch(e){return bhList();}
+}
+function bhSave(snap,meta){
+  let idx=bhList().filter(x=>x.blogId.toLowerCase()!==snap.blogId.toLowerCase());
+  idx.unshift(meta);
+  // 개수 초과분 + 용량 초과 시 오래된 것부터 삭제
+  while(idx.length>BH_MAX){const old=idx.pop();try{localStorage.removeItem(bhKey(old.blogId));}catch(e){}}
+  const body=JSON.stringify(snap);
+  for(let tries=0;tries<BH_MAX;tries++){
+    try{localStorage.setItem(bhKey(snap.blogId),body);localStorage.setItem(BH_INDEX,JSON.stringify(idx));return idx;}
+    catch(e){ if(idx.length<=1) return null; const old=idx.pop(); try{localStorage.removeItem(bhKey(old.blogId));}catch(_){} }
+  }
+  return null;
+}
+function bhAgo(ts){
+  const m=Math.floor((Date.now()-ts)/60000);
+  if(m<1)return "방금"; if(m<60)return m+"분 전"; if(m<1440)return Math.floor(m/60)+"시간 전";
+  const d=new Date(ts),z=n=>String(n).padStart(2,"0"); return `${String(d.getFullYear()).slice(2)}.${z(d.getMonth()+1)}.${z(d.getDate())}`;
+}
+
 // ── 누락 확인 > 키워드 인사이트 패널 ──
 function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun,scope,setScope,cumDone,cumPages,blogId}){
   const d=data||{};
@@ -3037,6 +3131,10 @@ function MissingTab(){
   const PER_PAGE=20;
   // 키워드 인사이트 — 페이지(20개) 단위 집계 + AI 추천
   const [insights,setInsights]=useState({});          // {page: {loading,step,rows,summary,ai,error}}
+  const [history,setHistory]=useState([]);            // 저장된 블로그 목록 (최근 조회순)
+  const [histOpen,setHistOpen]=useState(false);
+  const [restored,setRestored]=useState(null);         // {blogId,savedAt,count} — 저장본을 불러온 상태 표시
+  useEffect(()=>{setHistory(bhList());},[]);
   const [insightScope,setInsightScope]=useState("page"); // "page" | "all"(지금까지 분석한 페이지 누적)
   const scopeRef=useRef("page");
   const seenRef=useRef({});                            // {postNo: post} — 페이지를 넘겨도 분석한 글 정보를 유지
@@ -3063,12 +3161,64 @@ function MissingTab(){
   useEffect(()=>{extraRef.current=extraResults;},[extraResults]);
 
   // ── 방법1: 블로그 전체 글 목록을 20개씩 페이지 단위로 조회 (과거 글까지) ──
+  // 저장본에서 분석 결과만 꺼내기 (분석 도중 저장돼 순위가 비어 있는 글은 미분석으로 되돌림)
+  const cleanSavedAnalysis=(a)=>{const o={};Object.entries(a||{}).forEach(([k,v])=>{
+    if(!v||v.error) return; if((v.topKeywords||[]).some(x=>x.rankLoading)) return; o[k]=v;});return o;};
+  const cleanSavedExtra=(x)=>{const o={};Object.entries(x||{}).forEach(([k,arr])=>{o[k]=(arr||[]).filter(r=>!r.loading&&!r.rankLoading);});return o;};
+  const applySnapshot=(snap,withPosts)=>{
+    const a=cleanSavedAnalysis(snap.analysis);
+    setAnalysis(a);setExtraResults(cleanSavedExtra(snap.extraResults));setExtraKw({});
+    setInsights(snap.insights||{});seenRef.current={...(snap.seen||{})};
+    if(withPosts&&snap.posts){setPosts(snap.posts);setPage(snap.posts.page||1);}
+    setRestored({blogId:snap.blogId,savedAt:snap.savedAt,count:Object.keys(a).length});
+  };
+  // 최근 조회 목록에서 클릭 → 네트워크 호출 없이 저장된 화면 그대로 복원
+  const openHistory=(id)=>{
+    const snap=bhLoad(id);
+    if(!snap){setHistory(bhDelete(id));alert("저장된 데이터를 찾을 수 없어요.");return;}
+    setMode("blogId");setBlogId(snap.blogId);setFeedError("");setExpanded(null);setHistOpen(false);
+    lsSet(LS_BLOGID,snap.blogId);
+    applySnapshot(snap,true);
+  };
+  const removeHistory=(id)=>{setHistory(bhDelete(id));if(restored?.blogId===id)setRestored(null);};
+  // 현재 블로그의 저장본을 지우고 처음부터 다시
+  const resetSaved=()=>{
+    if(!posts?.blogId) return;
+    if(!confirm(`@${posts.blogId} 의 저장된 분석 결과를 지우고 새로 시작할까요?`)) return;
+    setHistory(bhDelete(posts.blogId));setRestored(null);
+    setAnalysis({});setExtraResults({});setExtraKw({});setInsights({});setExpanded(null);
+    const keepSeen={};(posts.current||[]).forEach(p=>{keepSeen[p.postNo]={...p,_page:posts.page||1};});seenRef.current=keepSeen;
+  };
+
+  // 자동 저장 — 분석/추가검색/인사이트가 바뀔 때마다 (0.8초 디바운스)
+  useEffect(()=>{
+    if(mode!=="blogId"||!posts?.serverPaged||!posts?.blogId) return;
+    const t=setTimeout(()=>{
+      const bid=posts.blogId, seen=seenRef.current||{};
+      const mine=k=>seen[k]&&(seen[k]._blogId||"").toLowerCase()===bid.toLowerCase();
+      const a={};Object.entries(analysis).forEach(([k,v])=>{if(mine(k)&&v&&!v.error)a[k]=v;});
+      const done=Object.values(a).filter(v=>!(v.topKeywords||[]).some(x=>x.rankLoading));
+      if(!done.length) return;
+      const x={};Object.entries(extraResults).forEach(([k,v])=>{if(mine(k)&&v?.length)x[k]=v;});
+      const ins={};Object.entries(insights).forEach(([k,v])=>{if(v&&!v.loading&&v.summary)ins[k]=v;});
+      const seenMine={};Object.entries(seen).forEach(([k,v])=>{if(mine(k))seenMine[k]=v;});
+      let topKw=0;done.forEach(v=>(v.topKeywords||[]).forEach(kw=>{
+        const ar=kw.realRank?.areas;const r=Math.min(ar?.main_search?.rank??999,ar?.blog?.rank??999,ar?999:(kw.realRank?.myRank??999));if(r<=10)topKw++;}));
+      const snap=bhSlim({blogId:bid,savedAt:Date.now(),posts:{...posts,all:posts.current},analysis:a,extraResults:x,insights:ins,seen:seenMine});
+      const meta={blogId:bid,savedAt:snap.savedAt,total:posts.total||0,analyzed:done.length,
+        missing:done.filter(v=>v.missingStatus==="누락").length,topKw,hasInsight:Object.keys(ins).length>0};
+      const idx=bhSave(snap,meta);
+      if(idx) setHistory(idx);
+    },800);
+    return ()=>clearTimeout(t);
+  },[analysis,extraResults,insights,posts,mode]);
+
   const fetchBlogPage=async(id,pg=1,keep=false)=>{
     const bid=(id||"").trim();
     if(!bid){alert("블로그 아이디를 입력해주세요.");return;}
     lsSet(LS_BLOGID, bid);   // 글쓰기 탭에서 제목 반복 단어를 분석할 때 사용
     setLoadingFeed(true);setFeedError("");setExpanded(null);
-    if(!keep){setPosts(null);setAnalysis({});setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};}
+    if(!keep){setPosts(null);setAnalysis({});setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};setRestored(null);}
     try{
       const res=await fetch(`/api/blog-posts?blogId=${encodeURIComponent(bid)}&page=${pg}&size=${PER_PAGE}`);
       let data=null;
@@ -3096,6 +3246,8 @@ function MissingTab(){
         notice:data.notice||"",
       });
       setPage(pg);
+      // 같은 ID의 저장본이 있으면 분석 결과를 이어받는다 (글 목록은 방금 받은 최신 것 사용 → 새 글만 추가 분석하면 됨)
+      if(!keep){const snap=bhLoad(data.blogId||bid);if(snap&&Object.keys(snap.analysis||{}).length)applySnapshot(snap,false);}
     }catch(e){setFeedError(e.message||"오류가 발생했습니다.");}
     setLoadingFeed(false);
   };
@@ -3664,6 +3816,43 @@ recommend는 8개.`;
       {feedError&&<div style={{background:"#2d1117",border:"1px solid #da3633",borderRadius:"8px",padding:"12px 14px",
         color:"#ff7b72",fontSize:"15px",display:"flex",gap:"8px",alignItems:"flex-start"}}>
         <span style={{flexShrink:0}}>⚠️</span><span>{feedError}</span>
+      </div>}
+
+      {/* 저장본 불러옴 안내 */}
+      {restored&&posts?.blogId===restored.blogId&&<div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",background:"#0f2a1a",border:"1px solid #2ea04344",borderRadius:"8px",padding:"8px 12px",fontSize:"13px",color:"#8b949e"}}>
+        <span>💾 저장된 분석 <b style={{color:"#3fb950"}}>{restored.count}개</b>를 불러왔어요 <span style={{color:"#484f58"}}>· {bhAgo(restored.savedAt)} 저장 · 이후 분석은 자동 저장</span></span>
+        <button onClick={resetSaved} style={{marginLeft:"auto",padding:"4px 10px",background:"none",border:"1px solid #30363d",borderRadius:"6px",color:"#ffa657",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>🗑 지우고 새로 분석</button>
+      </div>}
+
+      {/* 최근 조회한 블로그 (ID당 마지막 결과 1개 저장) */}
+      {history.length>0&&<div style={{border:"1px solid #21262d",borderRadius:"8px",overflow:"hidden"}}>
+        <button onClick={()=>setHistOpen(o=>!o)} style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 12px",background:"#0d1117",border:"none",cursor:"pointer",color:"#c9d1d9",fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>
+          🕘 최근 조회 <span style={{color:"#58a6ff"}}>{history.length}</span>
+          <span style={{color:"#484f58",fontWeight:400,fontSize:"12px"}}>클릭하면 저장된 결과를 바로 불러옵니다</span>
+          <span style={{marginLeft:"auto",color:"#484f58"}}>{(histOpen||!posts)?"▲":"▼"}</span>
+        </button>
+        {(histOpen||!posts)&&<div style={{overflowX:"auto"}}>
+          <div style={{minWidth:"520px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1.6fr .7fr .7fr .7fr .9fr .9fr 32px",gap:"8px",padding:"6px 12px",fontSize:"12px",color:"#484f58",borderTop:"1px solid #21262d"}}>
+              <span>블로그</span><span>전체 글</span><span>분석</span><span>누락</span><span>상위 키워드</span><span>저장</span><span/>
+            </div>
+            {history.map(h=>{
+              const cur=posts?.blogId&&posts.blogId.toLowerCase()===h.blogId.toLowerCase();
+              return <div key={h.blogId} onClick={()=>openHistory(h.blogId)}
+                style={{display:"grid",gridTemplateColumns:"1.6fr .7fr .7fr .7fr .9fr .9fr 32px",gap:"8px",padding:"8px 12px",fontSize:"13px",alignItems:"center",
+                  borderTop:"1px solid #161b22",cursor:"pointer",background:cur?"#1f6feb18":"transparent",color:"#c9d1d9"}}>
+                <span style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>@{h.blogId}{h.hasInsight&&<span title="키워드 인사이트 저장됨" style={{marginLeft:"6px"}}>🧠</span>}</span>
+                <span style={{color:"#8b949e"}}>{(h.total||0).toLocaleString()}</span>
+                <span style={{color:"#58a6ff"}}>{h.analyzed}</span>
+                <span style={{color:h.missing?"#ff7b72":"#8b949e"}}>{h.missing}</span>
+                <span style={{color:"#3fb950"}}>{h.topKw}</span>
+                <span style={{color:"#8b949e",fontSize:"12px"}}>{bhAgo(h.savedAt)}</span>
+                <span onClick={e=>{e.stopPropagation();if(confirm(`@${h.blogId} 저장 기록을 삭제할까요?`))removeHistory(h.blogId);}}
+                  style={{color:"#484f58",textAlign:"center",cursor:"pointer"}} title="삭제">✕</span>
+              </div>;
+            })}
+          </div>
+        </div>}
       </div>}
 
       <div style={{background:"#0d1117",border:"1px solid #1f6feb22",borderRadius:"8px",padding:"10px 13px",fontSize:"13px",color:"#484f58",lineHeight:"1.7"}}>
