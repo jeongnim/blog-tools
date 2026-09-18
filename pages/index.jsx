@@ -208,19 +208,43 @@ const COMPETITION_COLOR = {"매우낮음":"#3fb950","낮음":"#79c0ff","보통":
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 function escapeRegex(s){return s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");}
+// 금칙어가 들어있는 "어절"(공백·문장부호로 끊기는 덩어리) 범위 찾기
+// 예) "처음부터" 속 "음부" → 어절 = "처음부터". 교체는 어절 단위로 해야 문장이 안 깨진다.
+const HOST_BREAK=/[\s.,!?…·"'“”‘’()\[\]{}<>~:;\/|]/;
+function hostRange(text,idx,len){
+  let st=idx,en=idx+len;
+  while(st>0&&!HOST_BREAK.test(text[st-1])&&idx-st<12) st--;
+  while(en<text.length&&!HOST_BREAK.test(text[en])&&en-(idx+len)<12) en++;
+  return [st,en];
+}
+// word가 target 어절 안에 있는 자리만 골라 r로 교체 (다른 어절의 같은 글자는 건드리지 않음)
+function replaceHost(text,word,target,r){
+  let out="",last=0,from=0,idx;
+  while((idx=text.indexOf(word,from))!==-1){
+    const [st,en]=hostRange(text,idx,word.length);
+    if(text.slice(st,en)===target&&st>=last){out+=text.slice(last,st)+r;last=en;from=en;}
+    else from=idx+word.length;
+  }
+  return out+text.slice(last);
+}
 function detectForbidden(text){
   const results=[];
   FORBIDDEN_CATEGORIES.forEach(cat=>{
     cat.words.forEach(w=>{
-      const matches=text.match(new RegExp(escapeRegex(w),"g"))||[];
-      if(matches.length>0){
-        // 구문 추출: 단어 주변 20자
-        const idx=text.indexOf(w);
-        const start=Math.max(0,idx-10);
-        const end=Math.min(text.length,idx+w.length+10);
-        const phrase=text.slice(start,end).replace(/\n/g," ");
-        results.push({word:w,count:matches.length,catId:cat.id,catIcon:cat.icon,catLabel:cat.label,catColor:cat.color,catBg:cat.bg,catBorder:cat.border,severity:cat.severity,phrase});
+      const hosts={}; let from=0,idx;
+      while((idx=text.indexOf(w,from))!==-1){
+        const [st,en]=hostRange(text,idx,w.length);
+        const target=text.slice(st,en);
+        if(!hosts[target]){
+          const ps=Math.max(0,st-12),pe=Math.min(text.length,en+12);
+          hosts[target]={count:0,phrase:text.slice(ps,pe).replace(/\n/g," "),idx};
+        }
+        hosts[target].count++;
+        from=idx+w.length;
       }
+      Object.entries(hosts).forEach(([target,h])=>{
+        results.push({word:w,target,embedded:target!==w,count:h.count,idx:h.idx,catId:cat.id,catIcon:cat.icon,catLabel:cat.label,catColor:cat.color,catBg:cat.bg,catBorder:cat.border,severity:cat.severity,phrase:h.phrase});
+      });
     });
   });
   // 심각도 순 정렬: high → mid → low
@@ -228,7 +252,7 @@ function detectForbidden(text){
   return results.sort((a,b)=>(sevOrder[a.severity]??2)-(sevOrder[b.severity]??2));
 }
 function highlightText(text,list,repl){
-  const active=list.filter(({word})=>!repl[word]?.trim()).map(({word})=>word);
+  const active=[...new Set(list.filter(({target,word})=>!repl[target??word]?.trim()).map(({word})=>word))];
   if(!active.length) return text;
   const pat=new RegExp(`(${active.map(escapeRegex).join("|")})`, "g");
   const parts=[]; let last=0,m;
@@ -627,45 +651,54 @@ function ForbiddenSection({workingText,forbidden,hp,replacements,setReplacements
   const [perLoading,setPerLoading]=useState({});
   const [aiError,setAiError]=useState("");
 
+  // 금칙어가 들어있는 문장(앞뒤 문맥) 뽑기
+  const ctxOf=(item,pad=60)=>{
+    const i=item.idx??workingText.indexOf(item.target);
+    if(i<0) return "";
+    return workingText.slice(Math.max(0,i-pad),Math.min(workingText.length,i+item.target.length+pad)).replace(/\n/g," ");
+  };
+  // 추천 결과 검증: 금칙어가 다시 들어간 추천은 버린다
+  const cleanSugg=(list,item)=>[...new Set((list||[]).map(x=>String(x||"").replace(/["“”*]/g,"").trim()).filter(Boolean))]
+    .filter(x=>x!==item.target&&detectForbidden(x).length===0).slice(0,3);
+  const RULES=`규칙:
+- 네이버 필터는 글자가 그대로 이어져 있으면 뜻과 상관없이 걸린다. 그래서 금칙어가 다른 단어 속에 우연히 끼어 있는 경우도 고쳐야 한다. (예: "처음부터" 안의 "음부")
+- 먼저 "어절"에서 금칙어가 실제 그 뜻으로 쓰였는지, 다른 단어의 글자가 우연히 겹친 것인지 판단해라.
+  · 우연히 겹친 경우: 어절의 원래 뜻을 그대로 살린 다른 표현으로 바꾼다. 예) 어절 "처음부터" → "애초부터", "시작부터", "맨 앞부터"
+  · 실제 그 뜻으로 쓰인 경우: 같은 뜻의 순화된 표현으로 바꾼다.
+- 추천은 금칙어 글자만이 아니라 **어절 전체를 통째로 대체**하는 표현이다. 조사·어미(부터, 를, 에서, 했습니다 등)는 원래대로 붙여서 문장에 그대로 끼워 넣을 수 있어야 한다.
+- 추천 표현 안에 금칙어 목록의 글자열이 (띄어쓰기 없이) 다시 나타나면 안 된다.
+- 문맥과 무관한 단어를 지어내지 마라. 문장의 원래 의미가 바뀌면 안 된다.`;
+
   const aiRecommendAll=async()=>{
     if(!forbidden.length||aiLoading) return;
     setAiLoading(true); setAiError("");
     try{
-      const contexts=forbidden.map(({word})=>{
-        const idx=workingText.indexOf(word);
-        if(idx===-1) return{word,context:""};
-        const start=Math.max(0,idx-30);
-        const end=Math.min(workingText.length,idx+word.length+30);
-        return{word,context:workingText.slice(start,end)};
-      });
-      const prompt=`블로그 글에서 금칙어가 발견됐습니다. 각 금칙어를 문맥에 맞는 자연스러운 대체 단어로 추천해주세요.
+      const prompt=`블로그 글에서 네이버 금칙어 글자열이 발견됐습니다. 각 항목의 "어절"을 대체할 표현을 추천해주세요.
 반드시 순수 JSON 배열만 출력. 마크다운 없이.
 
-규칙:
-- 대체어는 반드시 아래 금칙어 목록에 없는 단어
-- 문장 흐름을 유지하는 자연스러운 한국어 단어
-- 대체어는 쉼표로 구분된 1~3개 문자열
+${RULES}
 - 금칙어 목록: ${FORBIDDEN_WORDS.join(",")}
 
-발견된 금칙어와 문맥:
-${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context}..."`).join("\n")}
+발견 항목:
+${forbidden.map((it,i)=>`${i+1}. 금칙어: "${it.word}" / 어절: "${it.target}" / 문맥: "...${ctxOf(it,40)}..."`).join("\n")}
 
-출력 형식:
-[{"word":"금칙어1","suggestions":"대체어1, 대체어2"},{"word":"금칙어2","suggestions":"대체어1"}]`;
+출력 형식 (target에는 위 "어절"을 그대로):
+[{"target":"어절1","suggestions":["대체표현1","대체표현2","대체표현3"]}]`;
 
       const raw=await callClaude([{role:"user",content:prompt}],
-        "Korean blog writing expert. Output ONLY valid JSON array.",800);
+        "Korean blog writing expert. Output ONLY valid JSON array.",1500);
       const s=raw.indexOf("["),e=raw.lastIndexOf("]");
       const arrStr=s!==-1&&e!==-1?raw.slice(s,e+1):raw;
       const arr=JSON.parse(fixRawControlChars(arrStr));
       const updates={};
       const suggMap={};
-      arr.forEach(({word,suggestions})=>{
-        if(word&&suggestions){
-          const parts=suggestions.split(",").map(x=>x.trim()).filter(Boolean);
-          updates[word]=parts[0]||"";
-          suggMap[`${word}__suggestions`]=suggestions;
-        }
+      arr.forEach(({target,suggestions})=>{
+        const item=forbidden.find(f=>f.target===target);
+        if(!item) return;
+        const parts=cleanSugg(Array.isArray(suggestions)?suggestions:String(suggestions||"").split(","),item);
+        if(!parts.length) return;
+        updates[target]=parts[0];
+        suggMap[`${target}__suggestions`]=parts.join("|");
       });
       setReplacements(prev=>({...prev,...updates}));
       setPerLoading(prev=>({...prev,...suggMap}));
@@ -673,31 +706,30 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
     setAiLoading(false);
   };
 
-  const aiRecommendOne=async(word)=>{
-    if(perLoading[word]===true) return;
-    setPerLoading(p=>({...p,[word]:true}));
+  const aiRecommendOne=async(item)=>{
+    const key=item.target;
+    if(perLoading[key]===true) return;
+    setPerLoading(p=>({...p,[key]:true}));
     try{
-      const idx=workingText.indexOf(word);
-      const start=Math.max(0,idx-50);
-      const end=Math.min(workingText.length,idx+word.length+50);
-      const context=idx!==-1?workingText.slice(start,end):"";
-      const prompt=`블로그 글에서 금칙어 "${word}"를 대체할 자연스러운 단어를 추천해주세요.
-문맥: "...${context}..."
+      const prompt=`블로그 글에서 네이버 금칙어 글자열 "${item.word}"이(가) 어절 "${item.target}" 안에서 발견됐습니다. 이 어절을 대체할 표현을 추천해주세요.
+문맥: "...${ctxOf(item,60)}..."
 금칙어 목록(사용 금지): ${FORBIDDEN_WORDS.join(",")}
 
-규칙:
-- 금칙어 목록에 없는 단어만 추천
-- 문장 흐름에 자연스러운 한국어
-- 쉼표로 구분된 추천 단어 3개만 출력 (설명 없이)
-예시 출력: 합리적인, 경제적인, 알맞은`;
+${RULES}
+
+출력: 대체 표현 3개를 JSON 배열로만. 설명 없이.
+예시 출력: ["애초부터","시작부터","맨 앞부터"]`;
       const raw=await callClaude([{role:"user",content:prompt}],
-        "Korean blog writing expert. Output ONLY comma-separated Korean words, nothing else.",300);
-      const suggestions=raw.replace(/["""*]/g,"").trim();
-      const first=suggestions.split(",")[0].trim();
-      if(first) setReplacements(p=>({...p,[word]:first}));
-      setPerLoading(p=>({...p,[word]:false,[`${word}__suggestions`]:suggestions}));
+        "Korean blog writing expert. Output ONLY a JSON array of strings.",300);
+      let list;
+      try{const s=raw.indexOf("["),e=raw.lastIndexOf("]");list=JSON.parse(fixRawControlChars(raw.slice(s,e+1)));}
+      catch(e){list=raw.split(/[,\n]/);}
+      const parts=cleanSugg(list,item);
+      if(!parts.length) throw new Error("쓸 만한 추천이 없습니다. 다시 눌러보세요.");
+      setReplacements(p=>({...p,[key]:parts[0]}));
+      setPerLoading(p=>({...p,[key]:false,[`${key}__suggestions`]:parts.join("|")}));
     }catch(err){
-      setPerLoading(p=>({...p,[word]:false}));
+      setPerLoading(p=>({...p,[key]:false}));
       setAiError("AI 추천 실패: "+(err?.message||String(err)));
     }
   };
@@ -758,41 +790,44 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
             </div>
             <div style={{display:"flex",flexDirection:"column"}}>
               {byCat[cat.id].map((item,i)=>{
-                const isPerLoading=perLoading[item.word]===true;
-                const suggRaw=perLoading[`${item.word}__suggestions`];
-                const suggList=suggRaw?suggRaw.split(",").map(s=>s.trim()).filter(Boolean):[];
-                return <div key={item.word} style={{borderBottom:i<byCat[cat.id].length-1?`1px solid ${cat.border}`:"none",padding:"10px 14px"}}>
+                const isPerLoading=perLoading[item.target]===true;
+                const suggRaw=perLoading[`${item.target}__suggestions`];
+                const suggList=suggRaw?suggRaw.split("|").map(s=>s.trim()).filter(Boolean):[];
+                return <div key={item.word+"\u0001"+item.target} style={{borderBottom:i<byCat[cat.id].length-1?`1px solid ${cat.border}`:"none",padding:"10px 14px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:suggList.length>0?"6px":"0"}}>
                     {/* 금칙어 + 구문 */}
                     <div style={{minWidth:"120px"}}>
                       <span style={{color:cat.color,fontWeight:700,fontSize:"15px"}}>"{item.word}"</span>
                       <span style={{color:"#484f58",fontSize:"12px",marginLeft:"6px"}}>{item.count}회</span>
+                      {item.embedded&&<div style={{color:"#ffa657",fontSize:"12px",marginTop:"2px"}}>
+                        어절 <b style={{color:"#e6edf3"}}>{item.target}</b> 을(를) 통째로 교체
+                      </div>}
                       {item.phrase&&<div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px",fontStyle:"italic"}}>
                         ...{item.phrase}...
                       </div>}
                     </div>
                     {/* 대체어 입력 */}
                     <input
-                      value={replacements[item.word]||""}
-                      onChange={e=>setReplacements(p=>({...p,[item.word]:e.target.value}))}
-                      placeholder={isPerLoading?"AI 추천 중...":"대체 단어 입력 또는 AI 추천 →"}
-                      onKeyDown={e=>e.key==="Enter"&&doReplace(item.word)}
+                      value={replacements[item.target]||""}
+                      onChange={e=>setReplacements(p=>({...p,[item.target]:e.target.value}))}
+                      placeholder={isPerLoading?"AI 추천 중...":item.embedded?`"${item.target}" 대신 쓸 표현 입력 또는 AI 추천 →`:"대체 단어 입력 또는 AI 추천 →"}
+                      onKeyDown={e=>e.key==="Enter"&&doReplace(item.target)}
                       style={{flex:1,padding:"6px 8px",background:"#0d1117",
-                        border:`1px solid ${replacements[item.word]?.trim()?"#1f6feb66":"#30363d"}`,
+                        border:`1px solid ${replacements[item.target]?.trim()?"#1f6feb66":"#30363d"}`,
                         borderRadius:"6px",color:"#e6edf3",fontSize:"14px",outline:"none",
                         fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
                       onFocus={e=>e.target.style.borderColor="#58a6ff"}
-                      onBlur={e=>e.target.style.borderColor=replacements[item.word]?.trim()?"#1f6feb66":"#30363d"}/>
+                      onBlur={e=>e.target.style.borderColor=replacements[item.target]?.trim()?"#1f6feb66":"#30363d"}/>
                     {/* 버튼 */}
-                    <button onClick={()=>aiRecommendOne(item.word)} disabled={isPerLoading} title="AI 대체어 추천"
+                    <button onClick={()=>aiRecommendOne(item)} disabled={isPerLoading} title="AI 대체어 추천"
                       style={{padding:"6px 8px",background:isPerLoading?"#21262d":"#8957e522",
                         color:isPerLoading?"#484f58":"#d2a8ff",border:`1px solid ${isPerLoading?"#30363d":"#8957e544"}`,
                         borderRadius:"6px",cursor:isPerLoading?"not-allowed":"pointer",fontSize:"15px",flexShrink:0}}>
                       {isPerLoading?"⏳":"✨"}
                     </button>
-                    <button onClick={()=>doReplace(item.word)}
-                      style={{padding:"6px 12px",background:replacements[item.word]?.trim()?"#1f6feb":"#21262d",
-                        color:replacements[item.word]?.trim()?"#fff":"#484f58",border:"none",
+                    <button onClick={()=>doReplace(item.target)}
+                      style={{padding:"6px 12px",background:replacements[item.target]?.trim()?"#1f6feb":"#21262d",
+                        color:replacements[item.target]?.trim()?"#fff":"#484f58",border:"none",
                         borderRadius:"6px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
                         fontSize:"13px",fontWeight:600,flexShrink:0}}>
                       바꾸기
@@ -801,10 +836,10 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
                   {suggList.length>0&&<div style={{display:"flex",gap:"5px",flexWrap:"wrap",paddingLeft:"130px"}}>
                     <span style={{color:"#484f58",fontSize:"12px",flexShrink:0,alignSelf:"center"}}>추천:</span>
                     {suggList.map((s,si)=>(
-                      <button key={si} onClick={()=>setReplacements(p=>({...p,[item.word]:s}))}
-                        style={{padding:"2px 10px",background:replacements[item.word]===s?"#1f6feb22":"#21262d",
-                          color:replacements[item.word]===s?"#58a6ff":"#8b949e",
-                          border:`1px solid ${replacements[item.word]===s?"#1f6feb55":"#30363d"}`,
+                      <button key={si} onClick={()=>setReplacements(p=>({...p,[item.target]:s}))}
+                        style={{padding:"2px 10px",background:replacements[item.target]===s?"#1f6feb22":"#21262d",
+                          color:replacements[item.target]===s?"#58a6ff":"#8b949e",
+                          border:`1px solid ${replacements[item.target]===s?"#1f6feb55":"#30363d"}`,
                           borderRadius:"20px",cursor:"pointer",fontSize:"13px",
                           fontFamily:"'Noto Sans KR',sans-serif"}}>
                         {s}
@@ -1351,8 +1386,14 @@ JSON 형식:
   // 금칙어
   const forbidden=workingText?detectForbidden(workingText):[];
   const hp=workingText?highlightText(workingText,forbidden,replacements):null;
-  const doReplace=(word)=>{const r=replacements[word];if(!r?.trim())return;setWorkingText(p=>p.split(word).join(r.trim()));setReplacements(p=>{const n={...p};delete n[word];return n;});};
-  const doReplaceAll=()=>{let t=workingText;Object.entries(replacements).forEach(([w,r])=>{if(r?.trim())t=t.split(w).join(r.trim());});setWorkingText(t);setReplacements({});};
+  const doReplace=(target)=>{const r=replacements[target];if(!r?.trim())return;
+    const items=forbidden.filter(f=>f.target===target);
+    setWorkingText(p=>{let t=p;items.forEach(f=>{t=replaceHost(t,f.word,target,r.trim());});return t;});
+    setReplacements(p=>{const n={...p};delete n[target];return n;});};
+  const doReplaceAll=()=>{let t=workingText;
+    // 긴 어절부터 바꿔야 짧은 금칙어 교체가 긴 어절을 망가뜨리지 않는다
+    forbidden.slice().sort((a,b)=>b.target.length-a.target.length).forEach(f=>{const r=replacements[f.target];if(r?.trim())t=replaceHost(t,f.word,f.target,r.trim());});
+    setWorkingText(t);setReplacements({});};
 
   // 저품질 AI 대체어 추천 (개별)
   const aiQualRecommend=async(item)=>{
