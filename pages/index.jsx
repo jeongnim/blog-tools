@@ -3243,8 +3243,6 @@ actions 5개, recommend 8개.`;
       }
       ai.recommend=rec;
       setInflow(p=>({...p,ai,aiScope:noInsight?"유입 데이터만":scopeLabel}));
-      // 비교 분석이 끝나면 글쓰기 맞춤 프로필까지 자동으로 갱신 (따로 누를 필요 없음). 인사이트가 있어야 만들 수 있다.
-      if(!noInsight&&rows?.length){ await makeProfile(ai,true); return; }
     }catch(ex){setErr(ex?.message||"AI 분석 실패");}
     setBusy("");
   };
@@ -3294,8 +3292,12 @@ ${L(agg.keywords.slice(0,25),k=>`${k.keyword} | ${agg.hasViews?k.est:k.ratio}`)}
 
 [조회수 상위 글] ${L(agg.topPosts.slice(0,10),p=>`${p.title} (${p.views})`)}
 [월별 채널] ${agg.months.map(m=>`${m.period}: 통합 ${m.mainRatio}% · 블로그탭 ${m.blogRatio}%`).join(" / ")}
-${cmp?`[상위인데 유입 0인 허수 키워드] ${cmp.hollow.slice(0,15).map(r=>r.keyword).join(", ")||"(없음)"}
-[순위 11~30위인데 유입 있는 키워드] ${cmp.push.slice(0,10).map(r=>r.keyword).join(", ")||"(없음)"}`:""}
+${cmp?`[A. 상위노출 + 실제 유입 있음 = 진짜 효자] (키워드 | 최고순위 | 유입 | 실제 검색된 변형어)
+${L(cmp.winners.slice(0,20),r=>`${r.keyword} | ${r.best}위 | ${r.inflow} | ${r.variants.join(", ")||"-"}`)}
+[B. 상위노출인데 유입 0 = 허수] ${cmp.hollow.slice(0,20).map(r=>`${r.keyword}(${r.best}위·월${r.monthly??"?"})`).join(", ")||"(없음)"}
+[C. 순위 11~30위인데 유입 있음 = 보강 후보] ${cmp.push.slice(0,10).map(r=>`${r.keyword}(${r.best}위·유입${r.inflow})`).join(", ")||"(없음)"}
+[D. 인사이트에 없던 실제 유입 키워드 = 놓친 패턴] (키워드 | 유입 | 어떤 분석 키워드의 변형인지)
+${L(cmp.hidden.slice(0,20),h=>`${h.keyword} | ${h.score} | ${h.variantOf||"-"}`)}`:""}
 ${inflowAi?`[실제 유입 비교 AI 분석]
 - 추정 vs 실제: ${inflowAi.gap||"-"}
 - 실제 먹히는 구간: ${inflowAi.realSweetSpot||"-"}
@@ -3304,7 +3306,7 @@ ${inflowAi?`[실제 유입 비교 AI 분석]
 [실검색 수식어 빈도 상위] ${modifiers.join(", ")||"(없음)"}
 
 작성 지침:
-- 실제 유입 데이터가 있으면 순위 기반 추정보다 실제 유입을 우선 근거로 삼아라.
+- 실제 유입 데이터가 있으면 순위 기반 추정보다 실제 유입을 우선 근거로 삼아라. A(효자)의 공통 형태는 따르고, B(허수)의 공통 형태는 피하고, D(놓친 패턴)에서 사람들이 실제로 붙여 검색하는 수식어·표현을 읽어내 규칙에 반영해라. 별도 서술 분석 없이 이 한 번의 호출로 결론까지 내라.
 - 규칙은 다른 AI가 읽고 바로 따를 수 있게 구체적인 명령문으로 써라. "좋은 키워드를 고를 것" 같은 일반론 금지. 검색량 구간, 단어 수, 붙일 수식어 유형, 주제 영역을 데이터에서 읽히는 대로 명시해라.
 - 데이터에 없는 수치는 지어내지 마라.
 - categories는 반드시 다음 목록의 값 그대로 3개: ${cats.join(", ")}
@@ -3355,7 +3357,8 @@ ${inflowAi?`[실제 유입 비교 AI 분석]
       <div style={{marginLeft:"auto",display:"flex",gap:"6px",flexWrap:"wrap"}}>
         {agg&&<button onClick={()=>{if(confirm("올린 유입 데이터를 지울까요?"))setInflow(null);}} style={btn(false)}>🗑</button>}
         <button onClick={()=>fileRef.current?.click()} disabled={!!busy} style={btn(!!busy)}>{agg?"📂 파일 다시 올리기":"📂 통계 엑셀 올리기"}</button>
-        {agg&&<button onClick={runAi} disabled={!!busy} style={{...btn(!!busy),background:busy?"#21262d":"#1f6feb",color:busy?"#484f58":"#fff",border:"none"}}>{inflow?.ai?"🔄 AI 다시 분석":cmp?"🤖 AI 비교 분석":"🤖 AI 유입 분석"}</button>}
+        {agg&&cmp&&<button onClick={()=>makeProfile()} disabled={!!busy||!rows?.length} style={{...btn(!!busy||!rows?.length),background:busy?"#21262d":"#1f6feb",color:busy?"#484f58":"#fff",border:"none"}}>{profile?"🔄 맞춤 프로필 다시 만들기":"✨ 맞춤 프로필 만들기"} <span style={{opacity:.7,fontSize:"11px"}}>(AI 1회)</span></button>}
+        {agg&&<button onClick={runAi} disabled={!!busy} style={btn(!!busy)} title="비교 결과에 대한 AI 서술 진단. 프로필 생성과 별개이며 비용이 추가로 듭니다.">{inflow?.ai?"🔄 AI 서술 진단 다시":"🤖 AI 서술 진단 (선택)"}</button>}
       </div>
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.zip" multiple onChange={onFiles} style={{display:"none"}}/>
     </div>
@@ -3367,7 +3370,7 @@ ${inflowAi?`[실제 유입 비교 AI 분석]
     </div>}
     {busy&&<div style={{color:"#58a6ff",fontSize:"13px"}}>⏳ {busy}</div>}
     {err&&<div style={{color:"#ff7b72",fontSize:"13px"}}>⚠️ {err}</div>}
-    {agg&&!rows?.length&&<div style={{color:"#ffa657",fontSize:"13px"}}>유입 데이터는 준비됐어요. 지금도 🤖 AI 유입 분석은 돌릴 수 있고, 위 🧠 키워드 인사이트(⚡ 전체 분석)를 돌리면 순위와 맞댄 4분류 비교 + 비교 분석까지 나옵니다.</div>}
+    {agg&&!rows?.length&&<div style={{color:"#ffa657",fontSize:"13px"}}>유입 데이터는 준비됐어요. 위 🧠 키워드 인사이트(⚡ 전체 분석)를 돌리면 순위와 맞댄 4분류 비교가 AI 없이 바로 나오고, 그 다음 ✨ 맞춤 프로필 만들기 한 번(AI 1회)으로 글쓰기에 반영됩니다.</div>}
 
     {agg&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:"8px"}}>
       {agg.months.map(m=>(
@@ -3593,6 +3596,10 @@ function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun,scope,
       </div>
 
       {d.aiError&&<div style={{color:"#ffa657",fontSize:"13px"}}>⚠️ AI 분석 실패: {d.aiError} (집계는 위에 표시됨)</div>}
+      {!d.ai&&!d.loading&&<div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+        <button onClick={()=>onRun(true)} disabled={busy} style={{padding:"5px 12px",background:"#21262d",color:busy?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:busy?"not-allowed":"pointer",fontSize:"12px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>🤖 AI 진단 (선택 · Sonnet 1회)</button>
+        <span style={{color:"#484f58",fontSize:"12px"}}>위 집계·제목 노출은 AI 없이 만들어졌어요. 글쓰기 반영은 아래 "맞춤 프로필 만들기" 한 번이면 충분합니다.</span>
+      </div>}
       {d.ai&&<div style={{...box,display:"flex",flexDirection:"column",gap:"8px"}}>
         <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>🤖 AI 분석 — 다음엔 이런 키워드로</div>
         {[["진단",d.ai.diagnosis],["먹히는 구간",d.ai.sweetSpot],["통합검색 패턴",d.ai.mainPattern],["블로그탭 패턴",d.ai.blogPattern],["피할 것",d.ai.avoid],["먹히는 제목",d.ai.titlePattern],["피할 제목",d.ai.titleAvoid]]
@@ -4061,7 +4068,7 @@ JSON 배열만 출력:`;
 
   // ── 키워드 인사이트: 현재 페이지에서 분석된 글들의 키워드 순위 + 월 검색량 집계 → AI 추천 ──
   const TOP_N=10; // 이 순위 이내면 "상위노출"로 본다
-  const runInsight=async(list,pg)=>{
+  const runInsight=async(list,pg,withAi=false)=>{
     const A=analysisRef.current, X=extraRef.current;
     const done=(list||[]).filter(p=>A[p.postNo]&&!A[p.postNo].error);
     if(!done.length){alert("먼저 글을 분석해주세요. (⚡ 전체 분석)");return;}
@@ -4134,6 +4141,8 @@ JSON 배열만 출력:`;
         medTop:med(anyTop),medMainTop:med(mainTop),medBlogTop:med(blogTop),medNotTop:med(notTop),
         topCount:anyTop.length,
       };
+      // 기본은 집계만 (AI 비용 절약). withAi일 때만 아래 AI 진단 실행.
+      if(!withAi){ setInsights(s=>({...s,[pg]:{loading:false,rows,summary,ai:s[pg]?.ai||null,aiError:""}})); return; }
       setInsights(s=>({...s,[pg]:{loading:true,step:"AI가 다음 키워드 전략 분석 중...",rows,summary}}));
 
       // 4) AI 분석
@@ -4384,7 +4393,7 @@ recommend는 8개.`;
         blogId={posts.blogId} scope={insightScope} setScope={setInsightScope} cumDone={cumDone} cumPages={cumPages}
         analyzedCount={isAll?cumDone:okCnt(posts.current)}
         totalCount={isAll?cumDone:posts.current.length} busy={analyzing!==-1}
-        onRun={()=>isAll?runInsight(cumulativeList(),"all"):runInsight(posts.current,page)}/>
+        onRun={(withAi)=>isAll?runInsight(cumulativeList(),"all",withAi===true):runInsight(posts.current,page,withAi===true)}/>
       <InflowPanel inflow={inflow} setInflow={setInflow} rows={insights[isAll?"all":page]?.rows||null}
         insightAi={insights[isAll?"all":page]?.ai||null} insightSummary={insights[isAll?"all":page]?.summary||null} topN={TOP_N} postDates={postDates} blogId={posts.blogId} scopeLabel={scopeLabel}/>
       </>;
@@ -8523,7 +8532,7 @@ function isCommercialStat(item) {
 // ─── 글쓰기 프롬프트 빌더 ──────────────────────────────────────────────────
 function buildWritePrompt({
   kw, yearMonth, today, category, smartBlockType, blogStrategy, bodies, mainKeyword,
-  topTitles, commercialWords, avoidWords, pattern, factSheetBlock = "", profileBlock = "",
+  topTitles, commercialWords, avoidWords, pattern, factSheetBlock = "", profileBlock = "", productStatusBlock = "",
 }) {
   const mainKw = mainKeyword || kw;
   const ctx = category
@@ -8560,7 +8569,7 @@ D4. 차별화는 관점·구성·표현에서만 한다. 사실(수치·날짜·
     : "";
 
   return `오늘 날짜: ${today || yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
-${factSheetBlock}${refBlock}${titleBlock}${commercialBlock}${avoidBlock}${profileBlock}${angleBlock}
+${productStatusBlock}${factSheetBlock}${refBlock}${titleBlock}${commercialBlock}${avoidBlock}${profileBlock}${angleBlock}
 네이버 블로그 홈판 노출 + AI 브리핑(AEO) 인용 최적화 글을 작성해줘:
 
 [주제 원칙 — 글의 범위를 정하는 기준. 사실 원칙 다음으로 우선한다]
@@ -8607,6 +8616,18 @@ G2. [확인된 사실] 목록의 내용을 쓸 때는 한 글에 2~3번, 출처�
    (O) "과기정통부가 2026년 3월 시행한 개정안에 따라 ~"
    (X) "확인 결과 ~입니다", "확인됩니다" ← 검증 말투를 본문에 쓰지 말 것. 출처는 이름으로만 밝힌다.
    같은 출처를 두 번 이상 반복해서 붙이지 말고, 사실 하나는 글에서 한 번만 쓸 것.
+
+[어조 원칙 — 무엇을 단정하고 무엇을 열어둘지]
+V1. 문장 성격에 따라 어미를 다르게 쓸 것. 모든 문장을 같은 확신도로 쓰지 말 것.
+   - 확인된 사실·정의·설정 방법·절차 → 단정해도 된다. 다만 명령조("~해야 합니다")보다 권유조("~하는 게 좋습니다", "~해두면 됩니다")를 쓸 것.
+   - 필자의 판단·평가("가장 실용적", "제일 낫다", "추천") → 판단인 게 드러나게. "제 기준에선 ~가 가장 실용적이었어요", "저라면 ~쪽을 고르겠어요".
+   - 독자에게 생길 효과·결과("피로가 줄어든다", "빨라진다", "절약된다", "해결된다") → 사람·환경마다 다르므로 단정 금지. 조건부나 가능성으로.
+     (X) "~까지 맞추면 손목 피로 없이 정밀한 제어가 가능합니다"
+     (O) "~까지 맞춰두면 손목 부담이 훨씬 덜하고 세밀하게 다루기도 편해질 거예요"
+V2. 효과·결과 문장에는 절대 표현을 쓰지 말 것: "없이", "완벽하게", "반드시", "확실히 해결", "누구나", "100%". → "훨씬 덜", "대부분", "한결", "~한 편" 같은 정도 표현으로.
+V3. 단, 판단까지 흐리지는 말 것. 결론은 분명하게 내려주되 그게 필자의 결론임을 드러낼 것. "~일 수도 있고 아닐 수도 있습니다"처럼 아무 말도 안 하는 문장은 금지.
+V4. "~것 같습니다", "~듯합니다", "~로 보입니다"는 한 글에 합쳐서 4번 이하. 추측 표현을 한 문장에 두 번 겹치지 말 것 ("~할 것이라고 생각됩니다" 같은 이중 추측 금지).
+V5. 이 원칙은 AEO1(도입부 정의·결론 문장)과 충돌하지 않는다 — 정의·사실은 단정하고, 효과 약속만 조건부로 쓴다.
 
 [브랜드·상표 원칙]
 H. 특정 브랜드·제품·서비스명이 등장하면, 그 대상에 관해 정확한 내용만 쓸 것.
@@ -8706,6 +8727,10 @@ E7. 화자는 이 분야를 실무로 오래 접한 사람이다. 단, 직업이
 [마무리]
 15. 본문 마지막에 "▶ 정리" 소제목을 따로 두고 마무리할 것 (앞 소제목 안에 뭉쳐 넣지 말 것):
     - 핵심 내용 요약 2~3줄 (각 줄이 독립적으로 읽히게)
+    - 요약 줄도 [어조 원칙]을 따를 것. 방법·사실은 단정하되, 마지막 줄처럼 "이렇게 하면 ~된다"는 효과 문장은
+      반드시 조건부·필자 관점으로 맺을 것. 정리 3줄이 모두 "~합니다/~가능합니다" 단정으로 끝나면 실패다.
+      (O) "~까지 같이 맞춰두면 오래 작업해도 훨씬 편해질 거예요"
+      (O) "제 기준에선 ~ 방식이 가장 손이 덜 갔어요"
     - 요약으로 끝낼 것. 그 뒤에 아무 말도 덧붙이지 말 것.
     ※ 댓글·공감·구독을 유도하는 문장은 절대 쓰지 말 것.
       "댓글로 경험 공유해주세요", "도움이 되셨다면", "궁금한 점은 댓글로",
@@ -8908,6 +8933,47 @@ Search before marking anything confirmed; if the search does not settle it, mark
 }
 
 // 사실표를 본문 프롬프트에 넣을 블록으로 만든다
+// ── 제품·서비스 출시 상태 확인 (절약/정밀 공통, 항상 실행) ──
+// "미출시 제품 사용기" 같은 사고를 막는다. 주제에 특정 제품·서비스가 없으면 검색 없이 끝난다.
+// Haiku + 검색 최대 2회 → 편당 20~30원 수준.
+async function checkProductStatus({ kw, mainKw, today }) {
+  const prompt = `블로그 글 주제: "${kw}" / 메인 키워드: "${mainKw}" / 오늘: ${today}
+
+1) 이 주제에 특정 제품(모델명)·서비스·요금제·앱 이름이 들어 있는가?
+   - 없으면(일반적인 방법·개념·생활 주제) 검색하지 말고 {"hasProduct":false,"items":[]} 만 출력.
+2) 있으면 각 이름에 대해 웹 검색으로 "오늘 기준 한국 출시·판매 여부"만 확인할 것 (최대 2개 이름).
+   status 값:
+   - "released_kr": 한국에서 정식 출시되어 지금 살 수 있음
+   - "announced": 발표됐거나 해외 출시됐지만 한국 정식 출시 전 (사전예약 중 포함)
+   - "not_exist": 공식 발표된 적 없음 (루머·추측 단계)
+   - "unknown": 검색으로 확인 안 됨
+   검색으로 확인되지 않으면 추측하지 말고 unknown.
+
+순수 JSON만: {"hasProduct":true,"items":[{"name":"공식 표기 이름","status":"released_kr","note":"한국 출시일 또는 현재 상황 한 줄","sourceName":"출처 사이트명"}]}`;
+  const raw = await callClaudeSearch(
+    [{ role: "user", content: prompt }],
+    "You check whether named products are officially released in Korea as of today, using web search. Never guess. Output ONLY valid JSON.",
+    800, MODEL_HAIKU, 2
+  );
+  const j = safeParseJson(raw);
+  if (!j || j.hasProduct === false) return [];
+  return (j.items || []).filter(x => x && x.name && x.status).slice(0, 2);
+}
+
+function formatProductStatusBlock(items) {
+  if (!items || !items.length) return "";
+  const label = { released_kr: "한국 정식 출시됨", announced: "한국 미출시 (발표·해외 출시·사전예약 단계)", not_exist: "공식 발표 없음 (루머 단계)", unknown: "출시 여부 확인 안 됨" };
+  const lines = items.map(x => `- ${x.name}: ${label[x.status] || x.status}${x.note ? ` — ${x.note}` : ""}${x.sourceName ? ` (출처: ${x.sourceName})` : ""}`).join("\n");
+  const notReleased = items.filter(x => x.status !== "released_kr");
+  const rule = notReleased.length
+    ? `\n※ 위에서 "한국 정식 출시됨"이 아닌 제품은 절대 직접 써봤다·샀다·개통했다·매장에서 만져봤다는 식으로 쓰지 말 것. 1인칭 사용 경험 서술 금지.
+  → 공개된 정보 정리, 해외 반응, 국내 출시 전망, 지금 쓰는 제품과 비교했을 때 기대되는 점처럼 "아직 안 나온 제품"이라는 전제가 드러나는 관점으로만 쓸 것.
+  → 주제에 "후기", "써보니" 같은 표현이 있어도 이 규칙이 우선한다 (주제 원칙 S5보다 우선).
+  → 한국 출시일·가격을 단정하지 말 것.`
+    : `\n※ 위 제품은 한국에 출시된 제품이다. 다만 스펙·가격은 [확인된 사실]에 있는 것만 쓸 것.`;
+  return `\n[제품 출시 상태 — 오늘 기준 검색으로 확인. 사실 원칙보다도 먼저 지킬 것]\n${lines}${rule}\n`;
+}
+
 function formatFactSheetBlock(items) {
   const ok = (items || []).filter(x => (x.verdict === "confirmed" || x.verdict === "outdated") && x.fact);
   const no = (items || []).filter(x => x.verdict === "unconfirmed");
@@ -9175,6 +9241,11 @@ export default function BlogTools(){
 
       const pattern = pickTitlePattern();
 
+      // ── 제품 출시 상태 확인 (항상, 사실표와 병렬) ──
+      const productStatusP = withTimeout(
+        checkProductStatus({ kw, mainKw, today: todayStr }).catch(() => []), 30000, []
+      );
+
       // ── 사전 사실표: 참고자료의 수치·정책을 공식 출처로 확인해 프롬프트에 넣는다 ──
       let factSheet = [];
       try {
@@ -9191,6 +9262,8 @@ export default function BlogTools(){
           );
         }
       } catch(e) { factSheet = []; /* 실패해도 글쓰기는 진행 */ }
+      setPendingAnalyzeText("__loading__:제품 출시 상태 확인 중");
+      const productStatus = await productStatusP;
       setPendingAnalyzeText("__loading__:본문 작성 중");
 
       const prompt = buildWritePrompt({
@@ -9199,6 +9272,7 @@ export default function BlogTools(){
         topTitles, commercialWords: banWords, avoidWords, pattern,
         factSheetBlock: formatFactSheetBlock(factSheet),
         profileBlock: buildProfileBlock(bpGetActive(), "write"),
+        productStatusBlock: formatProductStatusBlock(productStatus),
       });
 
       const sysPrompt = `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation (AEO).
@@ -9210,6 +9284,8 @@ FACTUAL DISCIPLINE — this overrides every stylistic instruction in the user me
 - When you are unsure of a specific figure, DO NOT vague the whole sentence away. Keep the sentence concrete and specific, and leave only the unknown value as a [확인필요: ...] placeholder for the author to fill in (max 3 per post). Falling back to qualitative phrasing is a last resort, reserved for details too peripheral to be worth a placeholder.
 - Do NOT claim anything is "current as of ${yearMonth}" unless you genuinely know it. Prefer hedged or timeless phrasing over confident but unverified recency.
 - Opinions, judgments, preferences and narrative experience are encouraged — but write them as opinions, not as verified facts. Make experience concrete through process and reasoning, not through fabricated measurements.
+- Calibrate certainty per sentence: state verified facts, definitions and procedures plainly; mark evaluations as the writer's own judgment; and never promise the reader an outcome ("no wrist fatigue", "solves it", "guaranteed") — phrase effects conditionally with degree words. Especially in the closing ▶ 정리 lines, the final takeaway about effects must be conditional or first-person, not an absolute claim. Keep hedges ("~것 같습니다") to four or fewer per post and never stack two in one sentence.
+- If a [제품 출시 상태] block says a product is not officially released in Korea, never write first-person use, purchase or activation of it, even if the topic says "후기".
 - A shorter, less specific post that is true is better than a specific post that is false. If a [확인된 사실] list is provided, figures, dates and conditions must come from that list; treat anything under [확인 안 된 주장] as unverified. Reference material may inform structure and context but is not a source of figures on its own (never copy its wording).
 
 BRAND ACCURACY:
@@ -9266,7 +9342,10 @@ Output ONLY valid JSON, no markdown.`;
       let factItems = [];
       let factSummary = null;
       const placeholders = extractPlaceholders(bodyText);
-      if (placeholders.length > 0) {
+      // 사실표를 이미 만든 글은 남은 [확인필요]가 대개 사실표에서도 못 찾은 항목이라 재검색하지 않는다.
+      // → 아래 정리 단계(검색 없음)에서 "확인처 안내" 문장으로 바꾸거나 삭제. 사실표를 건너뛴 글만 검색으로 채운다.
+      const hadFactSheet = (factSheet || []).length > 0;
+      if (placeholders.length > 0 && !hadFactSheet) {
         try {
           factItems = await resolveUncertainValues({
             placeholders, title: parsed.title, mainKw, text: bodyText,
