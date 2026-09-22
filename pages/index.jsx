@@ -959,11 +959,16 @@ const IMG_TYPE_META={
   product:{label:"실제 제품",icon:"📦",color:"#d29922"},
 };
 
+// 글자·설명 요소 금지 공통 문구 (장면·제품 타입)
+const NO_TEXT_EN="Absolutely no text of any kind: no captions, titles, labels, callouts, annotations, arrows, speech bubbles, badges, price tags, charts, graphs, icons, infographic elements, watermarks or logos (except branding physically printed on the real product). Any screen visible in the shot shows only a plain wallpaper or a blurred, unreadable interface. This must look like a genuine photograph, not a designed graphic.";
+const NO_TEXT_KO="어떤 종류의 글자도 넣지 말 것: 자막·제목·라벨·설명 문구·화살표·말풍선·뱃지·가격표·차트·그래프·아이콘·인포그래픽 요소·워터마크·로고 금지(실제 제품에 원래 새겨진 브랜드 표시만 허용). 사진 속 화면이 보이더라도 단순한 배경화면이거나 읽을 수 없게 흐릿하게 처리할 것. 디자인된 그래픽이 아니라 실제로 촬영한 사진처럼 보여야 함.";
+
 function buildFullPrompt(item,styleId,ratio,lang){
   const st=IMG_STYLES.find(s=>s.id===styleId)||IMG_STYLES[0];
   const type=item.imageType||"scene";
   const sceneEn=(item.scene||"").trim();
   const sceneKo=(item.sceneKo||item.scene||"").trim();
+  const product=(item.productName||"").trim();
 
   // ── 실제 프로그램/앱 화면 재현: 스타일 프리셋을 적용하지 않고 UI 텍스트를 허용 ──
   if(type==="ui"){
@@ -973,19 +978,20 @@ function buildFullPrompt(item,styleId,ratio,lang){
     return `${sceneEn} Rendered as a faithful screenshot of the real application: reproduce the actual window layout, menu bar, dialog structure, tabs, checkboxes and buttons of that program as accurately as possible. UI labels inside the screen must be rendered clearly and spelled correctly in Korean. Clean, crisp, high-resolution UI. ${ratio} aspect ratio. No watermarks and no decorative text outside the interface.`;
   }
 
-  // ── 특정 브랜드의 실제 제품: 브랜드·모델 디자인을 정확히 재현 ──
+  // ── 실제 제품: 첨부한 실제 제품 사진을 참고해 "사용 중인 장면"을 실사로 합성 ──
   if(type==="product"){
+    const name=product||"the product";
     if(lang==="ko"){
-      return `${sceneKo} ${st.ko}. 언급된 브랜드의 실제 제품 디자인(형태·색상·비율·버튼 위치)을 정확하게 재현할 것. 제품 자체에 원래 있는 로고 외에 별도의 글자·워터마크는 넣지 말 것. ${ratio} 비율.`;
+      return `[첨부한 ${product||"제품"} 실제 사진을 참고] ${sceneKo} 첨부한 참고 사진 속 제품의 실제 디자인(형태·색상·비율·카메라·버튼 위치·소재 질감)을 그대로 유지하고, 그 제품이 실제로 이 장면 안에서 사용되고 있는 것처럼 자연스럽게 합성할 것. 제품 디자인을 임의로 바꾸거나 다른 기종처럼 그리지 말 것. ${st.ko}. 일상적인 스냅 사진처럼 자연스러운 손 위치·자세·생활감 있는 배경. ${ratio} 비율. ${NO_TEXT_KO}`;
     }
-    return `${sceneEn} ${st.en}. Reproduce the real product design of the named brand and model accurately — exact form factor, colors, proportions and button placement. Apart from branding that exists on the real product, no extra text or watermarks. ${ratio} aspect ratio.`;
+    return `[Use the attached photo of the ${name} as the reference] ${sceneEn} Keep the product exactly as it appears in the attached reference photo — same form factor, colors, proportions, camera layout, button placement and material finish — and place it naturally in this scene as if it is genuinely being used there. Do not redesign the product or make it resemble any other model. ${st.en}. Candid, everyday snapshot feel with natural hand position, posture and a lived-in environment. ${ratio} aspect ratio. ${NO_TEXT_EN}`;
   }
 
-  // ── 일반 장면 (기존 방식) ──
+  // ── 일반 장면: 실제 촬영한 사진처럼 ──
   if(lang==="ko"){
-    return `${sceneKo} ${st.ko}. ${ratio} 비율. 이미지 안에 글자·문자·로고·워터마크는 넣지 말 것.`;
+    return `${sceneKo} ${st.ko}. 연출된 광고 컷이 아니라 실제 상황을 그대로 찍은 스냅 사진처럼 자연스럽게. ${ratio} 비율. ${NO_TEXT_KO}`;
   }
-  return `${sceneEn} ${st.en}. ${ratio} aspect ratio. No text, letters, watermarks or logos in the image.`;
+  return `${sceneEn} ${st.en}. Shot like a candid documentary photograph of a real moment, not a staged advertisement. ${ratio} aspect ratio. ${NO_TEXT_EN}`;
 }
 
 function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading,setImgLoading,imgError,setImgError,imgSections,setImgSections}){
@@ -1043,14 +1049,16 @@ For "ui" (MOST IMPORTANT — accuracy is the whole point):
 - Keep values shown on screen neutral/default unless the post states them.
 - Korean text inside the UI IS allowed and required. Do not describe photographs of a person at a desk — describe the screen itself.
 
-For "product":
-- Use the real brand and model name from the post and describe its accurate real-world design: form factor, size, colors, materials, where the buttons/ports/camera are. Only show features the post actually mentions.
-- No readable text other than branding that exists on the real product.
+For "product" (a REAL photo of the product will be attached as a reference, so do NOT spend words describing the product's design):
+- Put the exact brand + model name in "productName" (e.g. "삼성 갤럭시 S26").
+- Describe a realistic LIFESTYLE MOMENT in which a person is actually using that product, grounded in what the section says: who (age/gender vague, no face detail needed), what they are doing with it, where, camera angle (over-the-shoulder, close-up of hands, table-top, etc.), lighting and mood. Example: "a young woman's hands holding the 갤럭시 S26 at a cafe table, thumb tapping the screen, morning light" — NOT "a Galaxy S26 with 6.2 inch display and triple camera".
+- If the section is about a specific feature (camera, battery, folding screen, charging...), show the person doing that action, never a spec sheet. A phone screen may be visible but must show a neutral wallpaper or a blurred, unreadable interface.
+- No readable text, no captions, no labels.
 
 For "scene":
-- Describe the SCENE ONLY: subject, setting, composition, mood, colors.
+- Describe ONE PHOTOGRAPHABLE REAL MOMENT: a specific person/hands/object in a specific place doing a specific thing, plus composition, lighting and mood. Ask yourself "could a photographer actually take this shot?" — if not, rewrite it.
+- Concepts, comparisons, lists of options, steps, pros/cons, prices, numbers, charts, graphs, calendars, documents, signs, price tags, screens with readable text, whiteboards: NEVER visualise these. Instead pick a concrete everyday moment that IMPLIES the idea (e.g. "비교" → a person holding two items side by side; "절약" → someone checking a receipt at a kitchen table, receipt blurred).
 - No readable text, no logos, no recognizable real people or celebrity faces.
-- Never visualise prices, numbers, charts or graphs.
 
 General rules:
 - GROUNDING: every section and every scene must come STRICTLY from what the post actually says. Follow the post's real order. Do not add objects, places, activities, situations or facts that do not appear in the post.
@@ -1058,13 +1066,14 @@ General rules:
 - Exactly 5 sections, each covering a DIFFERENT aspect of the post; each scene visually distinct (different subject, setting, angle, or different screen/step).
 - If the whole post is about a specific program or product, most sections will naturally be "ui" or "product" — that is expected. Do NOT downgrade a specific program screen into a generic "laptop on a desk" scene.
 - Do NOT include style keywords, camera specs, aspect ratio, or "no text" instructions — those are appended later.
+- Prefer real, everyday, photo-like moments over conceptual or illustrative ideas — the goal is images that look like actual photographs with no text in them.
 - 30-70 words per scene, plain descriptive English (Korean UI labels / brand names may be written in Korean inside the English text)
 - "sceneKo" = natural Korean rendering of the exact same scene
 - "sectionTitle" = short Korean title, "sectionDesc" = one-line Korean summary of that section
 
 Return ONLY valid JSON, no markdown:
 {"sections":[
-  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","imageType":"ui | product | scene","scene":"English scene description","sceneKo":"같은 장면의 한글 묘사"},
+  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","imageType":"ui | product | scene","productName":"브랜드+모델명 (product일 때만, 아니면 빈 문자열)","scene":"English scene description","sceneKo":"같은 장면의 한글 묘사"},
   {"sectionTitle":"...","sectionDesc":"...","imageType":"...","scene":"...","sceneKo":"..."},
   {"sectionTitle":"...","sectionDesc":"...","imageType":"...","scene":"...","sceneKo":"..."},
   {"sectionTitle":"...","sectionDesc":"...","imageType":"...","scene":"...","sceneKo":"..."},
@@ -1079,7 +1088,7 @@ Return ONLY valid JSON, no markdown:
       if(s===-1||e===-1) throw new Error("단락 분석 JSON 형식 오류: "+raw.slice(0,100));
       const parsed=safeParseJson(raw);
       const sections=(parsed.sections||[]).filter(x=>x&&(x.scene||x.sceneKo)).slice(0,5)
-        .map(x=>({...x,imageType:["ui","product","scene"].includes(x.imageType)?x.imageType:"scene"}));
+        .map(x=>({...x,imageType:["ui","product","scene"].includes(x.imageType)?x.imageType:"scene",productName:typeof x.productName==="string"?x.productName.trim():""}));
       if(sections.length===0) throw new Error("단락 분석 실패");
 
       setImgSections(sections);
@@ -1183,7 +1192,8 @@ Return ONLY valid JSON, no markdown:
       <div style={{color:"#8b949e",fontSize:"15px",fontWeight:600,marginBottom:"6px"}}>글 내용을 분석해서 5개 단락에 맞는 이미지 프롬프트를 만들어줍니다</div>
       <div style={{color:"#484f58",fontSize:"13px",lineHeight:"1.7"}}>
         · 각 단락마다 서로 다른 장면 프롬프트 1개씩 총 5개<br/>
-        · 특정 프로그램의 설정 화면이나 특정 브랜드 제품 이야기면 실제 화면·실제 제품을 재현하는 프롬프트로 자동 전환<br/>
+        · 특정 프로그램의 설정 화면이면 실제 화면 재현 프롬프트로, 특정 브랜드 제품 이야기면 <b>실제 제품 사진을 첨부해 사용 장면을 합성</b>하는 프롬프트로 자동 전환<br/>
+        · 장면·제품 프롬프트는 글자·라벨·차트 없이 실제 촬영한 사진처럼 나오도록 작성<br/>
         · 복사해서 ChatGPT · Gemini · Midjourney 등에 그대로 붙여넣기<br/>
         · 스타일 · 비율 · 언어는 재생성 없이 바로 바꿔서 복사 가능
       </div>
@@ -1211,6 +1221,10 @@ Return ONLY valid JSON, no markdown:
               border:`1px solid ${copied===i?"#2ea043":"#30363d"}`,
             }}>{copied===i?"✅ 복사됨":"📋 복사"}</button>
           </div>
+          {item.imageType==="product"&&<div style={{padding:"7px 12px",background:"#2a1f0a",borderBottom:"1px solid #d2992233",display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",fontSize:"12px",color:"#e3b341"}}>
+            <span>📎 <b>{item.productName||"해당 제품"}</b> 실제 사진을 GPT에 먼저 첨부한 뒤 이 프롬프트를 붙여넣으세요 (첨부 사진의 디자인을 그대로 살려 사용 장면을 합성합니다)</span>
+            {item.productName&&<a href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName+" 제품 사진")}`} target="_blank" rel="noreferrer" style={{color:"#e3b341",textDecoration:"underline",whiteSpace:"nowrap"}}>제품 사진 찾기 ↗</a>}
+          </div>}
           <div onClick={()=>copyText(full,i)} style={{
             padding:"11px 13px",color:"#8b949e",fontSize:"14px",lineHeight:"1.65",cursor:"pointer",
             wordBreak:"break-word",whiteSpace:"pre-wrap",
