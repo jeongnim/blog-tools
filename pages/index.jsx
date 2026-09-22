@@ -3476,6 +3476,52 @@ function bhAgo(ts){
   const d=new Date(ts),z=n=>String(n).padStart(2,"0"); return `${String(d.getFullYear()).slice(2)}.${z(d.getMonth()+1)}.${z(d.getDate())}`;
 }
 
+// ── 저장 데이터 백업/복원 — 분석 결과·유입·맞춤 프로필·제목 기록을 JSON 파일 하나로 ──
+// API 키(vm_*)는 파일에 넣지 않는다.
+const BK_PREFIXES=["mt_","bp_"];
+function backupExport(){
+  const data={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k&&BK_PREFIXES.some(p=>k.startsWith(p))) data[k]=localStorage.getItem(k);
+  }
+  const ids=bhList().map(h=>h.blogId);
+  const file={app:"blog-tools",version:1,exportedAt:new Date().toISOString(),blogIds:ids,data};
+  const blob=new Blob([JSON.stringify(file)],{type:"application/json"});
+  const d=new Date(),z=n=>String(n).padStart(2,"0");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`blog-tools-backup-${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}.json`;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  return {keys:Object.keys(data).length,ids,bytes:blob.size};
+}
+// 병합 규칙: 같은 블로그 ID 저장본·프로필은 더 최근 것이 이긴다. 최근 조회 목록은 합친다. 나머지는 파일 값으로 덮는다.
+function backupImport(text){
+  let file;try{file=JSON.parse(text);}catch(e){throw new Error("백업 파일을 읽지 못했어요 (JSON 형식 아님).");}
+  if(!file||file.app!=="blog-tools"||!file.data) throw new Error("blog-tools 백업 파일이 아니에요.");
+  const parse=v=>{try{return JSON.parse(v);}catch(e){return null;}};
+  let added=0,kept=0,failed=[];
+  const put=(k,v)=>{try{localStorage.setItem(k,v);added++;}catch(e){failed.push(k);}};
+  Object.entries(file.data).forEach(([k,v])=>{
+    if(k===BH_INDEX) return;
+    const cur=localStorage.getItem(k);
+    if(cur!=null&&(k.startsWith(BH_PREFIX)||k.startsWith(BP_PREFIX))&&k!==BP_ACTIVE){
+      const a=parse(cur),b=parse(v);
+      const ta=a?.savedAt||a?.createdAt||0, tb=b?.savedAt||b?.createdAt||0;
+      if(ta>tb){kept++;return;}
+    }
+    put(k,v);
+  });
+  // 최근 조회 목록 병합 (실제 저장본이 있는 ID만)
+  const incoming=parse(file.data[BH_INDEX])||[];
+  const map={};
+  [...bhList(),...incoming].forEach(m=>{if(!m?.blogId)return;const key=m.blogId.toLowerCase();if(!map[key]||(m.savedAt||0)>(map[key].savedAt||0))map[key]=m;});
+  const idx=Object.values(map).filter(m=>localStorage.getItem(bhKey(m.blogId))!=null).sort((a,b)=>(b.savedAt||0)-(a.savedAt||0)).slice(0,BH_MAX);
+  try{localStorage.setItem(BH_INDEX,JSON.stringify(idx));}catch(e){failed.push(BH_INDEX);}
+  return {added,kept,failed,idx,exportedAt:file.exportedAt};
+}
+
 // ── 누락 확인 > 키워드 인사이트 패널 ──
 function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun,scope,setScope,cumDone,cumPages,blogId}){
   const d=data||{};
@@ -3645,6 +3691,7 @@ function MissingTab(){
   const [insights,setInsights]=useState({});          // {page: {loading,step,rows,summary,ai,error}}
   const [history,setHistory]=useState([]);            // 저장된 블로그 목록 (최근 조회순)
   const [histOpen,setHistOpen]=useState(false);
+  const [backupMsg,setBackupMsg]=useState("");
   const [inflow,setInflow]=useState(null);             // 네이버 통계 엑셀(유입분석) — 블로그별로 저장본에 같이 묶인다
   const [restored,setRestored]=useState(null);         // {blogId,savedAt,count} — 저장본을 불러온 상태 표시
   useEffect(()=>{setHistory(bhList());},[]);
@@ -4340,6 +4387,24 @@ recommend는 8개.`;
         <span>💾 저장된 분석 <b style={{color:"#3fb950"}}>{restored.count}개</b>를 불러왔어요 <span style={{color:"#484f58"}}>· {bhAgo(restored.savedAt)} 저장 · 이후 분석은 자동 저장</span></span>
         <button onClick={resetSaved} style={{marginLeft:"auto",padding:"4px 10px",background:"none",border:"1px solid #30363d",borderRadius:"6px",color:"#ffa657",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>🗑 지우고 새로 분석</button>
       </div>}
+
+      {/* 저장 데이터 백업 / 복원 */}
+      <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",fontSize:"12px",color:"#484f58"}}>
+        <span>💾 분석 결과는 이 브라우저에만 저장돼요. 사이트 데이터 삭제·다른 PC 대비용 →</span>
+        <button onClick={()=>{try{const r=backupExport();setBackupMsg(`✅ 백업 완료 · 블로그 ${r.ids.length}개 · ${(r.bytes/1024).toFixed(0)}KB`);}catch(e){setBackupMsg("⚠️ 백업 실패: "+(e?.message||e));}}}
+          style={{padding:"4px 10px",background:"#21262d",border:"1px solid #30363d",borderRadius:"6px",color:"#58a6ff",cursor:"pointer",fontSize:"12px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>⬇ 백업 파일 받기</button>
+        <label style={{padding:"4px 10px",background:"#21262d",border:"1px solid #30363d",borderRadius:"6px",color:"#8b949e",cursor:"pointer",fontSize:"12px",fontWeight:600}}>
+          ⬆ 백업 불러오기
+          <input type="file" accept=".json,application/json" style={{display:"none"}} onChange={async e=>{
+            const f=e.target.files?.[0];e.target.value="";if(!f)return;
+            if(!confirm("백업을 불러올까요?\n같은 블로그 ID는 더 최근에 저장된 쪽이 남고, 나머지는 합쳐집니다."))return;
+            try{const r=backupImport(await f.text());setHistory(r.idx);
+              setBackupMsg(`✅ 불러오기 완료 · 항목 ${r.added}개 반영${r.kept?` · 이 브라우저 쪽이 더 최신이라 유지 ${r.kept}개`:""}${r.failed.length?` · ⚠️ 저장공간 부족으로 ${r.failed.length}개 실패`:""}`);
+            }catch(ex){setBackupMsg("⚠️ "+(ex?.message||ex));}
+          }}/>
+        </label>
+        {backupMsg&&<span style={{color:backupMsg.startsWith("✅")?"#3fb950":"#ffa657"}}>{backupMsg}</span>}
+      </div>
 
       {/* 최근 조회한 블로그 (ID당 마지막 결과 1개 저장) */}
       {history.length>0&&<div style={{border:"1px solid #21262d",borderRadius:"8px",overflow:"hidden"}}>
