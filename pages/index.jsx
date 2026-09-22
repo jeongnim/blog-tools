@@ -2986,6 +2986,24 @@ function bpGetActiveId(){ try{return localStorage.getItem(BP_ACTIVE)||"";}catch(
 function bpSetActiveId(id){ try{ if(id) localStorage.setItem(BP_ACTIVE,id); else localStorage.removeItem(BP_ACTIVE);}catch(e){} }
 function bpGetActive(){ const id=bpGetActiveId(); return id?bpLoad(id):null; }
 
+// ── 제목 노출도: 글 제목 그대로 검색했을 때 블로그탭 순위 → 1위 / 2~30위 / 30위 밖 / 누락 ──
+const TITLE_EX_META={
+  top1:{label:"제목 1위",color:"#e8305a"},
+  top30:{label:"제목 2~30위",color:"#f27a9b"},
+  out:{label:"제목 30위 밖",color:"#f8c9d5"},
+  missing:{label:"누락",color:"#30363d"},
+  pending:{label:"미분석",color:"#161b22"},
+};
+function titleExposureCat(titleRank){
+  if(!titleRank) return {cat:"missing",blogRank:null,mainRank:null};
+  const areas=titleRank.areas;
+  const blogRank=areas?.blog?.rank??(areas?null:(titleRank.myRank??null));
+  const mainRank=areas?.main_search?.rank??null;
+  const r=blogRank??mainRank;
+  const cat=r==null?"missing":r<=1?"top1":r<=30?"top30":"out";
+  return {cat,blogRank,mainRank};
+}
+
 // kind: "keyword"(주제·키워드 추천용) | "write"(본문 작성용)
 function buildProfileBlock(profile,kind){
   if(!profile) return "";
@@ -3000,10 +3018,11 @@ ${profile.avoid?.length?`\n피할 것:\n${li(profile.avoid)}\n`:""}${profile.pro
 ※ 위 기준은 "어떤 크기·형태의 키워드를 고를지"에 대한 것이다. 카테고리와 무관한 주제를 억지로 끌어오지 말 것.
 `;
   }
+  const ex=a=>(a||[]).filter(Boolean).slice(0,8).map(t=>`  · ${t}`).join("\n");
   return `${head}
 제목 규칙 (이 블로그에서 실제로 먹힌 형태):
 ${li(profile.titleRules)}
-
+${profile.titleGood?.length?`\n제목 그대로 검색했을 때 블로그탭 1위였던 제목들 (이런 구조·길이·어투를 참고, 문구를 베끼지는 말 것):\n${ex(profile.titleGood)}\n`:""}${profile.titleBad?.length?`\n제목 그대로 검색해도 30위 밖이거나 누락된 제목들 (이런 형태는 피할 것):\n${ex(profile.titleBad)}\n`:""}
 본문 규칙:
 ${li(profile.writingRules)}
 ${profile.modifiers?.length?`\n방문자가 실제 검색할 때 붙여 쓰는 수식어 (주제와 자연스럽게 맞을 때만 소제목·본문에 반영): ${kws(profile.modifiers)}\n`:""}
@@ -3245,6 +3264,9 @@ actions 5개, recommend 8개.`;
       const modifiers=Object.keys(modCount).filter(k=>modCount[k]>=3).sort((a,b)=>modCount[b]-modCount[a]).slice(0,15);
       const proven=cmp?[...cmp.winners.map(r=>r.keyword),...cmp.hidden.slice(0,12).map(h=>h.keyword)]:topRows.slice(0,15).map(r=>r.keyword);
       const L=(arr,f)=>arr.length?arr.map(f).join("\n"):"(없음)";
+      const tex=insightSummary?.titleEx||[];
+      const titleGood=tex.filter(t=>t.cat==="top1").map(t=>t.title);
+      const titleBad=tex.filter(t=>t.cat==="out"||t.cat==="missing").map(t=>t.title);
       const prompt=`네이버 블로그 @${blogId}의 분석 데이터다. 이 블로그 전용 "글쓰기 맞춤 기준"을 만들어라. 이 기준은 앞으로 AI가 이 블로그의 글 주제·키워드를 추천하고 본문을 쓸 때 프롬프트에 그대로 추가된다.
 
 [분석 범위] ${scopeLabel} / 상위 = ${topN}위 이내${agg?` / 실제 유입 데이터: ${agg.months.map(m=>m.period).join(", ")}`:" / 실제 유입 데이터 없음(순위 기반 추정만 있음)"}
@@ -3258,6 +3280,14 @@ ${L(topRows.slice(0,30),r=>`${r.keyword} | ${best(r)}위 | ${r.monthly??"?"}`)}
 - 통합검색 패턴: ${insightAi?.mainPattern||"-"}
 - 블로그탭 패턴: ${insightAi?.blogPattern||"-"}
 - 피할 것: ${insightAi?.avoid||"-"}
+- 먹히는 제목: ${insightAi?.titlePattern||"-"}
+- 피할 제목: ${insightAi?.titleAvoid||"-"}
+
+[제목 노출도 — 제목 그대로 검색했을 때 블로그탭 순위] 1위 ${titleGood.length} / 30위 밖·누락 ${titleBad.length}
+1위 제목:
+${L(titleGood.slice(0,12),t=>`- ${t}`)}
+30위 밖·누락 제목:
+${L(titleBad.slice(0,12),t=>`- ${t}`)}
 ${agg?`
 [실제 유입 상위 키워드 25] (키워드 | ${agg.hasViews?"추정 유입수":"유입%"})
 ${L(agg.keywords.slice(0,25),k=>`${k.keyword} | ${agg.hasViews?k.est:k.ratio}`)}
@@ -3280,6 +3310,7 @@ ${inflowAi?`[실제 유입 비교 AI 분석]
 - categories는 반드시 다음 목록의 값 그대로 3개: ${cats.join(", ")}
   (keyword 필드에 카테고리 값, reason에 이 블로그 데이터에서의 근거)
 - seedKeywords는 다음에 쓸 만한 공략 키워드 10개 (keyword, reason).
+- titleRules는 제목 노출도 데이터를 근거로 써라: 1위 제목들의 공통 형태(길이·단어 수·구조·수식어)는 따르고, 30위 밖·누락 제목들의 공통 형태는 피하는 규칙으로. 노출도 데이터가 없으면 유입·순위 데이터로만 써라.
 
 항목: summary(이 블로그의 체급과 강점 2문장), categories, keywordRules(4~6개), titleRules(3~5개), writingRules(3~5개), avoid(3~5개), seedKeywords`;
       const ai=await callClaudeJson(prompt,{summary:"string",categories:"kw[]",keywordRules:"string[]",titleRules:"string[]",writingRules:"string[]",avoid:"string[]",seedKeywords:"kw[]"},3500);
@@ -3287,7 +3318,8 @@ ${inflowAi?`[실제 유입 비교 AI 분석]
       const p={blogId,createdAt:Date.now(),hasInflow:!!agg,basis:`${scopeLabel}${agg?` + 유입 ${agg.months.map(m=>m.period).join("·")}`:""}`,
         summary:ai.summary||"",categories:(ai.categories||[]).filter(c=>cats.includes(c.keyword)).slice(0,3),
         keywordRules:ai.keywordRules||[],titleRules:ai.titleRules||[],writingRules:ai.writingRules||[],avoid:ai.avoid||[],
-        seedKeywords:(ai.seedKeywords||[]).slice(0,10),proven:[...new Set(proven)].slice(0,20),modifiers};
+        seedKeywords:(ai.seedKeywords||[]).slice(0,10),proven:[...new Set(proven)].slice(0,20),modifiers,
+        titleGood:titleGood.slice(0,10),titleBad:titleBad.slice(0,10)};
       if(!bpSave(p)) throw new Error("브라우저 저장소에 저장하지 못했습니다.");
       bpSetActiveId(blogId);
       setProfile(p);setProfOpen(true);
@@ -3520,6 +3552,33 @@ function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun,scope,
         ))}
       </div>
 
+      {S.titleEx?.length>0&&<div style={box}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px",marginBottom:"8px"}}>
+          <span style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>🏷️ 블로그탭 제목 노출 <span style={{color:"#484f58",fontWeight:400,fontSize:"12px"}}>제목 그대로 검색했을 때 · {S.titleEx.length}개 글</span></span>
+          <span style={{fontSize:"12px",color:"#8b949e"}}>
+            노출 <b style={{color:"#e6edf3"}}>{S.titleEx.length-(S.titleExCount?.missing||0)}</b>/{S.titleEx.length}건
+            {(S.titleExCount?.out||0)>0&&<span style={{color:"#ffa657",marginLeft:"8px"}}>30위 밖 {S.titleExCount.out}건</span>}
+            {(S.titleExCount?.missing||0)>0&&<span style={{color:"#ff7b72",marginLeft:"8px"}}>누락 {S.titleExCount.missing}건</span>}
+          </span>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(30px,1fr))",gap:"4px",maxWidth:"420px"}}>
+          {S.titleEx.map((t,i)=>{const m=TITLE_EX_META[t.cat]||TITLE_EX_META.missing;const r=t.blogRank??t.mainRank;
+            return <a key={t.postNo||i} href={`https://search.naver.com/search.naver?ssc=tab.blog.all&query=${encodeURIComponent(t.title)}`} target="_blank" rel="noreferrer"
+              title={`${i+1}번째 글 · ${m.label}${r!=null?` (${r}위)`:""}\n${t.title}`}
+              style={{display:"block",height:"20px",borderRadius:"3px",background:m.color,border:t.cat==="missing"?"1px solid #484f58":"none"}}/>;})}
+        </div>
+        <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginTop:"8px",fontSize:"12px",color:"#8b949e"}}>
+          {["top1","top30","out","missing"].map(k=>{const m=TITLE_EX_META[k];return <span key={k} style={{display:"flex",alignItems:"center",gap:"4px"}}><span style={{width:"10px",height:"10px",borderRadius:"2px",background:m.color,border:k==="missing"?"1px solid #484f58":"none",display:"inline-block"}}/>{m.label} {S.titleExCount?.[k]||0}</span>;})}
+        </div>
+        {(S.titleExCount?.out||0)+(S.titleExCount?.missing||0)>0&&<div style={{marginTop:"8px",borderTop:"1px solid #21262d",paddingTop:"6px"}}>
+          <div style={{color:"#ffa657",fontSize:"12px",fontWeight:700,marginBottom:"3px"}}>제목이 약한 글 (30위 밖·누락)</div>
+          {S.titleEx.filter(t=>t.cat==="out"||t.cat==="missing").slice(0,8).map((t,i)=>(
+            <div key={i} style={{fontSize:"12px",color:"#8b949e",padding:"2px 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+              <span style={{color:t.cat==="missing"?"#ff7b72":"#ffa657",marginRight:"6px"}}>{t.cat==="missing"?"누락":`${t.blogRank??t.mainRank}위`}</span>{t.title}
+            </div>))}
+        </div>}
+      </div>}
+
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:"8px"}}>
         {[["통합검색 상위 키워드",S.mainTop,"mainRank",S.avgMainTop,S.medMainTop],["블로그탭 상위 키워드",S.blogTop,"blogRank",S.avgBlogTop,S.medBlogTop]].map(([title,list,key,av,md])=>(
           <div key={title} style={box}>
@@ -3536,7 +3595,7 @@ function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun,scope,
       {d.aiError&&<div style={{color:"#ffa657",fontSize:"13px"}}>⚠️ AI 분석 실패: {d.aiError} (집계는 위에 표시됨)</div>}
       {d.ai&&<div style={{...box,display:"flex",flexDirection:"column",gap:"8px"}}>
         <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>🤖 AI 분석 — 다음엔 이런 키워드로</div>
-        {[["진단",d.ai.diagnosis],["먹히는 구간",d.ai.sweetSpot],["통합검색 패턴",d.ai.mainPattern],["블로그탭 패턴",d.ai.blogPattern],["피할 것",d.ai.avoid]]
+        {[["진단",d.ai.diagnosis],["먹히는 구간",d.ai.sweetSpot],["통합검색 패턴",d.ai.mainPattern],["블로그탭 패턴",d.ai.blogPattern],["피할 것",d.ai.avoid],["먹히는 제목",d.ai.titlePattern],["피할 제목",d.ai.titleAvoid]]
           .filter(x=>x[1]).map(([l,t])=>(
           <div key={l} style={{fontSize:"13px",lineHeight:1.7,color:"#8b949e"}}>
             <span style={{color:"#58a6ff",fontWeight:700,marginRight:"6px"}}>{l}</span>{t}
@@ -4062,9 +4121,14 @@ JSON 배열만 출력:`;
       const anyTop=rows.filter(r=>isTop(r.mainRank)||isTop(r.blogRank));
       const notTop=rows.filter(r=>!isTop(r.mainRank)&&!isTop(r.blogRank));
       const missing=done.filter(p=>A[p.postNo].missingStatus==="누락");
+      // 제목 노출도 (제목 그대로 검색 → 블로그탭 순위)
+      const titleEx=done.map(p=>{const t=titleExposureCat(A[p.postNo].titleRank);return {title:p.title,date:p.date||"",postNo:p.postNo,...t};});
+      const titleExCount={top1:0,top30:0,out:0,missing:0};
+      titleEx.forEach(t=>{titleExCount[t.cat]=(titleExCount[t.cat]||0)+1;});
       const summary={
         postCount:done.length,totalPosts:list.length,kwCount:rows.length,
         missingCount:missing.length,
+        titleEx,titleExCount,
         mainTop,blogTop,
         avgTop:avg(anyTop),avgMainTop:avg(mainTop),avgBlogTop:avg(blogTop),avgNotTop:avg(notTop),
         medTop:med(anyTop),medMainTop:med(mainTop),medBlogTop:med(blogTop),medNotTop:med(notTop),
@@ -4076,8 +4140,9 @@ JSON 배열만 출력:`;
       const line=r=>`${r.keyword} | 통합 ${r.mainRank??"-"} | 블로그탭 ${r.blogRank??"-"} | 월검색 ${r.monthly??"?"}${r.commercial?" | 상업성":""}`;
       const prompt=`네이버 블로그 @${posts?.blogId||""}의 최근 글 ${done.length}개를 분석한 데이터다. (순위 "-" = 100위 밖, 상위 = ${TOP_N}위 이내)
 
-[글 제목]
-${done.slice(0,80).map(p=>`- ${p.title}${A[p.postNo].missingStatus==="누락"?" (제목검색 누락)":""}`).join("\n")}
+[글 제목 | 제목 그대로 검색했을 때 블로그탭 순위]
+${titleEx.slice(0,80).map(t=>`- ${t.title} | ${t.cat==="missing"?"누락":t.cat==="top1"?"1위":t.cat==="top30"?`${t.blogRank??t.mainRank}위`:`30위 밖(${t.blogRank??t.mainRank}위)`}`).join("\n")}
+- 제목 노출 집계: 1위 ${titleExCount.top1} / 2~30위 ${titleExCount.top30} / 30위 밖 ${titleExCount.out} / 누락 ${titleExCount.missing}
 
 [키워드 | 통합검색 순위 | 블로그탭 순위 | 월 검색량]
 ${rows.slice().sort(byVol).slice(0,300).map(line).join("\n")}
@@ -4089,13 +4154,14 @@ ${rows.slice().sort(byVol).slice(0,300).map(line).join("\n")}
 - 제목검색 누락 글 ${missing.length}/${done.length}개
 
 이 블로그가 실제로 상위에 올린 키워드의 주제·형태(단어 수, 수식어 패턴)·검색량 구간을 근거로, 앞으로 어떤 키워드를 노려야 하는지 분석해라. 데이터에 없는 수치는 지어내지 마라. 추천 키워드의 검색량은 모르면 적지 마라.
+제목 노출도도 봐라: "제목 그대로 검색해도 30위 밖/누락"인 제목은 제목 자체가 약한(경쟁 키워드 과다·상업성 단어 반복·너무 길거나 일반적) 신호다. 1위인 제목들과 30위 밖 제목들의 형태 차이(길이, 단어 수, 수식어, 구조)를 데이터에서 읽히는 대로 비교해라.
 
 아래 항목을 채워 report 도구로 제출:
-{"diagnosis":"현재 블로그 체급 진단 2~3문장","sweetSpot":"이 블로그가 먹히는 월검색량 구간과 키워드 형태 1~2문장","mainPattern":"통합검색에서 잘 뜨는 키워드의 공통점 1문장","blogPattern":"블로그탭에서 잘 뜨는 키워드의 공통점 1문장","avoid":"피해야 할 키워드 유형 1~2문장","recommend":[{"keyword":"추천 키워드","reason":"근거 1문장"}]}
+{"diagnosis":"현재 블로그 체급 진단 2~3문장","sweetSpot":"이 블로그가 먹히는 월검색량 구간과 키워드 형태 1~2문장","mainPattern":"통합검색에서 잘 뜨는 키워드의 공통점 1문장","blogPattern":"블로그탭에서 잘 뜨는 키워드의 공통점 1문장","avoid":"피해야 할 키워드 유형 1~2문장","titlePattern":"제목검색 1위인 제목들의 공통 형태 1~2문장","titleAvoid":"30위 밖·누락 제목들의 공통점과 피할 제목 형태 1~2문장","recommend":[{"keyword":"추천 키워드","reason":"근거 1문장"}]}
 recommend는 8개.`;
       let ai=null,aiError="";
       try{
-        ai=await callClaudeJson(prompt,{diagnosis:"string",sweetSpot:"string",mainPattern:"string",blogPattern:"string",avoid:"string",recommend:"kw[]"},2500);
+        ai=await callClaudeJson(prompt,{diagnosis:"string",sweetSpot:"string",mainPattern:"string",blogPattern:"string",avoid:"string",titlePattern:"string",titleAvoid:"string",recommend:"kw[]"},2800);
       }catch(e){aiError=e?.message||"AI 분석 실패";}
 
       // 5) 추천 키워드의 실제 월 검색량을 붙여서 검증
@@ -9252,6 +9318,7 @@ Output ONLY valid JSON, no markdown.`;
 ${(topTitles||[]).slice(0,10).map((t,i)=>`  ${i+1}. ${t}`).join("\n") || "  (없음)"}
 - 아래 단어는 제목에 쓰지 말 것: ${[...banWords, ...avoidWords].join(", ") || "(없음)"}
 - 가격·기간·퍼센트 같은 수치는 제목에 쓰지 말 것
+${(()=>{const bp=bpGetActive();if(!bp)return "";const rules=(bp.titleRules||[]).map(r=>`  - ${r}`).join("\n");const bad=(bp.titleBad||[]).slice(0,6).map(t=>`  · ${t}`).join("\n");return `- 이 블로그의 제목 규칙:\n${rules||"  (없음)"}${bad?`\n- 이 블로그에서 제목검색 30위 밖이었던 제목 형태 (피할 것):\n${bad}`:""}`;})()}
 
 글 앞부분:
 ${cleanContent(parsed.content||"").slice(0, 700)}
