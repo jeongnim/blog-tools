@@ -2392,6 +2392,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
 
       // ④ 상위 블로그 정보 (평균 발행일자, 고지수 비율)
       let top10Blogs = [];
+      let myPost = null;
       let avgPostAgeDays = null;
       let highIndexRatio = 0;
       try {
@@ -2399,6 +2400,12 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         const rankData = await rankRes.json();
         const items = (rankData.items || []).slice(0, 10);
         top10Blogs = items;
+        // 내 블로그 글이 이 키워드 블로그탭(검색 API 100위까지)에 이미 있는지
+        const myBid = myBlogIdForCheck().toLowerCase();
+        if (myBid) {
+          const mineHit = (rankData.items || []).find(i => (i.extractedBlogId || "").toLowerCase() === myBid);
+          if (mineHit) myPost = { rank: mineHit.rank, title: mineHit.title, date: mineHit.postDate || "", blogId: myBid };
+        }
         const now = Date.now();
         const ages = items.map(i=>i.postDate).filter(Boolean).map(d=>{
           const s=String(d).replace(/-/g,"");
@@ -2557,7 +2564,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         relKeywords,
         ...aiResult,
         monthlyBlogPosts,
-        top10Blogs, avgPostAgeDays, highIndexRatio,
+        top10Blogs, avgPostAgeDays, highIndexRatio, myPost,
       };
       KW_CACHE[kw] = kwRes;
       setKwResult(kwRes);
@@ -2617,6 +2624,15 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
           {result.trend==="상승"?"📈 상승세":result.trend==="하락"?"📉 하락세":"➡️ 유지"}
         </span>
       </div>
+
+      {/* ── 내 글 점유 경고 ── */}
+      {result.myPost&&<div style={{background:result.myPost.rank<=OCCUPY_TOP?"#2d1117":"#2a1f0a",border:`1px solid ${result.myPost.rank<=OCCUPY_TOP?"#da363355":"#d2992244"}`,borderRadius:"10px",padding:"10px 14px",fontSize:"14px",lineHeight:1.7,color:"#c9d1d9"}}>
+        <b style={{color:result.myPost.rank<=OCCUPY_TOP?"#ff7b72":"#e3b341"}}>{result.myPost.rank<=OCCUPY_TOP?"🚫":"📌"} 내 글이 이 키워드 블로그탭 {result.myPost.rank}위에 있어요</b>
+        <span style={{color:"#8b949e"}}> · @{result.myPost.blogId} · {result.myPost.title}{result.myPost.date?` (${result.myPost.date})`:""}</span>
+        <div style={{color:"#8b949e",fontSize:"13px"}}>{result.myPost.rank<=OCCUPY_TOP
+          ?"같은 검색어엔 한 블로그 글이 보통 1개만 떠서, 이 키워드로 새 글을 써도 상위 자리가 나기 어렵습니다. 아래 롱테일 중 검색 의도가 다른 걸로 쓰거나, 기존 글을 보강하는 쪽을 권해요."
+          :"아직 상위는 아니라 새 글로 도전할 수 있지만, 기존 글과 겹치면 둘 중 하나만 노출돼요. 기존 글을 보강하는 것도 방법이에요."}</div>
+      </div>}
 
       {/* ── PC: 2열 그리드 / 모바일: 단일 열 ── */}
       <div style={isMobile
@@ -2985,6 +3001,52 @@ function bpList(){
 function bpGetActiveId(){ try{return localStorage.getItem(BP_ACTIVE)||"";}catch(e){return "";} }
 function bpSetActiveId(id){ try{ if(id) localStorage.setItem(BP_ACTIVE,id); else localStorage.removeItem(BP_ACTIVE);}catch(e){} }
 function bpGetActive(){ const id=bpGetActiveId(); return id?bpLoad(id):null; }
+
+// ── 키워드 점유 확인: 내 블로그 글이 이미 상위에 있는 키워드는 새 글 추천에서 뺀다 ──
+// 네이버는 같은 검색어에 한 블로그의 글을 보통 1개만 올려주므로, 이미 상위인 키워드로 새 글을 써도 자리가 안 난다.
+// 롱테일은 다른 검색어라 막지 않는다 → 띄어쓰기만 무시한 "완전 일치"만 점유로 본다.
+const OCCUPY_TOP=10;
+const kwFlat=k=>String(k||"").replace(/\s+/g,"").toLowerCase();
+function myBlogIdForCheck(){ try{ return (bpGetActiveId()||JSON.parse(localStorage.getItem("bp_blog_id")||'""')||"").trim(); }catch(e){ return ""; } }
+// 누락확인에 저장된 분석에서 점유 키워드 목록 (API 호출 없음)
+function occupiedFromSnapshot(blogId,topN=100){
+  const out={}; if(!blogId) return out;
+  let snap=null; try{ snap=JSON.parse(localStorage.getItem("mt_blog_hist_"+String(blogId).toLowerCase())||"null"); }catch(e){}
+  if(!snap) return out;
+  const seen=snap.seen||{};
+  const add=(postNo,k)=>{
+    if(!k?.keyword||!k.realRank) return;
+    const ar=k.realRank.areas;
+    const blog=ar?.blog?.rank??(["sim","date"].includes(k.realRank.rankSource)?k.realRank.myRank:null)??k.realRank.simRank??null;
+    const main=ar?.main_search?.rank??null;
+    const best=Math.min(blog??999,main??999);
+    if(best>topN) return;
+    const key=kwFlat(k.keyword);
+    if(out[key]&&out[key].rank<=best) return;
+    out[key]={keyword:k.keyword,rank:best,area:(blog??999)<=(main??999)?"블로그탭":"통합검색",title:seen[postNo]?.title||"",date:seen[postNo]?.date||"",at:k._at||null};
+  };
+  // at = 그 순위를 조회한 시각. 예전 저장본엔 없음 → null → "오래됨"으로 취급해 재확인 대상
+  Object.entries(snap.analysis||{}).forEach(([no,a])=>(a?.topKeywords||[]).forEach(k=>add(no,{...k,_at:a.analyzedAt||null})));
+  Object.entries(snap.extraResults||{}).forEach(([no,arr])=>(arr||[]).forEach(k=>add(no,{...k,_at:k.checkedAt||null})));
+  return {...out,__savedAt:snap.savedAt};
+}
+// 재확인 결과 캐시 (블로그 ID별, 백업 파일에도 포함됨) — 7일 안에 다시 긁지 않게
+const OCCUPY_FRESH_MS=7*24*60*60*1000;
+const occCacheKey=id=>"mt_occ_check_"+String(id||"").toLowerCase();
+function occCacheLoad(id){ try{return JSON.parse(localStorage.getItem(occCacheKey(id))||"{}")||{};}catch(e){return {};} }
+function occCacheSave(id,c){ try{localStorage.setItem(occCacheKey(id),JSON.stringify(c));}catch(e){} }
+// 상위였던 키워드만 실제 검색으로 다시 확인 (프록시 블로그탭·통합검색 + 검색 API) → 내 블로그 글 최고 순위
+async function recheckMyRank(keyword,blogId){
+  try{
+    const r=await fetch(`/api/naver-rank?keyword=${encodeURIComponent(keyword)}&blogId=${encodeURIComponent(blogId)}`);
+    const d=await r.json(); if(d.error) return null;
+    const ar=d.areas;
+    const blog=ar?.blog?.rank??null, main=ar?.main_search?.rank??null;
+    const api=[d.simRank,d.dateRank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
+    const best=Math.min(blog??999,main??999,api??999);
+    return {rank:best===999?null:best,area:(blog??api??999)<=(main??999)?"블로그탭":"통합검색"};
+  }catch(e){ return null; }
+}
 
 // ── 제목 노출도: 글 제목 그대로 검색했을 때 블로그탭 순위 → 1위 / 2~30위 / 30위 밖 / 누락 ──
 const TITLE_EX_META={
@@ -3891,7 +3953,7 @@ function MissingTab(){
     try{ r=await getNaverRank(kw,bid,pno); }catch(e){ r=null; }
 
     setExtraResults(p=>({...p,[post.postNo]:(p[post.postNo]||[]).map(x=>
-      x.keyword===kw?{keyword:kw,realRank:r,loading:false}:x
+      x.keyword===kw?{keyword:kw,realRank:r,loading:false,checkedAt:Date.now()}:x
     )}));
     setExtraLoading(p=>({...p,[post.postNo]:false}));
   };
@@ -4096,7 +4158,7 @@ JSON 배열만 출력:`;
 
       setAnalysis(prev=>({...prev,[post.postNo]:{
         missingStatus, seoScore, seoDetail, titleRank,
-        topKeywords:exposedKeywords
+        topKeywords:exposedKeywords, analyzedAt:Date.now()
       }}));
     }catch(e){
       setAnalysis(prev=>({...prev,[post.postNo]:{error:true, errorMsg: e?.message||String(e)}}));
@@ -6136,6 +6198,7 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   const pickCost=(m)=>{setCostModeState(m);setCostMode(m);};
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
+  const [excludedKw,setExcludedKw]=useState([]);   // 내 글이 이미 상위라 뺀 키워드
   const [err,setErr]=useState("");
   const [trendingCount,setTrendingCount]=useState(0);
   const [googleCount,setGoogleCount]=useState(0);
@@ -6146,7 +6209,7 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
 
   const genKeywords=async()=>{
     if(!selCat) return;
-    setLoadingKw(true); setKeywords([]); setErr("");
+    setLoadingKw(true); setKeywords([]); setExcludedKw([]); setErr("");
     setStats({}); setDetail({}); setTrendingCount(0); setGoogleCount(0);
     try{
       const dirNo = NAVER_DIR_MAP[selCat] || 0;
@@ -6171,8 +6234,24 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
         ? `\n\n오늘 구글 트렌드 한국 인기 급상승 검색어 (참고용):\n${googleTrends.map((t,i)=>`${i+1}. ${t}`).join(", ")}\n※ 이 중 "${selCat}" 카테고리와 실제로 연결되는 것만 활용할 것. 억지로 끼워 맞추지 말 것.`
         : "";
 
+      // 내 블로그가 이미 상위를 차지한 키워드 (누락확인 저장본 기준)
+      const myBid=activeProf?.blogId||myBlogIdForCheck();
+      const occ=occupiedFromSnapshot(myBid);
+      const occCache=occCacheLoad(myBid);
+      const nowTs=Date.now();
+      // 키워드별 최신 판단: 재확인 캐시가 있으면 그게 우선
+      const occNow=k=>{const c=occCache[k];const v=occ[k];
+        if(c&&(!v?.at||c.at>=v.at)) return {...(v||{}),rank:c.rank,area:c.area||v?.area,at:c.at};
+        return v||null;};
+      const isFresh=v=>v?.at&&nowTs-v.at<OCCUPY_FRESH_MS;
+      const occList=Object.keys(occ).filter(k=>k!=="__savedAt").map(occNow)
+        .filter(v=>v&&v.rank!=null&&v.rank<=OCCUPY_TOP&&isFresh(v)).map(v=>v.keyword);
+      const occBlock=occList.length
+        ? `\n\n[내 블로그 글이 최근 7일 안에 ${OCCUPY_TOP}위 안으로 확인된 키워드 — 메인 키워드로 추천 금지]\n${occList.slice(0,80).join(", ")}\n※ 네이버는 같은 검색어에 한 블로그 글을 보통 1개만 노출하므로, 위 키워드를 메인으로 새 글을 쓰면 상위노출 자리가 나지 않는다. 띄어쓰기만 다른 같은 키워드도 금지. 같은 소재라도 검색 의도가 다른 별도 키워드(롱테일)로는 추천해도 된다.`
+        : "";
+
       const prompt=`카테고리: "${selCat}"
-${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각각의 메인 키워드를 추천해줘.${trendingBlock}${googleBlock}
+${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각각의 메인 키워드를 추천해줘.${trendingBlock}${googleBlock}${occBlock}
 ${buildProfileBlock(activeProf,"keyword")}
 선정 기준:
 1. 실제 블로거가 쓸 법한 완성된 제목 형태 (경험·후기·정보·비교 등 독자가 클릭하고 싶은 구체적 제목)
@@ -6189,7 +6268,33 @@ ${buildProfileBlock(activeProf,"keyword")}
       const raw=await callClaude([{role:"user",content:prompt}],
         "You are a Naver blog SEO expert. Output ONLY valid JSON, no markdown.",3000,"claude-haiku-4-5-20251001");
       const parsed=safeParseJson(raw);
-      const list=parsed.keywords||[];
+      let list=parsed.keywords||[];
+
+      // 판정 규칙
+      //  - 분석에서 상위(10위) 밖이었던 키워드 → 그대로 써도 됨 (재확인 안 함)
+      //  - 상위였고 확인한 지 7일 이내 → 제외
+      //  - 상위였지만 7일 넘음(또는 시각 모름) → 그 키워드만 실제 검색으로 다시 확인
+      //  - 분석에 없는 키워드 → 알 수 없으니 그대로 둠
+      const excluded=[]; const kept=[]; const toRecheck=[];
+      list.forEach(k=>{const mk=k.mainKeyword||k.keyword;const v=occNow(kwFlat(mk));
+        if(v&&v.rank!=null&&v.rank<=OCCUPY_TOP){
+          if(isFresh(v)) excluded.push({keyword:mk,rank:v.rank,area:v.area,title:v.title,basis:"분석"});
+          else toRecheck.push(k);
+        }else kept.push(v&&v.rank!=null?{...k,myRank:v.rank,myArea:v.area,myTitle:v.title}:k);
+      });
+      for(const k of toRecheck){
+        const mk=k.mainKeyword||k.keyword;const prev=occNow(kwFlat(mk));
+        const r=await recheckMyRank(mk,myBid);
+        await new Promise(res=>setTimeout(res,300));
+        if(!r){ excluded.push({keyword:mk,rank:prev.rank,area:prev.area,title:prev.title,basis:"재확인 실패 · 이전 분석"}); continue; }
+        occCache[kwFlat(mk)]={rank:r.rank,area:r.area,at:Date.now()};
+        if(r.rank!=null&&r.rank<=OCCUPY_TOP) excluded.push({keyword:mk,rank:r.rank,area:r.area,title:prev.title,basis:"방금 재확인"});
+        else kept.push(r.rank!=null?{...k,myRank:r.rank,myArea:r.area,myTitle:prev.title}:k);
+      }
+      if(toRecheck.length) occCacheSave(myBid,occCache);
+      const order=new Map(list.map((k,i)=>[k,i]));
+      list=kept.map(k=>[k,order.get(list.find(x=>(x.mainKeyword||x.keyword)===(k.mainKeyword||k.keyword)))]).sort((a,b)=>a[1]-b[1]).map(x=>x[0]);
+      setExcludedKw(excluded);
       setKeywords(list);
       fetchBulkStats(list);
     }catch(ex){setErr("추천 글 주제 생성 오류: "+(ex?.message||String(ex)));}
@@ -6359,6 +6464,11 @@ ${buildProfileBlock(activeProf,"keyword")}
       <div style={{color:"#484f58",fontSize:"14px",marginBottom:"14px"}}>
         월 검색량은 네이버 광고 API 실측값입니다 · <span style={{color:"#58a6ff",fontWeight:700}}>연관검색어 · 난이도</span>를 누르면 이번 달 발행량까지 조회합니다 (월 1,000건 미만은 정확한 실측)
       </div>
+      {excludedKw.length>0&&<div style={{background:"#2a1f0a",border:"1px solid #d2992233",borderRadius:"8px",padding:"9px 12px",marginBottom:"10px",fontSize:"13px",color:"#e3b341",lineHeight:1.7}}>
+        <b>🚫 내 글이 이미 상위라 뺀 키워드 {excludedKw.length}개</b> <span style={{color:"#8b949e"}}>— 같은 검색어엔 한 블로그 글이 보통 1개만 떠서 새 글은 자리가 안 나요</span>
+        {excludedKw.map((x,i)=><div key={i} style={{color:"#8b949e",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          <span style={{color:"#e3b341",fontWeight:700}}>{x.keyword}</span> · {x.area} {x.rank}위{x.title?` · ${x.title}`:""} <span style={{color:"#484f58"}}>({x.basis})</span></div>)}
+      </div>}
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         {keywords.map((kw,idx)=>{
           const mainKw=kw.mainKeyword||kw.keyword;
@@ -6385,6 +6495,8 @@ ${buildProfileBlock(activeProf,"keyword")}
                 {mainKw}
               </span>
               {st&&<span style={{fontSize:"13px",color:"#8b949e"}}>월 검색량 <b style={{color:"#e6edf3"}}>{fmt(st.monthly)}</b></span>}
+              {kw.myRank!=null&&<span title={`내 글: ${kw.myTitle||""}`} style={{background:"#d2992215",border:"1px solid #d2992244",borderRadius:"6px",padding:"2px 8px",color:"#e3b341",fontSize:"12px",fontWeight:700}}>
+                📌 내 글 {kw.myArea} {kw.myRank}위 있음</span>}
               {st?.commercial&&<span title={`통합검색 평균 광고 노출 ${st.depth}개`}
                 style={{background:"#f8514915",border:"1px solid #f8514944",borderRadius:"6px",padding:"2px 8px",color:"#ff7b72",fontSize:"12px",fontWeight:700}}>
                 💰 상업성 키워드
