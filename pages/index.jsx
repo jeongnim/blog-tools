@@ -2474,7 +2474,11 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         '    "예: 천안맛집 → \'천안 성정동 점심 혼밥하기 좋은 국밥집 솔직 후기\' 처럼.",',
         '    "키워드를 자연스럽게 포함하되 독자 클릭을 유도하는 제목으로. 과거 연도(2024년 등) 절대 사용 금지."',
         '  ]',
-        '}' + titlesAppend
+        '}' + titlesAppend,
+        // 맞춤 프로필이 켜져 있으면 추천 주제도 이 블로그 분석 기준으로
+        (()=>{const bp=bpGetActive();if(!bp)return "";
+          return "\n\n[longtailKeywords 작성 기준 — 아래 이 블로그의 분석 결과를 따를 것. trend·smartBlock 항목에는 적용하지 말 것]"+buildProfileBlock(bp,"topic")
+            +(myPost?`\n이 블로그는 이미 이 키워드로 쓴 글이 있다 (블로그탭 ${myPost.rank}위): "${myPost.title}"\n→ 이 글과 같은 각도·같은 질문의 주제는 추천하지 말고, 검색 의도가 다른 주제로.`:"");})()
       ].join("\n");
       const raw = await callClaude([{role:"user",content:msgContent}],"Respond ONLY with valid JSON.");
       const cleaned = raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
@@ -2599,6 +2603,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         ...aiResult,
         monthlyBlogPosts,
         top10Blogs, avgPostAgeDays, highIndexRatio, myPost,
+        profileId: bpGetActive()?.blogId || null,
       };
       KW_CACHE[kw] = kwRes;
       setKwResult(kwRes);
@@ -2884,7 +2889,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
 
           {/* AI 추천 주제 */}
           <div style={{color:"#8b949e",fontSize:"13px",fontWeight:700,marginBottom:"7px"}}>
-            🤖 AI 추천 주제 {result.longtailKeywords?.length>0&&<span style={{color:"#484f58",fontWeight:400}}>· {result.longtailKeywords.length}개 · ✏️ 를 누르면 위 칸으로 가져와 수정할 수 있어요</span>}
+            🤖 AI 추천 주제 {result.profileId&&<span style={{color:"#3fb950",fontWeight:700,marginRight:"4px"}}>· 🎯 @{result.profileId} 맞춤 프로필 기준</span>}{result.longtailKeywords?.length>0&&<span style={{color:"#484f58",fontWeight:400}}>· {result.longtailKeywords.length}개 · ✏️ 를 누르면 위 칸으로 가져와 수정할 수 있어요</span>}
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
             {result.longtailKeywords?.map((kw,i)=>(
@@ -3211,6 +3216,15 @@ function buildProfileBlock(profile,kind){
 중심 축 — 이 블로그의 전문 분야로 밀 주제:
 ${tl(profile.coreTopics)}
 ${profile.sideTopics?.length?`곁가지 — 가끔 써도 되는 주제:\n${tl(profile.sideTopics)}\n`:""}${profile.weakTopics?.length?`약한 주제 — 여러 편 써도 반응이 약했던 주제:\n${tl(profile.weakTopics)}\n`:""}`:"";
+  if(kind==="topic"){
+    const ex2=a=>(a||[]).filter(Boolean).slice(0,6).map(t=>`  · ${t}`).join("\n");
+    return `${head}${axis}${profile.coreTopics?.length?`
+주제를 잡을 때: 같은 키워드라도 위 중심 축과 맞닿는 각도(이 블로그가 강한 기기·앱·상황)를 우선하고, 약한 주제 쪽 각도는 피할 것. 키워드 자체가 중심 축 밖이면 억지로 엮지 말고 키워드에 충실할 것.
+`:""}
+추천 주제는 곧 제목 초안이므로 아래 제목 규칙을 따를 것:
+${li(profile.titleRules)}
+${profile.titleGood?.length?`\n제목 그대로 검색했을 때 블로그탭 1위였던 이 블로그 제목 (구조·길이·어투 참고, 문구는 베끼지 말 것):\n${ex2(profile.titleGood)}\n`:""}${profile.titleBad?.length?`\n30위 밖·누락이었던 제목 (이런 형태는 피할 것):\n${ex2(profile.titleBad)}\n`:""}${profile.modifiers?.length?`\n방문자가 실제 검색할 때 붙여 쓰는 수식어 (키워드와 자연스럽게 맞을 때만): ${kws(profile.modifiers)}\n`:""}`;
+  }
   if(kind==="keyword"){
     return `${head}${axis}${profile.coreTopics?.length?`
 주제 배분 규칙:
