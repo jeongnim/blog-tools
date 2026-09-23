@@ -3075,13 +3075,24 @@ const TITLE_EX_META={
   top30:{label:"제목 2~30위",color:"#f27a9b"},
   out:{label:"제목 30위 밖",color:"#f8c9d5"},
   missing:{label:"누락",color:"#30363d"},
+  wait:{label:"반영 대기",color:"#1f6feb66"},
   pending:{label:"미분석",color:"#161b22"},
 };
 // 기준은 블로그탭 하나. 누락 = 제목 그대로 검색했을 때 블로그탭에 아예 안 보이는 경우만.
 // 블로그탭 순위: ① 프록시가 실제 블로그탭에서 찾은 순위 → ② 블로그 검색 API(블로그탭과 같은 결과, 최대 100위) 순위
 // 통합검색 순위는 이 판정에 쓰지 않는다.
-function titleExposureCat(titleRank){
-  if(!titleRank) return {cat:"missing",blogRank:null,mainRank:null};
+// 제목 따옴표 검색용: 괄호·구두점·특수문자는 검색을 흐트러뜨리므로 공백으로
+function cleanTitleForSearch(t){ return String(t||"").replace(/[()\[\]{}<>!?.,~"'“”‘’…·|:;#*/\\^&%$@+=]/g," ").replace(/\s+/g," ").trim(); }
+// 발행 당일 글(네이버 반영 전일 수 있음)
+function isRecentPost(date){
+  const d=String(date||"");
+  if(/전\s*$/.test(d)) return true;   // "3시간 전" 같은 표기
+  const m=d.match(/(\d{4})\.(\d{2})\.(\d{2})/); if(!m) return false;
+  const now=new Date(); const z=n=>String(n).padStart(2,"0");
+  return `${m[1]}.${m[2]}.${m[3]}`===`${now.getFullYear()}.${z(now.getMonth()+1)}.${z(now.getDate())}`;
+}
+function titleExposureCat(titleRank,postDate){
+  if(!titleRank) return {cat:isRecentPost(postDate)?"wait":"missing",blogRank:null,mainRank:null};
   const areas=titleRank.areas;
   const mainRank=areas?.main_search?.rank??null;
   const apiFromMy=(titleRank.rankSource==="sim"||titleRank.rankSource==="date")?titleRank.myRank:null;
@@ -3089,8 +3100,12 @@ function titleExposureCat(titleRank){
   let blogRank=areas?.blog?.rank??apiRank;
   // 예전에 저장된 결과(API 순위 미저장): 블로그탭 프록시 범위 밖이지만 통합검색엔 떠 있던 글 → 누락이 아니라 "30위 밖"으로
   const legacyUnknown=blogRank==null&&titleRank.simRank===undefined&&titleRank.rankSource==="통합검색";
-  const cat=blogRank!=null?(blogRank<=1?"top1":blogRank<=30?"top30":"out"):legacyUnknown?"out":"missing";
-  return {cat,blogRank,mainRank};
+  // 따옴표 검색에서는 찾음 = 반영은 됐지만 일반 검색에선 100위 밖 → "30위 밖"
+  const quoted=blogRank==null&&titleRank.quoteRank!=null;
+  const cat=blogRank!=null?(blogRank<=1?"top1":blogRank<=30?"top30":"out")
+    :(legacyUnknown||quoted)?"out"
+    :isRecentPost(postDate)?"wait":"missing";
+  return {cat,blogRank,mainRank,quoted};
 }
 
 // kind: "keyword"(주제·키워드 추천용) | "write"(본문 작성용)
@@ -3741,17 +3756,17 @@ function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun,scope,
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(30px,1fr))",gap:"4px",maxWidth:"420px"}}>
           {S.titleEx.map((t,i)=>{const m=TITLE_EX_META[t.cat]||TITLE_EX_META.missing;const r=t.blogRank;
             return <a key={t.postNo||i} href={`https://search.naver.com/search.naver?ssc=tab.blog.all&query=${encodeURIComponent(t.title)}`} target="_blank" rel="noreferrer"
-              title={`${i+1}번째 글 · ${m.label}${r!=null?` (${r}위)`:""}\n${t.title}`}
+              title={`${i+1}번째 글 · ${m.label}${r!=null?` (${r}위)`:t.quoted?" (일반 검색 100위 밖 · 따옴표 검색엔 있음)":""}\n${t.title}`}
               style={{display:"block",height:"20px",borderRadius:"3px",background:m.color,border:t.cat==="missing"?"1px solid #484f58":"none"}}/>;})}
         </div>
         <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginTop:"8px",fontSize:"12px",color:"#8b949e"}}>
-          {["top1","top30","out","missing"].map(k=>{const m=TITLE_EX_META[k];return <span key={k} style={{display:"flex",alignItems:"center",gap:"4px"}}><span style={{width:"10px",height:"10px",borderRadius:"2px",background:m.color,border:k==="missing"?"1px solid #484f58":"none",display:"inline-block"}}/>{m.label} {S.titleExCount?.[k]||0}</span>;})}
+          {["top1","top30","out","missing","wait"].filter(k=>k!=="wait"||S.titleExCount?.wait).map(k=>{const m=TITLE_EX_META[k];return <span key={k} style={{display:"flex",alignItems:"center",gap:"4px"}}><span style={{width:"10px",height:"10px",borderRadius:"2px",background:m.color,border:k==="missing"?"1px solid #484f58":"none",display:"inline-block"}}/>{m.label} {S.titleExCount?.[k]||0}</span>;})}
         </div>
         {(S.titleExCount?.out||0)+(S.titleExCount?.missing||0)>0&&<div style={{marginTop:"8px",borderTop:"1px solid #21262d",paddingTop:"6px"}}>
           <div style={{color:"#ffa657",fontSize:"12px",fontWeight:700,marginBottom:"3px"}}>제목이 약한 글 (30위 밖·누락)</div>
           {S.titleEx.filter(t=>t.cat==="out"||t.cat==="missing").slice(0,8).map((t,i)=>(
             <div key={i} style={{fontSize:"12px",color:"#8b949e",padding:"2px 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-              <span style={{color:t.cat==="missing"?"#ff7b72":"#ffa657",marginRight:"6px"}}>{t.cat==="missing"?"누락":t.blogRank!=null?`${t.blogRank}위`:"30위 밖"}</span>{t.title}
+              <span style={{color:t.cat==="missing"?"#ff7b72":"#ffa657",marginRight:"6px"}}>{t.cat==="missing"?"누락":t.blogRank!=null?`${t.blogRank}위`:t.quoted?"100위 밖":"30위 밖"}</span>{t.title}
             </div>))}
         </div>}
       </div>}
@@ -3992,6 +4007,15 @@ function MissingTab(){
     }catch(e){return null;}
   };
 
+  // 제목 검색에서 못 찾은 글만: 특수문자 빼고 큰따옴표로 감싸 한 번 더 (판다랭크 방식)
+  const quoteRecheck=async(title,blogId,postNo)=>{
+    const clean=cleanTitleForSearch(title); if(!clean) return null;
+    const q=await getNaverRank(`"${clean}"`,blogId,postNo);
+    if(!q) return {quoteChecked:true,quoteRank:null};
+    const r=[q.areas?.blog?.rank,q.simRank,q.dateRank,q.myRank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
+    return {quoteChecked:true,quoteRank:r};
+  };
+
   // ── 추가검색: 제목 옆 입력창 키워드로 순위 조회 ──
   const runExtraKeyword=async(post)=>{
     const kw=(extraKw[post.postNo]||"").trim();
@@ -4194,8 +4218,13 @@ JSON 배열만 출력:`;
       const extractedPostNo=urlMatch?.[2]||post.postNo||"";
 
       // 제목 전체를 검색어로 넣어서 내 글이 결과에 있는지 확인
-      const titleRank=await getNaverRank(post.title, extractedBlogId, extractedPostNo);
-      const missingStatus = titleExposureCat(titleRank).cat==="missing" ? "누락" : "노출";
+      let titleRank=await getNaverRank(post.title, extractedBlogId, extractedPostNo);
+      if(titleRank&&titleExposureCat(titleRank,post.date).cat!=="top1"&&titleExposureCat(titleRank,post.date).blogRank==null){
+        const qr=await quoteRecheck(post.title,extractedBlogId,extractedPostNo);
+        if(qr) titleRank={...titleRank,...qr};
+      }
+      const exCat=titleExposureCat(titleRank,post.date).cat;
+      const missingStatus = exCat==="missing" ? "누락" : exCat==="wait" ? "반영 대기" : "노출";
 
       const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null,rankLoading:true}));
       setAnalysis(prev=>({...prev,[post.postNo]:{
@@ -4251,6 +4280,19 @@ JSON 배열만 출력:`;
     if(!done.length){alert("먼저 글을 분석해주세요. (⚡ 전체 분석)");return;}
     setInsights(s=>({...s,[pg]:{loading:true,step:"키워드 집계 중..."}}));
     try{
+      // 0) 누락으로 판정된 글 중 따옴표 재확인을 안 한 글만 재확인 (네이버 검색만, AI 없음)
+      const needQ=done.filter(p=>{const tr=A[p.postNo].titleRank;return tr&&!tr.quoteChecked&&titleExposureCat(tr,p.date).cat==="missing";});
+      for(let i=0;i<needQ.length;i++){
+        const p=needQ[i];
+        setInsights(s=>({...s,[pg]:{loading:true,step:`누락 글 따옴표 검색으로 재확인 중... (${i+1}/${needQ.length})`}}));
+        const m=p.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
+        const qr=await quoteRecheck(p.title,m?.[1]||p._blogId||"",m?.[2]||p.postNo);
+        if(!qr) continue;
+        const tr={...A[p.postNo].titleRank,...qr};
+        const c=titleExposureCat(tr,p.date).cat;
+        A[p.postNo]={...A[p.postNo],titleRank:tr,missingStatus:c==="missing"?"누락":c==="wait"?"반영 대기":"노출"};
+      }
+      if(needQ.length) setAnalysis({...A});
       // 1) 키워드 수집 (자동 추출 + 추가검색)
       const flat=k=>String(k||"").replace(/\s+/g,"").toUpperCase();
       const map={};
@@ -4304,10 +4346,10 @@ JSON 배열만 출력:`;
       const blogTop=rows.filter(r=>isTop(r.blogRank)).sort(byVol);
       const anyTop=rows.filter(r=>isTop(r.mainRank)||isTop(r.blogRank));
       const notTop=rows.filter(r=>!isTop(r.mainRank)&&!isTop(r.blogRank));
-      const missing=done.filter(p=>titleExposureCat(A[p.postNo].titleRank).cat==="missing");   // 저장된 예전 결과도 블로그탭 기준으로 다시 판정
+      const missing=done.filter(p=>titleExposureCat(A[p.postNo].titleRank,p.date).cat==="missing");   // 저장된 예전 결과도 블로그탭 기준으로 다시 판정
       // 제목 노출도 (제목 그대로 검색 → 블로그탭 순위)
-      const titleEx=done.map(p=>{const t=titleExposureCat(A[p.postNo].titleRank);return {title:p.title,date:p.date||"",postNo:p.postNo,...t};});
-      const titleExCount={top1:0,top30:0,out:0,missing:0};
+      const titleEx=done.map(p=>{const t=titleExposureCat(A[p.postNo].titleRank,p.date);return {title:p.title,date:p.date||"",postNo:p.postNo,...t};});
+      const titleExCount={top1:0,top30:0,out:0,missing:0,wait:0};
       titleEx.forEach(t=>{titleExCount[t.cat]=(titleExCount[t.cat]||0)+1;});
       const summary={
         postCount:done.length,totalPosts:list.length,kwCount:rows.length,
@@ -4836,12 +4878,12 @@ recommend는 8개.`;
               {/* 뱃지 */}
               {a&&!a.error&&<div style={{display:"flex",flexWrap:"wrap",gap:"5px",marginBottom:"8px"}}>
                 <span style={{
-                  background:a.missingStatus==="노출"?"#2ea04322":"#f8514922",
-                  color:a.missingStatus==="노출"?"#3fb950":"#f85149",
-                  border:`1px solid ${a.missingStatus==="노출"?"#2ea04344":"#f8514944"}`,
+                  background:a.missingStatus==="노출"?"#2ea04322":a.missingStatus==="반영 대기"?"#1f6feb22":"#f8514922",
+                  color:a.missingStatus==="노출"?"#3fb950":a.missingStatus==="반영 대기"?"#58a6ff":"#f85149",
+                  border:`1px solid ${a.missingStatus==="노출"?"#2ea04344":a.missingStatus==="반영 대기"?"#1f6feb44":"#f8514944"}`,
                   borderRadius:"20px",padding:"2px 10px",fontSize:"13px",fontWeight:700
                 }}>
-                  {a.missingStatus==="노출"?"✅ 노출":"🚨 누락"}
+                  {a.missingStatus==="노출"?(a.titleRank?.quoteRank!=null&&!a.titleRank?.areas?.blog?.rank&&a.titleRank?.simRank==null?"✅ 노출 (따옴표 검색)":"✅ 노출"):a.missingStatus==="반영 대기"?"⏳ 반영 대기":"🚨 누락"}
                 </span>
               </div>}
               {/* 분석 중 */}
