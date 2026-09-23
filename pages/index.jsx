@@ -3181,6 +3181,17 @@ const TITLE_EX_META={
 // 기준은 블로그탭 하나. 누락 = 제목 그대로 검색했을 때 블로그탭에 아예 안 보이는 경우만.
 // 블로그탭 순위: ① 프록시가 실제 블로그탭에서 찾은 순위 → ② 블로그 검색 API(블로그탭과 같은 결과, 최대 100위) 순위
 // 통합검색 순위는 이 판정에 쓰지 않는다.
+// ── 누락확인은 최근 1년 글만 다룬다 (그 이전 글은 사실상 검색에서 살아남기 어려움) ──
+const RECENT_DAYS=365;
+function isWithinRecent(date,days=RECENT_DAYS){
+  const d=String(date||"").trim();
+  if(!d) return true;                                   // 날짜 모르면 일단 포함
+  if(/전\s*$|어제|방금/.test(d)) return true;          // "3시간 전", "어제"
+  const m=d.match(/(\d{4})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})/); if(!m) return true;
+  const t=new Date(+m[1],+m[2]-1,+m[3]).getTime();
+  return Date.now()-t<=days*24*60*60*1000;
+}
+
 // 제목 따옴표 검색용: 괄호·구두점·특수문자는 검색을 흐트러뜨리므로 공백으로
 function cleanTitleForSearch(t){ return String(t||"").replace(/[()\[\]{}<>!?.,~"'“”‘’…·|:;#*/\\^&%$@+=]/g," ").replace(/\s+/g," ").trim(); }
 // 발행 당일 글(네이버 반영 전일 수 있음)
@@ -3989,6 +4000,7 @@ function MissingTab(){
   const [expanded,setExpanded]=useState(null);
   const [page,setPage]=useState(1);
   const PER_PAGE=20;
+  const yearCapRef=useRef({});   // 블로그별 "1년 이내 글이 끝나는 페이지"
   // 키워드 인사이트 — 페이지(20개) 단위 집계 + AI 추천
   const [insights,setInsights]=useState({});          // {page: {loading,step,rows,summary,ai,error}}
   const [history,setHistory]=useState([]);            // 저장된 블로그 목록 (최근 조회순)
@@ -4100,12 +4112,25 @@ function MissingTab(){
       }));
       if(!list.length) throw new Error(pg>1?"이 페이지에는 게시글이 없습니다.":"게시글을 찾을 수 없어요. 블로그 아이디를 다시 확인해주세요.");
 
+      // 최근 1년 글만. 1년 넘은 글이 나오기 시작하는 페이지가 마지막 페이지가 된다.
+      const recent=list.filter(p=>isWithinRecent(p.date));
+      const oldCount=list.length-recent.length;
+      const key=(data.blogId||bid).toLowerCase();
+      if(oldCount>0) yearCapRef.current={...yearCapRef.current,[key]:recent.length?pg:Math.max(pg-1,1)};
+      if(!recent.length){
+        if(pg>1){ setFeedError("여기부터는 1년이 넘은 글이라 불러오지 않아요. 이전 페이지가 마지막이에요."); setLoadingFeed(false); return; }
+        throw new Error("최근 1년 안에 쓴 글이 없어요.");
+      }
+
       const totalCount=data.totalCount||list.length;
+      const serverPages=data.totalPages||Math.max(Math.ceil(totalCount/PER_PAGE),1);
+      const cap=yearCapRef.current[key];
       setPosts({
-        all:list, current:list, total:totalCount, page:pg,
+        all:recent, current:recent, total:totalCount, page:pg,
         blogId:data.blogId||bid, serverPaged:true,
-        totalPages:data.totalPages||Math.max(Math.ceil(totalCount/PER_PAGE),1),
-        notice:data.notice||"",
+        totalPages:cap?Math.min(serverPages,cap):serverPages,
+        yearCapped:!!cap,
+        notice:[data.notice||"",oldCount?`1년 넘은 글 ${oldCount}개는 제외했어요`:""].filter(Boolean).join(" · "),
       });
       setPage(pg);
       // 같은 ID의 저장본이 있으면 분석 결과를 이어받는다 (글 목록은 방금 받은 최신 것 사용 → 새 글만 추가 분석하면 됨)
@@ -4437,7 +4462,7 @@ JSON 배열만 출력:`;
 
   // 지금까지 분석을 마친 글 전부 (페이지 누적)
   const cumulativeList=()=>Object.values(seenRef.current)
-    .filter(p=>analysisRef.current[p.postNo]&&!analysisRef.current[p.postNo].error);
+    .filter(p=>analysisRef.current[p.postNo]&&!analysisRef.current[p.postNo].error&&isWithinRecent(p.date));
 
   // ── 키워드 인사이트: 현재 페이지에서 분석된 글들의 키워드 순위 + 월 검색량 집계 → AI 추천 ──
   const TOP_N=10; // 이 순위 이내면 "상위노출"로 본다
@@ -4977,6 +5002,7 @@ recommend는 8개.`;
       <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
         <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:600}}>
           총 <span style={{color:"#58a6ff"}}>{posts.total}개</span>
+          {posts.serverPaged&&<span style={{color:"#484f58",fontSize:"13px",marginLeft:"6px"}}>· 최근 1년 글만{posts.yearCapped?` (${posts.totalPages}p까지)`:""}</span>}
           {posts.blogId&&<span style={{color:"#8b949e",marginLeft:"6px"}}>· @{posts.blogId}</span>}
           {totalPages>1&&<span style={{color:"#484f58",fontSize:"14px",marginLeft:"6px"}}>{page}/{totalPages}p</span>}
           {posts.serverPaged&&loadingFeed&&<span style={{color:"#58a6ff",fontSize:"14px",marginLeft:"6px"}}>⏳ 페이지 불러오는 중...</span>}
