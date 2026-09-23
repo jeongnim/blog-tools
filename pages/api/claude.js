@@ -3,7 +3,8 @@ import { requireAuth } from "../../lib/auth";
 
 // 긴 본문 생성은 60초를 넘길 수 있다. Pro 플랜에서 300초까지 허용된다.
 // (Hobby 플랜이면 Vercel이 알아서 60초로 깎으므로 값을 올려둬도 무해하다)
-export const config = { maxDuration: 300 };
+// 방문 리뷰의 사진(최대 10장)이 요청에 실려 오므로 본문 한도를 늘린다. Next 기본값 1MB, Vercel 상한 4.5MB.
+export const config = { maxDuration: 300, api: { bodyParser: { sizeLimit: "4.4mb" } } };
 
 export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
