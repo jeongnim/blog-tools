@@ -2348,6 +2348,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
   const [visitMemo,setVisitMemo]=useState("");
   const [disclosure,setDisclosure]=useState("self");
   const [visitPhotos,setVisitPhotos]=useState([]);
+  const [toneUrl,setToneUrl]=useState(()=>{try{return localStorage.getItem("mt_visit_tone_url")||"";}catch(e){return "";}});
   const [photoBusy,setPhotoBusy]=useState(false);
   const addVisitPhotos=async(files)=>{
     const list=[...files].filter(f=>f.type.startsWith("image/")).slice(0,10-visitPhotos.length);
@@ -2361,7 +2362,8 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
     if(!placeName.trim()||!goAutoWrite) return;
     const t=customTopic.trim()||`${result?.keyword||""} ${placeName.trim()} ${disclosure==="own"?"매장 소개":"방문 후기"}`.trim();
     goAutoWrite(t,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword,
-      {placeName:placeName.trim(),address:placeAddr.trim(),memo:visitMemo,disclosure,photos:visitPhotos});
+      {placeName:placeName.trim(),address:placeAddr.trim(),memo:visitMemo,disclosure,photos:visitPhotos,toneUrl:toneUrl.trim()});
+    try{localStorage.setItem("mt_visit_tone_url",toneUrl.trim());}catch(e){}
   };
 
   const result = kwResult; // 단일 객체: naver + AI 모두 포함
@@ -2845,6 +2847,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
                 <input value={placeName} onChange={e=>setPlaceName(e.target.value)} placeholder="상호명 (예: 밴드폰 안산점)" style={inp}/>
                 <input value={placeAddr} onChange={e=>setPlaceAddr(e.target.value)} placeholder="주소 (예: 경기 안산시 단원구 ...)" style={{...inp,flex:"2 1 280px"}}/>
               </div>
+              <input value={toneUrl} onChange={e=>setToneUrl(e.target.value)} placeholder="말투 참고할 내 글 주소 (선택 · 예전에 직접 쓴 방문 후기 URL — 말투·줄바꿈만 따라 해요)" style={{...inp,flex:"none",width:"100%",boxSizing:"border-box"}}/>
               <textarea value={visitMemo} onChange={e=>setVisitMemo(e.target.value)} rows={3}
                 placeholder={"방문 메모 (선택 · 경험은 여기 적은 것과 사진에 보이는 것만 글에 들어가요)\n예: 9/20 토요일 오후 방문, 갤럭시 S26 번호이동 상담, 대기 10분, 요금제 설명이 자세했음, 주차는 건물 뒤편"}
                 style={{...inp,flex:"none",width:"100%",boxSizing:"border-box",resize:"vertical",lineHeight:1.5}}/>
@@ -9471,10 +9474,11 @@ async function analyzeVisitPhotos(photos, placeName) {
   });
   content.push({ type: "text", text: `위 사진들은 "${placeName}" 방문 때 찍은 사진이다. 사진마다 실제로 보이는 것만 적어라.
 - kind: 외관 | 간판 | 내부 | 메뉴판·가격표 | 음식·음료 | 상품·진열 | 상담·계산 | 주변·주차 | 기타 중 하나
-- desc: 보이는 것 1~2문장 (색, 구성, 분위기, 배치). 보이지 않는 맛·친절도·가격은 추측하지 말 것
+- items: 사진에 실제로 보이는 것을 짧은 명사구로 3~6개 (예: "통창", "원목 테이블", "라떼 두 잔", "햇빛", "흰색 원형 테이블"). 문장으로 쓰지 말 것. 맛·친절도·가격처럼 보이지 않는 것은 넣지 말 것
+- mood: 이 장면의 분위기를 2~4글자 단어 1~2개 (예: "아늑함", "밝음", "북적임"). 확실하지 않으면 ""
 - text: 사진 속 글자(메뉴명, 가격, 간판 문구, 안내문) 중 또렷하게 읽혀서 확신할 수 있는 것만 그대로. 흐리거나, 일부만 보이거나, 뜻이 통하는 한국어 단어가 아닌 것은 절대 적지 말 것(추측해서 글자를 만들지 말 것). 없으면 ""
 - highlight: 이 장면에서 실제로 방문한 사람이라면 가장 먼저 눈에 들어올 만한 것 1가지 (짧게)
-순수 JSON만: {"photos":[{"n":1,"kind":"외관","desc":"...","text":"...","highlight":"..."}]}` });
+순수 JSON만: {"photos":[{"n":1,"kind":"외관","items":["...","..."],"mood":"...","text":"...","highlight":"..."}]}` });
   const model = getCostMode() === "save" ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-5-20250929";
   const raw = await callClaude([{ role: "user", content }], "You describe photos precisely and never guess what is not visible. Output ONLY valid JSON.", 2000, model);
   const j = safeParseJson(raw);
@@ -9530,9 +9534,15 @@ ${same.map((b, i) => `--- 후기 ${i + 1} ---\n${b.slice(0, 3000)}`).join("\n\n"
 }
 
 function formatVisitBlock(visit, photoDescs, placeInfo, reviews) {
+  const toneRef = visit.toneSample ? `
+말투 참고 (작성자가 예전에 직접 쓴 글의 일부 — 말투·문장 길이·줄바꿈 습관·이모지 쓰는 정도만 따라 하고, 내용·정보·경험은 절대 가져오지 말 것):
+"""
+${visit.toneSample}
+"""
+` : "";
   const own = visit.disclosure === "own";
   const photos = photoDescs.length
-    ? photoDescs.map(p => `[사진 ${p.n}] (${p.kind || "기타"}) ${p.desc || ""}${p.highlight ? ` / 눈에 띄는 것: ${p.highlight}` : ""}${p.text ? ` / 또렷하게 읽힌 글자: ${p.text}` : ""}`).join("\n")
+    ? photoDescs.map(p => `[사진 ${p.n}] ${p.kind || "기타"} — 보이는 것: ${(p.items || []).join(", ") || p.desc || "-"}${p.mood ? ` / 분위기: ${p.mood}` : ""}${p.highlight ? ` / 제일 눈에 띄는 것: ${p.highlight}` : ""}${p.text ? ` / 또렷하게 읽힌 글자: ${p.text}` : ""}`).join("\n")
     : visit.photos.map((_, i) => `[사진 ${i + 1}] (설명 없음)`).join("\n");
   const facts = placeInfo.facts.length ? placeInfo.facts.map(f => `- ${f.label}: ${f.value} (출처: ${f.source || "-"})`).join("\n") : "(검색으로 확인된 정보 없음)";
   const rv = reviews && reviews.count ? `
@@ -9557,11 +9567,19 @@ ${visit.memo?.trim() || "(메모 없음)"}
 
 검색으로 확인된 장소 정보:
 ${facts}
-${rv}
+${rv}${toneRef}
 방문 리뷰 규칙 (아래 사진 목록은 작성자가 현장에서 본 것을 정리한 "내부 메모"다. 독자에게 사진을 설명하는 글이 아니다):
-R1. 말투: 현장에 직접 다녀온 사람이 쓰는 1인칭 블로그 후기 말투. "~했어요", "~더라고요", "~였어요", "~인데요"를 섞어 자연스럽게. "~입니다/~합니다"로 딱딱하게 이어가지 말 것. 문장은 짧게, 본 것에 대한 가벼운 반응("생각보다 넓었어요", "간판이 커서 금방 찾았어요")을 곁들여도 된다 — 단 반응은 보이는 것에서 나온 것만.
-R2. 사진을 설명하지 말 것: 본문에 "사진", "찍힌", "사진에서", "사진 속", "보이는데" 같은 표현을 절대 쓰지 말 것. 사진 내용은 "들어가 보니", "입구 쪽에", "눈에 들어온 건"처럼 내가 그 자리에서 본 것으로 쓴다. 계절·시점도 사진으로 추측하지 말 것.
-R3. 사진마다 모든 걸 나열하지 말 것: 색·배치를 기계적으로 늘어놓지 말고, 각 장면에서 방문자라면 기억할 1~2가지만 자연스럽게 쓴다.
+R1. 말투: 현장에 다녀온 사람이 친구에게 말하듯 쓰는 1인칭 블로그 후기. "~했어요", "~더라고요", "~였어요", "~잖아요"를 섞는다. "~입니다/~합니다", "~가 특징이며", "~가 배치되어 있습니다" 같은 안내문·설명문 어투는 금지.
+R2. 사진을 설명하지 말 것: 본문에 "사진", "찍힌", "사진 속", "보이는데", "확인되지 않았는데" 같은 표현 금지. 계절·시점도 사진으로 추측하지 말 것.
+R3. 장면 문장법 (가장 중요): 각 [사진 N] 바로 아래 2~4줄은 그 사진의 "보이는 것" 단어 1~3개를 그대로 문장에 넣어, 내가 그 자리에서 한 행동이나 든 느낌으로 쓴다.
+   (X 설명문) "실내에는 흰색 원형 테이블과 흰색 의자가 놓인 대기 공간이 있습니다."
+   (O 장면)  "들어가자마자 흰색 원형 테이블이 있는 대기 공간이 보여서\n잠깐 앉아서 기다리기 편하겠다 싶었어요."
+   (X 설명문) "상단 녹색 간판에는 상호명이 흰색으로 표기되어 있습니다."
+   (O 장면)  "초록색 간판이 멀리서도 눈에 확 들어와서\n처음 가는 길인데도 헤매지 않았어요."
+   색·배치를 나열하지 말고 한 장면에 1~2가지만. "보이는 것"에 없는 사물을 새로 만들지 말 것.
+R3-1. 느낌 표현: "괜히 기분이 좋아지더라고요", "생각보다 아늑했어요", "간판이 커서 금방 찾았어요"처럼 보이는 것에 대한 가벼운 반응은 적극적으로 쓴다. 단 맛·친절·가격·만족도 같은 평가는 메모에 있을 때만.
+R3-2. 줄바꿈: 모바일 블로그처럼 호흡 단위로 줄을 바꾼다. 한 줄은 대략 15~35자, 의미가 끊기는 곳(쉼표·연결어미 뒤)에서 바꾸고, 2~3줄마다 빈 줄. 마지막 줄에 단어 하나만 덩그러니 남지 않게.
+R3-3. 도입: 메모에 방문 계기·동행·상황이 있으면 그걸로 시작한다. 없으면 "○○ 다녀왔어요" 한두 줄로 가볍게 시작하고 계기를 지어내지 말 것.
 R4. 글자 인용: "또렷하게 읽힌 글자"에 있는 것만, 그중에서도 의미가 통하고 글에 도움이 되는 것만 쓴다. 이상하거나 뜻이 안 통하는 문구는 무시한다. 간판 문구로 상호명을 추정하지 말 것.
 R5. 상호명·주소: 반드시 위 "장소"에 적힌 상호명과 주소를 글자 그대로 쓴다. 다른 표기로 바꾸지 말 것.
 R6. 경험의 근거: 사진에 보이는 것 + 작성자 메모만. 방문 시점("지난달" 등), 상담 내용, 가격, 대기 시간, 직원 응대, 평소 습관("제가 이런 매장 갈 때 챙기는 건")은 메모에 없으면 쓰지 말 것. 메모가 짧으면 글도 짧게 — 분량을 채우려고 일반 정보나 주의사항 섹션을 붙이지 말 것.
@@ -9865,6 +9883,14 @@ export default function BlogTools(){
       let visitBlock = "", photoDescs = [], placeInfo = { category: "", facts: [] }, placeReviews = null;
       if (visit) {
         setPendingAnalyzeText(`__loading__:사진 ${visit.photos.length}장 읽는 중 · 장소 정보 검색 · 같은 매장 후기 모으는 중`);
+        if (visit.toneUrl && !visit.toneSample) {
+          try {
+            const r = await fetch(`/api/blog-content?url=${encodeURIComponent(visit.toneUrl)}`);
+            const d = await r.json();
+            const b = (d.bodies || [])[0] || "";
+            visit = { ...visit, toneSample: b.replace(/\n{3,}/g, "\n\n").slice(0, 1500) };
+          } catch (e) {}
+        }
         const [pd, pi, rv] = await Promise.all([
           visit.photos.length ? withTimeout(analyzeVisitPhotos(visit.photos, visit.placeName).catch(() => []), 60000, []) : Promise.resolve([]),
           withTimeout(searchPlaceInfo({ placeName: visit.placeName, address: visit.address, today: todayStr }).catch(() => ({ category: "", facts: [] })), 45000, { category: "", facts: [] }),
@@ -9917,8 +9943,9 @@ FACTUAL DISCIPLINE:
 
 STYLE:
 - Open with the visit itself, not a definition sentence.
-- Short sentences. Mix endings naturally. Light personal reactions are fine only when grounded in what was seen.
-- Pick one or two memorable details per scene instead of listing colors and layouts.
+- Under each [사진 N], weave one to three of that photo's visible items into what the author did or felt at that moment. Never write descriptive/explanatory sentences like "~가 배치되어 있습니다" or "~가 특징입니다".
+- Light feelings about what was seen ("괜히 기분이 좋아지더라고요", "생각보다 아늑했어요") are encouraged. Judgments of taste, kindness, price or satisfaction only if they are in the memo.
+- Break lines by breath like a mobile Naver blog: about 15~35 characters per line, a blank line every two or three lines.
 - Do not write hashtags in the body; they belong only in the tags array. No engagement bait or sign-off pleasantries.
 
 Output ONLY valid JSON, no markdown.`;
