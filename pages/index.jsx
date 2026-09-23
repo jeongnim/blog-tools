@@ -3030,6 +3030,27 @@ function occupiedFromSnapshot(blogId,topN=100){
   Object.entries(snap.extraResults||{}).forEach(([no,arr])=>(arr||[]).forEach(k=>add(no,{...k,_at:k.checkedAt||null})));
   return {...out,__savedAt:snap.savedAt};
 }
+// ── 블로그 체급: 이 블로그가 실제로 상위(10위 안)에 올려본 키워드들의 월 검색량 범위 ──
+// ceil = 상위 키워드 검색량의 상위 10% 선(90백분위). 이보다 큰 키워드는 "체급 초과"로 표시.
+function volRangeFromRows(rows,topN=OCCUPY_TOP){
+  const best=r=>Math.min(r.mainRank??999,r.blogRank??999);
+  const seen=new Set();
+  const v=(rows||[]).filter(r=>{const k=kwFlat(r.keyword);if(seen.has(k))return false;seen.add(k);return best(r)<=topN&&r.monthly!=null;})
+    .map(r=>r.monthly).sort((a,b)=>a-b);
+  if(v.length<5) return null;   // 표본이 너무 적으면 판단 안 함
+  const q=p=>v[Math.min(v.length-1,Math.floor(p*(v.length-1)))];
+  return {med:q(0.5),ceil:q(0.9),n:v.length};
+}
+function blogVolumeRange(blogId,profile){
+  if(profile?.volCeil!=null) return {med:profile.volMed,ceil:profile.volCeil,n:profile.volN,src:"맞춤 프로필"};
+  if(!blogId) return null;
+  let snap=null; try{ snap=JSON.parse(localStorage.getItem("mt_blog_hist_"+String(blogId).toLowerCase())||"null"); }catch(e){}
+  const ins=snap?.insights||{};
+  const rows=[...(ins.all?.rows||[]),...Object.entries(ins).filter(([k])=>k!=="all").flatMap(([,v])=>v?.rows||[])];
+  const r=volRangeFromRows(rows);
+  return r?{...r,src:"누락확인 인사이트"}:null;
+}
+
 // 재확인 결과 캐시 (블로그 ID별, 백업 파일에도 포함됨) — 7일 안에 다시 긁지 않게
 const OCCUPY_FRESH_MS=7*24*60*60*1000;
 const occCacheKey=id=>"mt_occ_check_"+String(id||"").toLowerCase();
@@ -3078,8 +3099,20 @@ function buildProfileBlock(profile,kind){
   const li=a=>(a||[]).filter(Boolean).map(x=>`- ${x}`).join("\n");
   const kws=a=>(a||[]).filter(Boolean).slice(0,15).join(", ");
   const head=`\n[내 블로그 맞춤 기준 — @${profile.blogId} 의 실제 ${profile.hasInflow?"검색 유입·":""}순위 데이터 분석 결과 (${profile.basis||""})]\n${profile.summary||""}\n`;
+  const tl=a=>(a||[]).filter(x=>x?.keyword).map(x=>`- ${x.keyword}${x.reason?` (근거: ${x.reason})`:""}`).join("\n");
+  const axis=profile.coreTopics?.length?`
+이 블로그의 주제 축 (실제 조회·유입·상위노출 데이터로 나눈 것):
+중심 축 — 이 블로그의 전문 분야로 밀 주제:
+${tl(profile.coreTopics)}
+${profile.sideTopics?.length?`곁가지 — 가끔 써도 되는 주제:\n${tl(profile.sideTopics)}\n`:""}${profile.weakTopics?.length?`약한 주제 — 여러 편 써도 반응이 약했던 주제:\n${tl(profile.weakTopics)}\n`:""}`:"";
   if(kind==="keyword"){
-    return `${head}
+    return `${head}${axis}${profile.coreTopics?.length?`
+주제 배분 규칙:
+- 추천하는 주제의 70% 이상은 중심 축 안에서 고를 것. 중심 축 안에서도 매번 다른 기능·앱·기종·요금제 하나를 대상으로 잡아 서로 겹치지 않게.
+- 곁가지 주제는 30% 이내.
+- 약한 주제는 추천하지 말 것. 다만 선택한 카테고리 자체가 그 주제뿐이면 예외.
+- 선택한 카테고리가 중심 축과 거리가 멀면, 그 카테고리 안에서 중심 축과 맞닿는 소재(예: 같은 기기·앱을 쓰는 상황)를 우선할 것.
+`:""}
 키워드·주제를 고르는 규칙:
 ${li(profile.keywordRules)}
 ${profile.avoid?.length?`\n피할 것:\n${li(profile.avoid)}\n`:""}${profile.proven?.length?`\n이 블로그에서 실제로 유입·상위노출이 검증된 키워드 (같은 결의 주제를 우선하되 똑같은 건 다시 쓰지 말 것): ${kws(profile.proven)}\n`:""}${profile.modifiers?.length?`\n방문자가 실제 검색할 때 붙여 쓰는 수식어: ${kws(profile.modifiers)}\n`:""}${profile.seedKeywords?.length?`\n분석에서 도출된 공략 후보 키워드 (선택한 카테고리에 맞는 것만 참고): ${kws(profile.seedKeywords.map(x=>x.keyword))}\n`:""}
@@ -3087,7 +3120,12 @@ ${profile.avoid?.length?`\n피할 것:\n${li(profile.avoid)}\n`:""}${profile.pro
 `;
   }
   const ex=a=>(a||[]).filter(Boolean).slice(0,8).map(t=>`  · ${t}`).join("\n");
-  return `${head}
+  const axisWrite=profile.coreTopics?.length?`
+이 블로그의 중심 축: ${profile.coreTopics.map(x=>x.keyword).join(", ")}
+- 이 글의 주제가 중심 축에 속하면: 그 분야를 꾸준히 다뤄온 사람의 시선으로, 같은 분야에서 독자가 이어서 궁금해할 기능·설정·상황을 소제목 하나 정도로 짚어줄 것 (다른 글 링크나 "지난 글에서" 같은 언급은 금지).
+- 중심 축 밖의 주제면: 억지로 중심 축과 엮지 말고 주제에 충실할 것.
+`:"";
+  return `${head}${axisWrite}
 제목 규칙 (이 블로그에서 실제로 먹힌 형태):
 ${li(profile.titleRules)}
 ${profile.titleGood?.length?`\n제목 그대로 검색했을 때 블로그탭 1위였던 제목들 (이런 구조·길이·어투를 참고, 문구를 베끼지는 말 것):\n${ex(profile.titleGood)}\n`:""}${profile.titleBad?.length?`\n제목 그대로 검색해도 30위 밖이거나 누락된 제목들 (이런 형태는 피할 것):\n${ex(profile.titleBad)}\n`:""}
@@ -3333,6 +3371,11 @@ actions 5개, recommend 8개.`;
       const tex=insightSummary?.titleEx||[];
       const titleGood=tex.filter(t=>t.cat==="top1").map(t=>t.title);
       const titleBad=tex.filter(t=>t.cat==="out"||t.cat==="missing").map(t=>t.title);
+      // 글별 성과: 주제 축을 가르는 근거 (제목 · 제목노출 · 조회수)
+      const viewsByTitle={};(agg?.topPosts||[]).forEach(p=>{viewsByTitle[kwFlat(p.title)]=(viewsByTitle[kwFlat(p.title)]||0)+(Number(p.views)||0);});
+      const exLabel={top1:"제목1위",top30:"제목2~30위",out:"제목30위밖",missing:"제목누락"};
+      const postPerf=tex.slice(0,80).map(t=>`- ${t.title} | ${exLabel[t.cat]||"-"}${viewsByTitle[kwFlat(t.title)]!=null?` | 조회 ${viewsByTitle[kwFlat(t.title)]}`:""}`);
+      const extraTop=(agg?.topPosts||[]).filter(p=>!tex.some(t=>kwFlat(t.title)===kwFlat(p.title))).slice(0,20).map(p=>`- ${p.title} | 조회 ${p.views} (분석 범위 밖 과거 글)`);
       const prompt=`네이버 블로그 @${blogId}의 분석 데이터다. 이 블로그 전용 "글쓰기 맞춤 기준"을 만들어라. 이 기준은 앞으로 AI가 이 블로그의 글 주제·키워드를 추천하고 본문을 쓸 때 프롬프트에 그대로 추가된다.
 
 [분석 범위] ${scopeLabel} / 상위 = ${topN}위 이내${agg?` / 실제 유입 데이터: ${agg.months.map(m=>m.period).join(", ")}`:" / 실제 유입 데이터 없음(순위 기반 추정만 있음)"}
@@ -3373,6 +3416,10 @@ ${inflowAi?`[실제 유입 비교 AI 분석]
 - 놓친 패턴: ${inflowAi.hidden||"-"}`:""}`:""}
 [실검색 수식어 빈도 상위] ${modifiers.join(", ")||"(없음)"}
 
+[글별 성과] (제목 | 제목검색 노출 | 조회수 — 조회수는 유입 파일에 있는 글만)
+${postPerf.length?postPerf.join("\n"):"(없음)"}
+${extraTop.length?extraTop.join("\n"):""}
+
 작성 지침:
 - 실제 유입 데이터가 있으면 순위 기반 추정보다 실제 유입을 우선 근거로 삼아라. A(효자)의 공통 형태는 따르고, B(허수)의 공통 형태는 피하고, D(놓친 패턴)에서 사람들이 실제로 붙여 검색하는 수식어·표현을 읽어내 규칙에 반영해라. 별도 서술 분석 없이 이 한 번의 호출로 결론까지 내라.
 - 규칙은 다른 AI가 읽고 바로 따를 수 있게 구체적인 명령문으로 써라. "좋은 키워드를 고를 것" 같은 일반론 금지. 검색량 구간, 단어 수, 붙일 수식어 유형, 주제 영역을 데이터에서 읽히는 대로 명시해라.
@@ -3380,16 +3427,24 @@ ${inflowAi?`[실제 유입 비교 AI 분석]
 - categories는 반드시 다음 목록의 값 그대로 3개: ${cats.join(", ")}
   (keyword 필드에 카테고리 값, reason에 이 블로그 데이터에서의 근거)
 - seedKeywords는 다음에 쓸 만한 공략 키워드 10개 (keyword, reason).
+- coreTopics / sideTopics / weakTopics — 이 블로그의 "주제 축"을 나눠라. [글별 성과]·[조회수 상위 글]·[실제 유입 키워드]·[상위노출 키워드]를 주제별로 묶어서 성과를 비교하라.
+  · 주제는 "IT" 같은 넓은 분류가 아니라 "스마트폰 기능·설정", "통신사 요금제·결합", "메신저(카톡) 사용 팁"처럼 한 단계 좁힌 이름으로.
+  · coreTopics(1~2개): 조회수·유입·상위노출이 가장 몰린 주제. 이 블로그가 전문 분야로 밀어야 할 중심 축.
+  · sideTopics(2~4개): 가끔 써도 되는 곁가지. 성과는 중간이거나 표본이 적은 주제.
+  · weakTopics(1~3개): 여러 편 썼는데도 유입·상위노출이 약했던 주제.
+  · 각 항목 reason에는 반드시 근거를 데이터로 적어라 (예: "조회 상위 10개 중 6개, 유입 상위 키워드 대부분"). 데이터가 부족하면 weakTopics는 비워도 된다.
 - titleRules는 제목 노출도 데이터를 근거로 써라: 1위 제목들의 공통 형태(길이·단어 수·구조·수식어)는 따르고, 30위 밖·누락 제목들의 공통 형태는 피하는 규칙으로. 노출도 데이터가 없으면 유입·순위 데이터로만 써라.
 
-항목: summary(이 블로그의 체급과 강점 2문장), categories, keywordRules(4~6개), titleRules(3~5개), writingRules(3~5개), avoid(3~5개), seedKeywords`;
-      const ai=await callClaudeJson(prompt,{summary:"string",categories:"kw[]",keywordRules:"string[]",titleRules:"string[]",writingRules:"string[]",avoid:"string[]",seedKeywords:"kw[]"},3500);
+항목: summary(이 블로그의 체급과 강점 2문장), categories, coreTopics, sideTopics, weakTopics, keywordRules(4~6개), titleRules(3~5개), writingRules(3~5개), avoid(3~5개), seedKeywords (seedKeywords는 대부분 coreTopics 안에서)`;
+      const ai=await callClaudeJson(prompt,{summary:"string",categories:"kw[]",coreTopics:"kw[]",sideTopics:"kw[]",weakTopics:"kw[]",keywordRules:"string[]",titleRules:"string[]",writingRules:"string[]",avoid:"string[]",seedKeywords:"kw[]"},4000);
       if(!ai?.keywordRules?.length) throw new Error("프로필 생성 결과가 비어 있습니다. 다시 시도해주세요.");
       const p={blogId,createdAt:Date.now(),hasInflow:!!agg,basis:`${scopeLabel}${agg?` + 유입 ${agg.months.map(m=>m.period).join("·")}`:""}`,
         summary:ai.summary||"",categories:(ai.categories||[]).filter(c=>cats.includes(c.keyword)).slice(0,3),
+        coreTopics:(ai.coreTopics||[]).slice(0,2),sideTopics:(ai.sideTopics||[]).slice(0,4),weakTopics:(ai.weakTopics||[]).slice(0,3),
         keywordRules:ai.keywordRules||[],titleRules:ai.titleRules||[],writingRules:ai.writingRules||[],avoid:ai.avoid||[],
         seedKeywords:(ai.seedKeywords||[]).slice(0,10),proven:[...new Set(proven)].slice(0,20),modifiers,
-        titleGood:titleGood.slice(0,10),titleBad:titleBad.slice(0,10)};
+        titleGood:titleGood.slice(0,10),titleBad:titleBad.slice(0,10),
+        ...(()=>{const vr=volRangeFromRows(rows,topN);return vr?{volMed:vr.med,volCeil:vr.ceil,volN:vr.n}:{};})()};
       if(!bpSave(p)) throw new Error("브라우저 저장소에 저장하지 못했습니다.");
       bpSetActiveId(blogId);
       setProfile(p);setProfOpen(true);
@@ -3496,6 +3551,11 @@ ${inflowAi?`[실제 유입 비교 AI 분석]
       {profile&&profOpen&&<div style={{display:"flex",flexDirection:"column",gap:"8px",fontSize:"13px",color:"#8b949e",lineHeight:1.7}}>
         <div style={{color:"#c9d1d9"}}>{profile.summary}</div>
         {profile.categories?.length>0&&<div><b style={{color:"#58a6ff"}}>추천 카테고리</b> {profile.categories.map(c=><span key={c.keyword} title={c.reason} style={{display:"inline-block",margin:"0 4px 4px 0",padding:"2px 8px",border:"1px solid #1f6feb66",borderRadius:"10px",color:"#c9d1d9"}}>{c.keyword}</span>)}</div>}
+        {profile.coreTopics?.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
+          {[["🎯 중심 축","#3fb950",profile.coreTopics],["🌿 곁가지","#d29922",profile.sideTopics],["💤 약한 주제","#8b949e",profile.weakTopics]].map(([l,c,arr])=>arr?.length>0&&(
+            <div key={l}><b style={{color:c}}>{l}</b>{arr.map((x,i)=><div key={i} style={{paddingLeft:"10px"}}>· <span style={{color:"#c9d1d9"}}>{x.keyword}</span> <span style={{color:"#484f58"}}>— {x.reason}</span></div>)}</div>))}
+        </div>}
+        {!profile.coreTopics?.length&&<div style={{color:"#484f58",fontSize:"12px"}}>이 프로필은 주제 축(중심 축·곁가지)이 없는 예전 버전이에요. 다시 만들면 추가됩니다.</div>}
         {[["키워드 규칙",profile.keywordRules],["제목 규칙",profile.titleRules],["본문 규칙",profile.writingRules],["피할 것",profile.avoid]].map(([l,arr])=>arr?.length>0&&(
           <div key={l}><b style={{color:"#58a6ff"}}>{l}</b>{arr.map((x,i)=><div key={i} style={{paddingLeft:"10px"}}>· {x}</div>)}</div>
         ))}
@@ -6199,6 +6259,7 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
   const [excludedKw,setExcludedKw]=useState([]);   // 내 글이 이미 상위라 뺀 키워드
+  const [volRange,setVolRange]=useState(null);     // 이 블로그 체급 (상위 키워드 검색량 범위)
   const [err,setErr]=useState("");
   const [trendingCount,setTrendingCount]=useState(0);
   const [googleCount,setGoogleCount]=useState(0);
@@ -6209,7 +6270,7 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
 
   const genKeywords=async()=>{
     if(!selCat) return;
-    setLoadingKw(true); setKeywords([]); setExcludedKw([]); setErr("");
+    setLoadingKw(true); setKeywords([]); setExcludedKw([]); setVolRange(null); setErr("");
     setStats({}); setDetail({}); setTrendingCount(0); setGoogleCount(0);
     try{
       const dirNo = NAVER_DIR_MAP[selCat] || 0;
@@ -6250,20 +6311,26 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
         ? `\n\n[내 블로그 글이 최근 7일 안에 ${OCCUPY_TOP}위 안으로 확인된 키워드 — 메인 키워드로 추천 금지]\n${occList.slice(0,80).join(", ")}\n※ 네이버는 같은 검색어에 한 블로그 글을 보통 1개만 노출하므로, 위 키워드를 메인으로 새 글을 쓰면 상위노출 자리가 나지 않는다. 띄어쓰기만 다른 같은 키워드도 금지. 같은 소재라도 검색 의도가 다른 별도 키워드(롱테일)로는 추천해도 된다.`
         : "";
 
+      const vr=blogVolumeRange(myBid,activeProf);
+      setVolRange(vr);
+      const volRule=vr
+        ? `네이버에서 실제로 검색되는 단어이되, 이 블로그의 체급에 맞는 크기로 고를 것. 이 블로그가 실제로 10위 안에 올린 키워드 ${vr.n}개의 월 검색량은 중앙값 ${vr.med}, 대부분 ${vr.ceil} 이하다. 이보다 훨씬 큰 대표 키워드(예: 누구나 쓰는 넓은 단어)는 노출은 돼도 순위권에 못 드니 피하고, 같은 소재에서 더 구체적인 2형태소 조합을 고를 것`
+        : `네이버에서 실제로 많이 검색되는 단어`;
+
       const prompt=`카테고리: "${selCat}"
 ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각각의 메인 키워드를 추천해줘.${trendingBlock}${googleBlock}${occBlock}
 ${buildProfileBlock(activeProf,"keyword")}
 선정 기준:
 1. 실제 블로거가 쓸 법한 완성된 제목 형태 (경험·후기·정보·비교 등 독자가 클릭하고 싶은 구체적 제목)
 2. ${yearMonth} 최신 트렌드와 시의성 반영${trendingTitles.length > 0 ? " (위 실시간 인기글 소재를 참고해 유사하거나 파생된 주제 우선)" : ""}
-3. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. 네이버에서 실제로 많이 검색되는 단어
+3. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. ${volRule}
 4. 인기글과 너무 똑같은 제목은 피하고, 소재만 참고해서 차별화된 새 주제로 발전시킬 것
 5. 20개의 메인 키워드는 서로 겹치지 않게 분산시킬 것 (같은 단어를 변형만 해서 반복하지 말 것)
 
 ※ 검색량과 경쟁도는 추측하지 말 것. 추천 후 실제 데이터로 따로 조회한다.
 
 반드시 순수 JSON만 출력. 마크다운 없이.
-{"keywords":[{"rank":1,"title":"추천 글 주제 제목","mainKeyword":"메인 키워드 (1~2형태소, 예:옷장정리)","reason":"선정 이유 한 줄 (유행성 포함)"},...]}`
+{"keywords":[{"rank":1,"title":"추천 글 주제 제목","mainKeyword":"메인 키워드 (1~2형태소, 예:옷장정리)","reason":"선정 이유 한 줄 (유행성 포함)"${activeProf?.coreTopics?.length?`,"axis":"core | side | other (위 주제 축 중 어디에 속하는지)"`:""}},...]}`
 
       const raw=await callClaude([{role:"user",content:prompt}],
         "You are a Naver blog SEO expert. Output ONLY valid JSON, no markdown.",3000,"claude-haiku-4-5-20251001");
@@ -6469,8 +6536,14 @@ ${buildProfileBlock(activeProf,"keyword")}
         {excludedKw.map((x,i)=><div key={i} style={{color:"#8b949e",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
           <span style={{color:"#e3b341",fontWeight:700}}>{x.keyword}</span> · {x.area} {x.rank}위{x.title?` · ${x.title}`:""} <span style={{color:"#484f58"}}>({x.basis})</span></div>)}
       </div>}
+      {volRange&&<div style={{color:"#8b949e",fontSize:"13px",marginBottom:"10px"}}>
+        📏 이 블로그 체급: 10위 안에 올린 키워드 {volRange.n}개의 월 검색량 중앙값 <b style={{color:"#e6edf3"}}>{fmt(volRange.med)}</b> · 대부분 <b style={{color:"#e6edf3"}}>{fmt(volRange.ceil)}</b> 이하
+        <span style={{color:"#484f58"}}> ({volRange.src} 기준) · 이보다 큰 키워드는 "체급 초과"로 표시하고 아래로 내립니다</span>
+      </div>}
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-        {keywords.map((kw,idx)=>{
+        {keywords.map((kw,idx)=>({kw,idx,over:!!(volRange&&stats[kw.mainKeyword||kw.keyword]?.monthly>volRange.ceil)}))
+          .sort((a,b)=>(a.over-b.over)||(a.idx-b.idx))
+          .map(({kw,idx,over})=>{
           const mainKw=kw.mainKeyword||kw.keyword;
           const st=stats[mainKw];
           const dt=detail[mainKw];
@@ -6495,6 +6568,10 @@ ${buildProfileBlock(activeProf,"keyword")}
                 {mainKw}
               </span>
               {st&&<span style={{fontSize:"13px",color:"#8b949e"}}>월 검색량 <b style={{color:"#e6edf3"}}>{fmt(st.monthly)}</b></span>}
+              {kw.axis==="core"&&<span title="맞춤 프로필의 중심 축 주제" style={{background:"#23863615",border:"1px solid #23863655",borderRadius:"6px",padding:"2px 8px",color:"#3fb950",fontSize:"12px",fontWeight:700}}>🎯 중심 축</span>}
+              {kw.axis==="side"&&<span title="맞춤 프로필의 곁가지 주제" style={{background:"#d2992210",border:"1px solid #d2992240",borderRadius:"6px",padding:"2px 8px",color:"#d29922",fontSize:"12px",fontWeight:700}}>🌿 곁가지</span>}
+              {over&&<span title={`이 블로그가 10위 안에 올린 키워드는 대부분 월 ${volRange.ceil} 이하예요`} style={{background:"#8957e515",border:"1px solid #8957e544",borderRadius:"6px",padding:"2px 8px",color:"#d2a8ff",fontSize:"12px",fontWeight:700}}>
+                ⚖️ 체급 초과</span>}
               {kw.myRank!=null&&<span title={`내 글: ${kw.myTitle||""}`} style={{background:"#d2992215",border:"1px solid #d2992244",borderRadius:"6px",padding:"2px 8px",color:"#e3b341",fontSize:"12px",fontWeight:700}}>
                 📌 내 글 {kw.myArea} {kw.myRank}위 있음</span>}
               {st?.commercial&&<span title={`통합검색 평균 광고 노출 ${st.depth}개`}
