@@ -1583,6 +1583,18 @@ JSON 형식:
         <span style={{color:"#8b949e"}}>{(workingText||text).length.toLocaleString()}자</span>
         {postMeta.tags?.length>0&&<><span style={{color:"#484f58"}}>해시태그</span>
         <span style={{color:"#58a6ff",lineHeight:"1.8"}}>{postMeta.tags.map(t=>"#"+t).join(" ")}</span></>}
+        {postMeta.visit&&<><span style={{color:"#484f58"}}>방문 리뷰</span>
+        <span style={{color:"#8b949e",lineHeight:1.6}}>
+          📍 {postMeta.visit.placeName}{postMeta.visit.address?` · ${postMeta.visit.address}`:""} · {VISIT_DISCLOSURE[postMeta.visit.disclosure]?.label}
+          {postMeta.visit.placeInfo?.facts?.length>0&&<span style={{display:"block",fontSize:"13px"}}>검색 확인: {postMeta.visit.placeInfo.facts.map(f=>f.label).join(", ")}</span>}
+          {postMeta.visit.missingPhotos?.length>0&&<span style={{display:"block",color:"#d29922",fontSize:"13px"}}>⚠️ 본문에 배치 안 된 사진: {postMeta.visit.missingPhotos.map(n=>`[사진 ${n}]`).join(", ")} — 원하는 위치에 직접 넣어주세요</span>}
+          <span style={{display:"flex",gap:"5px",flexWrap:"wrap",marginTop:"5px"}}>
+            {postMeta.visit.thumbs.map((u,i)=><span key={i} style={{position:"relative"}}>
+              <img src={u} alt="" style={{width:"64px",height:"64px",objectFit:"cover",borderRadius:"6px",border:"1px solid #30363d",display:"block"}}/>
+              <span style={{position:"absolute",left:"3px",top:"3px",background:"#0d1117cc",color:"#e6edf3",fontSize:"11px",fontWeight:700,borderRadius:"4px",padding:"0 4px"}}>{i+1}</span>
+            </span>)}
+          </span>
+        </span></>}
         {postMeta.factSummary&&<><span style={{color:"#484f58"}}>수치조사</span>
         <span style={{color:"#8b949e",lineHeight:"1.6"}}>
           검색으로 확인 <b style={{color:"#3fb950"}}>{postMeta.factSummary.resolved}</b>
@@ -1652,7 +1664,7 @@ JSON 형식:
     </div>}
 
     {/* ── 단락별 이미지 프롬프트 생성 (GPT용) ── */}
-    {postMeta&&<ImageGenSection
+    {postMeta&&!postMeta.visit&&<ImageGenSection
       postMeta={postMeta}
       postContent={workingText||text}
       genImages={genImages} setGenImages={setGenImages}
@@ -2328,6 +2340,28 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
   const [customTopic,setCustomTopic]=useState("");   // 직접 입력한 글 주제
+  // 방문 리뷰 모드
+  const [visitOpen,setVisitOpen]=useState(false);
+  const [placeName,setPlaceName]=useState("");
+  const [placeAddr,setPlaceAddr]=useState("");
+  const [visitMemo,setVisitMemo]=useState("");
+  const [disclosure,setDisclosure]=useState("self");
+  const [visitPhotos,setVisitPhotos]=useState([]);
+  const [photoBusy,setPhotoBusy]=useState(false);
+  const addVisitPhotos=async(files)=>{
+    const list=[...files].filter(f=>f.type.startsWith("image/")).slice(0,10-visitPhotos.length);
+    if(!list.length) return;
+    setPhotoBusy(true);
+    try{ const out=[]; for(const f of list){ try{ out.push(await resizeImageFile(f)); }catch(e){} } setVisitPhotos(p=>[...p,...out].slice(0,10)); }
+    finally{ setPhotoBusy(false); }
+  };
+  const moveVisitPhoto=(i,d)=>setVisitPhotos(p=>{const a=[...p];const j=i+d;if(j<0||j>=a.length)return a;[a[i],a[j]]=[a[j],a[i]];return a;});
+  const writeVisit=()=>{
+    if(!placeName.trim()||!goAutoWrite) return;
+    const t=customTopic.trim()||`${result?.keyword||""} ${placeName.trim()} ${disclosure==="own"?"매장 소개":"방문 후기"}`.trim();
+    goAutoWrite(t,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword,
+      {placeName:placeName.trim(),address:placeAddr.trim(),memo:visitMemo,disclosure,photos:visitPhotos});
+  };
 
   const result = kwResult; // 단일 객체: naver + AI 모두 포함
 
@@ -2789,6 +2823,63 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
               <div style={{color:"#ffa657",fontSize:"12px",marginTop:"7px"}}>
                 ⚠️ 제목에 키워드 "{result.keyword}"를 그대로 넣어야 검색 노출에 유리합니다
               </div>}
+          </div>
+
+          {/* 📍 방문 리뷰 모드 */}
+          <div style={{background:"#0d1117",border:`1px solid ${visitOpen?"#3fb95066":"#21262d"}`,borderRadius:"10px",padding:"11px 12px",marginBottom:"14px"}}>
+            <div onClick={()=>setVisitOpen(v=>!v)} style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",flexWrap:"wrap"}}>
+              <span style={{color:"#3fb950",fontSize:"14px",fontWeight:700}}>📍 방문 리뷰로 쓰기</span>
+              <span style={{color:"#484f58",fontSize:"12px"}}>· 사진 + 상호명·주소로 플레이스 방문 리뷰 작성 (위 주제 칸은 비워도 됨)</span>
+              <span style={{marginLeft:"auto",color:"#484f58"}}>{visitOpen?"▲":"▼"}</span>
+            </div>
+            {visitOpen&&<div style={{display:"flex",flexDirection:"column",gap:"8px",marginTop:"10px"}}>
+              {(()=>{const inp={flex:"1 1 200px",minWidth:0,padding:"8px 10px",background:"#010409",border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none"};
+              return <>
+              <div style={{display:"flex",gap:"7px",flexWrap:"wrap"}}>
+                <input value={placeName} onChange={e=>setPlaceName(e.target.value)} placeholder="상호명 (예: 밴드폰 안산점)" style={inp}/>
+                <input value={placeAddr} onChange={e=>setPlaceAddr(e.target.value)} placeholder="주소 (예: 경기 안산시 단원구 ...)" style={{...inp,flex:"2 1 280px"}}/>
+              </div>
+              <textarea value={visitMemo} onChange={e=>setVisitMemo(e.target.value)} rows={3}
+                placeholder={"방문 메모 (선택 · 경험은 여기 적은 것과 사진에 보이는 것만 글에 들어가요)\n예: 9/20 토요일 오후 방문, 갤럭시 S26 번호이동 상담, 대기 10분, 요금제 설명이 자세했음, 주차는 건물 뒤편"}
+                style={{...inp,flex:"none",width:"100%",boxSizing:"border-box",resize:"vertical",lineHeight:1.5}}/>
+              <div style={{display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap",fontSize:"13px"}}>
+                <span style={{color:"#8b949e"}}>광고 표기</span>
+                {Object.entries(VISIT_DISCLOSURE).map(([k,v])=>(
+                  <button key={k} onClick={()=>setDisclosure(k)} style={{padding:"4px 10px",borderRadius:"14px",cursor:"pointer",fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
+                    background:disclosure===k?"#1f6feb":"#21262d",color:disclosure===k?"#fff":"#8b949e",border:`1px solid ${disclosure===k?"#1f6feb":"#30363d"}`}}>{v.label}</button>))}
+                {disclosure!=="self"&&<span style={{color:"#d29922",fontSize:"12px"}}>글 맨 앞에 경제적 관계 표기 문구가 자동으로 들어가요{disclosure==="own"?" · 손님 후기가 아닌 매장 소개 관점으로 작성":disclosure==="staff"?" · 직원·회사 관계자가 직접 돈 내고 이용한 경우":""}</span>}
+              </div>
+              <div>
+                <label style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"6px 12px",background:"#21262d",border:"1px dashed #484f58",borderRadius:"8px",color:"#c9d1d9",cursor:visitPhotos.length>=10?"not-allowed":"pointer",fontSize:"13px",fontWeight:700}}>
+                  📷 사진 올리기 ({visitPhotos.length}/10){photoBusy?" · 줄이는 중...":""}
+                  <input type="file" accept="image/*" multiple disabled={visitPhotos.length>=10} style={{display:"none"}} onChange={e=>{addVisitPhotos(e.target.files);e.target.value="";}}/>
+                </label>
+                {visitPhotos.length>0&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"8px"}}>
+                  {visitPhotos.map((p,i)=>(
+                    <div key={i} style={{position:"relative",width:"76px"}}>
+                      <img src={p.dataUrl} alt="" style={{width:"76px",height:"76px",objectFit:"cover",borderRadius:"6px",border:"1px solid #30363d",display:"block"}}/>
+                      <span style={{position:"absolute",left:"3px",top:"3px",background:"#0d1117cc",color:"#e6edf3",fontSize:"11px",fontWeight:700,borderRadius:"4px",padding:"0 4px"}}>{i+1}</span>
+                      <div style={{display:"flex",justifyContent:"space-between",marginTop:"2px"}}>
+                        <button onClick={()=>moveVisitPhoto(i,-1)} style={{background:"none",border:"none",color:"#8b949e",cursor:"pointer",fontSize:"12px",padding:0}}>◀</button>
+                        <button onClick={()=>setVisitPhotos(a=>a.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#f85149",cursor:"pointer",fontSize:"12px",padding:0}}>✕</button>
+                        <button onClick={()=>moveVisitPhoto(i,1)} style={{background:"none",border:"none",color:"#8b949e",cursor:"pointer",fontSize:"12px",padding:0}}>▶</button>
+                      </div>
+                    </div>))}
+                </div>}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+                <button onClick={writeVisit} disabled={!placeName.trim()||photoBusy}
+                  style={{background:placeName.trim()&&!photoBusy?"linear-gradient(135deg,#238636,#2ea043)":"#21262d",border:"none",color:placeName.trim()&&!photoBusy?"#fff":"#484f58",
+                    borderRadius:"8px",padding:"9px 16px",fontSize:"14px",fontWeight:700,cursor:placeName.trim()&&!photoBusy?"pointer":"not-allowed",fontFamily:"'Noto Sans KR',sans-serif"}}>
+                  📍 방문 리뷰 쓰기
+                </button>
+                <span style={{color:"#484f58",fontSize:"12px"}}>
+                  주제: {customTopic.trim()||`${result.keyword} ${placeName.trim()||"(상호명)"} ${disclosure==="own"?"매장 소개":"방문 후기"}`}
+                  {visitPhotos.length===0&&" · 사진 없이도 쓸 수 있지만 사진이 있어야 경험이 구체적으로 나와요"}
+                </span>
+              </div>
+              </>;})()}
+            </div>}
           </div>
 
           {/* AI 추천 주제 */}
@@ -8894,7 +8985,7 @@ function isCommercialStat(item) {
 // ─── 글쓰기 프롬프트 빌더 ──────────────────────────────────────────────────
 function buildWritePrompt({
   kw, yearMonth, today, category, smartBlockType, blogStrategy, bodies, mainKeyword,
-  topTitles, commercialWords, avoidWords, pattern, factSheetBlock = "", profileBlock = "", productStatusBlock = "",
+  topTitles, commercialWords, avoidWords, pattern, factSheetBlock = "", profileBlock = "", productStatusBlock = "", visitBlock = "",
 }) {
   const mainKw = mainKeyword || kw;
   const ctx = category
@@ -8931,7 +9022,7 @@ D4. 차별화는 관점·구성·표현에서만 한다. 사실(수치·날짜·
     : "";
 
   return `오늘 날짜: ${today || yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
-${productStatusBlock}${factSheetBlock}${refBlock}${titleBlock}${commercialBlock}${avoidBlock}${profileBlock}${angleBlock}
+${visitBlock}${productStatusBlock}${factSheetBlock}${refBlock}${titleBlock}${commercialBlock}${avoidBlock}${profileBlock}${angleBlock}
 네이버 블로그 홈판 노출 + AI 브리핑(AEO) 인용 최적화 글을 작성해줘:
 
 [주제 원칙 — 글의 범위를 정하는 기준. 사실 원칙 다음으로 우선한다]
@@ -9322,6 +9413,107 @@ async function checkProductStatus({ kw, mainKw, today }) {
   return (j.items || []).filter(x => x && x.name && x.status).slice(0, 2);
 }
 
+// ═══ 방문 리뷰 모드 ═══════════════════════════════════════════════════════
+// 사진은 브라우저에서 긴 변 1024px JPEG로 줄여 보낸다 (Vercel 요청 4.5MB 제한 + 비용 절감)
+async function resizeImageFile(file, maxSide = 1024, quality = 0.78) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = url; });
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    c.getContext("2d").drawImage(img, 0, 0, w, h);
+    const dataUrl = c.toDataURL("image/jpeg", quality);
+    return { name: file.name, dataUrl, base64: dataUrl.split(",")[1], mediaType: "image/jpeg" };
+  } finally { URL.revokeObjectURL(url); }
+}
+
+const VISIT_DISCLOSURE = {
+  self: { label: "내돈내산", text: () => "" },
+  staff: { label: "관계자 내돈내산", text: n => `※ 작성자는 ${n}과(와) 관계가 있는 사람이며, 직접 비용을 내고 이용한 후기입니다.` },
+  sponsor: { label: "협찬·원고료", text: n => `※ 이 글은 ${n}으로부터 서비스 또는 원고료를 제공받아 작성했습니다.` },
+  own: { label: "자사 매장", text: n => `※ 이 글은 ${n}을(를) 운영하는 업체가 직접 작성한 매장 소개 글입니다.` },
+};
+
+// 요청 크기가 한도(4.4MB)에 가까우면 더 작게 다시 줄인다
+async function shrinkDataUrl(dataUrl, maxSide, quality) {
+  const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = dataUrl; });
+  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+  const c = document.createElement("canvas"); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  const u = c.toDataURL("image/jpeg", quality);
+  return { dataUrl: u, base64: u.split(",")[1], mediaType: "image/jpeg" };
+}
+
+// 사진 읽기: 사진마다 무엇이 찍혔는지 (보이는 것만)
+async function analyzeVisitPhotos(photos, placeName) {
+  const total = photos.reduce((a, p) => a + p.base64.length, 0);
+  if (total > 3500000) photos = await Promise.all(photos.map(p => shrinkDataUrl(p.dataUrl, 800, 0.65)));
+  const content = [];
+  photos.forEach((p, i) => {
+    content.push({ type: "text", text: `[사진 ${i + 1}]` });
+    content.push({ type: "image", source: { type: "base64", media_type: p.mediaType, data: p.base64 } });
+  });
+  content.push({ type: "text", text: `위 사진들은 "${placeName}" 방문 때 찍은 사진이다. 사진마다 실제로 보이는 것만 적어라.
+- kind: 외관 | 간판 | 내부 | 메뉴판·가격표 | 음식·음료 | 상품·진열 | 상담·계산 | 주변·주차 | 기타 중 하나
+- desc: 보이는 것 1~2문장 (색, 구성, 분위기, 배치). 보이지 않는 맛·친절도·가격은 추측하지 말 것
+- text: 사진 속에서 읽히는 글자(메뉴명, 가격, 간판 문구, 안내문)를 그대로. 흐리면 읽힌 부분만. 없으면 ""
+순수 JSON만: {"photos":[{"n":1,"kind":"외관","desc":"...","text":"..."}]}` });
+  const model = getCostMode() === "save" ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-5-20250929";
+  const raw = await callClaude([{ role: "user", content }], "You describe photos precisely and never guess what is not visible. Output ONLY valid JSON.", 2000, model);
+  const j = safeParseJson(raw);
+  return (j?.photos || []).filter(x => x && x.n);
+}
+
+// 장소 기본 정보: 검색으로 확인된 것만
+async function searchPlaceInfo({ placeName, address, today }) {
+  const prompt = `오늘: ${today}
+장소: "${placeName}" / 주소: "${address}"
+웹 검색으로 이 장소의 기본 정보를 확인해라 (최대 3회 검색). 주소가 일치하는 같은 장소인지 반드시 확인할 것. 다른 지점·동명 업소 정보는 쓰지 말 것.
+- category: 업종 (예: 휴대폰 판매점, 한식당, 카페)
+- facts: 확인된 항목만 [{"label":"영업시간|주차|전화|대표 메뉴·품목|예약|기타","value":"...","source":"출처 사이트명"}]
+- 검색으로 확인되지 않은 항목은 넣지 말 것. 다른 사람 후기의 개인 경험(맛 평가, 직원 응대 등)은 넣지 말 것.
+순수 JSON만: {"category":"...","facts":[...]}`;
+  const raw = await callClaudeSearch([{ role: "user", content: prompt }],
+    "You verify basic facts about a specific local business using web search. Never guess. Output ONLY valid JSON.",
+    1200, "claude-haiku-4-5-20251001", 3);
+  const j = safeParseJson(raw);
+  return { category: j?.category || "", facts: (j?.facts || []).filter(f => f?.label && f?.value).slice(0, 8) };
+}
+
+function formatVisitBlock(visit, photoDescs, placeInfo) {
+  const own = visit.disclosure === "own";
+  const photos = photoDescs.length
+    ? photoDescs.map(p => `[사진 ${p.n}] (${p.kind || "기타"}) ${p.desc || ""}${p.text ? ` / 사진 속 글자: ${p.text}` : ""}`).join("\n")
+    : visit.photos.map((_, i) => `[사진 ${i + 1}] (설명 없음)`).join("\n");
+  const facts = placeInfo.facts.length ? placeInfo.facts.map(f => `- ${f.label}: ${f.value} (출처: ${f.source || "-"})`).join("\n") : "(검색으로 확인된 정보 없음)";
+  return `
+[방문 리뷰 모드 — 이 블록은 주제 원칙·경험 서술 규칙보다 우선한다]
+장소: ${visit.placeName} / 주소: ${visit.address || "(미입력)"}${placeInfo.category ? ` / 업종: ${placeInfo.category}` : ""}
+${own ? "작성 관점: 이 매장을 운영하는 업체가 직접 쓰는 매장 소개 글이다. 손님인 척 방문 후기처럼 쓰지 말 것. \"저희 매장\"처럼 운영자 관점으로 쓰되 과장 광고 표현은 쓰지 말 것."
+  : visit.disclosure === "staff" ? "작성 관점: 작성자는 이 매장과 관계가 있지만, 실제로 직접 비용을 내고 이용한 경험을 쓰는 후기다. 방문 후기 관점으로 쓰되, 관계가 있다는 사실을 숨기거나 부정하는 표현(\"광고 아님\", \"순수 손님으로서\" 등)은 쓰지 말고, 과장된 칭찬이나 다른 매장을 깎아내리는 비교는 하지 말 것."
+  : "작성 관점: 작성자가 이 장소에 실제로 방문해서 쓰는 후기다."}
+
+사진 (작성자가 방문 때 직접 찍은 것):
+${photos}
+
+작성자 메모 (작성자가 직접 적은 경험 — 경험 서술의 유일한 근거):
+${visit.memo?.trim() || "(메모 없음)"}
+
+검색으로 확인된 장소 정보:
+${facts}
+
+방문 리뷰 규칙:
+R1. 경험은 사진 설명과 작성자 메모에 있는 것만 쓴다. 사진·메모에 없는 메뉴를 먹었다거나, 없는 가격·대기시간·직원 응대·맛 평가를 지어내지 말 것. 메모가 없으면 사진에 보이는 것(분위기, 구성, 배치)을 중심으로 담백하게 쓴다.
+R2. 가격·영업시간·주차 같은 정보는 메모, 사진 속 글자, 확인된 장소 정보에 있는 것만 쓴다. 없으면 "방문 전 확인하는 게 좋다" 정도로만.
+R3. 글 흐름은 업종과 이 키워드로 검색하는 사람이 궁금해할 것을 기준으로 스스로 구성한다. 참고자료(상위 글)에서 독자가 궁금해하는 항목(위치·주차·가격 조건·예약·대기 등)을 참고하되, 상위 글 작성자의 경험을 내 경험처럼 옮기지 말 것.
+R4. 사진 배치: 본문의 알맞은 위치에 "[사진 N]"을 단독 줄로 넣어 어느 사진을 어디에 넣을지 표시한다. 모든 사진을 한 번씩 쓰고, 순서는 글 흐름에 맞게 바꿔도 된다. 사진 바로 아래 문장은 그 사진에 보이는 내용과 맞아야 한다.
+R5. ▶ 정리 바로 앞에 "📍 기본 정보" 소제목을 두고 상호명, 주소, 확인된 정보만 한 줄씩 적는다. 확인 안 된 항목은 적지 않는다.
+R6. 광고·협찬 표기 문구는 코드가 글 맨 앞에 붙이므로 본문에 따로 쓰지 말 것.
+R7. 메인 키워드는 제목과 도입부에 자연스럽게 넣되, 상호명도 제목이나 첫 문단에 넣는다.
+`;
+}
+
 function formatProductStatusBlock(items) {
   if (!items || !items.length) return "";
   const label = { released_kr: "한국 정식 출시됨", announced: "한국 미출시 (발표·해외 출시·사전예약 단계)", not_exist: "공식 발표 없음 (루머 단계)", unknown: "출시 여부 확인 안 됨" };
@@ -9569,7 +9761,7 @@ export default function BlogTools(){
   const [analyzeActiveSection,setAnalyzeActiveSection]=useState("morpheme");
   const [analyzePostMeta,setAnalyzePostMeta]=useState(null); // 부모로 올려서 안전하게 공유
   // 키워드탭 글쓰기: 자동 생성 후 분석탭으로 이동
-  const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy, mainKeyword)=>{
+  const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy, mainKeyword, visit)=>{
     setAnalyzePostMeta(null);
     setAnalyzeText("");
     setAnalyzeAiResult(null);
@@ -9608,9 +9800,21 @@ export default function BlogTools(){
         checkProductStatus({ kw, mainKw, today: todayStr }).catch(() => []), 30000, []
       );
 
+      // ── 방문 리뷰 모드: 사진 읽기 + 장소 정보 검색 (일반 사실표 대신) ──
+      let visitBlock = "", photoDescs = [], placeInfo = { category: "", facts: [] };
+      if (visit) {
+        setPendingAnalyzeText(`__loading__:사진 ${visit.photos.length}장 읽는 중 · 장소 정보 검색 중`);
+        const [pd, pi] = await Promise.all([
+          visit.photos.length ? withTimeout(analyzeVisitPhotos(visit.photos, visit.placeName).catch(() => []), 60000, []) : Promise.resolve([]),
+          withTimeout(searchPlaceInfo({ placeName: visit.placeName, address: visit.address, today: todayStr }).catch(() => ({ category: "", facts: [] })), 45000, { category: "", facts: [] }),
+        ]);
+        photoDescs = pd; placeInfo = pi;
+        visitBlock = formatVisitBlock(visit, photoDescs, placeInfo);
+      }
+
       // ── 사전 사실표: 참고자료의 수치·정책을 공식 출처로 확인해 프롬프트에 넣는다 ──
       let factSheet = [];
-      try {
+      if (!visit) try {
         // 절약 모드: 수치·정책이 핵심이 아닌 주제(사용법·경험담 등)는 웹검색 사실표를 건너뛴다
         let needFacts = { need: true };
         if (getCostMode() === "save") {
@@ -9635,6 +9839,7 @@ export default function BlogTools(){
         factSheetBlock: formatFactSheetBlock(factSheet),
         profileBlock: buildProfileBlock(bpGetActive(), "write"),
         productStatusBlock: formatProductStatusBlock(productStatus),
+        visitBlock,
       });
 
       const sysPrompt = `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation (AEO).
@@ -9648,6 +9853,7 @@ FACTUAL DISCIPLINE — this overrides every stylistic instruction in the user me
 - Opinions, judgments, preferences and narrative experience are encouraged — but write them as opinions, not as verified facts. Make experience concrete through process and reasoning, not through fabricated measurements.
 - Calibrate certainty per sentence: state verified facts, definitions and procedures plainly; mark evaluations as the writer's own judgment; and never promise the reader an outcome ("no wrist fatigue", "solves it", "guaranteed") — phrase effects conditionally with degree words. Especially in the closing ▶ 정리 lines, the final takeaway about effects must be conditional or first-person, not an absolute claim. Keep hedges ("~것 같습니다") to four or fewer per post and never stack two in one sentence.
 - If a [제품 출시 상태] block says a product is not officially released in Korea, never write first-person use, purchase or activation of it, even if the topic says "후기".
+- If a [방문 리뷰 모드] block is present, first-person experience must be grounded ONLY in its photo descriptions and the author's memo. Never invent dishes eaten, prices, waiting times, staff behavior or taste judgments that are not there.
 - A shorter, less specific post that is true is better than a specific post that is false. If a [확인된 사실] list is provided, figures, dates and conditions must come from that list; treat anything under [확인 안 된 주장] as unverified. Reference material may inform structure and context but is not a source of figures on its own (never copy its wording).
 
 BRAND ACCURACY:
@@ -9798,6 +10004,16 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
       const tagBlock = tags.length > 0
         ? "\n\n" + tags.map(t => "#" + String(t).replace(/^#/, "")).join(" ")
         : "";
+      // 방문 리뷰: 광고 표기 문구를 맨 앞에 코드로 보장 + 사진 배치 누락 확인
+      let visitMeta = null;
+      if (visit) {
+        const disc = (VISIT_DISCLOSURE[visit.disclosure] || VISIT_DISCLOSURE.self).text(visit.placeName);
+        if (disc) bodyText = disc + "\n\n" + bodyText;
+        const placed = new Set([...bodyText.matchAll(/\[사진\s*(\d+)\]/g)].map(m => +m[1]));
+        const missingPhotos = visit.photos.map((_, i) => i + 1).filter(n => !placed.has(n));
+        visitMeta = { placeName: visit.placeName, address: visit.address, disclosure: visit.disclosure,
+          thumbs: visit.photos.map(p => p.dataUrl), photoDescs, placeInfo, missingPhotos };
+      }
       const fullContent = (bodyText + tagBlock).replace(/\n{3,}/g, "\n\n");
 
       const meta = {
@@ -9811,6 +10027,7 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
         factSummary,
         factItems,
         factSheet,
+        visit: visitMeta,
         _source: "keyword",
       };
       setAnalyzePostMeta(meta);
