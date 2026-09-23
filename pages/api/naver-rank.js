@@ -47,6 +47,26 @@ async function fetchAreasViaHomeProxy(keyword, normalizedBlogId, normalizedPostN
   }
 }
 
+// ── 홈 PC 프록시: 블로그탭을 발행일 전후 하루로 기간 필터해서 조회 (누락 재확인용) ──
+async function fetchDatedViaHomeProxy(keyword, blogId, postNo, date) {
+  const proxyUrl = process.env.HOME_PROXY_URL;
+  const proxyKey = process.env.HOME_PROXY_KEY;
+  if (!proxyUrl || !proxyKey) return { rank: null, error: "프록시 미설정" };
+  try {
+    const url = `${proxyUrl}/naver-blog-dated?keyword=${encodeURIComponent(keyword)}&blogId=${encodeURIComponent(blogId)}&postNo=${encodeURIComponent(postNo)}&date=${encodeURIComponent(date)}&key=${encodeURIComponent(proxyKey)}`;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 15000);
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (r.status === 404) return { rank: null, error: "프록시에 기간 검색 기능 없음 (server.js 업데이트 필요)" };
+    if (!r.ok) return { rank: null, error: "프록시 응답 오류 " + r.status };
+    const d = await r.json();
+    return { rank: d.rank ?? null, total: d.total ?? 0, error: d.error || null };
+  } catch (e) {
+    return { rank: null, error: "프록시 연결 실패: " + (e?.message || "") };
+  }
+}
+
 export default async function handler(req, res) {
 
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -82,11 +102,14 @@ export default async function handler(req, res) {
       return await r.json();
     };
 
-    const [proxyResult, simResult, dateResult] = await Promise.allSettled([
+    const pubDate = /^\d{8}$/.test(req.query.date || "") ? req.query.date : "";
+    const [proxyResult, simResult, dateResult, datedResult] = await Promise.allSettled([
       fetchAreasViaHomeProxy(keyword, normalizedBlogId, normalizedPostNo),
       fetchSort("sim"),
       fetchSort("date"),
+      pubDate ? fetchDatedViaHomeProxy(keyword, normalizedBlogId, normalizedPostNo, pubDate) : Promise.resolve(null),
     ]);
+    const dated = datedResult.status === "fulfilled" ? datedResult.value : { rank: null, error: datedResult.reason?.message };
 
     const proxy = proxyResult.status === "fulfilled" ? proxyResult.value : { areas: null, error: proxyResult.reason?.message };
 
@@ -181,6 +204,7 @@ export default async function handler(req, res) {
       simRank,
       dateRank,
       deepSearched,      // 정확도순으로 몇 위까지 훑었는지
+      dated,             // 발행일 기간 필터 블로그탭 결과 { rank, total, error } (date 파라미터 있을 때만)
       searchedBlogId: normalizedBlogId,
       searchedPostNo: normalizedPostNo,
       items: results,
