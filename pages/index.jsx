@@ -3987,9 +3987,10 @@ function MissingTab(){
   };
 
   // ── 네이버 순위 조회 (통합검색/블로그탭 2영역) ──
-  const getNaverRank=async(kw,blogId,postNo)=>{
+  const getNaverRank=async(kw,blogId,postNo,deep)=>{
     try{
       const params=new URLSearchParams({keyword:kw});
+      if(deep) params.append("deep",String(deep));
       if(blogId) params.append("blogId",blogId);
       if(postNo) params.append("postNo",postNo);
       const res=await fetch(`/api/naver-rank?${params.toString()}`);
@@ -4010,10 +4011,11 @@ function MissingTab(){
   // 제목 검색에서 못 찾은 글만: 특수문자 빼고 큰따옴표로 감싸 한 번 더 (판다랭크 방식)
   const quoteRecheck=async(title,blogId,postNo)=>{
     const clean=cleanTitleForSearch(title); if(!clean) return null;
-    const q=await getNaverRank(`"${clean}"`,blogId,postNo);
-    if(!q) return {quoteChecked:true,quoteRank:null};
+    // 따옴표 검색 결과를 1,000위까지 훑는다. 어디서든 보이면 = 검색에 반영된 글 → 누락 아님
+    const q=await getNaverRank(`"${clean}"`,blogId,postNo,10);
+    if(!q) return null;   // 조회 실패는 판정하지 않음 (다음에 다시 시도)
     const r=[q.areas?.blog?.rank,q.simRank,q.dateRank,q.myRank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
-    return {quoteChecked:true,quoteRank:r};
+    return {quoteChecked:true,quoteDeep:true,quoteRank:r};
   };
 
   // ── 추가검색: 제목 옆 입력창 키워드로 순위 조회 ──
@@ -4281,7 +4283,7 @@ JSON 배열만 출력:`;
     setInsights(s=>({...s,[pg]:{loading:true,step:"키워드 집계 중..."}}));
     try{
       // 0) 누락으로 판정된 글 중 따옴표 재확인을 안 한 글만 재확인 (네이버 검색만, AI 없음)
-      const needQ=done.filter(p=>{const tr=A[p.postNo].titleRank;return tr&&!tr.quoteChecked&&titleExposureCat(tr,p.date).cat==="missing";});
+      const needQ=done.filter(p=>{const tr=A[p.postNo].titleRank;return tr&&!tr.quoteDeep&&titleExposureCat(tr,p.date).cat==="missing";});
       for(let i=0;i<needQ.length;i++){
         const p=needQ[i];
         setInsights(s=>({...s,[pg]:{loading:true,step:`누락 글 따옴표 검색으로 재확인 중... (${i+1}/${needQ.length})`}}));
