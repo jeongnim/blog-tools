@@ -56,6 +56,8 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
 
   const { keyword, blogId, postNo } = req.query;
+  // deep=N: 정확도순(sim)을 100개씩 N페이지까지 (최대 10 = 1,000위). 누락 재확인용으로만 사용.
+  const deep = Math.min(10, Math.max(1, parseInt(req.query.deep || "1", 10) || 1));
   if (!keyword) return res.status(400).json({ error: "keyword 파라미터가 필요합니다." });
 
   const clientId     = process.env.NAVER_CLIENT_ID;
@@ -66,9 +68,9 @@ export default async function handler(req, res) {
 
   try {
     // ── 홈 프록시(3영역 실제검색) + Search API(sim/date, fallback용) 병렬 조회 ──
-    const fetchSort = async (sort) => {
+    const fetchSort = async (sort, start = 1) => {
       if (!clientId || !clientSecret) return null;
-      const url = "https://openapi.naver.com/v1/search/blog.json?query=" + encodeURIComponent(keyword) + "&display=100&start=1&sort=" + sort;
+      const url = "https://openapi.naver.com/v1/search/blog.json?query=" + encodeURIComponent(keyword) + "&display=100&start=" + start + "&sort=" + sort;
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 10000);
       const r = await fetch(url, {
@@ -105,7 +107,21 @@ export default async function handler(req, res) {
       return null;
     };
 
-    const simRank  = findMyRank(simItems);
+    let simRank  = findMyRank(simItems);
+    // 깊은 조회: 1페이지에 없고 deep>1이면 101위~ 계속 (찾으면 멈춤)
+    let deepSearched = 100;
+    if (simRank === null && deep > 1 && simItems.length >= 100) {
+      for (let pg = 1; pg < deep; pg++) {
+        try {
+          const more = await fetchSort("sim", pg * 100 + 1);
+          const items = more?.items || [];
+          deepSearched = pg * 100 + items.length;
+          const r = findMyRank(items);
+          if (r !== null) { simRank = pg * 100 + r; break; }
+          if (items.length < 100) break;
+        } catch (e) { break; }
+      }
+    }
     const dateRank = findMyRank(dateItems);
 
     // 3영역 중 가장 좋은(낮은) 순위를 대표 순위로
@@ -164,6 +180,7 @@ export default async function handler(req, res) {
       proxyError: proxy.error,
       simRank,
       dateRank,
+      deepSearched,      // 정확도순으로 몇 위까지 훑었는지
       searchedBlogId: normalizedBlogId,
       searchedPostNo: normalizedPostNo,
       items: results,
