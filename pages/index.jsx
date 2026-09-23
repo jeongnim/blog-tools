@@ -3987,10 +3987,11 @@ function MissingTab(){
   };
 
   // ── 네이버 순위 조회 (통합검색/블로그탭 2영역) ──
-  const getNaverRank=async(kw,blogId,postNo,deep)=>{
+  const getNaverRank=async(kw,blogId,postNo,deep,pubDate)=>{
     try{
       const params=new URLSearchParams({keyword:kw});
       if(deep) params.append("deep",String(deep));
+      if(pubDate) params.append("date",pubDate);
       if(blogId) params.append("blogId",blogId);
       if(postNo) params.append("postNo",postNo);
       const res=await fetch(`/api/naver-rank?${params.toString()}`);
@@ -4004,18 +4005,23 @@ function MissingTab(){
         proxyError: data.proxyError??null,
         simRank: data.simRank??null,     // 블로그 검색 API 순위 (블로그탭 누락 판정용)
         dateRank: data.dateRank??null,
+        dated: data.dated??null,
       };
     }catch(e){return null;}
   };
 
   // 제목 검색에서 못 찾은 글만: 특수문자 빼고 큰따옴표로 감싸 한 번 더 (판다랭크 방식)
-  const quoteRecheck=async(title,blogId,postNo)=>{
+  // 네이버 검색 API는 따옴표를 무시하므로, 실제 블로그탭 따옴표 검색에 발행일 전후 하루 기간 필터를 건다(집 PC 프록시).
+  // 그날 그 문구로 쓴 글만 남아 첫 페이지에서 찾을 수 있다. 여기서 보이면 = 검색에 반영된 글 → 누락 아님.
+  const quoteRecheck=async(title,blogId,postNo,postDate)=>{
     const clean=cleanTitleForSearch(title); if(!clean) return null;
-    // 따옴표 검색 결과를 1,000위까지 훑는다. 어디서든 보이면 = 검색에 반영된 글 → 누락 아님
-    const q=await getNaverRank(`"${clean}"`,blogId,postNo,10);
+    const m=String(postDate||"").match(/(\d{4})\.(\d{2})\.(\d{2})/);
+    const ymd=m?`${m[1]}${m[2]}${m[3]}`:"";
+    const q=await getNaverRank(`"${clean}"`,blogId,postNo,1,ymd);
     if(!q) return null;   // 조회 실패는 판정하지 않음 (다음에 다시 시도)
-    const r=[q.areas?.blog?.rank,q.simRank,q.dateRank,q.myRank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
-    return {quoteChecked:true,quoteDeep:true,quoteRank:r};
+    if(ymd&&q.dated?.error) return null;   // 기간 검색 실패(프록시 꺼짐·미업데이트)도 판정 보류
+    const r=[q.areas?.blog?.rank,q.dated?.rank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
+    return {quoteChecked:true,quoteDated:!!ymd,quoteRank:r};
   };
 
   // ── 추가검색: 제목 옆 입력창 키워드로 순위 조회 ──
@@ -4222,7 +4228,7 @@ JSON 배열만 출력:`;
       // 제목 전체를 검색어로 넣어서 내 글이 결과에 있는지 확인
       let titleRank=await getNaverRank(post.title, extractedBlogId, extractedPostNo);
       if(titleRank&&titleExposureCat(titleRank,post.date).cat!=="top1"&&titleExposureCat(titleRank,post.date).blogRank==null){
-        const qr=await quoteRecheck(post.title,extractedBlogId,extractedPostNo);
+        const qr=await quoteRecheck(post.title,extractedBlogId,extractedPostNo,post.date);
         if(qr) titleRank={...titleRank,...qr};
       }
       const exCat=titleExposureCat(titleRank,post.date).cat;
@@ -4283,12 +4289,12 @@ JSON 배열만 출력:`;
     setInsights(s=>({...s,[pg]:{loading:true,step:"키워드 집계 중..."}}));
     try{
       // 0) 누락으로 판정된 글 중 따옴표 재확인을 안 한 글만 재확인 (네이버 검색만, AI 없음)
-      const needQ=done.filter(p=>{const tr=A[p.postNo].titleRank;return tr&&!tr.quoteDeep&&titleExposureCat(tr,p.date).cat==="missing";});
+      const needQ=done.filter(p=>{const tr=A[p.postNo].titleRank;return tr&&!tr.quoteDated&&titleExposureCat(tr,p.date).cat==="missing";});
       for(let i=0;i<needQ.length;i++){
         const p=needQ[i];
         setInsights(s=>({...s,[pg]:{loading:true,step:`누락 글 따옴표 검색으로 재확인 중... (${i+1}/${needQ.length})`}}));
         const m=p.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
-        const qr=await quoteRecheck(p.title,m?.[1]||p._blogId||"",m?.[2]||p.postNo);
+        const qr=await quoteRecheck(p.title,m?.[1]||p._blogId||"",m?.[2]||p.postNo,p.date);
         if(!qr) continue;
         const tr={...A[p.postNo].titleRank,...qr};
         const c=titleExposureCat(tr,p.date).cat;
