@@ -3071,12 +3071,12 @@ async function recheckMyRank(keyword,blogId){
 
 // ── 제목 노출도: 글 제목 그대로 검색했을 때 블로그탭 순위 → 1위 / 2~30위 / 30위 밖 / 누락 ──
 const TITLE_EX_META={
-  top1:{label:"제목 1위",color:"#e8305a"},
-  top30:{label:"제목 2~30위",color:"#f27a9b"},
-  out:{label:"제목 30위 밖",color:"#f8c9d5"},
-  missing:{label:"누락",color:"#30363d"},
-  wait:{label:"반영 대기",color:"#1f6feb66"},
-  pending:{label:"미분석",color:"#161b22"},
+  top1:{label:"1위",long:"제목 1위",color:"#3fb950",h:1},
+  top30:{label:"2~30위",long:"제목 2~30위",color:"#58a6ff",h:0.68},
+  out:{label:"30위 밖",long:"제목 30위 밖",color:"#d29922",h:0.4},
+  missing:{label:"누락",long:"누락",color:"#f85149",h:0.16},
+  wait:{label:"반영 대기",long:"반영 대기",color:"#6e7681",h:0.16},
+  pending:{label:"미분석",long:"미분석",color:"#30363d",h:0.1},
 };
 // 기준은 블로그탭 하나. 누락 = 제목 그대로 검색했을 때 블로그탭에 아예 안 보이는 경우만.
 // 블로그탭 순위: ① 프록시가 실제 블로그탭에서 찾은 순위 → ② 블로그 검색 API(블로그탭과 같은 결과, 최대 100위) 순위
@@ -3665,6 +3665,81 @@ function backupImport(text){
   return {added,kept,failed,idx,exportedAt:file.exportedAt};
 }
 
+// ── 제목 노출 패널: 비율 막대 + 발행순 타임라인 + 최근/이전 비교 ──
+function TitleExposurePanel({ex,count,box}){
+  const [hover,setHover]=useState(null);
+  const ORDER=["top1","top30","out","missing","wait"];
+  const total=ex.length;
+  const dnum=d=>{const m=String(d||"").match(/(\d{4})\.(\d{2})\.(\d{2})/);return m?+(m[1]+m[2]+m[3]):null;};
+  // 발행순(오래된 → 최신). 날짜 없는 글은 원래 순서 유지
+  const chrono=ex.map((t,i)=>({...t,_i:i,_d:dnum(t.date)}))
+    .sort((a,b)=>(a._d!=null&&b._d!=null&&a._d!==b._d)?a._d-b._d:b._i-a._i);
+  const rate=arr=>{const n=arr.filter(t=>t.cat!=="wait").length;return n?Math.round(arr.filter(t=>t.cat==="top1").length/n*100):null;};
+  const recentN=Math.min(20,Math.floor(total/2));
+  const recent=recentN?chrono.slice(-recentN):[], before=recentN?chrono.slice(0,-recentN):[];
+  const rRecent=rate(recent), rBefore=rate(before);
+  const diff=rRecent!=null&&rBefore!=null?rRecent-rBefore:null;
+  const shown=count.top1+count.top30+count.out;
+  const H=64;
+  const tip=hover!=null?chrono[hover]:null;
+  const rankTxt=t=>t.cat==="missing"?"누락":t.cat==="wait"?"반영 대기":t.blogRank!=null?`${t.blogRank}위`:t.quoted?"100위 밖":"30위 밖";
+
+  return <div style={box}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:"6px",marginBottom:"10px"}}>
+      <span style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>🔎 제목 검색 노출 <span style={{color:"#484f58",fontWeight:400,fontSize:"12px"}}>글 제목 그대로 블로그탭 검색 · {total}개 글</span></span>
+      <span style={{fontSize:"12px",color:"#8b949e"}}>검색에 보임 <b style={{color:"#e6edf3",fontSize:"15px"}}>{shown}</b>/{total} · 1위 <b style={{color:"#3fb950",fontSize:"15px"}}>{total?Math.round(count.top1/total*100):0}%</b></span>
+    </div>
+
+    {/* 비율 막대 */}
+    <div style={{display:"flex",height:"26px",borderRadius:"6px",overflow:"hidden",border:"1px solid #21262d"}}>
+      {ORDER.filter(k=>count[k]).map(k=>{const m=TITLE_EX_META[k];const pct=count[k]/total*100;
+        return <div key={k} title={`${m.long} ${count[k]}개`} style={{width:`${pct}%`,background:m.color+(k==="wait"?"66":"cc"),display:"flex",alignItems:"center",justifyContent:"center",color:"#0d1117",fontSize:"12px",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden"}}>
+          {pct>=8?`${m.label} ${count[k]}`:""}</div>;})}
+    </div>
+    <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginTop:"6px",fontSize:"12px",color:"#8b949e"}}>
+      {ORDER.filter(k=>k!=="wait"||count.wait).map(k=>{const m=TITLE_EX_META[k];return <span key={k} style={{display:"flex",alignItems:"center",gap:"4px"}}>
+        <span style={{width:"8px",height:"8px",borderRadius:"50%",background:m.color}}/>{m.long} <b style={{color:"#c9d1d9"}}>{count[k]||0}</b></span>;})}
+    </div>
+
+    {/* 발행순 타임라인 */}
+    <div style={{marginTop:"14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:"12px",color:"#484f58",marginBottom:"4px"}}>
+        <span>발행순 · 막대가 높을수록 제목 순위가 좋아요</span>
+        {tip&&<span style={{color:"#c9d1d9",maxWidth:"60%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          <b style={{color:TITLE_EX_META[tip.cat]?.color}}>{rankTxt(tip)}</b> · {tip.date||""} · {tip.title}</span>}
+      </div>
+      <div onMouseLeave={()=>setHover(null)} style={{display:"flex",alignItems:"flex-end",gap:"2px",height:`${H}px`,padding:"0 2px",borderBottom:"1px solid #30363d",position:"relative"}}>
+        {recentN>0&&<div style={{position:"absolute",right:0,top:0,bottom:0,width:`${recentN/total*100}%`,background:"#58a6ff08",borderLeft:"1px dashed #30363d",pointerEvents:"none"}}/>}
+        {chrono.map((t,i)=>{const m=TITLE_EX_META[t.cat]||TITLE_EX_META.missing;
+          return <a key={t.postNo||i} href={`https://search.naver.com/search.naver?ssc=tab.blog.all&query=${encodeURIComponent('"'+cleanTitleForSearch(t.title)+'"')}`} target="_blank" rel="noreferrer"
+            onMouseEnter={()=>setHover(i)}
+            style={{flex:1,minWidth:"3px",height:`${Math.round(m.h*H)}px`,background:m.color,opacity:hover==null||hover===i?1:0.45,borderRadius:"2px 2px 0 0",transition:"opacity .1s"}}/>;})}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:"11px",color:"#484f58",marginTop:"3px"}}>
+        <span>{chrono[0]?.date||""}</span>{recentN>0&&<span>최근 {recentN}개 ▸</span>}<span>{chrono[chrono.length-1]?.date||""}</span>
+      </div>
+    </div>
+
+    {/* 최근 vs 이전 */}
+    {diff!=null&&<div style={{marginTop:"10px",display:"flex",gap:"8px",flexWrap:"wrap",fontSize:"13px"}}>
+      <span style={{padding:"4px 10px",background:"#0d1117",border:"1px solid #21262d",borderRadius:"6px",color:"#8b949e"}}>이전 {before.length}개 1위 비율 <b style={{color:"#c9d1d9"}}>{rBefore}%</b></span>
+      <span style={{padding:"4px 10px",background:"#0d1117",border:"1px solid #21262d",borderRadius:"6px",color:"#8b949e"}}>최근 {recentN}개 1위 비율 <b style={{color:"#c9d1d9"}}>{rRecent}%</b></span>
+      <span style={{padding:"4px 10px",borderRadius:"6px",fontWeight:700,
+        background:diff>=5?"#23863620":diff<=-5?"#da363320":"#21262d",color:diff>=5?"#3fb950":diff<=-5?"#ff7b72":"#8b949e"}}>
+        {diff>=5?`▲ ${diff}%p 좋아짐`:diff<=-5?`▼ ${-diff}%p 나빠짐`:"비슷함"}</span>
+    </div>}
+
+    {/* 약한 제목 */}
+    {(count.out||0)+(count.missing||0)>0&&<div style={{marginTop:"10px",borderTop:"1px solid #21262d",paddingTop:"6px"}}>
+      <div style={{color:"#d29922",fontSize:"12px",fontWeight:700,marginBottom:"3px"}}>제목이 약한 글 (30위 밖·누락)</div>
+      {ex.filter(t=>t.cat==="out"||t.cat==="missing").slice(0,8).map((t,i)=>(
+        <div key={i} style={{fontSize:"12px",color:"#8b949e",padding:"2px 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          <span style={{color:TITLE_EX_META[t.cat].color,marginRight:"6px",fontWeight:700}}>{rankTxt(t)}</span>{t.title}
+        </div>))}
+    </div>}
+  </div>;
+}
+
 // ── 누락 확인 > 키워드 인사이트 패널 ──
 function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun,scope,setScope,cumDone,cumPages,blogId}){
   const d=data||{};
@@ -3744,32 +3819,7 @@ function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun,scope,
         ))}
       </div>
 
-      {S.titleEx?.length>0&&<div style={box}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px",marginBottom:"8px"}}>
-          <span style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>🏷️ 블로그탭 제목 노출 <span style={{color:"#484f58",fontWeight:400,fontSize:"12px"}}>제목 그대로 검색했을 때 · {S.titleEx.length}개 글</span></span>
-          <span style={{fontSize:"12px",color:"#8b949e"}}>
-            노출 <b style={{color:"#e6edf3"}}>{S.titleEx.length-(S.titleExCount?.missing||0)}</b>/{S.titleEx.length}건
-            {(S.titleExCount?.out||0)>0&&<span style={{color:"#ffa657",marginLeft:"8px"}}>30위 밖 {S.titleExCount.out}건</span>}
-            {(S.titleExCount?.missing||0)>0&&<span style={{color:"#ff7b72",marginLeft:"8px"}}>누락 {S.titleExCount.missing}건</span>}
-          </span>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(30px,1fr))",gap:"4px",maxWidth:"420px"}}>
-          {S.titleEx.map((t,i)=>{const m=TITLE_EX_META[t.cat]||TITLE_EX_META.missing;const r=t.blogRank;
-            return <a key={t.postNo||i} href={`https://search.naver.com/search.naver?ssc=tab.blog.all&query=${encodeURIComponent(t.title)}`} target="_blank" rel="noreferrer"
-              title={`${i+1}번째 글 · ${m.label}${r!=null?` (${r}위)`:t.quoted?" (일반 검색 100위 밖 · 따옴표 검색엔 있음)":""}\n${t.title}`}
-              style={{display:"block",height:"20px",borderRadius:"3px",background:m.color,border:t.cat==="missing"?"1px solid #484f58":"none"}}/>;})}
-        </div>
-        <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginTop:"8px",fontSize:"12px",color:"#8b949e"}}>
-          {["top1","top30","out","missing","wait"].filter(k=>k!=="wait"||S.titleExCount?.wait).map(k=>{const m=TITLE_EX_META[k];return <span key={k} style={{display:"flex",alignItems:"center",gap:"4px"}}><span style={{width:"10px",height:"10px",borderRadius:"2px",background:m.color,border:k==="missing"?"1px solid #484f58":"none",display:"inline-block"}}/>{m.label} {S.titleExCount?.[k]||0}</span>;})}
-        </div>
-        {(S.titleExCount?.out||0)+(S.titleExCount?.missing||0)>0&&<div style={{marginTop:"8px",borderTop:"1px solid #21262d",paddingTop:"6px"}}>
-          <div style={{color:"#ffa657",fontSize:"12px",fontWeight:700,marginBottom:"3px"}}>제목이 약한 글 (30위 밖·누락)</div>
-          {S.titleEx.filter(t=>t.cat==="out"||t.cat==="missing").slice(0,8).map((t,i)=>(
-            <div key={i} style={{fontSize:"12px",color:"#8b949e",padding:"2px 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-              <span style={{color:t.cat==="missing"?"#ff7b72":"#ffa657",marginRight:"6px"}}>{t.cat==="missing"?"누락":t.blogRank!=null?`${t.blogRank}위`:t.quoted?"100위 밖":"30위 밖"}</span>{t.title}
-            </div>))}
-        </div>}
-      </div>}
+      {S.titleEx?.length>0&&<TitleExposurePanel ex={S.titleEx} count={S.titleExCount||{}} box={box}/>}
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:"8px"}}>
         {[["통합검색 상위 키워드",S.mainTop,"mainRank",S.avgMainTop,S.medMainTop],["블로그탭 상위 키워드",S.blogTop,"blogRank",S.avgBlogTop,S.medBlogTop]].map(([title,list,key,av,md])=>(
