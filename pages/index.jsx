@@ -9471,8 +9471,9 @@ async function analyzeVisitPhotos(photos, placeName) {
   content.push({ type: "text", text: `위 사진들은 "${placeName}" 방문 때 찍은 사진이다. 사진마다 실제로 보이는 것만 적어라.
 - kind: 외관 | 간판 | 내부 | 메뉴판·가격표 | 음식·음료 | 상품·진열 | 상담·계산 | 주변·주차 | 기타 중 하나
 - desc: 보이는 것 1~2문장 (색, 구성, 분위기, 배치). 보이지 않는 맛·친절도·가격은 추측하지 말 것
-- text: 사진 속에서 읽히는 글자(메뉴명, 가격, 간판 문구, 안내문)를 그대로. 흐리면 읽힌 부분만. 없으면 ""
-순수 JSON만: {"photos":[{"n":1,"kind":"외관","desc":"...","text":"..."}]}` });
+- text: 사진 속 글자(메뉴명, 가격, 간판 문구, 안내문) 중 또렷하게 읽혀서 확신할 수 있는 것만 그대로. 흐리거나, 일부만 보이거나, 뜻이 통하는 한국어 단어가 아닌 것은 절대 적지 말 것(추측해서 글자를 만들지 말 것). 없으면 ""
+- highlight: 이 장면에서 실제로 방문한 사람이라면 가장 먼저 눈에 들어올 만한 것 1가지 (짧게)
+순수 JSON만: {"photos":[{"n":1,"kind":"외관","desc":"...","text":"...","highlight":"..."}]}` });
   const model = getCostMode() === "save" ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-5-20250929";
   const raw = await callClaude([{ role: "user", content }], "You describe photos precisely and never guess what is not visible. Output ONLY valid JSON.", 2000, model);
   const j = safeParseJson(raw);
@@ -9498,11 +9499,12 @@ async function searchPlaceInfo({ placeName, address, today }) {
 function formatVisitBlock(visit, photoDescs, placeInfo) {
   const own = visit.disclosure === "own";
   const photos = photoDescs.length
-    ? photoDescs.map(p => `[사진 ${p.n}] (${p.kind || "기타"}) ${p.desc || ""}${p.text ? ` / 사진 속 글자: ${p.text}` : ""}`).join("\n")
+    ? photoDescs.map(p => `[사진 ${p.n}] (${p.kind || "기타"}) ${p.desc || ""}${p.highlight ? ` / 눈에 띄는 것: ${p.highlight}` : ""}${p.text ? ` / 또렷하게 읽힌 글자: ${p.text}` : ""}`).join("\n")
     : visit.photos.map((_, i) => `[사진 ${i + 1}] (설명 없음)`).join("\n");
   const facts = placeInfo.facts.length ? placeInfo.facts.map(f => `- ${f.label}: ${f.value} (출처: ${f.source || "-"})`).join("\n") : "(검색으로 확인된 정보 없음)";
   return `
-[방문 리뷰 모드 — 이 블록은 주제 원칙·경험 서술 규칙보다 우선한다]
+[방문 리뷰 모드 — 이 블록은 아래의 주제 원칙·경험 서술 규칙·AEO 규칙보다 우선한다]
+※ 방문 리뷰에는 AEO1(도입부 정의문), AEO4(소제목마다 질문-답변 묶음), E4(판단 이유 두 군데 이상), 질문형 소제목 규칙을 적용하지 않는다. 어조 원칙의 "단정·권유조" 대신 R1의 후기 말투를 따른다.
 장소: ${visit.placeName} / 주소: ${visit.address || "(미입력)"}${placeInfo.category ? ` / 업종: ${placeInfo.category}` : ""}
 ${own ? "작성 관점: 이 매장을 운영하는 업체가 직접 쓰는 매장 소개 글이다. 손님인 척 방문 후기처럼 쓰지 말 것. \"저희 매장\"처럼 운영자 관점으로 쓰되 과장 광고 표현은 쓰지 말 것."
   : visit.disclosure === "staff" ? "작성 관점: 작성자는 이 매장과 관계가 있지만, 실제로 직접 비용을 내고 이용한 경험을 쓰는 후기다. 방문 후기 관점으로 쓰되, 관계가 있다는 사실을 숨기거나 부정하는 표현(\"광고 아님\", \"순수 손님으로서\" 등)은 쓰지 말고, 과장된 칭찬이나 다른 매장을 깎아내리는 비교는 하지 말 것."
@@ -9517,14 +9519,20 @@ ${visit.memo?.trim() || "(메모 없음)"}
 검색으로 확인된 장소 정보:
 ${facts}
 
-방문 리뷰 규칙:
-R1. 경험은 사진 설명과 작성자 메모에 있는 것만 쓴다. 사진·메모에 없는 메뉴를 먹었다거나, 없는 가격·대기시간·직원 응대·맛 평가를 지어내지 말 것. 메모가 없으면 사진에 보이는 것(분위기, 구성, 배치)을 중심으로 담백하게 쓴다.
-R2. 가격·영업시간·주차 같은 정보는 메모, 사진 속 글자, 확인된 장소 정보에 있는 것만 쓴다. 없으면 "방문 전 확인하는 게 좋다" 정도로만.
-R3. 글 흐름은 업종과 이 키워드로 검색하는 사람이 궁금해할 것을 기준으로 스스로 구성한다. 참고자료(상위 글)에서 독자가 궁금해하는 항목(위치·주차·가격 조건·예약·대기 등)을 참고하되, 상위 글 작성자의 경험을 내 경험처럼 옮기지 말 것.
-R4. 사진 배치: 본문의 알맞은 위치에 "[사진 N]"을 단독 줄로 넣어 어느 사진을 어디에 넣을지 표시한다. 모든 사진을 한 번씩 쓰고, 순서는 글 흐름에 맞게 바꿔도 된다. 사진 바로 아래 문장은 그 사진에 보이는 내용과 맞아야 한다.
-R5. ▶ 정리 바로 앞에 "📍 기본 정보" 소제목을 두고 상호명, 주소, 확인된 정보만 한 줄씩 적는다. 확인 안 된 항목은 적지 않는다.
-R6. 광고·협찬 표기 문구는 코드가 글 맨 앞에 붙이므로 본문에 따로 쓰지 말 것.
-R7. 메인 키워드는 제목과 도입부에 자연스럽게 넣되, 상호명도 제목이나 첫 문단에 넣는다.
+방문 리뷰 규칙 (아래 사진 목록은 작성자가 현장에서 본 것을 정리한 "내부 메모"다. 독자에게 사진을 설명하는 글이 아니다):
+R1. 말투: 현장에 직접 다녀온 사람이 쓰는 1인칭 블로그 후기 말투. "~했어요", "~더라고요", "~였어요", "~인데요"를 섞어 자연스럽게. "~입니다/~합니다"로 딱딱하게 이어가지 말 것. 문장은 짧게, 본 것에 대한 가벼운 반응("생각보다 넓었어요", "간판이 커서 금방 찾았어요")을 곁들여도 된다 — 단 반응은 보이는 것에서 나온 것만.
+R2. 사진을 설명하지 말 것: 본문에 "사진", "찍힌", "사진에서", "사진 속", "보이는데" 같은 표현을 절대 쓰지 말 것. 사진 내용은 "들어가 보니", "입구 쪽에", "눈에 들어온 건"처럼 내가 그 자리에서 본 것으로 쓴다. 계절·시점도 사진으로 추측하지 말 것.
+R3. 사진마다 모든 걸 나열하지 말 것: 색·배치를 기계적으로 늘어놓지 말고, 각 장면에서 방문자라면 기억할 1~2가지만 자연스럽게 쓴다.
+R4. 글자 인용: "또렷하게 읽힌 글자"에 있는 것만, 그중에서도 의미가 통하고 글에 도움이 되는 것만 쓴다. 이상하거나 뜻이 안 통하는 문구는 무시한다. 간판 문구로 상호명을 추정하지 말 것.
+R5. 상호명·주소: 반드시 위 "장소"에 적힌 상호명과 주소를 글자 그대로 쓴다. 다른 표기로 바꾸지 말 것.
+R6. 경험의 근거: 사진에 보이는 것 + 작성자 메모만. 방문 시점("지난달" 등), 상담 내용, 가격, 대기 시간, 직원 응대, 평소 습관("제가 이런 매장 갈 때 챙기는 건")은 메모에 없으면 쓰지 말 것. 메모가 짧으면 글도 짧게 — 분량을 채우려고 일반 정보나 주의사항 섹션을 붙이지 말 것.
+R7. 가격·영업시간·주차: 메모, 또렷하게 읽힌 글자, 확인된 장소 정보에 있는 것만. 없으면 한 줄로 "방문 전에 물어보면 좋아요" 정도.
+R8. 형식: 이 글은 정보 글이 아니라 방문 후기다. 도입부를 "○○은 ~에 위치한 ~입니다" 같은 정의문으로 시작하지 말고 "○○ 다녀왔어요"처럼 방문 이야기로 시작한다. 질문-답변 묶음은 넣지 않아도 되고, 넣더라도 이 매장 방문자가 실제로 궁금해할 것 1개까지만. 일반 상식 Q&A(대기 공간은 왜 있나요 등) 금지.
+R9. 흐름: 업종과 이 키워드로 검색하는 사람이 궁금해할 순서(찾아가기 → 외관 → 내부 → 핵심 경험 → 총평 등)로 스스로 구성한다. 참고자료(상위 글)는 독자가 궁금해하는 항목을 파악하는 데만 쓰고, 그 작성자들의 경험을 내 경험처럼 옮기지 말 것.
+R10. 사진 배치: 알맞은 위치에 "[사진 N]"을 단독 줄로 넣는다. 모든 사진을 한 번씩, 순서는 흐름에 맞게. 사진 바로 아래 문장은 그 장면과 맞아야 한다.
+R11. ▶ 정리 바로 앞에 "📍 기본 정보" 소제목을 두고 상호명, 주소, 확인된 정보만 한 줄씩. ▶ 정리도 후기 말투로 2~3줄.
+R12. 광고·협찬 표기 문구는 코드가 글 맨 앞에 붙이므로 본문에 쓰지 말 것.
+R13. 메인 키워드는 제목과 첫 문단에 자연스럽게 넣고, 상호명도 제목이나 첫 문단에 넣는다.
 `;
 }
 
@@ -9856,7 +9864,26 @@ export default function BlogTools(){
         visitBlock,
       });
 
-      const sysPrompt = `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation (AEO).
+      const visitSys = `You are writing a first-person Korean Naver blog visit review ("방문 후기") in a warm, natural conversational tone (~했어요, ~더라고요). The [방문 리뷰 모드] block in the user message overrides any conflicting rule there.
+
+Today is ${todayStr}.
+
+FACTUAL DISCIPLINE:
+- Experience must come only from the photo notes and the author's memo. Never invent dates of visit, prices, waiting times, conversations with staff, taste or service judgments, or the author's habits.
+- The photo notes are private notes about what the author saw on site. Never mention photos in the body ("사진", "찍힌", "사진 속", "보이는데"). Write them as things the author saw in person.
+- Quote only clearly legible sign or menu text from the notes, and only when it makes sense. Always use the exact place name and address given by the author.
+- Prices, hours and parking: only from the memo, legible text, or the verified place info.
+- A shorter, honest review is better than a padded one. Do not add generic advice sections or general-knowledge Q&A to fill length.
+
+STYLE:
+- Open with the visit itself, not a definition sentence.
+- Short sentences. Mix endings naturally. Light personal reactions are fine only when grounded in what was seen.
+- Pick one or two memorable details per scene instead of listing colors and layouts.
+- Do not write hashtags in the body; they belong only in the tags array. No engagement bait or sign-off pleasantries.
+
+Output ONLY valid JSON, no markdown.`;
+
+      const sysPrompt = visit ? visitSys : `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation (AEO).
 
 Today is ${todayStr}. You cannot search the web, and your knowledge of recent events may be outdated or wrong.
 
