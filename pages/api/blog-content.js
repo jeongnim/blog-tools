@@ -90,6 +90,8 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
 
   const { keyword, url } = req.query;
+  // n: 가져올 본문 수 (기본 3, 최대 6) — 방문 리뷰에서 같은 상호명 후기를 모을 때 늘려 쓴다
+  const n = Math.min(6, Math.max(1, parseInt(req.query.n || "3", 10) || 3));
 
   // ── url 파라미터: 특정 블로그 글 본문 직접 크롤링 ──
   if (url) {
@@ -116,7 +118,7 @@ export default async function handler(req, res) {
 
   try {
     const r = await fetch(
-      `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=5&start=1&sort=sim`,
+      `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(keyword)}&display=${n > 3 ? 10 : 5}&start=1&sort=sim`,
       {
         headers: {
           "X-Naver-Client-Id": clientId,
@@ -127,15 +129,15 @@ export default async function handler(req, res) {
     const data = await r.json();
     if (data.errorCode) return res.status(200).json({ bodies: [], success: false, error: data.errorMessage });
 
-    const items = (data.items || []).slice(0, 5);
+    const items = (data.items || []).slice(0, n > 3 ? 10 : 5);
     const links = items.map(i => i.link || i.bloggerlink).filter(Boolean);
 
     if (links.length === 0) {
       return res.status(200).json({ bodies: [], success: false, error: "URL 없음" });
     }
 
-    const results = await Promise.all(links.slice(0, 3).map(url => fetchBlogBody(url)));
-    const bodies  = results.filter(Boolean);
+    const results = await Promise.all(links.slice(0, n > 3 ? 8 : 3).map(url => fetchBlogBody(url)));
+    const bodies  = results.filter(Boolean).slice(0, n);
 
     res.status(200).json({ success: bodies.length > 0, count: bodies.length, bodies });
   } catch (err) {
