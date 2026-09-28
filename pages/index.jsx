@@ -4208,6 +4208,30 @@ function MissingTab(){
     return {quoteChecked:true,quoteDated:!!ymd,quoteRank:r};
   };
 
+  // ── 제목 노출만 다시 확인 (AI 없음 · 키워드 분석은 그대로 둠) ──
+  // 누락이던 글을 고친 뒤 확인할 때 쓴다. 목록을 새로 불러왔다면 바뀐 제목으로 검색한다.
+  const [titleRechecking,setTitleRechecking]=useState({});
+  const recheckTitle=async(post)=>{
+    const a=analysisRef.current[post.postNo]; if(!a||a.error) return;
+    const m=(post.link||"").match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
+    const bid=m?.[1]||post._blogId||posts?.blogId||"", pno=m?.[2]||post.postNo;
+    setTitleRechecking(r=>({...r,[post.postNo]:true}));
+    try{
+      let tr=await getNaverRank(post.title,bid,pno);
+      if(!tr) return;
+      const c0=titleExposureCat(tr,post.date);
+      if(c0.cat!=="top1"&&c0.blogRank==null){ const qr=await quoteRecheck(post.title,bid,pno,post.date); if(qr) tr={...tr,...qr}; }
+      const c=titleExposureCat(tr,post.date).cat;
+      const next={...a,titleRank:tr,missingStatus:c==="missing"?"누락":c==="wait"?"반영 대기":"노출",titleRecheckedAt:Date.now()};
+      analysisRef.current={...analysisRef.current,[post.postNo]:next};
+      setAnalysis(x=>({...x,[post.postNo]:next}));
+    }finally{ setTitleRechecking(r=>{const o={...r};delete o[post.postNo];return o;}); }
+  };
+  const recheckMissingOnPage=async()=>{
+    const list=(posts?.current||[]).filter(p=>{const a=analysisRef.current[p.postNo];return a&&!a.error&&a.missingStatus!=="노출";});
+    for(const p of list){ await recheckTitle(p); await new Promise(r=>setTimeout(r,300)); }
+  };
+
   // ── 추가검색: 제목 옆 입력창 키워드로 순위 조회 ──
   const runExtraKeyword=async(post)=>{
     const kw=(extraKw[post.postNo]||"").trim();
@@ -5007,6 +5031,11 @@ recommend는 8개.`;
           {totalPages>1&&<span style={{color:"#484f58",fontSize:"14px",marginLeft:"6px"}}>{page}/{totalPages}p</span>}
           {posts.serverPaged&&loadingFeed&&<span style={{color:"#58a6ff",fontSize:"14px",marginLeft:"6px"}}>⏳ 페이지 불러오는 중...</span>}
           {posts.notice&&<span style={{color:"#ffa657",fontSize:"13px",marginLeft:"6px"}}>· {posts.notice}</span>}
+          {(()=>{const n=(posts.current||[]).filter(p=>{const a=analysis[p.postNo];return a&&!a.error&&a.missingStatus!=="노출";}).length;
+            const busy=Object.keys(titleRechecking).length>0;
+            return n>0&&<button onClick={recheckMissingOnPage} disabled={busy} title="이 페이지의 누락·반영 대기 글만 제목 노출을 다시 확인해요 (AI 비용 없음)"
+              style={{marginLeft:"8px",padding:"3px 10px",background:"#f8514915",border:"1px solid #f8514944",borderRadius:"14px",color:busy?"#484f58":"#ff7b72",cursor:busy?"wait":"pointer",fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}>
+              {busy?"재확인 중...":`🔄 누락 ${n}건 재확인`}</button>;})()}
         </div>
         <div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
           {posts.current.some(p=>!analysis[p.postNo])&&analyzing===-1&&
@@ -5078,6 +5107,14 @@ recommend는 8개.`;
                 }}>
                   {a.missingStatus==="노출"?(a.titleRank?.quoteRank!=null&&!a.titleRank?.areas?.blog?.rank&&a.titleRank?.simRank==null?"✅ 노출 (따옴표 검색)":"✅ 노출"):a.missingStatus==="반영 대기"?"⏳ 반영 대기":"🚨 누락"}
                 </span>
+                <button onClick={()=>recheckTitle(post)} disabled={!!titleRechecking[post.postNo]}
+                  title="제목 노출만 다시 확인해요 (AI 비용 없음 · 키워드 분석은 그대로)"
+                  style={{padding:"2px 9px",background:"transparent",border:"1px solid #30363d",borderRadius:"20px",color:titleRechecking[post.postNo]?"#484f58":"#8b949e",
+                    cursor:titleRechecking[post.postNo]?"wait":"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+                  {titleRechecking[post.postNo]?"확인 중...":"🔄 재확인"}
+                </button>
+                {a.titleRecheckedAt&&!titleRechecking[post.postNo]&&<span style={{color:"#484f58",fontSize:"12px",alignSelf:"center"}}>
+                  {new Date(a.titleRecheckedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 재확인</span>}
               </div>}
               {/* 분석 중 */}
               {isAn&&<div style={{display:"flex",flexDirection:"column",gap:"3px",marginTop:"4px"}}>
@@ -9559,6 +9596,49 @@ ${same.map((b, i) => `--- 후기 ${i + 1} ---\n${b.slice(0, 3000)}`).join("\n\n"
   } catch (e) { return { count: same.length, points: [], facts: [], sponsored }; }
 }
 
+// 다 쓴 글에 사진 자리를 나중에 정한다: 문단별로 나눠 사진마다 이야기상 가장 맞는 문단 뒤에 [사진 N]
+async function placeVisitPhotos(body, photoDescs, photoCount) {
+  if (!photoCount) return body;
+  const paras = body.split(/\n\s*\n/).map(x => x.trim()).filter(Boolean);
+  // 배치 가능한 문단: "📍 기본 정보"·"▶ 정리"가 시작되기 전까지
+  const endIdx = paras.findIndex(t => /^(📍|▶\s*정리)/.test(t));
+  const okAfter = i => endIdx < 0 || i < endIdx;
+  let place = null;
+  try {
+    const plist = Array.from({ length: photoCount }, (_, i) => {
+      const d = photoDescs.find(p => p.n === i + 1);
+      return `사진 ${i + 1}: ${d ? `${d.kind || "기타"} — ${(d.items || []).join(", ")}` : "(설명 없음)"}`;
+    }).join("\n");
+    const prompt = `아래는 방문 후기 글의 문단 목록과, 작성자가 찍은 사진 목록이다.
+사진마다 이야기 흐름상 가장 잘 어울리는 문단을 골라, 그 문단 "뒤"에 사진을 넣을 것.
+- 사진 내용과 문단 내용이 맞아야 한다 (간판·외관 → 찾아가는 문단, 내부 → 들어가서 문단, 상품·음식 → 핵심 경험 문단).
+- 딱 맞는 문단이 없으면 흐름상 그 장면이 나올 법한 위치에.
+- "📍 기본 정보"나 "▶ 정리" 문단 뒤에는 넣지 말 것. 첫 문단(도입) 바로 뒤는 외관·간판 사진일 때만.
+- 한 문단 뒤에 사진은 최대 2장.
+- 모든 사진을 한 번씩.
+
+[문단]
+${paras.map((t, i) => `${i}: ${t.replace(/\n/g, " ").slice(0, 90)}`).join("\n")}
+
+[사진]
+${plist}
+
+순수 JSON만: {"place":[{"n":1,"after":0}]}`;
+    const raw = await callClaude([{ role: "user", content: prompt }], "You place photos into a blog post. Output ONLY valid JSON.", 600, "claude-haiku-4-5-20251001");
+    const seen = new Set();
+    place = (safeParseJson(raw)?.place || []).filter(x => x && Number.isInteger(x.n) && Number.isInteger(x.after) && x.n >= 1 && x.n <= photoCount && x.after >= 0 && x.after < paras.length && okAfter(x.after) && !seen.has(x.n) && seen.add(x.n));
+  } catch (e) { place = null; }
+  // 빠진 사진은 본문 중간 문단들에 고르게
+  const used = new Set((place || []).map(x => x.n));
+  const bodyIdx = paras.map((t, i) => i).filter(okAfter);
+  const missing = Array.from({ length: photoCount }, (_, i) => i + 1).filter(n => !used.has(n));
+  const pool = bodyIdx.length ? bodyIdx : paras.map((_, i) => i);
+  missing.forEach((n, k) => { (place = place || []).push({ n, after: pool[Math.min(pool.length - 1, Math.floor((k + 1) * pool.length / (missing.length + 1)))] }); });
+  const after = {};
+  (place || []).forEach(x => { (after[x.after] = after[x.after] || []).push(x.n); });
+  return paras.map((t, i) => [t, ...(after[i] || []).map(n => `[사진 ${n}]`)].join("\n\n")).join("\n\n");
+}
+
 function formatVisitBlock(visit, photoDescs, placeInfo, reviews) {
   const toneRef = visit.toneSample ? `
 말투 참고 (작성자가 예전에 직접 쓴 글의 일부 — 말투·문장 길이·줄바꿈 습관·이모지 쓰는 정도만 따라 하고, 내용·정보·경험은 절대 가져오지 말 것):
@@ -9567,9 +9647,19 @@ ${visit.toneSample}
 """
 ` : "";
   const own = visit.disclosure === "own";
-  const photos = photoDescs.length
-    ? photoDescs.map(p => `[사진 ${p.n}] ${p.kind || "기타"} — 보이는 것: ${(p.items || []).join(", ") || p.desc || "-"}${p.mood ? ` / 분위기: ${p.mood}` : ""}${p.highlight ? ` / 제일 눈에 띄는 것: ${p.highlight}` : ""}${p.text ? ` / 또렷하게 읽힌 글자: ${p.text}` : ""}`).join("\n")
-    : visit.photos.map((_, i) => `[사진 ${i + 1}] (설명 없음)`).join("\n");
+  // 사진 번호를 주지 않는다 — 번호가 있으면 AI가 사진 한 장씩 읽어주는 글을 쓴다
+  const byKind = {};
+  photoDescs.forEach(p => {
+    const k = p.kind || "기타";
+    const g = byKind[k] || (byKind[k] = { items: new Set(), moods: new Set(), texts: new Set() });
+    (p.items || []).forEach(x => g.items.add(x));
+    if (p.highlight) g.items.add(p.highlight);
+    if (p.mood) String(p.mood).split(/[,·\s]+/).filter(Boolean).forEach(x => g.moods.add(x));
+    if (p.text) g.texts.add(p.text);
+  });
+  const photos = Object.keys(byKind).length
+    ? Object.entries(byKind).map(([k, g]) => `- ${k}: ${[...g.items].join(", ")}${g.moods.size ? ` (분위기: ${[...g.moods].join(", ")})` : ""}${g.texts.size ? ` / 또렷하게 읽힌 글자: ${[...g.texts].join(" / ")}` : ""}`).join("\n")
+    : "(사진 없음)";
   const facts = placeInfo.facts.length ? placeInfo.facts.map(f => `- ${f.label}: ${f.value} (출처: ${f.source || "-"})`).join("\n") : "(검색으로 확인된 정보 없음)";
   const rv = reviews && reviews.count ? `
 같은 상호명으로 올라온 다른 블로그 후기 ${reviews.count}개에서 공통으로 나온 내용${reviews.sponsored ? ` (이 중 ${reviews.sponsored}개는 협찬·체험단 글)` : ""}:
@@ -9585,7 +9675,7 @@ ${own ? "작성 관점: 이 매장을 운영하는 업체가 직접 쓰는 매�
   : visit.disclosure === "staff" ? "작성 관점: 작성자는 이 매장과 관계가 있지만, 실제로 직접 비용을 내고 이용한 경험을 쓰는 후기다. 방문 후기 관점으로 쓰되, 관계가 있다는 사실을 숨기거나 부정하는 표현(\"광고 아님\", \"순수 손님으로서\" 등)은 쓰지 말고, 과장된 칭찬이나 다른 매장을 깎아내리는 비교는 하지 말 것."
   : "작성 관점: 작성자가 이 장소에 실제로 방문해서 쓰는 후기다."}
 
-사진 (작성자가 방문 때 직접 찍은 것):
+현장에서 본 것 (작성자가 방문 때 본 것들을 정리한 메모 — 이야기에 필요할 때만 꺼내 쓰는 배경 지식):
 ${photos}
 
 작성자 메모 (작성자가 직접 적은 경험 — 경험 서술의 유일한 근거):
@@ -9594,25 +9684,25 @@ ${visit.memo?.trim() || "(메모 없음)"}
 검색으로 확인된 장소 정보:
 ${facts}
 ${rv}${toneRef}
-방문 리뷰 규칙 (아래 사진 목록은 작성자가 현장에서 본 것을 정리한 "내부 메모"다. 독자에게 사진을 설명하는 글이 아니다):
-R1. 말투: 현장에 다녀온 사람이 친구에게 말하듯 쓰는 1인칭 블로그 후기. "~했어요", "~더라고요", "~였어요", "~잖아요"를 섞는다. "~입니다/~합니다", "~가 특징이며", "~가 배치되어 있습니다" 같은 안내문·설명문 어투는 금지.
-R2. 사진을 설명하지 말 것: 본문에 "사진", "찍힌", "사진 속", "보이는데", "확인되지 않았는데" 같은 표현 금지. 계절·시점도 사진으로 추측하지 말 것.
-R3. 장면 문장법 (가장 중요): 각 [사진 N] 바로 아래 2~4줄은 그 사진의 "보이는 것" 단어 1~3개를 그대로 문장에 넣어, 내가 그 자리에서 한 행동이나 든 느낌으로 쓴다.
-   (X 설명문) "실내에는 흰색 원형 테이블과 흰색 의자가 놓인 대기 공간이 있습니다."
-   (O 장면)  "들어가자마자 흰색 원형 테이블이 있는 대기 공간이 보여서\n잠깐 앉아서 기다리기 편하겠다 싶었어요."
-   (X 설명문) "상단 녹색 간판에는 상호명이 흰색으로 표기되어 있습니다."
-   (O 장면)  "초록색 간판이 멀리서도 눈에 확 들어와서\n처음 가는 길인데도 헤매지 않았어요."
-   색·배치를 나열하지 말고 한 장면에 1~2가지만. "보이는 것"에 없는 사물을 새로 만들지 말 것.
-R3-1. 느낌 표현: "괜히 기분이 좋아지더라고요", "생각보다 아늑했어요", "간판이 커서 금방 찾았어요"처럼 보이는 것에 대한 가벼운 반응은 적극적으로 쓴다. 단 맛·친절·가격·만족도 같은 평가는 메모에 있을 때만.
-R3-2. 줄바꿈: 모바일 블로그처럼 호흡 단위로 줄을 바꾼다. 한 줄은 대략 15~35자, 의미가 끊기는 곳(쉼표·연결어미 뒤)에서 바꾸고, 2~3줄마다 빈 줄. 마지막 줄에 단어 하나만 덩그러니 남지 않게.
-R3-3. 도입: 메모에 방문 계기·동행·상황이 있으면 그걸로 시작한다. 없으면 "○○ 다녀왔어요" 한두 줄로 가볍게 시작하고 계기를 지어내지 말 것.
+방문 리뷰 규칙:
+R1. 말투: 현장에 다녀온 사람이 친구에게 말하듯 쓰는 1인칭 블로그 후기. "~했어요", "~더라고요", "~였어요", "~잖아요"를 섞는다. "~입니다/~합니다", "~가 특징이며", "~가 배치되어 있습니다", "~가 놓여 있습니다" 같은 안내문·묘사문 어투는 금지.
+R2. 사진 이야기 금지: 본문에 "사진", "찍힌", "사진 속", "보이는데" 같은 표현 금지. 계절·시점도 추측하지 말 것.
+R3. 이야기가 먼저다 (가장 중요): 글은 방문한 순서의 이야기로 쓴다 — 가게 된 계기(메모에 있을 때) → 찾아가서 도착 → 들어가서 → 핵심 경험(상담·식사·이용) → 나오면서 든 생각. "현장에서 본 것"은 이야기에 필요할 때만 한 번씩 곁들인다.
+   (X 묘사) "매장 안에는 흰색 원형 테이블과 정수기가 있고, 벽에는 포스터가 붙어 있어요."
+   (O 이야기) "상담 순서 기다리는 동안 테이블에 앉아 물 한 잔 마시고 있었는데\n생각보다 금방 불러주시더라고요."  ← 메모에 대기 이야기가 있을 때
+   (O 이야기) "길 찾다가 초록색 간판이 보여서 아 여기구나 했어요."
+   - 본 것을 늘어놓는 문단, 인테리어·색깔을 설명하는 문단을 따로 만들지 말 것. 한 문단에 본 것은 많아야 하나.
+   - "현장에서 본 것"을 다 쓸 필요 없다. 이야기에 안 맞으면 버린다.
+R3-1. 느낌: "생각보다 아늑했어요", "간판이 커서 금방 찾았어요"처럼 본 것에 대한 가벼운 반응은 좋다. 맛·친절·가격·만족도 평가는 메모에 있을 때만.
+R3-2. 줄바꿈: 모바일 블로그처럼 호흡 단위로 줄을 바꾼다. 한 줄 대략 15~35자, 2~3줄마다 빈 줄(빈 줄이 문단 구분). 마지막 줄에 단어 하나만 남지 않게.
+R3-3. 도입: 메모에 방문 계기·동행·상황이 있으면 그걸로 시작. 없으면 "○○ 다녀왔어요" 한두 줄로 가볍게 시작하고 계기를 지어내지 말 것.
 R4. 글자 인용: "또렷하게 읽힌 글자"에 있는 것만, 그중에서도 의미가 통하고 글에 도움이 되는 것만 쓴다. 이상하거나 뜻이 안 통하는 문구는 무시한다. 간판 문구로 상호명을 추정하지 말 것.
 R5. 상호명·주소: 반드시 위 "장소"에 적힌 상호명과 주소를 글자 그대로 쓴다. 다른 표기로 바꾸지 말 것.
 R6. 경험의 근거: 사진에 보이는 것 + 작성자 메모만. 방문 시점("지난달" 등), 상담 내용, 가격, 대기 시간, 직원 응대, 평소 습관("제가 이런 매장 갈 때 챙기는 건")은 메모에 없으면 쓰지 말 것. 메모가 짧으면 글도 짧게 — 분량을 채우려고 일반 정보나 주의사항 섹션을 붙이지 말 것.
 R7. 가격·영업시간·주차: 메모, 또렷하게 읽힌 글자, 확인된 장소 정보에 있는 것만. 없으면 한 줄로 "방문 전에 물어보면 좋아요" 정도.
 R8. 형식: 이 글은 정보 글이 아니라 방문 후기다. 도입부를 "○○은 ~에 위치한 ~입니다" 같은 정의문으로 시작하지 말고 "○○ 다녀왔어요"처럼 방문 이야기로 시작한다. 질문-답변 묶음은 넣지 않아도 되고, 넣더라도 이 매장 방문자가 실제로 궁금해할 것 1개까지만. 일반 상식 Q&A(대기 공간은 왜 있나요 등) 금지.
 R9. 흐름: 업종과 이 키워드로 검색하는 사람이 궁금해할 순서(찾아가기 → 외관 → 내부 → 핵심 경험 → 총평 등)로 스스로 구성한다. 참고자료(상위 글)는 독자가 궁금해하는 항목을 파악하는 데만 쓰고, 그 작성자들의 경험을 내 경험처럼 옮기지 말 것.
-R10. 사진 배치: 알맞은 위치에 "[사진 N]"을 단독 줄로 넣는다. 모든 사진을 한 번씩, 순서는 흐름에 맞게. 사진 바로 아래 문장은 그 장면과 맞아야 한다.
+R10. 사진 표시([사진 N])는 넣지 말 것. 사진 배치는 글을 다 쓴 뒤 따로 한다.
 R11. ▶ 정리 바로 앞에 "📍 기본 정보" 소제목을 두고 상호명, 주소, 확인된 정보만 한 줄씩. ▶ 정리도 후기 말투로 2~3줄.
 R12. 광고·협찬 표기 문구는 코드가 글 맨 앞에 붙이므로 본문에 쓰지 말 것.
 R13. 메인 키워드는 제목과 첫 문단에 자연스럽게 넣고, 상호명도 제목이나 첫 문단에 넣는다.
@@ -9969,7 +10059,7 @@ FACTUAL DISCIPLINE:
 
 STYLE:
 - Open with the visit itself, not a definition sentence.
-- Under each [사진 N], weave one to three of that photo's visible items into what the author did or felt at that moment. Never write descriptive/explanatory sentences like "~가 배치되어 있습니다" or "~가 특징입니다".
+- Write the visit as a story in the order it happened. The "현장에서 본 것" notes are background knowledge: mention a seen thing only when the story needs it (finding the sign while looking for the place, sitting at the table while waiting). Never write paragraphs that describe interiors, colors or objects. Do not insert [사진 N] markers; photos are placed afterwards.
 - Light feelings about what was seen ("괜히 기분이 좋아지더라고요", "생각보다 아늑했어요") are encouraged. Judgments of taste, kindness, price or satisfaction only if they are in the memo.
 - Break lines by breath like a mobile Naver blog: about 15~35 characters per line, a blank line every two or three lines.
 - Do not write hashtags in the body; they belong only in the tags array. No engagement bait or sign-off pleasantries.
@@ -10141,6 +10231,11 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
       // 방문 리뷰: 광고 표기 문구를 맨 앞에 코드로 보장 + 사진 배치 누락 확인
       let visitMeta = null;
       if (visit) {
+        if (visit.photos.length) {
+          setPendingAnalyzeText("__loading__:사진 자리 정하는 중");
+          bodyText = bodyText.replace(/^\s*\[사진\s*\d+\]\s*$/gm, "").replace(/\n{3,}/g, "\n\n");   // AI가 규칙을 어기고 넣은 표시 제거
+          bodyText = await withTimeout(placeVisitPhotos(bodyText, photoDescs, visit.photos.length).catch(() => bodyText), 30000, bodyText);
+        }
         const disc = (VISIT_DISCLOSURE[visit.disclosure] || VISIT_DISCLOSURE.self).text(visit.placeName);
         if (disc) bodyText = disc + "\n\n" + bodyText;
         const placed = new Set([...bodyText.matchAll(/\[사진\s*(\d+)\]/g)].map(m => +m[1]));
