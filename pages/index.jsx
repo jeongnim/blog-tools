@@ -2351,10 +2351,10 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
   const [toneUrl,setToneUrl]=useState(()=>{try{return localStorage.getItem("mt_visit_tone_url")||"";}catch(e){return "";}});
   const [photoBusy,setPhotoBusy]=useState(false);
   const addVisitPhotos=async(files)=>{
-    const list=[...files].filter(f=>f.type.startsWith("image/")).slice(0,10-visitPhotos.length);
+    const list=[...files].filter(f=>f.type.startsWith("image/")).slice(0,20-visitPhotos.length);
     if(!list.length) return;
     setPhotoBusy(true);
-    try{ const out=[]; for(const f of list){ try{ out.push(await resizeImageFile(f)); }catch(e){} } setVisitPhotos(p=>[...p,...out].slice(0,10)); }
+    try{ const out=[]; for(const f of list){ try{ out.push(await resizeImageFile(f)); }catch(e){} } setVisitPhotos(p=>[...p,...out].slice(0,20)); }
     finally{ setPhotoBusy(false); }
   };
   const moveVisitPhoto=(i,d)=>setVisitPhotos(p=>{const a=[...p];const j=i+d;if(j<0||j>=a.length)return a;[a[i],a[j]]=[a[j],a[i]];return a;});
@@ -2859,9 +2859,9 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
                 {disclosure!=="self"&&<span style={{color:"#d29922",fontSize:"12px"}}>글 맨 앞에 경제적 관계 표기 문구가 자동으로 들어가요{disclosure==="own"?" · 손님 후기가 아닌 매장 소개 관점으로 작성":disclosure==="staff"?" · 직원·회사 관계자가 직접 돈 내고 이용한 경우":""}</span>}
               </div>
               <div>
-                <label style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"6px 12px",background:"#21262d",border:"1px dashed #484f58",borderRadius:"8px",color:"#c9d1d9",cursor:visitPhotos.length>=10?"not-allowed":"pointer",fontSize:"13px",fontWeight:700}}>
-                  📷 사진 올리기 ({visitPhotos.length}/10){photoBusy?" · 줄이는 중...":""}
-                  <input type="file" accept="image/*" multiple disabled={visitPhotos.length>=10} style={{display:"none"}} onChange={e=>{addVisitPhotos(e.target.files);e.target.value="";}}/>
+                <label style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"6px 12px",background:"#21262d",border:"1px dashed #484f58",borderRadius:"8px",color:"#c9d1d9",cursor:visitPhotos.length>=20?"not-allowed":"pointer",fontSize:"13px",fontWeight:700}}>
+                  📷 사진 올리기 ({visitPhotos.length}/20){photoBusy?" · 줄이는 중...":""}
+                  <input type="file" accept="image/*" multiple disabled={visitPhotos.length>=20} style={{display:"none"}} onChange={e=>{addVisitPhotos(e.target.files);e.target.value="";}}/>
                 </label>
                 {visitPhotos.length>0&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"8px"}}>
                   {visitPhotos.map((p,i)=>(
@@ -4211,6 +4211,7 @@ function MissingTab(){
   // ── 순위 재확인: 제목 노출 + 이미 뽑아둔 키워드 순위 + 추가검색 키워드 순위 (AI 없음) ──
   // 키워드는 새로 뽑지 않고 저장된 것 그대로 순위만 다시 조회한다. 목록을 새로 불러왔다면 바뀐 제목으로 검색한다.
   const [titleRechecking,setTitleRechecking]=useState({});
+  const proxyDownRef=useRef(false);
   const recheckTitle=async(post)=>{
     const a=analysisRef.current[post.postNo]; if(!a||a.error) return;
     const m=(post.link||"").match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
@@ -4220,6 +4221,12 @@ function MissingTab(){
     try{
       // 1) 제목 노출
       let tr=await getNaverRank(post.title,bid,pno);
+      // 집 PC 프록시가 안 닿으면 재확인하지 않는다 — 블로그탭 순위 없이 저장하면 기존 결과가 더 나빠진다
+      if(tr?.proxyError&&/연결 실패|TIMEOUT|미설정|응답 오류/i.test(tr.proxyError)){
+        proxyDownRef.current=true;
+        alert(`집 PC 프록시에 연결이 안 돼서 재확인을 멈췄어요. 기존 결과는 그대로 두었어요.\n\n(${tr.proxyError})\n\n집 PC가 켜져 있는지, 프록시가 실행 중인지 확인한 뒤 다시 눌러주세요.`);
+        return;
+      }
       if(tr){
         const c0=titleExposureCat(tr,post.date);
         if(c0.cat!=="top1"&&c0.blogRank==null){ const qr=await quoteRecheck(post.title,bid,pno,post.date); if(qr) tr={...tr,...qr}; }
@@ -4256,7 +4263,8 @@ function MissingTab(){
   const recheckPage=async(onlyMissing)=>{
     const list=(posts?.current||[]).filter(p=>{const a=analysisRef.current[p.postNo];return a&&!a.error&&(!onlyMissing||a.missingStatus!=="노출");});
     if(!onlyMissing&&list.length>5&&!confirm(`이 페이지 글 ${list.length}개의 제목·키워드 순위를 모두 다시 조회할까요?\n(AI 비용은 없고, 네이버 검색을 글당 5~7번 해서 몇 분 걸려요)`)) return;
-    for(const p of list){ await recheckTitle(p); await new Promise(r=>setTimeout(r,300)); }
+    proxyDownRef.current=false;
+    for(const p of list){ await recheckTitle(p); if(proxyDownRef.current) break; await new Promise(r=>setTimeout(r,300)); }
   };
 
   // ── 추가검색: 제목 옆 입력창 키워드로 순위 조회 ──
@@ -9558,13 +9566,21 @@ async function shrinkDataUrl(dataUrl, maxSide, quality) {
   return { dataUrl: u, base64: u.split(",")[1], mediaType: "image/jpeg" };
 }
 
-// 사진 읽기: 사진마다 무엇이 찍혔는지 (보이는 것만)
+// 사진 읽기: 10장씩 나눠 보낸다 (요청 크기 4.4MB·서버 검사 한도 10장). 번호는 전체 기준으로 맞춘다.
 async function analyzeVisitPhotos(photos, placeName) {
+  const out = [];
+  for (let start = 0; start < photos.length; start += 10) {
+    const part = await analyzeVisitPhotosBatch(photos.slice(start, start + 10), placeName, start);
+    out.push(...part);
+  }
+  return out;
+}
+async function analyzeVisitPhotosBatch(photos, placeName, offset = 0) {
   const total = photos.reduce((a, p) => a + p.base64.length, 0);
   if (total > 3500000) photos = await Promise.all(photos.map(p => shrinkDataUrl(p.dataUrl, 800, 0.65)));
   const content = [];
   photos.forEach((p, i) => {
-    content.push({ type: "text", text: `[사진 ${i + 1}]` });
+    content.push({ type: "text", text: `[사진 ${offset + i + 1}]` });
     content.push({ type: "image", source: { type: "base64", media_type: p.mediaType, data: p.base64 } });
   });
   content.push({ type: "text", text: `위 사진들은 "${placeName}" 방문 때 찍은 사진이다. 사진마다 실제로 보이는 것만 적어라.
@@ -9577,7 +9593,10 @@ async function analyzeVisitPhotos(photos, placeName) {
   const model = getCostMode() === "save" ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-5-20250929";
   const raw = await callClaude([{ role: "user", content }], "You describe photos precisely and never guess what is not visible. Output ONLY valid JSON.", 2000, model);
   const j = safeParseJson(raw);
-  return (j?.photos || []).filter(x => x && x.n);
+  const list = (j?.photos || []).filter(x => x && x.n);
+  // 두 번째 묶음부터: AI가 번호를 1부터 다시 매겼으면 전체 번호로 되돌린다
+  const shift = offset && list.length && list.every(x => x.n <= photos.length);
+  return shift ? list.map(x => ({ ...x, n: x.n + offset })) : list;
 }
 
 // 장소 기본 정보: 검색으로 확인된 것만
