@@ -17,7 +17,13 @@ const FORBIDDEN_CATEGORIES = [
       // 성인용품/콘텐츠
       "성인용품","성인샵","러브샵","섹스샵","딜도샵","바이브샵","성인몰",
       "애널","SM","BDSM","bondage","페티시","코스프레야동","성인코스프레",
-      "유흥알바","조건알바","만남알바","성인알바","밤알바","룸알바","노래방도우미"
+      "유흥알바","조건알바","만남알바","성인알바","밤알바","룸알바","노래방도우미",
+      // 핵심 2~3글자 (다른 단어 속에 우연히 끼기 쉬운 것들 — 예: 전성기/성기, 사정상/사정, 개발기간/발기, 일정액/정액)
+      "성인","섹시","유흥","정사","애무","발기","사정","정액","성교","체위","알몸","나체","음모","유두","젖꼭지",
+      "창녀","창부","매음","윤락","불륜","조루","콘돔","피임","낙태","성병","성희롱","성추행","성범죄","성노예",
+      "야짤","야애니","망가","헨타이","벗방","노콘","질내","후장","빠구리","떡치","걸레년","쓰리섬","갱뱅",
+      "출장마사지","출장안마","출장샵","안마방","대딸","립카페","풀싸롱","룸살롱","룸싸롱","텐프로","호빠","호스트바",
+      "보도방","티켓다방","휴게텔","핸플","유흥업소","화류계","스폰만남","조건녀","원조"
     ]
   },
   {
@@ -28,7 +34,10 @@ const FORBIDDEN_CATEGORIES = [
       "카지노","도박","슬롯","배팅","토토","먹튀","스포츠토토","불법도박",
       "사설토토","온라인도박","배당률","핸디캡","불법카지노","해외카지노",
       "강원랜드꿀팁","블랙잭","룰렛","포커머니","홀덤머니","바카라",
-      "복권당첨비법","로또조작","경마베팅","개경주","투견","소싸움베팅"
+      "복권당첨비법","로또조작","경마베팅","개경주","투견","소싸움베팅",
+      "베팅","홀덤","잭팟","파워볼","사다리게임","릴게임","바다이야기","황금성","경마","경륜","경정",
+      "화투","고스톱","섯다","맞고머니","포커","놀이터추천","안전놀이터","메이저놀이터","꽁머니","총판모집","픽스터",
+      "토토사이트","카지노사이트","바카라사이트","슬롯사이트","먹튀검증","판돈","노름","타짜","불법스포츠"
     ]
   },
   {
@@ -76,7 +85,11 @@ const FORBIDDEN_CATEGORIES = [
       "폰테크","대포폰","폰개통대리","명의도용개통","소액결제현금화",
       // 핀테크 사기
       "상품권현금화","상품권깡","카드깡","카드현금화불법","신용카드깡",
-      "피싱","보이스피싱","스미싱","파밍","해킹","개인정보판매","개인정보불법"
+      "피싱","보이스피싱","스미싱","파밍","해킹","개인정보판매","개인정보불법",
+      // 핵심어 (주사기/사기, 회사채/사채, 고가일수록/일수 처럼 우연히 걸리는 것 포함)
+      "사기","대출","급전","깡통전세","대포통장","대포차","몸캠","리딩방","주식리딩","코인리딩","고수익보장","원금보장",
+      "환치기","돈세탁","자금세탁","탈세","뇌물","횡령","비자금","불법환전","내구제","휴대폰깡","폰깡","가개통","유심매입",
+      "불법","편법","먹튀사이트","디도스","랜섬웨어","계정판매","아이디판매","아이디구매"
     ]
   },
   {
@@ -115,6 +128,35 @@ const FORBIDDEN_CATEGORIES = [
       "불법왁싱","무자격왁싱시술",
       // 누수
       "누수사기","누수허위수리","누수바가지"
+    ]
+  },
+  {
+    id:"crime", icon:"🔪", label:"범죄·폭력·자해",
+    color:"#f85149", bg:"#2d0b0b", border:"#f8514944",
+    severity:"mid", desc:"폭력·범죄·자해 관련 — 검색 제한·유해글 분류 가능",
+    words:[
+      "살인","살해","자살","자해","동반자살","극단적선택","시체","시신유기","암매장","토막","학살","테러","폭탄",
+      "납치","유괴","감금","폭행","구타","고문","협박","청부","흥신소","심부름센터","뒷조사","도청","위치추적불법",
+      "스토킹","성착취","아동학대","인신매매","장기매매","밀입국","밀수","절도","강도","방화","칼부림","묻지마"
+    ]
+  },
+  {
+    id:"profanity", icon:"🤬", label:"욕설·비하",
+    color:"#ffa657", bg:"#2d1e0a", border:"#ffa65744",
+    severity:"mid", desc:"욕설·비하 표현 — 시발점/시발, 새끼손가락/새끼 같은 우연 포함",
+    words:[
+      "시발","씨발","씨팔","씨바","ㅅㅂ","병신","ㅂㅅ","개새끼","새끼","좆","존나","졸라","지랄","염병","썅","쌍놈","쌍년",
+      "미친놈","미친년","닥쳐","꺼져","등신","또라이","찐따","빡대가리","니미","엿먹","개같","개소리","개돼지",
+      "한남충","김치녀","된장녀","맘충","틀딱","급식충","짱깨","쪽바리","깜둥이","흑형","똥남아","조센징","홍어","통구이"
+    ]
+  },
+  {
+    id:"medical_sensitive", icon:"🏥", label:"의료 민감어",
+    color:"#79c0ff", bg:"#0d1e33", border:"#79c0ff44",
+    severity:"low", desc:"의료 업종어 — 비의료 글에서는 피하는 편이 안전",
+    words:[
+      "병원","의원","시술","수술","처방","치료","완치","성형","보톡스","필러","임플란트","한의원","약국","진료",
+      "부작용없","효과보장","특효","만병통치"
     ]
   },
   {
@@ -193,6 +235,7 @@ const FORBIDDEN_CATEGORIES = [
 ];
 
 // 금칙어 전체 목록 (detectForbidden에서 사용)
+(()=>{const seen=new Set();FORBIDDEN_CATEGORIES.forEach(c=>{c.words=c.words.filter(w=>{if(seen.has(w))return false;seen.add(w);return true;});});})();
 const FORBIDDEN_WORDS = FORBIDDEN_CATEGORIES.flatMap(c=>c.words);
 
 // 카테고리 매핑
@@ -208,29 +251,68 @@ const COMPETITION_COLOR = {"매우낮음":"#3fb950","낮음":"#79c0ff","보통":
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 function escapeRegex(s){return s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");}
-function detectForbidden(text){
-  const results=[];
-  FORBIDDEN_CATEGORIES.forEach(cat=>{
-    cat.words.forEach(w=>{
-      const matches=text.match(new RegExp(escapeRegex(w),"g"))||[];
-      if(matches.length>0){
-        // 구문 추출: 단어 주변 20자
-        const idx=text.indexOf(w);
-        const start=Math.max(0,idx-10);
-        const end=Math.min(text.length,idx+w.length+10);
-        const phrase=text.slice(start,end).replace(/\n/g," ");
-        results.push({word:w,count:matches.length,catId:cat.id,catIcon:cat.icon,catLabel:cat.label,catColor:cat.color,catBg:cat.bg,catBorder:cat.border,severity:cat.severity,phrase});
-      }
-    });
+// 금칙어가 들어있는 "어절"(공백·문장부호로 끊기는 덩어리) 범위 찾기
+// 예) "처음부터" 속 "음부" → 어절 = "처음부터". 교체는 어절 단위로 해야 문장이 안 깨진다.
+const HOST_BREAK=/[\s.,!?…·"'“”‘’()\[\]{}<>~:;\/|]/;
+function hostRange(text,idx,len){
+  let st=idx,en=idx+len;
+  while(st>0&&!HOST_BREAK.test(text[st-1])&&idx-st<12) st--;
+  while(en<text.length&&!HOST_BREAK.test(text[en])&&en-(idx+len)<12) en++;
+  return [st,en];
+}
+// word가 target 어절 안에 있는 자리만 골라 r로 교체 (다른 어절의 같은 글자는 건드리지 않음)
+// 금칙어 패턴: 3글자 이상은 글자 사이 공백 1칸까지 허용 → "성인 용품", "불법 도박", "처방전 없이"도 잡는다.
+// 2글자는 붙어 있을 때만 ("회사 기준"이 "사기"로 걸리는 식의 오탐 방지).
+const _patCache=new Map();
+function wordPatternSrc(w){
+  const chars=[...w];
+  if(chars.length<3||/\s/.test(w)) return escapeRegex(w);
+  return chars.map(escapeRegex).join("[ \\t]?");
+}
+function findMatches(text,w){
+  let src=_patCache.get(w); if(!src){src=wordPatternSrc(w);_patCache.set(w,src);}
+  const re=new RegExp(src,"g"); const out=[]; let m;
+  while((m=re.exec(text))!==null){ out.push({idx:m.index,len:m[0].length}); if(m[0].length===0) re.lastIndex++; }
+  return out;
+}
+// word가 target 어절 안에 있는 자리만 골라 r로 교체 (다른 어절의 같은 글자는 건드리지 않음)
+function replaceHost(text,word,target,r){
+  let out="",last=0;
+  findMatches(text,word).forEach(({idx,len})=>{
+    const [st,en]=hostRange(text,idx,len);
+    if(st>=last&&text.slice(st,en)===target){out+=text.slice(last,st)+r;last=en;}
   });
+  return out+text.slice(last);
+}
+function detectForbidden(text){
+  // 1) 전체 매치 수집 → 긴 금칙어에 완전히 포함된 짧은 금칙어 매치는 버린다 ("불법 도박"이 불법도박·불법·도박 3건으로 뜨지 않게)
+  const all=[];
+  FORBIDDEN_CATEGORIES.forEach(cat=>cat.words.forEach(w=>findMatches(text,w).forEach(m=>all.push({...m,w,cat}))));
+  all.sort((a,b)=>b.len-a.len);
+  const kept=[];
+  all.forEach(m=>{ if(!kept.some(k=>k.w!==m.w&&k.idx<=m.idx&&m.idx+m.len<=k.idx+k.len&&k.len>m.len)) kept.push(m); });
+  // 2) (금칙어, 어절) 단위로 묶기
+  const groups=new Map();
+  kept.forEach(({idx,len,w,cat})=>{
+    const [st,en]=hostRange(text,idx,len);
+    const target=text.slice(st,en), key=w+"\u0001"+target;
+    let g=groups.get(key);
+    if(!g){
+      const ps=Math.max(0,st-12),pe=Math.min(text.length,en+12);
+      g={word:w,target,embedded:target!==w,count:0,idx,catId:cat.id,catIcon:cat.icon,catLabel:cat.label,catColor:cat.color,catBg:cat.bg,catBorder:cat.border,severity:cat.severity,phrase:text.slice(ps,pe).replace(/\n/g," ")};
+      groups.set(key,g);
+    }
+    g.count++; if(idx<g.idx) g.idx=idx;
+  });
+  const results=[...groups.values()].sort((a,b)=>a.idx-b.idx);
   // 심각도 순 정렬: high → mid → low
   const sevOrder={high:0,mid:1,low:2};
   return results.sort((a,b)=>(sevOrder[a.severity]??2)-(sevOrder[b.severity]??2));
 }
 function highlightText(text,list,repl){
-  const active=list.filter(({word})=>!repl[word]?.trim()).map(({word})=>word);
+  const active=[...new Set(list.filter(({target,word})=>!repl[target??word]?.trim()).map(({word})=>word))];
   if(!active.length) return text;
-  const pat=new RegExp(`(${active.map(escapeRegex).join("|")})`, "g");
+  const pat=new RegExp(`(${active.slice().sort((a,b)=>b.length-a.length).map(wordPatternSrc).join("|")})`, "g");
   const parts=[]; let last=0,m;
   while((m=pat.exec(text))!==null){
     if(m.index>last) parts.push({text:text.slice(last,m.index),h:false});
@@ -627,45 +709,53 @@ function ForbiddenSection({workingText,forbidden,hp,replacements,setReplacements
   const [perLoading,setPerLoading]=useState({});
   const [aiError,setAiError]=useState("");
 
+  // 금칙어가 들어있는 문장(앞뒤 문맥) 뽑기
+  const ctxOf=(item,pad=60)=>{
+    const i=item.idx??workingText.indexOf(item.target);
+    if(i<0) return "";
+    return workingText.slice(Math.max(0,i-pad),Math.min(workingText.length,i+item.target.length+pad)).replace(/\n/g," ");
+  };
+  // 추천 결과 검증: 금칙어가 다시 들어간 추천은 버린다
+  const cleanSugg=(list,item)=>[...new Set((list||[]).map(x=>String(x||"").replace(/["“”*]/g,"").trim()).filter(Boolean))]
+    .filter(x=>x!==item.target&&detectForbidden(x).length===0).slice(0,3);
+  const RULES=`규칙:
+- 네이버 필터는 글자가 그대로 이어져 있으면 뜻과 상관없이 걸린다. 그래서 금칙어가 다른 단어 속에 우연히 끼어 있는 경우도 고쳐야 한다. (예: "처음부터" 안의 "음부")
+- 먼저 "어절"에서 금칙어가 실제 그 뜻으로 쓰였는지, 다른 단어의 글자가 우연히 겹친 것인지 판단해라.
+  · 우연히 겹친 경우: 어절의 원래 뜻을 그대로 살린 다른 표현으로 바꾼다. 예) 어절 "처음부터" → "애초부터", "시작부터", "맨 앞부터"
+  · 실제 그 뜻으로 쓰인 경우: 같은 뜻의 순화된 표현으로 바꾼다.
+- 추천은 금칙어 글자만이 아니라 **어절 전체를 통째로 대체**하는 표현이다. 조사·어미(부터, 를, 에서, 했습니다 등)는 원래대로 붙여서 문장에 그대로 끼워 넣을 수 있어야 한다.
+- 추천 표현 안에 해당 금칙어 글자열이 다시 나타나면 안 되고, 성인·도박·사기·욕설로 읽힐 수 있는 다른 글자 조합도 피해라.
+- 문맥과 무관한 단어를 지어내지 마라. 문장의 원래 의미가 바뀌면 안 된다.`;
+
   const aiRecommendAll=async()=>{
     if(!forbidden.length||aiLoading) return;
     setAiLoading(true); setAiError("");
     try{
-      const contexts=forbidden.map(({word})=>{
-        const idx=workingText.indexOf(word);
-        if(idx===-1) return{word,context:""};
-        const start=Math.max(0,idx-30);
-        const end=Math.min(workingText.length,idx+word.length+30);
-        return{word,context:workingText.slice(start,end)};
-      });
-      const prompt=`블로그 글에서 금칙어가 발견됐습니다. 각 금칙어를 문맥에 맞는 자연스러운 대체 단어로 추천해주세요.
+      const prompt=`블로그 글에서 네이버 금칙어 글자열이 발견됐습니다. 각 항목의 "어절"을 대체할 표현을 추천해주세요.
 반드시 순수 JSON 배열만 출력. 마크다운 없이.
 
-규칙:
-- 대체어는 반드시 아래 금칙어 목록에 없는 단어
-- 문장 흐름을 유지하는 자연스러운 한국어 단어
-- 대체어는 쉼표로 구분된 1~3개 문자열
-- 금칙어 목록: ${FORBIDDEN_WORDS.join(",")}
+${RULES}
 
-발견된 금칙어와 문맥:
-${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context}..."`).join("\n")}
+발견 항목:
+${forbidden.map((it,i)=>`${i+1}. 금칙어: "${it.word}" / 어절: "${it.target}" / 문맥: "...${ctxOf(it,40)}..."`).join("\n")}
 
-출력 형식:
-[{"word":"금칙어1","suggestions":"대체어1, 대체어2"},{"word":"금칙어2","suggestions":"대체어1"}]`;
+출력 형식 (target에는 위 "어절"을 그대로):
+[{"target":"어절1","suggestions":["대체표현1","대체표현2","대체표현3"]}]`;
 
       const raw=await callClaude([{role:"user",content:prompt}],
-        "Korean blog writing expert. Output ONLY valid JSON array.",800);
+        "Korean blog writing expert. Output ONLY valid JSON array.",1500);
       const s=raw.indexOf("["),e=raw.lastIndexOf("]");
       const arrStr=s!==-1&&e!==-1?raw.slice(s,e+1):raw;
       const arr=JSON.parse(fixRawControlChars(arrStr));
       const updates={};
       const suggMap={};
-      arr.forEach(({word,suggestions})=>{
-        if(word&&suggestions){
-          const parts=suggestions.split(",").map(x=>x.trim()).filter(Boolean);
-          updates[word]=parts[0]||"";
-          suggMap[`${word}__suggestions`]=suggestions;
-        }
+      arr.forEach(({target,suggestions})=>{
+        const item=forbidden.find(f=>f.target===target);
+        if(!item) return;
+        const parts=cleanSugg(Array.isArray(suggestions)?suggestions:String(suggestions||"").split(","),item);
+        if(!parts.length) return;
+        updates[target]=parts[0];
+        suggMap[`${target}__suggestions`]=parts.join("|");
       });
       setReplacements(prev=>({...prev,...updates}));
       setPerLoading(prev=>({...prev,...suggMap}));
@@ -673,31 +763,29 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
     setAiLoading(false);
   };
 
-  const aiRecommendOne=async(word)=>{
-    if(perLoading[word]===true) return;
-    setPerLoading(p=>({...p,[word]:true}));
+  const aiRecommendOne=async(item)=>{
+    const key=item.target;
+    if(perLoading[key]===true) return;
+    setPerLoading(p=>({...p,[key]:true}));
     try{
-      const idx=workingText.indexOf(word);
-      const start=Math.max(0,idx-50);
-      const end=Math.min(workingText.length,idx+word.length+50);
-      const context=idx!==-1?workingText.slice(start,end):"";
-      const prompt=`블로그 글에서 금칙어 "${word}"를 대체할 자연스러운 단어를 추천해주세요.
-문맥: "...${context}..."
-금칙어 목록(사용 금지): ${FORBIDDEN_WORDS.join(",")}
+      const prompt=`블로그 글에서 네이버 금칙어 글자열 "${item.word}"이(가) 어절 "${item.target}" 안에서 발견됐습니다. 이 어절을 대체할 표현을 추천해주세요.
+문맥: "...${ctxOf(item,60)}..."
 
-규칙:
-- 금칙어 목록에 없는 단어만 추천
-- 문장 흐름에 자연스러운 한국어
-- 쉼표로 구분된 추천 단어 3개만 출력 (설명 없이)
-예시 출력: 합리적인, 경제적인, 알맞은`;
+${RULES}
+
+출력: 대체 표현 3개를 JSON 배열로만. 설명 없이.
+예시 출력: ["애초부터","시작부터","맨 앞부터"]`;
       const raw=await callClaude([{role:"user",content:prompt}],
-        "Korean blog writing expert. Output ONLY comma-separated Korean words, nothing else.",300);
-      const suggestions=raw.replace(/["""*]/g,"").trim();
-      const first=suggestions.split(",")[0].trim();
-      if(first) setReplacements(p=>({...p,[word]:first}));
-      setPerLoading(p=>({...p,[word]:false,[`${word}__suggestions`]:suggestions}));
+        "Korean blog writing expert. Output ONLY a JSON array of strings.",300);
+      let list;
+      try{const s=raw.indexOf("["),e=raw.lastIndexOf("]");list=JSON.parse(fixRawControlChars(raw.slice(s,e+1)));}
+      catch(e){list=raw.split(/[,\n]/);}
+      const parts=cleanSugg(list,item);
+      if(!parts.length) throw new Error("쓸 만한 추천이 없습니다. 다시 눌러보세요.");
+      setReplacements(p=>({...p,[key]:parts[0]}));
+      setPerLoading(p=>({...p,[key]:false,[`${key}__suggestions`]:parts.join("|")}));
     }catch(err){
-      setPerLoading(p=>({...p,[word]:false}));
+      setPerLoading(p=>({...p,[key]:false}));
       setAiError("AI 추천 실패: "+(err?.message||String(err)));
     }
   };
@@ -758,41 +846,44 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
             </div>
             <div style={{display:"flex",flexDirection:"column"}}>
               {byCat[cat.id].map((item,i)=>{
-                const isPerLoading=perLoading[item.word]===true;
-                const suggRaw=perLoading[`${item.word}__suggestions`];
-                const suggList=suggRaw?suggRaw.split(",").map(s=>s.trim()).filter(Boolean):[];
-                return <div key={item.word} style={{borderBottom:i<byCat[cat.id].length-1?`1px solid ${cat.border}`:"none",padding:"10px 14px"}}>
+                const isPerLoading=perLoading[item.target]===true;
+                const suggRaw=perLoading[`${item.target}__suggestions`];
+                const suggList=suggRaw?suggRaw.split("|").map(s=>s.trim()).filter(Boolean):[];
+                return <div key={item.word+"\u0001"+item.target} style={{borderBottom:i<byCat[cat.id].length-1?`1px solid ${cat.border}`:"none",padding:"10px 14px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:suggList.length>0?"6px":"0"}}>
                     {/* 금칙어 + 구문 */}
                     <div style={{minWidth:"120px"}}>
                       <span style={{color:cat.color,fontWeight:700,fontSize:"15px"}}>"{item.word}"</span>
                       <span style={{color:"#484f58",fontSize:"12px",marginLeft:"6px"}}>{item.count}회</span>
+                      {item.embedded&&<div style={{color:"#ffa657",fontSize:"12px",marginTop:"2px"}}>
+                        어절 <b style={{color:"#e6edf3"}}>{item.target}</b> 을(를) 통째로 교체
+                      </div>}
                       {item.phrase&&<div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px",fontStyle:"italic"}}>
                         ...{item.phrase}...
                       </div>}
                     </div>
                     {/* 대체어 입력 */}
                     <input
-                      value={replacements[item.word]||""}
-                      onChange={e=>setReplacements(p=>({...p,[item.word]:e.target.value}))}
-                      placeholder={isPerLoading?"AI 추천 중...":"대체 단어 입력 또는 AI 추천 →"}
-                      onKeyDown={e=>e.key==="Enter"&&doReplace(item.word)}
+                      value={replacements[item.target]||""}
+                      onChange={e=>setReplacements(p=>({...p,[item.target]:e.target.value}))}
+                      placeholder={isPerLoading?"AI 추천 중...":item.embedded?`"${item.target}" 대신 쓸 표현 입력 또는 AI 추천 →`:"대체 단어 입력 또는 AI 추천 →"}
+                      onKeyDown={e=>e.key==="Enter"&&doReplace(item.target)}
                       style={{flex:1,padding:"6px 8px",background:"#0d1117",
-                        border:`1px solid ${replacements[item.word]?.trim()?"#1f6feb66":"#30363d"}`,
+                        border:`1px solid ${replacements[item.target]?.trim()?"#1f6feb66":"#30363d"}`,
                         borderRadius:"6px",color:"#e6edf3",fontSize:"14px",outline:"none",
                         fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"}}
                       onFocus={e=>e.target.style.borderColor="#58a6ff"}
-                      onBlur={e=>e.target.style.borderColor=replacements[item.word]?.trim()?"#1f6feb66":"#30363d"}/>
+                      onBlur={e=>e.target.style.borderColor=replacements[item.target]?.trim()?"#1f6feb66":"#30363d"}/>
                     {/* 버튼 */}
-                    <button onClick={()=>aiRecommendOne(item.word)} disabled={isPerLoading} title="AI 대체어 추천"
+                    <button onClick={()=>aiRecommendOne(item)} disabled={isPerLoading} title="AI 대체어 추천"
                       style={{padding:"6px 8px",background:isPerLoading?"#21262d":"#8957e522",
                         color:isPerLoading?"#484f58":"#d2a8ff",border:`1px solid ${isPerLoading?"#30363d":"#8957e544"}`,
                         borderRadius:"6px",cursor:isPerLoading?"not-allowed":"pointer",fontSize:"15px",flexShrink:0}}>
                       {isPerLoading?"⏳":"✨"}
                     </button>
-                    <button onClick={()=>doReplace(item.word)}
-                      style={{padding:"6px 12px",background:replacements[item.word]?.trim()?"#1f6feb":"#21262d",
-                        color:replacements[item.word]?.trim()?"#fff":"#484f58",border:"none",
+                    <button onClick={()=>doReplace(item.target)}
+                      style={{padding:"6px 12px",background:replacements[item.target]?.trim()?"#1f6feb":"#21262d",
+                        color:replacements[item.target]?.trim()?"#fff":"#484f58",border:"none",
                         borderRadius:"6px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
                         fontSize:"13px",fontWeight:600,flexShrink:0}}>
                       바꾸기
@@ -801,10 +892,10 @@ ${contexts.map(({word,context})=>`- 금칙어: "${word}" / 문맥: "...${context
                   {suggList.length>0&&<div style={{display:"flex",gap:"5px",flexWrap:"wrap",paddingLeft:"130px"}}>
                     <span style={{color:"#484f58",fontSize:"12px",flexShrink:0,alignSelf:"center"}}>추천:</span>
                     {suggList.map((s,si)=>(
-                      <button key={si} onClick={()=>setReplacements(p=>({...p,[item.word]:s}))}
-                        style={{padding:"2px 10px",background:replacements[item.word]===s?"#1f6feb22":"#21262d",
-                          color:replacements[item.word]===s?"#58a6ff":"#8b949e",
-                          border:`1px solid ${replacements[item.word]===s?"#1f6feb55":"#30363d"}`,
+                      <button key={si} onClick={()=>setReplacements(p=>({...p,[item.target]:s}))}
+                        style={{padding:"2px 10px",background:replacements[item.target]===s?"#1f6feb22":"#21262d",
+                          color:replacements[item.target]===s?"#58a6ff":"#8b949e",
+                          border:`1px solid ${replacements[item.target]===s?"#1f6feb55":"#30363d"}`,
                           borderRadius:"20px",cursor:"pointer",fontSize:"13px",
                           fontFamily:"'Noto Sans KR',sans-serif"}}>
                         {s}
@@ -868,11 +959,16 @@ const IMG_TYPE_META={
   product:{label:"실제 제품",icon:"📦",color:"#d29922"},
 };
 
+// 글자·설명 요소 금지 공통 문구 (장면·제품 타입)
+const NO_TEXT_EN="Absolutely no text of any kind: no captions, titles, labels, callouts, annotations, arrows, speech bubbles, badges, price tags, charts, graphs, icons, infographic elements, watermarks or logos (except branding physically printed on the real product). Any screen visible in the shot shows only a plain wallpaper or a blurred, unreadable interface. This must look like a genuine photograph, not a designed graphic.";
+const NO_TEXT_KO="어떤 종류의 글자도 넣지 말 것: 자막·제목·라벨·설명 문구·화살표·말풍선·뱃지·가격표·차트·그래프·아이콘·인포그래픽 요소·워터마크·로고 금지(실제 제품에 원래 새겨진 브랜드 표시만 허용). 사진 속 화면이 보이더라도 단순한 배경화면이거나 읽을 수 없게 흐릿하게 처리할 것. 디자인된 그래픽이 아니라 실제로 촬영한 사진처럼 보여야 함.";
+
 function buildFullPrompt(item,styleId,ratio,lang){
   const st=IMG_STYLES.find(s=>s.id===styleId)||IMG_STYLES[0];
   const type=item.imageType||"scene";
   const sceneEn=(item.scene||"").trim();
   const sceneKo=(item.sceneKo||item.scene||"").trim();
+  const product=(item.productName||"").trim();
 
   // ── 실제 프로그램/앱 화면 재현: 스타일 프리셋을 적용하지 않고 UI 텍스트를 허용 ──
   if(type==="ui"){
@@ -882,19 +978,20 @@ function buildFullPrompt(item,styleId,ratio,lang){
     return `${sceneEn} Rendered as a faithful screenshot of the real application: reproduce the actual window layout, menu bar, dialog structure, tabs, checkboxes and buttons of that program as accurately as possible. UI labels inside the screen must be rendered clearly and spelled correctly in Korean. Clean, crisp, high-resolution UI. ${ratio} aspect ratio. No watermarks and no decorative text outside the interface.`;
   }
 
-  // ── 특정 브랜드의 실제 제품: 브랜드·모델 디자인을 정확히 재현 ──
+  // ── 실제 제품: 첨부한 실제 제품 사진을 참고해 "사용 중인 장면"을 실사로 합성 ──
   if(type==="product"){
+    const name=product||"the product";
     if(lang==="ko"){
-      return `${sceneKo} ${st.ko}. 언급된 브랜드의 실제 제품 디자인(형태·색상·비율·버튼 위치)을 정확하게 재현할 것. 제품 자체에 원래 있는 로고 외에 별도의 글자·워터마크는 넣지 말 것. ${ratio} 비율.`;
+      return `[첨부한 ${product||"제품"} 실제 사진을 참고] ${sceneKo} 첨부한 참고 사진 속 제품의 실제 디자인(형태·색상·비율·카메라·버튼 위치·소재 질감)을 그대로 유지하고, 그 제품이 실제로 이 장면 안에서 사용되고 있는 것처럼 자연스럽게 합성할 것. 제품 디자인을 임의로 바꾸거나 다른 기종처럼 그리지 말 것. ${st.ko}. 일상적인 스냅 사진처럼 자연스러운 손 위치·자세·생활감 있는 배경. ${ratio} 비율. ${NO_TEXT_KO}`;
     }
-    return `${sceneEn} ${st.en}. Reproduce the real product design of the named brand and model accurately — exact form factor, colors, proportions and button placement. Apart from branding that exists on the real product, no extra text or watermarks. ${ratio} aspect ratio.`;
+    return `[Use the attached photo of the ${name} as the reference] ${sceneEn} Keep the product exactly as it appears in the attached reference photo — same form factor, colors, proportions, camera layout, button placement and material finish — and place it naturally in this scene as if it is genuinely being used there. Do not redesign the product or make it resemble any other model. ${st.en}. Candid, everyday snapshot feel with natural hand position, posture and a lived-in environment. ${ratio} aspect ratio. ${NO_TEXT_EN}`;
   }
 
-  // ── 일반 장면 (기존 방식) ──
+  // ── 일반 장면: 실제 촬영한 사진처럼 ──
   if(lang==="ko"){
-    return `${sceneKo} ${st.ko}. ${ratio} 비율. 이미지 안에 글자·문자·로고·워터마크는 넣지 말 것.`;
+    return `${sceneKo} ${st.ko}. 연출된 광고 컷이 아니라 실제 상황을 그대로 찍은 스냅 사진처럼 자연스럽게. ${ratio} 비율. ${NO_TEXT_KO}`;
   }
-  return `${sceneEn} ${st.en}. ${ratio} aspect ratio. No text, letters, watermarks or logos in the image.`;
+  return `${sceneEn} ${st.en}. Shot like a candid documentary photograph of a real moment, not a staged advertisement. ${ratio} aspect ratio. ${NO_TEXT_EN}`;
 }
 
 function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading,setImgLoading,imgError,setImgError,imgSections,setImgSections}){
@@ -952,14 +1049,16 @@ For "ui" (MOST IMPORTANT — accuracy is the whole point):
 - Keep values shown on screen neutral/default unless the post states them.
 - Korean text inside the UI IS allowed and required. Do not describe photographs of a person at a desk — describe the screen itself.
 
-For "product":
-- Use the real brand and model name from the post and describe its accurate real-world design: form factor, size, colors, materials, where the buttons/ports/camera are. Only show features the post actually mentions.
-- No readable text other than branding that exists on the real product.
+For "product" (a REAL photo of the product will be attached as a reference, so do NOT spend words describing the product's design):
+- Put the exact brand + model name in "productName" (e.g. "삼성 갤럭시 S26").
+- Describe a realistic LIFESTYLE MOMENT in which a person is actually using that product, grounded in what the section says: who (age/gender vague, no face detail needed), what they are doing with it, where, camera angle (over-the-shoulder, close-up of hands, table-top, etc.), lighting and mood. Example: "a young woman's hands holding the 갤럭시 S26 at a cafe table, thumb tapping the screen, morning light" — NOT "a Galaxy S26 with 6.2 inch display and triple camera".
+- If the section is about a specific feature (camera, battery, folding screen, charging...), show the person doing that action, never a spec sheet. A phone screen may be visible but must show a neutral wallpaper or a blurred, unreadable interface.
+- No readable text, no captions, no labels.
 
 For "scene":
-- Describe the SCENE ONLY: subject, setting, composition, mood, colors.
+- Describe ONE PHOTOGRAPHABLE REAL MOMENT: a specific person/hands/object in a specific place doing a specific thing, plus composition, lighting and mood. Ask yourself "could a photographer actually take this shot?" — if not, rewrite it.
+- Concepts, comparisons, lists of options, steps, pros/cons, prices, numbers, charts, graphs, calendars, documents, signs, price tags, screens with readable text, whiteboards: NEVER visualise these. Instead pick a concrete everyday moment that IMPLIES the idea (e.g. "비교" → a person holding two items side by side; "절약" → someone checking a receipt at a kitchen table, receipt blurred).
 - No readable text, no logos, no recognizable real people or celebrity faces.
-- Never visualise prices, numbers, charts or graphs.
 
 General rules:
 - GROUNDING: every section and every scene must come STRICTLY from what the post actually says. Follow the post's real order. Do not add objects, places, activities, situations or facts that do not appear in the post.
@@ -967,13 +1066,14 @@ General rules:
 - Exactly 5 sections, each covering a DIFFERENT aspect of the post; each scene visually distinct (different subject, setting, angle, or different screen/step).
 - If the whole post is about a specific program or product, most sections will naturally be "ui" or "product" — that is expected. Do NOT downgrade a specific program screen into a generic "laptop on a desk" scene.
 - Do NOT include style keywords, camera specs, aspect ratio, or "no text" instructions — those are appended later.
+- Prefer real, everyday, photo-like moments over conceptual or illustrative ideas — the goal is images that look like actual photographs with no text in them.
 - 30-70 words per scene, plain descriptive English (Korean UI labels / brand names may be written in Korean inside the English text)
 - "sceneKo" = natural Korean rendering of the exact same scene
 - "sectionTitle" = short Korean title, "sectionDesc" = one-line Korean summary of that section
 
 Return ONLY valid JSON, no markdown:
 {"sections":[
-  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","imageType":"ui | product | scene","scene":"English scene description","sceneKo":"같은 장면의 한글 묘사"},
+  {"sectionTitle":"단락 제목 (Korean)","sectionDesc":"어떤 내용인지 한 줄 (Korean)","imageType":"ui | product | scene","productName":"브랜드+모델명 (product일 때만, 아니면 빈 문자열)","scene":"English scene description","sceneKo":"같은 장면의 한글 묘사"},
   {"sectionTitle":"...","sectionDesc":"...","imageType":"...","scene":"...","sceneKo":"..."},
   {"sectionTitle":"...","sectionDesc":"...","imageType":"...","scene":"...","sceneKo":"..."},
   {"sectionTitle":"...","sectionDesc":"...","imageType":"...","scene":"...","sceneKo":"..."},
@@ -988,7 +1088,7 @@ Return ONLY valid JSON, no markdown:
       if(s===-1||e===-1) throw new Error("단락 분석 JSON 형식 오류: "+raw.slice(0,100));
       const parsed=safeParseJson(raw);
       const sections=(parsed.sections||[]).filter(x=>x&&(x.scene||x.sceneKo)).slice(0,5)
-        .map(x=>({...x,imageType:["ui","product","scene"].includes(x.imageType)?x.imageType:"scene"}));
+        .map(x=>({...x,imageType:["ui","product","scene"].includes(x.imageType)?x.imageType:"scene",productName:typeof x.productName==="string"?x.productName.trim():""}));
       if(sections.length===0) throw new Error("단락 분석 실패");
 
       setImgSections(sections);
@@ -1092,7 +1192,8 @@ Return ONLY valid JSON, no markdown:
       <div style={{color:"#8b949e",fontSize:"15px",fontWeight:600,marginBottom:"6px"}}>글 내용을 분석해서 5개 단락에 맞는 이미지 프롬프트를 만들어줍니다</div>
       <div style={{color:"#484f58",fontSize:"13px",lineHeight:"1.7"}}>
         · 각 단락마다 서로 다른 장면 프롬프트 1개씩 총 5개<br/>
-        · 특정 프로그램의 설정 화면이나 특정 브랜드 제품 이야기면 실제 화면·실제 제품을 재현하는 프롬프트로 자동 전환<br/>
+        · 특정 프로그램의 설정 화면이면 실제 화면 재현 프롬프트로, 특정 브랜드 제품 이야기면 <b>실제 제품 사진을 첨부해 사용 장면을 합성</b>하는 프롬프트로 자동 전환<br/>
+        · 장면·제품 프롬프트는 글자·라벨·차트 없이 실제 촬영한 사진처럼 나오도록 작성<br/>
         · 복사해서 ChatGPT · Gemini · Midjourney 등에 그대로 붙여넣기<br/>
         · 스타일 · 비율 · 언어는 재생성 없이 바로 바꿔서 복사 가능
       </div>
@@ -1120,6 +1221,10 @@ Return ONLY valid JSON, no markdown:
               border:`1px solid ${copied===i?"#2ea043":"#30363d"}`,
             }}>{copied===i?"✅ 복사됨":"📋 복사"}</button>
           </div>
+          {item.imageType==="product"&&<div style={{padding:"7px 12px",background:"#2a1f0a",borderBottom:"1px solid #d2992233",display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",fontSize:"12px",color:"#e3b341"}}>
+            <span>📎 <b>{item.productName||"해당 제품"}</b> 실제 사진을 GPT에 먼저 첨부한 뒤 이 프롬프트를 붙여넣으세요 (첨부 사진의 디자인을 그대로 살려 사용 장면을 합성합니다)</span>
+            {item.productName&&<a href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName+" 제품 사진")}`} target="_blank" rel="noreferrer" style={{color:"#e3b341",textDecoration:"underline",whiteSpace:"nowrap"}}>제품 사진 찾기 ↗</a>}
+          </div>}
           <div onClick={()=>copyText(full,i)} style={{
             padding:"11px 13px",color:"#8b949e",fontSize:"14px",lineHeight:"1.65",cursor:"pointer",
             wordBreak:"break-word",whiteSpace:"pre-wrap",
@@ -1269,7 +1374,12 @@ Output ONLY valid JSON.`,
     setAnalyzing(true); setAiResult(null);
     setWorkingText(text); setReplacements({}); setQualReplacements({});
 
+    const _now=new Date();
+    const todayStr=`${_now.getFullYear()}년 ${_now.getMonth()+1}월 ${_now.getDate()}일`;
     const prompt=`다음 블로그 글을 두 가지 관점에서 분석해줘. 반드시 순수 JSON만 출력해. 마크다운 없이.
+
+[오늘 날짜] ${todayStr}
+※ 네가 학습한 시점이 아니라 위 날짜가 실제 현재다. 글 속 날짜가 오늘 또는 그 이전이면 "미래 날짜"가 아니다. 네 지식에 없는 최신 제품·사건·날짜가 나와도 틀렸다고 단정하지 마라.
 
 === 분석할 글 ===
 ${text.slice(0,4000)}
@@ -1304,6 +1414,7 @@ JSON 형식:
   * 광고/협찬: 협찬·체험단·대가성 표현 → category="광고·협찬" severity="mid"
   * 키워드 도배: 동일 단어 15회 이상 반복 → category="키워드도배" severity="mid"
   * 스팸 패턴: 과도한 상업성·어뷰징 표현 → category="스팸·어뷰징" severity="low"
+- lowQuality.items에는 위 감지 대상만 넣는다. 날짜·수치·사실관계의 진위 검증(예: "사실성 검증 필요", "미래 날짜")은 이 분석의 범위가 아니므로 항목으로 만들지 마라.
 - lowQuality.score: 낮을수록 저품질 위험 적음 (0=완전 안전, 100=매우 위험)
 - 19금 단어나 성인 구문이 하나라도 있으면 score 80 이상, verdict="위험"`;
 
@@ -1345,8 +1456,14 @@ JSON 형식:
   // 금칙어
   const forbidden=workingText?detectForbidden(workingText):[];
   const hp=workingText?highlightText(workingText,forbidden,replacements):null;
-  const doReplace=(word)=>{const r=replacements[word];if(!r?.trim())return;setWorkingText(p=>p.split(word).join(r.trim()));setReplacements(p=>{const n={...p};delete n[word];return n;});};
-  const doReplaceAll=()=>{let t=workingText;Object.entries(replacements).forEach(([w,r])=>{if(r?.trim())t=t.split(w).join(r.trim());});setWorkingText(t);setReplacements({});};
+  const doReplace=(target)=>{const r=replacements[target];if(!r?.trim())return;
+    const items=forbidden.filter(f=>f.target===target);
+    setWorkingText(p=>{let t=p;items.forEach(f=>{t=replaceHost(t,f.word,target,r.trim());});return t;});
+    setReplacements(p=>{const n={...p};delete n[target];return n;});};
+  const doReplaceAll=()=>{let t=workingText;
+    // 긴 어절부터 바꿔야 짧은 금칙어 교체가 긴 어절을 망가뜨리지 않는다
+    forbidden.slice().sort((a,b)=>b.target.length-a.target.length).forEach(f=>{const r=replacements[f.target];if(r?.trim())t=replaceHost(t,f.word,f.target,r.trim());});
+    setWorkingText(t);setReplacements({});};
 
   // 저품질 AI 대체어 추천 (개별)
   const aiQualRecommend=async(item)=>{
@@ -1466,6 +1583,19 @@ JSON 형식:
         <span style={{color:"#8b949e"}}>{(workingText||text).length.toLocaleString()}자</span>
         {postMeta.tags?.length>0&&<><span style={{color:"#484f58"}}>해시태그</span>
         <span style={{color:"#58a6ff",lineHeight:"1.8"}}>{postMeta.tags.map(t=>"#"+t).join(" ")}</span></>}
+        {postMeta.visit&&<><span style={{color:"#484f58"}}>방문 리뷰</span>
+        <span style={{color:"#8b949e",lineHeight:1.6}}>
+          📍 {postMeta.visit.placeName}{postMeta.visit.address?` · ${postMeta.visit.address}`:""} · {VISIT_DISCLOSURE[postMeta.visit.disclosure]?.label}
+          {postMeta.visit.placeInfo?.facts?.length>0&&<span style={{display:"block",fontSize:"13px"}}>검색 확인: {postMeta.visit.placeInfo.facts.map(f=>f.label).join(", ")}</span>}
+          {postMeta.visit.placeReviews&&<span style={{display:"block",fontSize:"13px"}}>같은 매장 후기: {postMeta.visit.placeReviews.count}개 참고{postMeta.visit.placeReviews.count?` · 공통 내용 ${postMeta.visit.placeReviews.points.length}개 · 일치 정보 ${postMeta.visit.placeReviews.facts.length}개`:" (같은 매장 글을 못 찾았어요)"}</span>}
+          {postMeta.visit.missingPhotos?.length>0&&<span style={{display:"block",color:"#d29922",fontSize:"13px"}}>⚠️ 본문에 배치 안 된 사진: {postMeta.visit.missingPhotos.map(n=>`[사진 ${n}]`).join(", ")} — 원하는 위치에 직접 넣어주세요</span>}
+          <span style={{display:"flex",gap:"5px",flexWrap:"wrap",marginTop:"5px"}}>
+            {postMeta.visit.thumbs.map((u,i)=><span key={i} style={{position:"relative"}}>
+              <img src={u} alt="" style={{width:"64px",height:"64px",objectFit:"cover",borderRadius:"6px",border:"1px solid #30363d",display:"block"}}/>
+              <span style={{position:"absolute",left:"3px",top:"3px",background:"#0d1117cc",color:"#e6edf3",fontSize:"11px",fontWeight:700,borderRadius:"4px",padding:"0 4px"}}>{i+1}</span>
+            </span>)}
+          </span>
+        </span></>}
         {postMeta.factSummary&&<><span style={{color:"#484f58"}}>수치조사</span>
         <span style={{color:"#8b949e",lineHeight:"1.6"}}>
           검색으로 확인 <b style={{color:"#3fb950"}}>{postMeta.factSummary.resolved}</b>
@@ -1535,7 +1665,7 @@ JSON 형식:
     </div>}
 
     {/* ── 단락별 이미지 프롬프트 생성 (GPT용) ── */}
-    {postMeta&&<ImageGenSection
+    {postMeta&&!postMeta.visit&&<ImageGenSection
       postMeta={postMeta}
       postContent={workingText||text}
       genImages={genImages} setGenImages={setGenImages}
@@ -2211,6 +2341,30 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
   const [customTopic,setCustomTopic]=useState("");   // 직접 입력한 글 주제
+  // 방문 리뷰 모드
+  const [visitOpen,setVisitOpen]=useState(false);
+  const [placeName,setPlaceName]=useState("");
+  const [placeAddr,setPlaceAddr]=useState("");
+  const [visitMemo,setVisitMemo]=useState("");
+  const [disclosure,setDisclosure]=useState("self");
+  const [visitPhotos,setVisitPhotos]=useState([]);
+  const [toneUrl,setToneUrl]=useState(()=>{try{return localStorage.getItem("mt_visit_tone_url")||"";}catch(e){return "";}});
+  const [photoBusy,setPhotoBusy]=useState(false);
+  const addVisitPhotos=async(files)=>{
+    const list=[...files].filter(f=>f.type.startsWith("image/")).slice(0,10-visitPhotos.length);
+    if(!list.length) return;
+    setPhotoBusy(true);
+    try{ const out=[]; for(const f of list){ try{ out.push(await resizeImageFile(f)); }catch(e){} } setVisitPhotos(p=>[...p,...out].slice(0,10)); }
+    finally{ setPhotoBusy(false); }
+  };
+  const moveVisitPhoto=(i,d)=>setVisitPhotos(p=>{const a=[...p];const j=i+d;if(j<0||j>=a.length)return a;[a[i],a[j]]=[a[j],a[i]];return a;});
+  const writeVisit=()=>{
+    if(!placeName.trim()||!goAutoWrite) return;
+    const t=customTopic.trim()||`${result?.keyword||""} ${placeName.trim()} ${disclosure==="own"?"매장 소개":"방문 후기"}`.trim();
+    goAutoWrite(t,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword,
+      {placeName:placeName.trim(),address:placeAddr.trim(),memo:visitMemo,disclosure,photos:visitPhotos,toneUrl:toneUrl.trim()});
+    try{localStorage.setItem("mt_visit_tone_url",toneUrl.trim());}catch(e){}
+  };
 
   const result = kwResult; // 단일 객체: naver + AI 모두 포함
 
@@ -2275,6 +2429,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
 
       // ④ 상위 블로그 정보 (평균 발행일자, 고지수 비율)
       let top10Blogs = [];
+      let myPost = null;
       let avgPostAgeDays = null;
       let highIndexRatio = 0;
       try {
@@ -2282,6 +2437,12 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         const rankData = await rankRes.json();
         const items = (rankData.items || []).slice(0, 10);
         top10Blogs = items;
+        // 내 블로그 글이 이 키워드 블로그탭(검색 API 100위까지)에 이미 있는지
+        const myBid = myBlogIdForCheck().toLowerCase();
+        if (myBid) {
+          const mineHit = (rankData.items || []).find(i => (i.extractedBlogId || "").toLowerCase() === myBid);
+          if (mineHit) myPost = { rank: mineHit.rank, title: mineHit.title, date: mineHit.postDate || "", blogId: myBid };
+        }
         const now = Date.now();
         const ages = items.map(i=>i.postDate).filter(Boolean).map(d=>{
           const s=String(d).replace(/-/g,"");
@@ -2316,7 +2477,11 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         '    "예: 천안맛집 → \'천안 성정동 점심 혼밥하기 좋은 국밥집 솔직 후기\' 처럼.",',
         '    "키워드를 자연스럽게 포함하되 독자 클릭을 유도하는 제목으로. 과거 연도(2024년 등) 절대 사용 금지."',
         '  ]',
-        '}' + titlesAppend
+        '}' + titlesAppend,
+        // 맞춤 프로필이 켜져 있으면 추천 주제도 이 블로그 분석 기준으로
+        (()=>{const bp=bpGetActive();if(!bp)return "";
+          return "\n\n[longtailKeywords 작성 기준 — 아래 이 블로그의 분석 결과를 따를 것. trend·smartBlock 항목에는 적용하지 말 것]"+buildProfileBlock(bp,"topic")
+            +(myPost?`\n이 블로그는 이미 이 키워드로 쓴 글이 있다 (블로그탭 ${myPost.rank}위): "${myPost.title}"\n→ 이 글과 같은 각도·같은 질문의 주제는 추천하지 말고, 검색 의도가 다른 주제로.`:"");})()
       ].join("\n");
       const raw = await callClaude([{role:"user",content:msgContent}],"Respond ONLY with valid JSON.");
       const cleaned = raw.replace(/```json\n?/g,"").replace(/```\n?/g,"").trim();
@@ -2440,7 +2605,8 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         relKeywords,
         ...aiResult,
         monthlyBlogPosts,
-        top10Blogs, avgPostAgeDays, highIndexRatio,
+        top10Blogs, avgPostAgeDays, highIndexRatio, myPost,
+        profileId: bpGetActive()?.blogId || null,
       };
       KW_CACHE[kw] = kwRes;
       setKwResult(kwRes);
@@ -2500,6 +2666,15 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
           {result.trend==="상승"?"📈 상승세":result.trend==="하락"?"📉 하락세":"➡️ 유지"}
         </span>
       </div>
+
+      {/* ── 내 글 점유 경고 ── */}
+      {result.myPost&&<div style={{background:result.myPost.rank<=OCCUPY_TOP?"#2d1117":"#2a1f0a",border:`1px solid ${result.myPost.rank<=OCCUPY_TOP?"#da363355":"#d2992244"}`,borderRadius:"10px",padding:"10px 14px",fontSize:"14px",lineHeight:1.7,color:"#c9d1d9"}}>
+        <b style={{color:result.myPost.rank<=OCCUPY_TOP?"#ff7b72":"#e3b341"}}>{result.myPost.rank<=OCCUPY_TOP?"🚫":"📌"} 내 글이 이 키워드 블로그탭 {result.myPost.rank}위에 있어요</b>
+        <span style={{color:"#8b949e"}}> · @{result.myPost.blogId} · {result.myPost.title}{result.myPost.date?` (${result.myPost.date})`:""}</span>
+        <div style={{color:"#8b949e",fontSize:"13px"}}>{result.myPost.rank<=OCCUPY_TOP
+          ?"같은 검색어엔 한 블로그 글이 보통 1개만 떠서, 이 키워드로 새 글을 써도 상위 자리가 나기 어렵습니다. 아래 롱테일 중 검색 의도가 다른 걸로 쓰거나, 기존 글을 보강하는 쪽을 권해요."
+          :"아직 상위는 아니라 새 글로 도전할 수 있지만, 기존 글과 겹치면 둘 중 하나만 노출돼요. 기존 글을 보강하는 것도 방법이에요."}</div>
+      </div>}
 
       {/* ── PC: 2열 그리드 / 모바일: 단일 열 ── */}
       <div style={isMobile
@@ -2658,9 +2833,67 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
               </div>}
           </div>
 
+          {/* 📍 방문 리뷰 모드 */}
+          <div style={{background:"#0d1117",border:`1px solid ${visitOpen?"#3fb95066":"#21262d"}`,borderRadius:"10px",padding:"11px 12px",marginBottom:"14px"}}>
+            <div onClick={()=>setVisitOpen(v=>!v)} style={{display:"flex",alignItems:"center",gap:"6px",cursor:"pointer",flexWrap:"wrap"}}>
+              <span style={{color:"#3fb950",fontSize:"14px",fontWeight:700}}>📍 방문 리뷰로 쓰기</span>
+              <span style={{color:"#484f58",fontSize:"12px"}}>· 사진 + 상호명·주소로 플레이스 방문 리뷰 작성 (위 주제 칸은 비워도 됨)</span>
+              <span style={{marginLeft:"auto",color:"#484f58"}}>{visitOpen?"▲":"▼"}</span>
+            </div>
+            {visitOpen&&<div style={{display:"flex",flexDirection:"column",gap:"8px",marginTop:"10px"}}>
+              {(()=>{const inp={flex:"1 1 200px",minWidth:0,padding:"8px 10px",background:"#010409",border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none"};
+              return <>
+              <div style={{display:"flex",gap:"7px",flexWrap:"wrap"}}>
+                <input value={placeName} onChange={e=>setPlaceName(e.target.value)} placeholder="상호명 (예: 밴드폰 안산점)" style={inp}/>
+                <input value={placeAddr} onChange={e=>setPlaceAddr(e.target.value)} placeholder="주소 (예: 경기 안산시 단원구 ...)" style={{...inp,flex:"2 1 280px"}}/>
+              </div>
+              <input value={toneUrl} onChange={e=>setToneUrl(e.target.value)} placeholder="말투 참고할 내 글 주소 (선택 · 예전에 직접 쓴 방문 후기 URL — 말투·줄바꿈만 따라 해요)" style={{...inp,flex:"none",width:"100%",boxSizing:"border-box"}}/>
+              <textarea value={visitMemo} onChange={e=>setVisitMemo(e.target.value)} rows={3}
+                placeholder={"방문 메모 (선택 · 경험은 여기 적은 것과 사진에 보이는 것만 글에 들어가요)\n예: 9/20 토요일 오후 방문, 갤럭시 S26 번호이동 상담, 대기 10분, 요금제 설명이 자세했음, 주차는 건물 뒤편"}
+                style={{...inp,flex:"none",width:"100%",boxSizing:"border-box",resize:"vertical",lineHeight:1.5}}/>
+              <div style={{display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap",fontSize:"13px"}}>
+                <span style={{color:"#8b949e"}}>광고 표기</span>
+                {Object.entries(VISIT_DISCLOSURE).map(([k,v])=>(
+                  <button key={k} onClick={()=>setDisclosure(k)} style={{padding:"4px 10px",borderRadius:"14px",cursor:"pointer",fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
+                    background:disclosure===k?"#1f6feb":"#21262d",color:disclosure===k?"#fff":"#8b949e",border:`1px solid ${disclosure===k?"#1f6feb":"#30363d"}`}}>{v.label}</button>))}
+                {disclosure!=="self"&&<span style={{color:"#d29922",fontSize:"12px"}}>글 맨 앞에 경제적 관계 표기 문구가 자동으로 들어가요{disclosure==="own"?" · 손님 후기가 아닌 매장 소개 관점으로 작성":disclosure==="staff"?" · 직원·회사 관계자가 직접 돈 내고 이용한 경우":""}</span>}
+              </div>
+              <div>
+                <label style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"6px 12px",background:"#21262d",border:"1px dashed #484f58",borderRadius:"8px",color:"#c9d1d9",cursor:visitPhotos.length>=10?"not-allowed":"pointer",fontSize:"13px",fontWeight:700}}>
+                  📷 사진 올리기 ({visitPhotos.length}/10){photoBusy?" · 줄이는 중...":""}
+                  <input type="file" accept="image/*" multiple disabled={visitPhotos.length>=10} style={{display:"none"}} onChange={e=>{addVisitPhotos(e.target.files);e.target.value="";}}/>
+                </label>
+                {visitPhotos.length>0&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"8px"}}>
+                  {visitPhotos.map((p,i)=>(
+                    <div key={i} style={{position:"relative",width:"76px"}}>
+                      <img src={p.dataUrl} alt="" style={{width:"76px",height:"76px",objectFit:"cover",borderRadius:"6px",border:"1px solid #30363d",display:"block"}}/>
+                      <span style={{position:"absolute",left:"3px",top:"3px",background:"#0d1117cc",color:"#e6edf3",fontSize:"11px",fontWeight:700,borderRadius:"4px",padding:"0 4px"}}>{i+1}</span>
+                      <div style={{display:"flex",justifyContent:"space-between",marginTop:"2px"}}>
+                        <button onClick={()=>moveVisitPhoto(i,-1)} style={{background:"none",border:"none",color:"#8b949e",cursor:"pointer",fontSize:"12px",padding:0}}>◀</button>
+                        <button onClick={()=>setVisitPhotos(a=>a.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#f85149",cursor:"pointer",fontSize:"12px",padding:0}}>✕</button>
+                        <button onClick={()=>moveVisitPhoto(i,1)} style={{background:"none",border:"none",color:"#8b949e",cursor:"pointer",fontSize:"12px",padding:0}}>▶</button>
+                      </div>
+                    </div>))}
+                </div>}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+                <button onClick={writeVisit} disabled={!placeName.trim()||photoBusy}
+                  style={{background:placeName.trim()&&!photoBusy?"linear-gradient(135deg,#238636,#2ea043)":"#21262d",border:"none",color:placeName.trim()&&!photoBusy?"#fff":"#484f58",
+                    borderRadius:"8px",padding:"9px 16px",fontSize:"14px",fontWeight:700,cursor:placeName.trim()&&!photoBusy?"pointer":"not-allowed",fontFamily:"'Noto Sans KR',sans-serif"}}>
+                  📍 방문 리뷰 쓰기
+                </button>
+                <span style={{color:"#484f58",fontSize:"12px"}}>
+                  주제: {customTopic.trim()||`${result.keyword} ${placeName.trim()||"(상호명)"} ${disclosure==="own"?"매장 소개":"방문 후기"}`}
+                  {visitPhotos.length===0&&" · 사진 없이도 쓸 수 있지만 사진이 있어야 경험이 구체적으로 나와요"}
+                </span>
+              </div>
+              </>;})()}
+            </div>}
+          </div>
+
           {/* AI 추천 주제 */}
           <div style={{color:"#8b949e",fontSize:"13px",fontWeight:700,marginBottom:"7px"}}>
-            🤖 AI 추천 주제 {result.longtailKeywords?.length>0&&<span style={{color:"#484f58",fontWeight:400}}>· {result.longtailKeywords.length}개 · ✏️ 를 누르면 위 칸으로 가져와 수정할 수 있어요</span>}
+            🤖 AI 추천 주제 {result.profileId&&<span style={{color:"#3fb950",fontWeight:700,marginRight:"4px"}}>· 🎯 @{result.profileId} 맞춤 프로필 기준</span>}{result.longtailKeywords?.length>0&&<span style={{color:"#484f58",fontWeight:400}}>· {result.longtailKeywords.length}개 · ✏️ 를 누르면 위 칸으로 가져와 수정할 수 있어요</span>}
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
             {result.longtailKeywords?.map((kw,i)=>(
@@ -2693,6 +2926,1063 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
 
 
 // ─── TAB 4: 누락 확인 & 포스팅 분석 ─────────────────────────────────────
+// ── 키워드 인사이트 내보내기 (엑셀 / PDF) — 라이브러리는 CDN 런타임 로드 ──
+function loadCdnScript(src,globalName){
+  if(typeof window==="undefined") return Promise.reject(new Error("브라우저 전용"));
+  if(window[globalName]) return Promise.resolve(window[globalName]);
+  return new Promise((resolve,reject)=>{
+    const el=document.createElement("script");
+    el.src=src;
+    el.onload=()=>window[globalName]?resolve(window[globalName]):reject(new Error(globalName+" 로드 실패"));
+    el.onerror=()=>reject(new Error("라이브러리 로드 실패 — 인터넷 연결을 확인해주세요."));
+    document.head.appendChild(el);
+  });
+}
+function insightFileName(meta,ext){
+  const t=new Date(),z=n=>String(n).padStart(2,"0");
+  return `키워드인사이트_${meta.blogId||"blog"}_${meta.scope==="all"?"누적":meta.page+"p"}_${t.getFullYear()}${z(t.getMonth()+1)}${z(t.getDate())}.${ext}`;
+}
+function saveBlob(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
+async function exportInsightXlsx(d,meta){
+  const ExcelJS=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js","ExcelJS");
+  const S=d.summary, ai=d.ai, rows=d.rows||[];
+  const wb=new ExcelJS.Workbook();
+  const FONT="맑은 고딕";
+  const NAVY="FF1F3A5F", LIGHT="FFEAF1FB", GREEN="FFE3F5E6", GRAY="FFF4F6F8", BORDER="FFD0D7DE";
+  const border={top:{style:"thin",color:{argb:BORDER}},bottom:{style:"thin",color:{argb:BORDER}},left:{style:"thin",color:{argb:BORDER}},right:{style:"thin",color:{argb:BORDER}}};
+  const fill=c=>({type:"pattern",pattern:"solid",fgColor:{argb:c}});
+  const head=(ws,rowNo)=>{ws.getRow(rowNo).eachCell(c=>{c.font={name:FONT,bold:true,color:{argb:"FFFFFFFF"},size:10};c.fill=fill(NAVY);c.alignment={vertical:"middle",horizontal:"center"};c.border=border;});ws.getRow(rowNo).height=22;};
+  const body=(ws,from,to,wrapCols=[])=>{for(let r=from;r<=to;r++){ws.getRow(r).eachCell({includeEmpty:true},(c,col)=>{c.font={...(c.font||{}),name:FONT,size:10};c.border=border;c.alignment={vertical:"middle",wrapText:wrapCols.includes(col),horizontal:typeof c.value==="number"?"right":"left"};if(typeof c.value==="number")c.numFmt="#,##0";});}};
+  const title=(ws,text,span)=>{ws.mergeCells(1,1,1,span);const c=ws.getCell(1,1);c.value=text;c.font={name:FONT,bold:true,size:15,color:{argb:NAVY}};ws.getRow(1).height=30;c.alignment={vertical:"middle"};
+    ws.mergeCells(2,1,2,span);const m=ws.getCell(2,1);m.value=`@${meta.blogId} · ${meta.scopeLabel} · 글 ${S.postCount}개 · 키워드 ${S.kwCount}개 · 상위 기준 ${meta.topN}위 이내 · ${new Date().toLocaleString("ko-KR")}`;m.font={name:FONT,size:9,color:{argb:"FF6B7785"}};};
+  const rankCell=(c)=>{if(typeof c.value==="number"&&c.value<=meta.topN){c.fill=fill(GREEN);c.font={...(c.font||{}),name:FONT,size:10,bold:true,color:{argb:"FF1A7F37"}};}c.alignment={vertical:"middle",horizontal:"center"};};
+
+  // ── 시트1: 요약 ──
+  const ws=wb.addWorksheet("요약",{views:[{showGridLines:false}]});
+  ws.columns=[{width:30},{width:16},{width:16},{width:16},{width:60}];
+  title(ws,"키워드 인사이트 리포트",5);
+  let r=4;
+  ws.getRow(r).values=["지표","값","중앙값(월검색)","평균(월검색)","비고"];head(ws,r);r++;
+  const st=r;
+  [
+    ["상위노출 키워드",`${S.topCount} / ${S.kwCount}개`,S.medTop,S.avgTop,`통합검색 또는 블로그탭 ${meta.topN}위 이내`],
+    ["통합검색 상위 키워드",`${S.mainTop.length}개`,S.medMainTop,S.avgMainTop,""],
+    ["블로그탭 상위 키워드",`${S.blogTop.length}개`,S.medBlogTop,S.avgBlogTop,""],
+    ["상위 못 든 키워드",`${S.kwCount-S.topCount}개`,S.medNotTop,S.avgNotTop,""],
+    ["제목검색 누락 글",`${S.missingCount} / ${S.postCount}개`,null,null,"글 제목 그대로 검색했을 때 안 나오는 글"],
+  ].forEach(v=>{ws.getRow(r).values=v;r++;});
+  body(ws,st,r-1,[5]);
+  for(let i=st;i<r;i++){ws.getCell(i,1).font={name:FONT,size:10,bold:true};ws.getCell(i,1).fill=fill(GRAY);ws.getCell(i,2).alignment={horizontal:"center",vertical:"middle"};}
+
+  if(ai){
+    r+=1;ws.mergeCells(r,1,r,5);ws.getCell(r,1).value="AI 분석";ws.getCell(r,1).font={name:FONT,bold:true,size:12,color:{argb:NAVY}};r++;
+    [["진단",ai.diagnosis],["먹히는 구간",ai.sweetSpot],["통합검색 패턴",ai.mainPattern],["블로그탭 패턴",ai.blogPattern],["피할 것",ai.avoid]].filter(x=>x[1]).forEach(([l,t])=>{
+      ws.mergeCells(r,2,r,5);
+      const a=ws.getCell(r,1),b=ws.getCell(r,2);
+      a.value=l;a.font={name:FONT,size:10,bold:true};a.fill=fill(LIGHT);a.alignment={vertical:"top"};a.border=border;
+      b.value=t;b.font={name:FONT,size:10};b.alignment={wrapText:true,vertical:"top"};
+      for(let c=2;c<=5;c++)ws.getCell(r,c).border=border;
+      ws.getRow(r).height=Math.max(20,Math.ceil(String(t).length/52)*16+4);
+      r++;
+    });
+  }
+
+  // ── 시트2: AI 추천 키워드 ──
+  if(ai?.recommend?.length){
+    const w2=wb.addWorksheet("추천 키워드",{views:[{showGridLines:false,state:"frozen",ySplit:4}]});
+    w2.columns=[{width:6},{width:30},{width:14},{width:10},{width:70}];
+    title(w2,"AI 추천 키워드",5);
+    w2.getRow(4).values=["No","키워드","월 검색량","상업성","추천 근거"];head(w2,4);
+    ai.recommend.forEach((x,i)=>{w2.getRow(5+i).values=[i+1,x.keyword,x.monthly??"—",x.commercial?"상업성":"",x.reason||""];w2.getRow(5+i).height=Math.max(20,Math.ceil(String(x.reason||"").length/48)*16+4);});
+    body(w2,5,4+ai.recommend.length,[5]);
+    for(let i=5;i<5+ai.recommend.length;i++){w2.getCell(i,1).alignment={horizontal:"center",vertical:"middle"};w2.getCell(i,2).font={name:FONT,size:10,bold:true};w2.getCell(i,4).alignment={horizontal:"center",vertical:"middle"};if(w2.getCell(i,4).value)w2.getCell(i,4).font={name:FONT,size:10,color:{argb:"FFB35900"}};}
+    w2.getCell(6+ai.recommend.length,1).value="※ 월 검색량은 AI 추정이 아니라 네이버 키워드도구 실측값입니다.";
+    w2.getCell(6+ai.recommend.length,1).font={name:FONT,size:9,color:{argb:"FF6B7785"}};
+  }
+
+  // ── 시트3: 키워드 전체 ──
+  const w3=wb.addWorksheet("키워드 전체",{views:[{showGridLines:false,state:"frozen",ySplit:4}]});
+  w3.columns=[{width:6},{width:30},{width:12},{width:12},{width:14},{width:10},{width:10},{width:60}];
+  title(w3,"분석 키워드 전체",8);
+  w3.getRow(4).values=["No","키워드","통합검색","블로그탭","월 검색량","상위",  "상업성","해당 글"];head(w3,4);
+  const isTop=x=>x!=null&&x<=meta.topN;
+  const sorted=rows.slice().sort((a,b)=>(b.monthly||0)-(a.monthly||0));
+  sorted.forEach((x,i)=>{
+    w3.getRow(5+i).values=[i+1,x.keyword,x.mainRank??"—",x.blogRank??"—",x.monthly??"—",(isTop(x.mainRank)||isTop(x.blogRank))?"●":"",x.commercial?"상업성":"",[...new Set(x.posts||[])].join(" / ")];
+  });
+  body(w3,5,4+sorted.length,[8]);
+  for(let i=5;i<5+sorted.length;i++){[1,6,7].forEach(c=>w3.getCell(i,c).alignment={horizontal:"center",vertical:"middle"});rankCell(w3.getCell(i,3));rankCell(w3.getCell(i,4));if(w3.getCell(i,6).value)w3.getCell(i,6).font={name:FONT,size:10,color:{argb:"FF1A7F37"}};}
+  w3.autoFilter={from:{row:4,column:1},to:{row:4,column:8}};
+
+  const buf=await wb.xlsx.writeBuffer();
+  saveBlob(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),insightFileName(meta,"xlsx"));
+}
+
+function buildInsightReportHtml(d,meta){
+  const S=d.summary, ai=d.ai;
+  const esc=t=>String(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const fmt=n=>n==null?"—":Number(n).toLocaleString();
+  const card=(l,v,sub)=>`<td style="width:25%;padding:0 5px"><div style="border:1px solid #d8dee4;border-radius:8px;padding:10px 12px;background:#f6f8fa">
+    <div style="font-size:11px;color:#57606a">${l}</div><div style="font-size:19px;font-weight:800;color:#1f2328;margin:3px 0">${v}</div><div style="font-size:10px;color:#8c959f">${sub}</div></div></td>`;
+  const list=(titleTxt,arr,key,av,md)=>`<td style="width:50%;padding:0 5px;vertical-align:top"><div style="border:1px solid #d8dee4;border-radius:8px;padding:10px 12px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px"><b style="font-size:12px;color:#1f2328">${titleTxt} <span style="color:#0969da">${arr.length}</span></b><span style="font-size:10px;color:#8c959f">중앙값 ${fmt(md)} · 평균 ${fmt(av)}</span></div>
+    ${arr.length?arr.slice(0,15).map(x=>`<div style="display:flex;gap:8px;font-size:11px;padding:4px 0;border-top:1px solid #eef1f4"><span style="color:#1a7f37;font-weight:800;min-width:30px">${x[key]}위</span><span style="flex:1;color:#1f2328">${esc(x.keyword)}</span><span style="color:#57606a">월 ${fmt(x.monthly)}</span></div>`).join(""):`<div style="font-size:11px;color:#8c959f">${meta.topN}위 이내 키워드 없음</div>`}
+    ${arr.length>15?`<div style="font-size:10px;color:#8c959f;padding-top:4px">외 ${arr.length-15}개 (엑셀에서 전체 확인)</div>`:""}
+  </div></td>`;
+  const sec='page-break-inside:avoid;break-inside:avoid;';
+  return `<div style="font-family:'Noto Sans KR','Malgun Gothic',sans-serif;color:#1f2328;background:#fff;width:760px;padding:6px 4px;box-sizing:border-box">
+    <div style="border-bottom:3px solid #1f3a5f;padding-bottom:8px;margin-bottom:14px">
+      <div style="font-size:21px;font-weight:800;color:#1f3a5f">키워드 인사이트 리포트</div>
+      <div style="font-size:11px;color:#57606a;margin-top:4px">@${esc(meta.blogId)} · ${esc(meta.scopeLabel)} · 글 ${S.postCount}개 · 키워드 ${S.kwCount}개 · 상위 기준 ${meta.topN}위 이내 · ${new Date().toLocaleString("ko-KR")}</div>
+    </div>
+    <table style="width:calc(100% + 10px);border-collapse:collapse;margin:0 -5px 12px;${sec}"><tr>
+      ${card("상위노출 키워드",`${S.topCount} / ${S.kwCount}개`,`${meta.topN}위 이내`)}
+      ${card("상위 키워드 검색량 (중앙값)",fmt(S.medTop),`평균 ${fmt(S.avgTop)}`)}
+      ${card("상위 못 든 키워드 (중앙값)",fmt(S.medNotTop),`평균 ${fmt(S.avgNotTop)}`)}
+      ${card("제목검색 누락",`${S.missingCount} / ${S.postCount}개`,"글 기준")}
+    </tr></table>
+    <table style="width:calc(100% + 10px);border-collapse:collapse;margin:0 -5px 12px"><tr>
+      ${list("통합검색 상위 키워드",S.mainTop,"mainRank",S.avgMainTop,S.medMainTop)}
+      ${list("블로그탭 상위 키워드",S.blogTop,"blogRank",S.avgBlogTop,S.medBlogTop)}
+    </tr></table>
+    ${ai?`<div style="border:1px solid #d8dee4;border-radius:8px;padding:12px 14px;margin-bottom:12px;${sec}">
+      <div style="font-size:13px;font-weight:800;color:#1f3a5f;margin-bottom:6px">AI 분석</div>
+      ${[["진단",ai.diagnosis],["먹히는 구간",ai.sweetSpot],["통합검색 패턴",ai.mainPattern],["블로그탭 패턴",ai.blogPattern],["피할 것",ai.avoid]].filter(x=>x[1]).map(([l,t])=>`<div style="font-size:11.5px;line-height:1.7;margin-bottom:4px"><b style="color:#0969da;margin-right:6px">${l}</b>${esc(t)}</div>`).join("")}
+    </div>`:""}
+    ${ai?.recommend?.length?`<div style="border:1px solid #d8dee4;border-radius:8px;padding:12px 14px">
+      <div style="font-size:13px;font-weight:800;color:#1f3a5f;margin-bottom:6px">추천 키워드</div>
+      ${ai.recommend.map((x,i)=>`<div style="display:flex;gap:10px;font-size:11.5px;padding:6px 0;border-top:1px solid #eef1f4;${sec}"><span style="color:#8c959f;min-width:16px">${i+1}</span><b style="min-width:150px">${esc(x.keyword)}</b><span style="min-width:70px;color:${x.monthly!=null?"#1a7f37":"#8c959f"}">월 ${fmt(x.monthly)}</span><span style="flex:1;color:#57606a;line-height:1.6">${x.commercial?'<span style="color:#b35900">[상업성] </span>':""}${esc(x.reason)}</span></div>`).join("")}
+      <div style="font-size:10px;color:#8c959f;margin-top:6px">※ 월 검색량은 네이버 키워드도구 실측값 · "—"는 데이터 없음</div>
+    </div>`:""}
+  </div>`;
+}
+
+async function exportInsightPdf(d,meta){
+  const html=buildInsightReportHtml(d,meta);
+  try{
+    const html2pdf=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js","html2pdf");
+    try{ if(document.fonts?.ready) await document.fonts.ready; }catch(e){}
+    const el=document.createElement("div");
+    el.innerHTML=html;
+    await html2pdf().set({
+      margin:[10,8,10,8], filename:insightFileName(meta,"pdf"),
+      image:{type:"jpeg",quality:0.96},
+      html2canvas:{scale:2,backgroundColor:"#ffffff",useCORS:true},
+      jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},
+      pagebreak:{mode:["css","legacy"]},
+    }).from(el.firstElementChild).save();
+  }catch(e){
+    // 라이브러리 로드 실패 시 — 인쇄 창을 열어 "PDF로 저장"
+    const w=window.open("","_blank");
+    if(!w){alert("PDF 생성 실패: "+(e?.message||e)+"\n팝업 차단을 해제하면 인쇄 창으로 저장할 수 있어요.");return;}
+    w.document.write(`<html><head><title>${insightFileName(meta,"pdf")}</title><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;800&display=swap" rel="stylesheet"></head><body style="margin:20px;-webkit-print-color-adjust:exact;print-color-adjust:exact">${html}</body></html>`);
+    w.document.close();
+    setTimeout(()=>{w.focus();w.print();},700);
+  }
+}
+
+// ── 블로그 맞춤 프로필 — 누락확인의 인사이트·실제 유입 분석을 글쓰기 프롬프트에 얹는다 ──
+const BP_PREFIX="mt_blog_profile_", BP_ACTIVE="mt_blog_profile_active";
+const bpKey=id=>BP_PREFIX+String(id||"").toLowerCase();
+function bpLoad(id){ try{return JSON.parse(localStorage.getItem(bpKey(id))||"null");}catch(e){return null;} }
+function bpSave(profile){ try{localStorage.setItem(bpKey(profile.blogId),JSON.stringify(profile));return true;}catch(e){return false;} }
+function bpDelete(id){ try{localStorage.removeItem(bpKey(id)); if(bpGetActiveId().toLowerCase()===String(id).toLowerCase()) localStorage.removeItem(BP_ACTIVE);}catch(e){} }
+function bpList(){
+  const out=[];
+  try{ for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(k&&k.startsWith(BP_PREFIX)&&k!==BP_ACTIVE){const p=JSON.parse(localStorage.getItem(k)||"null"); if(p?.blogId) out.push(p);} } }catch(e){}
+  return out.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+}
+function bpGetActiveId(){ try{return localStorage.getItem(BP_ACTIVE)||"";}catch(e){return "";} }
+function bpSetActiveId(id){ try{ if(id) localStorage.setItem(BP_ACTIVE,id); else localStorage.removeItem(BP_ACTIVE);}catch(e){} }
+function bpGetActive(){ const id=bpGetActiveId(); return id?bpLoad(id):null; }
+
+// ── 키워드 점유 확인: 내 블로그 글이 이미 상위에 있는 키워드는 새 글 추천에서 뺀다 ──
+// 네이버는 같은 검색어에 한 블로그의 글을 보통 1개만 올려주므로, 이미 상위인 키워드로 새 글을 써도 자리가 안 난다.
+// 롱테일은 다른 검색어라 막지 않는다 → 띄어쓰기만 무시한 "완전 일치"만 점유로 본다.
+const OCCUPY_TOP=10;
+const kwFlat=k=>String(k||"").replace(/\s+/g,"").toLowerCase();
+function myBlogIdForCheck(){ try{ return (bpGetActiveId()||JSON.parse(localStorage.getItem("bp_blog_id")||'""')||"").trim(); }catch(e){ return ""; } }
+// 누락확인에 저장된 분석에서 점유 키워드 목록 (API 호출 없음)
+function occupiedFromSnapshot(blogId,topN=100){
+  const out={}; if(!blogId) return out;
+  let snap=null; try{ snap=JSON.parse(localStorage.getItem("mt_blog_hist_"+String(blogId).toLowerCase())||"null"); }catch(e){}
+  if(!snap) return out;
+  const seen=snap.seen||{};
+  const add=(postNo,k)=>{
+    if(!k?.keyword||!k.realRank) return;
+    const ar=k.realRank.areas;
+    const blog=ar?.blog?.rank??(["sim","date"].includes(k.realRank.rankSource)?k.realRank.myRank:null)??k.realRank.simRank??null;
+    const main=ar?.main_search?.rank??null;
+    const best=Math.min(blog??999,main??999);
+    if(best>topN) return;
+    const key=kwFlat(k.keyword);
+    if(out[key]&&out[key].rank<=best) return;
+    out[key]={keyword:k.keyword,rank:best,area:(blog??999)<=(main??999)?"블로그탭":"통합검색",title:seen[postNo]?.title||"",date:seen[postNo]?.date||"",at:k._at||null};
+  };
+  // at = 그 순위를 조회한 시각. 예전 저장본엔 없음 → null → "오래됨"으로 취급해 재확인 대상
+  Object.entries(snap.analysis||{}).forEach(([no,a])=>(a?.topKeywords||[]).forEach(k=>add(no,{...k,_at:a.analyzedAt||null})));
+  Object.entries(snap.extraResults||{}).forEach(([no,arr])=>(arr||[]).forEach(k=>add(no,{...k,_at:k.checkedAt||null})));
+  return {...out,__savedAt:snap.savedAt};
+}
+// ── 블로그 체급: 이 블로그가 실제로 상위(10위 안)에 올려본 키워드들의 월 검색량 범위 ──
+// ceil = 상위 키워드 검색량의 상위 10% 선(90백분위). 이보다 큰 키워드는 "체급 초과"로 표시.
+function volRangeFromRows(rows,topN=OCCUPY_TOP){
+  const best=r=>Math.min(r.mainRank??999,r.blogRank??999);
+  const seen=new Set();
+  const v=(rows||[]).filter(r=>{const k=kwFlat(r.keyword);if(seen.has(k))return false;seen.add(k);return best(r)<=topN&&r.monthly!=null;})
+    .map(r=>r.monthly).sort((a,b)=>a-b);
+  if(v.length<5) return null;   // 표본이 너무 적으면 판단 안 함
+  const q=p=>v[Math.min(v.length-1,Math.floor(p*(v.length-1)))];
+  return {med:q(0.5),ceil:q(0.9),n:v.length};
+}
+function blogVolumeRange(blogId,profile){
+  if(profile?.volCeil!=null) return {med:profile.volMed,ceil:profile.volCeil,n:profile.volN,src:"맞춤 프로필"};
+  if(!blogId) return null;
+  let snap=null; try{ snap=JSON.parse(localStorage.getItem("mt_blog_hist_"+String(blogId).toLowerCase())||"null"); }catch(e){}
+  const ins=snap?.insights||{};
+  const rows=[...(ins.all?.rows||[]),...Object.entries(ins).filter(([k])=>k!=="all").flatMap(([,v])=>v?.rows||[])];
+  const r=volRangeFromRows(rows);
+  return r?{...r,src:"누락확인 인사이트"}:null;
+}
+
+// 재확인 결과 캐시 (블로그 ID별, 백업 파일에도 포함됨) — 7일 안에 다시 긁지 않게
+const OCCUPY_FRESH_MS=7*24*60*60*1000;
+const occCacheKey=id=>"mt_occ_check_"+String(id||"").toLowerCase();
+function occCacheLoad(id){ try{return JSON.parse(localStorage.getItem(occCacheKey(id))||"{}")||{};}catch(e){return {};} }
+function occCacheSave(id,c){ try{localStorage.setItem(occCacheKey(id),JSON.stringify(c));}catch(e){} }
+// 상위였던 키워드만 실제 검색으로 다시 확인 (프록시 블로그탭·통합검색 + 검색 API) → 내 블로그 글 최고 순위
+async function recheckMyRank(keyword,blogId){
+  try{
+    const r=await fetch(`/api/naver-rank?keyword=${encodeURIComponent(keyword)}&blogId=${encodeURIComponent(blogId)}`);
+    const d=await r.json(); if(d.error) return null;
+    const ar=d.areas;
+    const blog=ar?.blog?.rank??null, main=ar?.main_search?.rank??null;
+    const api=[d.simRank,d.dateRank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
+    const best=Math.min(blog??999,main??999,api??999);
+    return {rank:best===999?null:best,area:(blog??api??999)<=(main??999)?"블로그탭":"통합검색"};
+  }catch(e){ return null; }
+}
+
+// ── 제목 노출도: 글 제목 그대로 검색했을 때 블로그탭 순위 → 1위 / 2~30위 / 30위 밖 / 누락 ──
+const TITLE_EX_META={
+  top1:{label:"1위",long:"제목 1위",color:"#3fb950",h:1},
+  top30:{label:"2~30위",long:"제목 2~30위",color:"#58a6ff",h:0.68},
+  out:{label:"30위 밖",long:"제목 30위 밖",color:"#d29922",h:0.4},
+  missing:{label:"누락",long:"누락",color:"#f85149",h:0.16},
+  wait:{label:"반영 대기",long:"반영 대기",color:"#6e7681",h:0.16},
+  pending:{label:"미분석",long:"미분석",color:"#30363d",h:0.1},
+};
+// 기준은 블로그탭 하나. 누락 = 제목 그대로 검색했을 때 블로그탭에 아예 안 보이는 경우만.
+// 블로그탭 순위: ① 프록시가 실제 블로그탭에서 찾은 순위 → ② 블로그 검색 API(블로그탭과 같은 결과, 최대 100위) 순위
+// 통합검색 순위는 이 판정에 쓰지 않는다.
+// ── 누락확인은 최근 1년 글만 다룬다 (그 이전 글은 사실상 검색에서 살아남기 어려움) ──
+const RECENT_DAYS=365;
+function isWithinRecent(date,days=RECENT_DAYS){
+  const d=String(date||"").trim();
+  if(!d) return true;                                   // 날짜 모르면 일단 포함
+  if(/전\s*$|어제|방금/.test(d)) return true;          // "3시간 전", "어제"
+  const m=d.match(/(\d{4})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})/); if(!m) return true;
+  const t=new Date(+m[1],+m[2]-1,+m[3]).getTime();
+  return Date.now()-t<=days*24*60*60*1000;
+}
+
+// 제목 따옴표 검색용: 괄호·구두점·특수문자는 검색을 흐트러뜨리므로 공백으로
+function cleanTitleForSearch(t){ return String(t||"").replace(/[()\[\]{}<>!?.,~"'“”‘’…·|:;#*/\\^&%$@+=]/g," ").replace(/\s+/g," ").trim(); }
+// 발행 당일 글(네이버 반영 전일 수 있음)
+function isRecentPost(date){
+  const d=String(date||"");
+  if(/전\s*$/.test(d)) return true;   // "3시간 전" 같은 표기
+  const m=d.match(/(\d{4})\.(\d{2})\.(\d{2})/); if(!m) return false;
+  const now=new Date(); const z=n=>String(n).padStart(2,"0");
+  return `${m[1]}.${m[2]}.${m[3]}`===`${now.getFullYear()}.${z(now.getMonth()+1)}.${z(now.getDate())}`;
+}
+function titleExposureCat(titleRank,postDate){
+  if(!titleRank) return {cat:isRecentPost(postDate)?"wait":"missing",blogRank:null,mainRank:null};
+  const areas=titleRank.areas;
+  const mainRank=areas?.main_search?.rank??null;
+  const apiFromMy=(titleRank.rankSource==="sim"||titleRank.rankSource==="date")?titleRank.myRank:null;
+  const apiRank=[titleRank.simRank,titleRank.dateRank,apiFromMy].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
+  let blogRank=areas?.blog?.rank??apiRank;
+  // 예전에 저장된 결과(API 순위 미저장): 블로그탭 프록시 범위 밖이지만 통합검색엔 떠 있던 글 → 누락이 아니라 "30위 밖"으로
+  const legacyUnknown=blogRank==null&&titleRank.simRank===undefined&&titleRank.rankSource==="통합검색";
+  // 따옴표 검색에서는 찾음 = 반영은 됐지만 일반 검색에선 100위 밖 → "30위 밖"
+  const quoted=blogRank==null&&titleRank.quoteRank!=null;
+  const cat=blogRank!=null?(blogRank<=1?"top1":blogRank<=30?"top30":"out")
+    :(legacyUnknown||quoted)?"out"
+    :isRecentPost(postDate)?"wait":"missing";
+  return {cat,blogRank,mainRank,quoted};
+}
+
+// kind: "keyword"(주제·키워드 추천용) | "write"(본문 작성용)
+function buildProfileBlock(profile,kind){
+  if(!profile) return "";
+  const li=a=>(a||[]).filter(Boolean).map(x=>`- ${x}`).join("\n");
+  const kws=a=>(a||[]).filter(Boolean).slice(0,15).join(", ");
+  const head=`\n[내 블로그 맞춤 기준 — @${profile.blogId} 의 실제 ${profile.hasInflow?"검색 유입·":""}순위 데이터 분석 결과 (${profile.basis||""})]\n${profile.summary||""}\n`;
+  const tl=a=>(a||[]).filter(x=>x?.keyword).map(x=>`- ${x.keyword}${x.reason?` (근거: ${x.reason})`:""}`).join("\n");
+  const axis=profile.coreTopics?.length?`
+이 블로그의 주제 축 (실제 조회·유입·상위노출 데이터로 나눈 것):
+중심 축 — 이 블로그의 전문 분야로 밀 주제:
+${tl(profile.coreTopics)}
+${profile.sideTopics?.length?`곁가지 — 가끔 써도 되는 주제:\n${tl(profile.sideTopics)}\n`:""}${profile.weakTopics?.length?`약한 주제 — 여러 편 써도 반응이 약했던 주제:\n${tl(profile.weakTopics)}\n`:""}`:"";
+  if(kind==="topic"){
+    const ex2=a=>(a||[]).filter(Boolean).slice(0,6).map(t=>`  · ${t}`).join("\n");
+    return `${head}${axis}${profile.coreTopics?.length?`
+주제를 잡을 때: 같은 키워드라도 위 중심 축과 맞닿는 각도(이 블로그가 강한 기기·앱·상황)를 우선하고, 약한 주제 쪽 각도는 피할 것. 키워드 자체가 중심 축 밖이면 억지로 엮지 말고 키워드에 충실할 것.
+`:""}
+추천 주제는 곧 제목 초안이므로 아래 제목 규칙을 따를 것:
+${li(profile.titleRules)}
+${profile.titleGood?.length?`\n제목 그대로 검색했을 때 블로그탭 1위였던 이 블로그 제목 (구조·길이·어투 참고, 문구는 베끼지 말 것):\n${ex2(profile.titleGood)}\n`:""}${profile.titleBad?.length?`\n30위 밖·누락이었던 제목 (이런 형태는 피할 것):\n${ex2(profile.titleBad)}\n`:""}${profile.modifiers?.length?`\n방문자가 실제 검색할 때 붙여 쓰는 수식어 (키워드와 자연스럽게 맞을 때만): ${kws(profile.modifiers)}\n`:""}`;
+  }
+  if(kind==="keyword"){
+    return `${head}${axis}${profile.coreTopics?.length?`
+주제 배분 규칙:
+- 추천하는 주제의 70% 이상은 중심 축 안에서 고를 것. 중심 축 안에서도 매번 다른 기능·앱·기종·요금제 하나를 대상으로 잡아 서로 겹치지 않게.
+- 곁가지 주제는 30% 이내.
+- 약한 주제는 추천하지 말 것. 다만 선택한 카테고리 자체가 그 주제뿐이면 예외.
+- 선택한 카테고리가 중심 축과 거리가 멀면, 그 카테고리 안에서 중심 축과 맞닿는 소재(예: 같은 기기·앱을 쓰는 상황)를 우선할 것.
+`:""}
+키워드·주제를 고르는 규칙:
+${li(profile.keywordRules)}
+${profile.avoid?.length?`\n피할 것:\n${li(profile.avoid)}\n`:""}${profile.proven?.length?`\n이 블로그에서 실제로 유입·상위노출이 검증된 키워드 (같은 결의 주제를 우선하되 똑같은 건 다시 쓰지 말 것): ${kws(profile.proven)}\n`:""}${profile.modifiers?.length?`\n방문자가 실제 검색할 때 붙여 쓰는 수식어: ${kws(profile.modifiers)}\n`:""}${profile.seedKeywords?.length?`\n분석에서 도출된 공략 후보 키워드 (선택한 카테고리에 맞는 것만 참고): ${kws(profile.seedKeywords.map(x=>x.keyword))}\n`:""}
+※ 위 기준은 "어떤 크기·형태의 키워드를 고를지"에 대한 것이다. 카테고리와 무관한 주제를 억지로 끌어오지 말 것.
+`;
+  }
+  const ex=a=>(a||[]).filter(Boolean).slice(0,8).map(t=>`  · ${t}`).join("\n");
+  const axisWrite=profile.coreTopics?.length?`
+이 블로그의 중심 축: ${profile.coreTopics.map(x=>x.keyword).join(", ")}
+- 이 글의 주제가 중심 축에 속하면: 그 분야를 꾸준히 다뤄온 사람의 시선으로, 같은 분야에서 독자가 이어서 궁금해할 기능·설정·상황을 소제목 하나 정도로 짚어줄 것 (다른 글 링크나 "지난 글에서" 같은 언급은 금지).
+- 중심 축 밖의 주제면: 억지로 중심 축과 엮지 말고 주제에 충실할 것.
+`:"";
+  return `${head}${axisWrite}
+제목 규칙 (이 블로그에서 실제로 먹힌 형태):
+${li(profile.titleRules)}
+${profile.titleGood?.length?`\n제목 그대로 검색했을 때 블로그탭 1위였던 제목들 (이런 구조·길이·어투를 참고, 문구를 베끼지는 말 것):\n${ex(profile.titleGood)}\n`:""}${profile.titleBad?.length?`\n제목 그대로 검색해도 30위 밖이거나 누락된 제목들 (이런 형태는 피할 것):\n${ex(profile.titleBad)}\n`:""}
+본문 규칙:
+${li(profile.writingRules)}
+${profile.modifiers?.length?`\n방문자가 실제 검색할 때 붙여 쓰는 수식어 (주제와 자연스럽게 맞을 때만 소제목·본문에 반영): ${kws(profile.modifiers)}\n`:""}
+※ 이 맞춤 기준은 사실 원칙·주제 원칙보다 아래 순위다. 충돌하면 사실·주제 원칙을 따를 것. 맞춤 기준을 지키려고 없는 사실을 만들지 말 것.
+`;
+}
+
+// ── AI에게 구조화된 결과를 받기 — tool 강제 호출이라 따옴표/줄바꿈 때문에 JSON이 깨질 일이 없다 ──
+async function callClaudeJson(prompt,fields,maxTokens=3000,model="claude-sonnet-4-5-20250929"){
+  const props={};
+  Object.entries(fields).forEach(([k,t])=>{
+    props[k]=t==="string"?{type:"string"}
+      :t==="string[]"?{type:"array",items:{type:"string"}}
+      :{type:"array",items:{type:"object",properties:{keyword:{type:"string"},reason:{type:"string"}},required:["keyword","reason"]}};
+  });
+  const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({model,max_tokens:maxTokens,messages:[{role:"user",content:prompt}],
+      tools:[{name:"report",description:"분석 결과를 제출한다",input_schema:{type:"object",properties:props,required:Object.keys(fields)}}],
+      tool_choice:{type:"tool",name:"report"}})});
+  const data=await res.json();
+  if(data?.error) throw new Error(data.error?.message||(typeof data.error==="string"?data.error:"AI 오류"));
+  const tu=(data.content||[]).find(c=>c.type==="tool_use");
+  if(tu?.input&&Object.keys(tu.input).length) return tu.input;
+  const raw=(data.content||[]).find(c=>c.type==="text")?.text||"";
+  if(raw) return safeParseJson(raw.replace(/```json|```/g,"").trim());
+  throw new Error(data.stop_reason==="max_tokens"?"AI 응답이 너무 길어 잘렸습니다. 다시 시도해주세요.":"AI 응답이 비어 있습니다.");
+}
+
+// ── 누락 확인 > 실제 유입 비교 (네이버 블로그 통계 "지표 다운로드" 엑셀) ──
+const ifNorm=k=>String(k||"").replace(/\s+/g,"").toLowerCase();
+// 시트(2차원 배열) 1개 → {type:"inflow"|"views", period:"2026.08", ...}
+function parseNaverStatSheet(rows){
+  const meta={};
+  rows.slice(0,8).forEach(r=>{if(r&&r[0])meta[String(r[0]).trim()]=String(r[1]??"").trim();});
+  const name=meta["데이터명"]||"";
+  const pm=(meta["데이터 기간"]||"").match(/(\d{4})\.(\d{2})\.(\d{2})/);
+  const period=pm?`${pm[1]}.${pm[2]}`:"";
+  const periodStart=pm?new Date(+pm[1],+pm[2]-1,+pm[3]).getTime():0;
+  const unit=meta["데이터 단위"]||"";
+  const hi=rows.findIndex(r=>r&&(r[0]==="유입경로"||r[0]==="순위"));
+  if(hi<0) return null;
+  const body=rows.slice(hi+1);
+  if(name.includes("유입분석")){
+    let ch="",chRatio=0; const channels=[],kws=[];
+    body.forEach(r=>{
+      if(!r) return;
+      if(r[0]&&String(r[0]).trim()!==ch){ch=String(r[0]).trim();chRatio=parseFloat(r[1])||0;channels.push({name:ch,ratio:chRatio});}
+      const d=String(r[2]??"").trim(); const ratio=parseFloat(r[3])||0;
+      if(!d||/^https?:\/\//i.test(d)||d==="기타"||!ratio) return;
+      const type=ch.includes("통합검색")?"main":ch.includes("블로그검색")?"blog":/검색|bing|google|daum|zum/i.test(ch)?"etc":null;
+      if(!type) return;
+      kws.push({keyword:d,ratio,type,channel:ch});
+    });
+    return {type:"inflow",period,periodStart,unit,channels,kws};
+  }
+  if(name.includes("조회수 순위")){
+    const posts=body.filter(r=>r&&r[1]&&r[2]!==""&&r[2]!=null).map(r=>({title:String(r[1]).trim(),views:parseInt(String(r[2]).replace(/,/g,""))||0,date:String(r[3]||"").slice(0,10)}));
+    return {type:"views",period,periodStart,unit,posts,totalViews:posts.reduce((a,b)=>a+b.views,0)};
+  }
+  return null;
+}
+// 여러 달 파일 합치기 → 키워드별 추정 유입수
+function aggregateInflow(parsed){
+  const inflows=parsed.filter(x=>x?.type==="inflow").sort((a,b)=>a.periodStart-b.periodStart);
+  const views=parsed.filter(x=>x?.type==="views");
+  const viewsBy={};views.forEach(v=>{viewsBy[v.period]=v;});
+  const map={};
+  const months=inflows.map(f=>{
+    const tv=viewsBy[f.period]?.totalViews||0;
+    const sum=t=>f.channels.filter(c=>t(c.name)).reduce((a,b)=>a+b.ratio,0);
+    f.kws.forEach(k=>{
+      const key=ifNorm(k.keyword);
+      const m=map[key]||(map[key]={keyword:k.keyword,ratio:0,est:0,main:0,blog:0,months:new Set()});
+      m.ratio+=k.ratio; m.est+=tv?k.ratio/100*tv:0; m[k.type==="blog"?"blog":"main"]+=k.ratio; m.months.add(f.period);
+    });
+    return {period:f.period,totalViews:tv,mainRatio:+sum(n=>n.includes("통합검색")).toFixed(1),blogRatio:+sum(n=>n.includes("블로그검색")).toFixed(1)};
+  });
+  const hasViews=months.some(m=>m.totalViews>0);
+  const keywords=Object.values(map).map(m=>({...m,est:Math.round(m.est*10)/10,ratio:+m.ratio.toFixed(2),main:+m.main.toFixed(2),blog:+m.blog.toFixed(2),months:[...m.months]}))
+    .sort((a,b)=>hasViews?(b.est-a.est):(b.ratio-a.ratio));
+  const topPosts={};views.forEach(v=>v.posts.forEach(p=>{const t=topPosts[p.title]||(topPosts[p.title]={title:p.title,views:0,date:p.date});t.views+=p.views;}));
+  const last=inflows[inflows.length-1];
+  const periodEnd=last?new Date(new Date(last.periodStart).getFullYear(),new Date(last.periodStart).getMonth()+1,0,23,59).getTime():0;
+  return {months,keywords,hasViews,periodEnd,topPosts:Object.values(topPosts).sort((a,b)=>b.views-a.views).slice(0,15)};
+}
+// 인사이트(순위 키워드) vs 실제 유입 비교
+function compareInsightInflow(rows,agg,topN,postDates){
+  const score=k=>agg.hasViews?k.est:k.ratio;
+  const inflow=agg.keywords.map(k=>({...k,n:ifNorm(k.keyword)}));
+  const best=r=>Math.min(r.mainRank??999,r.blogRank??999);
+  const parseD=t=>{const m=String(t||"").match(/(\d{4})\.(\d{1,2})\.(\d{1,2})/);return m?new Date(+m[1],+m[2]-1,+m[3]).getTime():(t?Date.now():0);};
+  const out=(rows||[]).map(r=>{
+    const n=ifNorm(r.keyword);
+    const hits=n.length>=2?inflow.filter(k=>k.n===n||(n.length>=4&&k.n.includes(n))):[];
+    const dates=(r.posts||[]).map(t=>parseD(postDates?.[t])).filter(Boolean);
+    const afterPeriod=dates.length>0&&Math.min(...dates)>agg.periodEnd;
+    return {...r,best:best(r),inflow:+hits.reduce((a,b)=>a+score(b),0).toFixed(1),variants:hits.filter(h=>h.n!==n).slice(0,3).map(h=>h.keyword),afterPeriod};
+  });
+  const rowNorms=new Set(out.map(r=>ifNorm(r.keyword)));
+  const bySc=(a,b)=>b.inflow-a.inflow;
+  return {
+    winners:out.filter(r=>r.best<=topN&&r.inflow>0).sort(bySc),                         // 상위 + 실제 유입 O
+    hollow:out.filter(r=>r.best<=topN&&r.inflow===0&&!r.afterPeriod).sort((a,b)=>(b.monthly||0)-(a.monthly||0)), // 상위인데 유입 0
+    push:out.filter(r=>r.best>topN&&r.best<=30&&r.inflow>0).sort(bySc),                 // 순위 낮은데 유입 O → 보강
+    tooNew:out.filter(r=>r.best<=topN&&r.inflow===0&&r.afterPeriod).length,
+    hidden:inflow.filter(k=>!rowNorms.has(k.n)).slice(0,40)                             // 인사이트에 없던 실제 유입 키워드
+      .map(k=>({keyword:k.keyword,score:+score(k).toFixed(1),main:k.main,blog:k.blog,months:k.months.length,
+        variantOf:out.find(r=>ifNorm(r.keyword).length>=4&&k.n.includes(ifNorm(r.keyword)))?.keyword||null})),
+  };
+}
+
+// ── 누락 확인 > 실제 유입 비교 패널 ──
+function InflowPanel({inflow,setInflow,rows,insightAi,topN,postDates,blogId,scopeLabel,insightSummary}){
+  const fileRef=useRef(null);
+  const [profile,setProfile]=useState(null);
+  const [profOpen,setProfOpen]=useState(false);
+  useEffect(()=>{setProfile(blogId?bpLoad(blogId):null);},[blogId]);
+  const [busy,setBusy]=useState("");
+  const [err,setErr]=useState("");
+  const agg=inflow?.agg||null;
+  const cmpReal=useMemo(()=>agg&&rows?.length?compareInsightInflow(rows,agg,topN,postDates):null,[agg,rows,topN,postDates]);
+  const cmp=cmpReal;
+  const unit=agg?.hasViews?"회":"%";
+  const fmt=n=>n==null?"—":Number(n).toLocaleString();
+  const box={background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",padding:"10px 12px"};
+  const btn=(dis)=>({padding:"6px 12px",background:"#21262d",color:dis?"#484f58":"#58a6ff",border:"1px solid #30363d",borderRadius:"6px",
+    cursor:dis?"not-allowed":"pointer",fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"});
+
+  const onFiles=async(e)=>{
+    const files=[...(e.target.files||[])]; e.target.value="";
+    if(!files.length) return;
+    setBusy("파일 읽는 중...");setErr("");
+    try{
+      const XLSX=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js","XLSX");
+      // zip이면 풀어서 안의 엑셀을 전부 꺼낸다 (파일 종류·기간은 이름이 아니라 내용으로 구분하므로 한글 파일명 깨져도 무관)
+      const buffers=[];
+      for(const f of files){
+        if(/\.(alz|egg|7z|rar)$/i.test(f.name)) throw new Error("알집 전용 형식(.alz/.egg)이나 7z·rar은 못 읽어요. 압축할 때 형식을 ZIP으로 선택해주세요.");
+        if(/\.zip$/i.test(f.name)){
+          const JSZip=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js","JSZip");
+          const zip=await JSZip.loadAsync(await f.arrayBuffer());
+          for(const entry of Object.values(zip.files)){
+            if(entry.dir) continue;
+            const ab=await entry.async("arraybuffer");
+            const h=new Uint8Array(ab.slice(0,2));
+            if(h[0]===0x50&&h[1]===0x4B) buffers.push(ab);   // xlsx는 내부적으로 zip(PK) — 확장자 대신 시그니처로 판별
+          }
+        }else buffers.push(await f.arrayBuffer());
+      }
+      const parsed=[];
+      for(const ab of buffers){
+        try{
+          const wb=XLSX.read(ab);
+          const p=parseNaverStatSheet(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""}));
+          if(p) parsed.push(p);
+        }catch(e){}
+      }
+      if(!parsed.some(x=>x.type==="inflow")) throw new Error("유입분석 파일을 찾지 못했어요. 지표 다운로드에서 '유입분석'을 받아 올려주세요.");
+      const a=aggregateInflow(parsed);
+      setInflow({agg:{...a,keywords:a.keywords.slice(0,400)},fileCount:parsed.length,uploadedAt:Date.now(),ai:null});
+    }catch(ex){setErr(ex?.message||"파일을 읽지 못했습니다.");}
+    setBusy("");
+  };
+
+  const runAi=async()=>{
+    if(!agg||busy) return;
+    // 인사이트를 아직 안 돌렸으면 유입 데이터만으로 분석 (비교 항목은 비워서 보냄)
+    const cmp=cmpReal||{winners:[],hollow:[],push:[],tooNew:0,
+      hidden:agg.keywords.slice(0,40).map(k=>({keyword:k.keyword,score:agg.hasViews?k.est:k.ratio,main:k.main,blog:k.blog,months:k.months.length,variantOf:null}))};
+    const noInsight=!cmpReal;
+    setBusy("AI가 실제 유입과 비교 분석 중...");setErr("");
+    try{
+      // 숨은 키워드 상위 15개는 월 검색량을 붙여서 "검색량 대비 유입"을 보게 한다
+      const hid=cmp.hidden.slice(0,15).map(h=>({...h}));
+      const qc=v=>{const t=String(v??"");if(t.includes("<"))return 5;return Number(t.replace(/,/g,""))||0;};
+      for(let i=0;i<hid.length;i+=5){
+        const ch=hid.slice(i,i+5);
+        try{const r=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(ch.map(c=>c.keyword).join(","))}`);const d=await r.json();
+          (d.keywordList||[]).forEach(it=>{const h=ch.find(c=>ifNorm(c.keyword)===ifNorm(it.relKeyword));if(h)h.monthly=qc(it.monthlyPcQcCnt)+qc(it.monthlyMobileQcCnt);});}catch(e){}
+      }
+      const L=(arr,f)=>arr.length?arr.map(f).join("\n"):"(없음)";
+      const prompt=`네이버 블로그 @${blogId}의 "순위 기반 키워드 인사이트"와 "네이버 통계의 실제 검색 유입"을 비교한 데이터다.
+유입 단위: ${agg.hasViews?"추정 유입 횟수(유입비율×월 조회수 합)":"유입 비율(%)"} / 기간: ${agg.months.map(m=>m.period).join(", ")} / 인사이트 범위: ${scopeLabel}
+
+[월별 채널 비중] ${agg.months.map(m=>`${m.period}: 조회수 ${m.totalViews||"?"} · 통합검색 ${m.mainRatio}% · 블로그탭 ${m.blogRatio}%`).join(" / ")}
+
+[실제 유입 상위 키워드 30] (키워드 | 유입 | 통합% | 블로그탭% | 유입된 개월수)
+${L(agg.keywords.slice(0,30),k=>`${k.keyword} | ${agg.hasViews?k.est:k.ratio} | ${k.main} | ${k.blog} | ${k.months.length}`)}
+
+[A. 상위노출 + 실제 유입 있음] (키워드 | 최고순위 | 월검색량 | 유입 | 실제 검색된 변형어)
+${L(cmp.winners.slice(0,20),r=>`${r.keyword} | ${r.best}위 | ${r.monthly??"?"} | ${r.inflow} | ${r.variants.join(", ")||"-"}`)}
+
+[B. 상위노출인데 유입 0 = 허수] (키워드 | 최고순위 | 월검색량)
+${L(cmp.hollow.slice(0,25),r=>`${r.keyword} | ${r.best}위 | ${r.monthly??"?"}`)}
+(기간 이후 발행이라 판단 보류한 키워드 ${cmp.tooNew}개는 제외함)
+
+[C. 순위 11~30위인데 유입 있음 = 보강 후보]
+${L(cmp.push.slice(0,15),r=>`${r.keyword} | ${r.best}위 | 유입 ${r.inflow}`)}
+
+[D. 인사이트에 없던 실제 유입 키워드] (키워드 | 유입 | 월검색량 | 어떤 분석 키워드의 변형인지)
+${L(hid,h=>`${h.keyword} | ${h.score} | ${h.monthly??"?"} | ${h.variantOf||"-"}`)}
+
+[조회수 상위 글] ${L(agg.topPosts.slice(0,10),p=>`${p.title} (${p.views})`)}
+
+[기존 인사이트의 추정] ${insightAi?.sweetSpot||"(없음)"}
+
+${noInsight?"※ 순위 기반 인사이트는 아직 실행하지 않아 A·B·C는 비어 있고 D는 실제 유입 상위 키워드 전체다. gap/hollow 항목은 빈 문자열로 두고, 실제 유입 데이터만으로 분석해라.\n":""}기존 인사이트는 "순위"만 보고 추정한 것이고, 위 데이터는 실제 유입이다. 둘의 차이를 짚고 앞으로 어떻게 바꿔야 하는지 분석해라. 데이터에 없는 수치는 지어내지 마라.
+아래 항목을 채워 report 도구로 제출:
+{"gap":"순위 기반 추정과 실제 유입의 가장 큰 차이 2~3문장","realSweetSpot":"실제로 유입을 만드는 키워드의 형태·검색량 구간 1~2문장","hollow":"허수 키워드의 공통점과 그만해야 할 것 1~2문장","hidden":"인사이트가 놓친 유입 키워드에서 보이는 패턴(사람들이 실제로 붙여 검색하는 수식어 등) 1~2문장","channel":"통합검색 vs 블로그탭 비중 변화가 의미하는 것 1문장","actions":["바로 할 일 (구체적 글/키워드 지목)"],"recommend":[{"keyword":"추천 키워드","reason":"실제 유입 근거 1문장"}]}
+actions 5개, recommend 8개.`;
+      const ai=await callClaudeJson(prompt,{gap:"string",realSweetSpot:"string",hollow:"string",hidden:"string",channel:"string",actions:"string[]",recommend:"kw[]"});
+      if(!ai) throw new Error("AI 응답을 해석하지 못했습니다. 다시 시도해주세요.");
+      const rec=(ai.recommend||[]).filter(x=>x?.keyword).slice(0,10);
+      for(let i=0;i<rec.length;i+=5){
+        const ch=rec.slice(i,i+5);
+        try{const r=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(ch.map(c=>c.keyword).join(","))}`);const d=await r.json();
+          (d.keywordList||[]).forEach(it=>{const h=ch.find(c=>ifNorm(c.keyword)===ifNorm(it.relKeyword));if(h)h.monthly=qc(it.monthlyPcQcCnt)+qc(it.monthlyMobileQcCnt);});}catch(e){}
+      }
+      ai.recommend=rec;
+      setInflow(p=>({...p,ai,aiScope:noInsight?"유입 데이터만":scopeLabel}));
+    }catch(ex){setErr(ex?.message||"AI 분석 실패");}
+    setBusy("");
+  };
+
+  // ── 글쓰기 맞춤 프로필 만들기: 인사이트(+실제 유입) → 카테고리·키워드·제목·본문 규칙 ──
+  const makeProfile=async(aiOverride,force)=>{
+    if((busy&&!force)||!rows?.length) return;
+    const inflowAi=aiOverride||inflow?.ai||null;
+    setBusy("글쓰기 맞춤 프로필 만드는 중...");setErr("");
+    try{
+      const cats=NAVER_AUTO_CATEGORIES.flatMap(g=>g.items.map(i=>i.value));
+      const best=r=>Math.min(r.mainRank??999,r.blogRank??999);
+      const topRows=rows.filter(r=>best(r)<=topN).sort((a,b)=>(b.monthly||0)-(a.monthly||0));
+      // 실검색 수식어: 유입 키워드에서 자주 붙는 단어
+      const modCount={};
+      (agg?.keywords||[]).slice(0,200).forEach(k=>String(k.keyword).split(/\s+/).slice(1).forEach(t=>{if(t.length>=2)modCount[t]=(modCount[t]||0)+1;}));
+      const modifiers=Object.keys(modCount).filter(k=>modCount[k]>=3).sort((a,b)=>modCount[b]-modCount[a]).slice(0,15);
+      const proven=cmp?[...cmp.winners.map(r=>r.keyword),...cmp.hidden.slice(0,12).map(h=>h.keyword)]:topRows.slice(0,15).map(r=>r.keyword);
+      const L=(arr,f)=>arr.length?arr.map(f).join("\n"):"(없음)";
+      const tex=insightSummary?.titleEx||[];
+      const titleGood=tex.filter(t=>t.cat==="top1").map(t=>t.title);
+      const titleBad=tex.filter(t=>t.cat==="out"||t.cat==="missing").map(t=>t.title);
+      // 글별 성과: 주제 축을 가르는 근거 (제목 · 제목노출 · 조회수)
+      const viewsByTitle={};(agg?.topPosts||[]).forEach(p=>{viewsByTitle[kwFlat(p.title)]=(viewsByTitle[kwFlat(p.title)]||0)+(Number(p.views)||0);});
+      const exLabel={top1:"제목1위",top30:"제목2~30위",out:"제목30위밖",missing:"제목누락"};
+      const postPerf=tex.slice(0,80).map(t=>`- ${t.title} | ${exLabel[t.cat]||"-"}${viewsByTitle[kwFlat(t.title)]!=null?` | 조회 ${viewsByTitle[kwFlat(t.title)]}`:""}`);
+      const extraTop=(agg?.topPosts||[]).filter(p=>!tex.some(t=>kwFlat(t.title)===kwFlat(p.title))).slice(0,20).map(p=>`- ${p.title} | 조회 ${p.views} (분석 범위 밖 과거 글)`);
+      const prompt=`네이버 블로그 @${blogId}의 분석 데이터다. 이 블로그 전용 "글쓰기 맞춤 기준"을 만들어라. 이 기준은 앞으로 AI가 이 블로그의 글 주제·키워드를 추천하고 본문을 쓸 때 프롬프트에 그대로 추가된다.
+
+[분석 범위] ${scopeLabel} / 상위 = ${topN}위 이내${agg?` / 실제 유입 데이터: ${agg.months.map(m=>m.period).join(", ")}`:" / 실제 유입 데이터 없음(순위 기반 추정만 있음)"}
+${insightSummary?`[순위 집계] 상위노출 키워드 ${insightSummary.topCount}/${insightSummary.kwCount}개 · 상위 키워드 월검색량 중앙값 ${insightSummary.medTop??"?"} · 상위 못 든 키워드 중앙값 ${insightSummary.medNotTop??"?"}`:""}
+
+[상위노출 키워드] (키워드 | 최고순위 | 월검색량)
+${L(topRows.slice(0,30),r=>`${r.keyword} | ${best(r)}위 | ${r.monthly??"?"}`)}
+
+[순위 기반 AI 인사이트]
+- 먹히는 구간: ${insightAi?.sweetSpot||"-"}
+- 통합검색 패턴: ${insightAi?.mainPattern||"-"}
+- 블로그탭 패턴: ${insightAi?.blogPattern||"-"}
+- 피할 것: ${insightAi?.avoid||"-"}
+- 먹히는 제목: ${insightAi?.titlePattern||"-"}
+- 피할 제목: ${insightAi?.titleAvoid||"-"}
+
+[제목 노출도 — 제목 그대로 검색했을 때 블로그탭 순위] 1위 ${titleGood.length} / 30위 밖·누락 ${titleBad.length}
+1위 제목:
+${L(titleGood.slice(0,12),t=>`- ${t}`)}
+30위 밖·누락 제목:
+${L(titleBad.slice(0,12),t=>`- ${t}`)}
+${agg?`
+[실제 유입 상위 키워드 25] (키워드 | ${agg.hasViews?"추정 유입수":"유입%"})
+${L(agg.keywords.slice(0,25),k=>`${k.keyword} | ${agg.hasViews?k.est:k.ratio}`)}
+
+[조회수 상위 글] ${L(agg.topPosts.slice(0,10),p=>`${p.title} (${p.views})`)}
+[월별 채널] ${agg.months.map(m=>`${m.period}: 통합 ${m.mainRatio}% · 블로그탭 ${m.blogRatio}%`).join(" / ")}
+${cmp?`[A. 상위노출 + 실제 유입 있음 = 진짜 효자] (키워드 | 최고순위 | 유입 | 실제 검색된 변형어)
+${L(cmp.winners.slice(0,20),r=>`${r.keyword} | ${r.best}위 | ${r.inflow} | ${r.variants.join(", ")||"-"}`)}
+[B. 상위노출인데 유입 0 = 허수] ${cmp.hollow.slice(0,20).map(r=>`${r.keyword}(${r.best}위·월${r.monthly??"?"})`).join(", ")||"(없음)"}
+[C. 순위 11~30위인데 유입 있음 = 보강 후보] ${cmp.push.slice(0,10).map(r=>`${r.keyword}(${r.best}위·유입${r.inflow})`).join(", ")||"(없음)"}
+[D. 인사이트에 없던 실제 유입 키워드 = 놓친 패턴] (키워드 | 유입 | 어떤 분석 키워드의 변형인지)
+${L(cmp.hidden.slice(0,20),h=>`${h.keyword} | ${h.score} | ${h.variantOf||"-"}`)}`:""}
+${inflowAi?`[실제 유입 비교 AI 분석]
+- 추정 vs 실제: ${inflowAi.gap||"-"}
+- 실제 먹히는 구간: ${inflowAi.realSweetSpot||"-"}
+- 허수: ${inflowAi.hollow||"-"}
+- 놓친 패턴: ${inflowAi.hidden||"-"}`:""}`:""}
+[실검색 수식어 빈도 상위] ${modifiers.join(", ")||"(없음)"}
+
+[글별 성과] (제목 | 제목검색 노출 | 조회수 — 조회수는 유입 파일에 있는 글만)
+${postPerf.length?postPerf.join("\n"):"(없음)"}
+${extraTop.length?extraTop.join("\n"):""}
+
+작성 지침:
+- 실제 유입 데이터가 있으면 순위 기반 추정보다 실제 유입을 우선 근거로 삼아라. A(효자)의 공통 형태는 따르고, B(허수)의 공통 형태는 피하고, D(놓친 패턴)에서 사람들이 실제로 붙여 검색하는 수식어·표현을 읽어내 규칙에 반영해라. 별도 서술 분석 없이 이 한 번의 호출로 결론까지 내라.
+- 규칙은 다른 AI가 읽고 바로 따를 수 있게 구체적인 명령문으로 써라. "좋은 키워드를 고를 것" 같은 일반론 금지. 검색량 구간, 단어 수, 붙일 수식어 유형, 주제 영역을 데이터에서 읽히는 대로 명시해라.
+- 데이터에 없는 수치는 지어내지 마라.
+- categories는 반드시 다음 목록의 값 그대로 3개: ${cats.join(", ")}
+  (keyword 필드에 카테고리 값, reason에 이 블로그 데이터에서의 근거)
+- seedKeywords는 다음에 쓸 만한 공략 키워드 10개 (keyword, reason).
+- coreTopics / sideTopics / weakTopics — 이 블로그의 "주제 축"을 나눠라. [글별 성과]·[조회수 상위 글]·[실제 유입 키워드]·[상위노출 키워드]를 주제별로 묶어서 성과를 비교하라.
+  · 주제는 "IT" 같은 넓은 분류가 아니라 "스마트폰 기능·설정", "통신사 요금제·결합", "메신저(카톡) 사용 팁"처럼 한 단계 좁힌 이름으로.
+  · coreTopics(1~2개): 조회수·유입·상위노출이 가장 몰린 주제. 이 블로그가 전문 분야로 밀어야 할 중심 축.
+  · sideTopics(2~4개): 가끔 써도 되는 곁가지. 성과는 중간이거나 표본이 적은 주제.
+  · weakTopics(1~3개): 여러 편 썼는데도 유입·상위노출이 약했던 주제.
+  · 각 항목 reason에는 반드시 근거를 데이터로 적어라 (예: "조회 상위 10개 중 6개, 유입 상위 키워드 대부분"). 데이터가 부족하면 weakTopics는 비워도 된다.
+- titleRules는 제목 노출도 데이터를 근거로 써라: 1위 제목들의 공통 형태(길이·단어 수·구조·수식어)는 따르고, 30위 밖·누락 제목들의 공통 형태는 피하는 규칙으로. 노출도 데이터가 없으면 유입·순위 데이터로만 써라.
+
+항목: summary(이 블로그의 체급과 강점 2문장), categories, coreTopics, sideTopics, weakTopics, keywordRules(4~6개), titleRules(3~5개), writingRules(3~5개), avoid(3~5개), seedKeywords (seedKeywords는 대부분 coreTopics 안에서)`;
+      const ai=await callClaudeJson(prompt,{summary:"string",categories:"kw[]",coreTopics:"kw[]",sideTopics:"kw[]",weakTopics:"kw[]",keywordRules:"string[]",titleRules:"string[]",writingRules:"string[]",avoid:"string[]",seedKeywords:"kw[]"},4000);
+      if(!ai?.keywordRules?.length) throw new Error("프로필 생성 결과가 비어 있습니다. 다시 시도해주세요.");
+      const p={blogId,createdAt:Date.now(),hasInflow:!!agg,basis:`${scopeLabel}${agg?` + 유입 ${agg.months.map(m=>m.period).join("·")}`:""}`,
+        summary:ai.summary||"",categories:(ai.categories||[]).filter(c=>cats.includes(c.keyword)).slice(0,3),
+        coreTopics:(ai.coreTopics||[]).slice(0,2),sideTopics:(ai.sideTopics||[]).slice(0,4),weakTopics:(ai.weakTopics||[]).slice(0,3),
+        keywordRules:ai.keywordRules||[],titleRules:ai.titleRules||[],writingRules:ai.writingRules||[],avoid:ai.avoid||[],
+        seedKeywords:(ai.seedKeywords||[]).slice(0,10),proven:[...new Set(proven)].slice(0,20),modifiers,
+        titleGood:titleGood.slice(0,10),titleBad:titleBad.slice(0,10),
+        ...(()=>{const vr=volRangeFromRows(rows,topN);return vr?{volMed:vr.med,volCeil:vr.ceil,volN:vr.n}:{};})()};
+      if(!bpSave(p)) throw new Error("브라우저 저장소에 저장하지 못했습니다.");
+      bpSetActiveId(blogId);
+      setProfile(p);setProfOpen(true);
+    }catch(ex){setErr(ex?.message||"프로필 생성 실패");}
+    setBusy("");
+  };
+
+  const list=(title,color,arr,render,empty,note)=>(
+    <div style={box}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:"8px",marginBottom:"4px"}}>
+        <span style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>{title} <span style={{color}}>{arr.length}</span></span>
+        {note&&<span style={{color:"#484f58",fontSize:"12px"}}>{note}</span>}
+      </div>
+      {arr.length?arr.slice(0,10).map(render):<div style={{color:"#484f58",fontSize:"13px",padding:"6px 0"}}>{empty}</div>}
+      {arr.length>10&&<div style={{color:"#484f58",fontSize:"12px",paddingTop:"4px"}}>외 {arr.length-10}개</div>}
+    </div>
+  );
+  const row=(k,left,leftColor,name,right,sub)=>(
+    <div key={k} style={{display:"flex",alignItems:"baseline",gap:"8px",padding:"5px 0",borderBottom:"1px solid #161b22",fontSize:"13px"}}>
+      <span style={{color:leftColor,fontWeight:800,minWidth:"44px",whiteSpace:"nowrap"}}>{left}</span>
+      <span style={{flex:1,minWidth:0}}>
+        <a href={`https://search.naver.com/search.naver?query=${encodeURIComponent(name)}`} target="_blank" rel="noreferrer" style={{color:"#c9d1d9",textDecoration:"none"}}>{name}</a>
+        {sub&&<span style={{color:"#484f58",fontSize:"12px",marginLeft:"6px"}}>{sub}</span>}
+      </span>
+      <span style={{color:"#8b949e",whiteSpace:"nowrap"}}>{right}</span>
+    </div>
+  );
+
+  return <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px 18px",display:"flex",flexDirection:"column",gap:"12px"}}>
+    <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+      <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:700}}>📥 실제 유입 비교</div>
+      {agg&&<span style={{color:"#484f58",fontSize:"13px"}}>{agg.months.map(m=>m.period).join(" · ")} · 유입 키워드 {agg.keywords.length}개{!agg.hasViews&&" · 조회수 순위 파일 없음(비율로 표시)"}</span>}
+      <div style={{marginLeft:"auto",display:"flex",gap:"6px",flexWrap:"wrap"}}>
+        {agg&&<button onClick={()=>{if(confirm("올린 유입 데이터를 지울까요?"))setInflow(null);}} style={btn(false)}>🗑</button>}
+        <button onClick={()=>fileRef.current?.click()} disabled={!!busy} style={btn(!!busy)}>{agg?"📂 파일 다시 올리기":"📂 통계 엑셀 올리기"}</button>
+        {agg&&cmp&&<button onClick={()=>makeProfile()} disabled={!!busy||!rows?.length} style={{...btn(!!busy||!rows?.length),background:busy?"#21262d":"#1f6feb",color:busy?"#484f58":"#fff",border:"none"}}>{profile?"🔄 맞춤 프로필 다시 만들기":"✨ 맞춤 프로필 만들기"} <span style={{opacity:.7,fontSize:"11px"}}>(AI 1회)</span></button>}
+        {agg&&<button onClick={runAi} disabled={!!busy} style={btn(!!busy)} title="비교 결과에 대한 AI 서술 진단. 프로필 생성과 별개이며 비용이 추가로 듭니다.">{inflow?.ai?"🔄 AI 서술 진단 다시":"🤖 AI 서술 진단 (선택)"}</button>}
+      </div>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls,.zip" multiple onChange={onFiles} style={{display:"none"}}/>
+    </div>
+
+    {!agg&&!busy&&<div style={{color:"#484f58",fontSize:"13px",lineHeight:1.8}}>
+      내 블로그일 때만 쓸 수 있어요. 네이버 블로그 관리 → 내 블로그 통계 → <b style={{color:"#8b949e"}}>지표 다운로드</b>에서
+      <b style={{color:"#8b949e"}}> 유입분석</b>(월간)과 <b style={{color:"#8b949e"}}>조회수 순위</b>(월간)를 받아서, 여러 달 치를 <b style={{color:"#8b949e"}}>한 번에 선택</b>하거나 <b style={{color:"#8b949e"}}>ZIP으로 묶어서</b> 올리면 됩니다.
+      조회수 순위를 같이 올리면 유입이 %가 아니라 추정 횟수로 계산돼요. 파일은 브라우저 안에서만 읽습니다.
+    </div>}
+    {busy&&<div style={{color:"#58a6ff",fontSize:"13px"}}>⏳ {busy}</div>}
+    {err&&<div style={{color:"#ff7b72",fontSize:"13px"}}>⚠️ {err}</div>}
+    {agg&&!rows?.length&&<div style={{color:"#ffa657",fontSize:"13px"}}>유입 데이터는 준비됐어요. 위 🧠 키워드 인사이트(⚡ 전체 분석)를 돌리면 순위와 맞댄 4분류 비교가 AI 없이 바로 나오고, 그 다음 ✨ 맞춤 프로필 만들기 한 번(AI 1회)으로 글쓰기에 반영됩니다.</div>}
+
+    {agg&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:"8px"}}>
+      {agg.months.map(m=>(
+        <div key={m.period} style={box}>
+          <div style={{color:"#8b949e",fontSize:"12px"}}>{m.period}</div>
+          <div style={{color:"#e6edf3",fontSize:"17px",fontWeight:800,margin:"2px 0"}}>{m.totalViews?fmt(m.totalViews)+"회":"—"}</div>
+          <div style={{color:"#484f58",fontSize:"11px"}}>통합검색 {m.mainRatio}% · 블로그탭 {m.blogRatio}%</div>
+        </div>
+      ))}
+    </div>}
+
+    {cmp&&<>
+      <div style={{color:"#484f58",fontSize:"12px"}}>비교 대상: 키워드 인사이트 <b style={{color:"#8b949e"}}>{scopeLabel}</b> 의 키워드 {rows.length}개 · 상위 = {topN}위 이내 · 유입 {agg.hasViews?"= 유입비율 × 월 조회수(추정)":"= 비율 합계"}</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:"8px"}}>
+        {list("✅ 상위노출 + 실제 유입","#3fb950",cmp.winners,r=>row(r.keyword,`${r.inflow}${unit}`,"#3fb950",r.keyword,`${r.best}위`,r.variants.length?`실검색: ${r.variants.join(", ")}`:""),"해당 없음","진짜 효자 키워드")}
+        {list("🫥 상위노출인데 유입 0","#ff7b72",cmp.hollow,r=>row(r.keyword,`${r.best}위`,"#ff7b72",r.keyword,`월 ${fmt(r.monthly)}`),"해당 없음",cmp.tooNew?`기간 이후 발행 ${cmp.tooNew}개 제외`:"순위만 높은 허수")}
+        {list("🔧 11~30위인데 유입 있음","#ffa657",cmp.push,r=>row(r.keyword,`${r.inflow}${unit}`,"#ffa657",r.keyword,`${r.best}위`),"해당 없음","보강하면 유입 늘 글")}
+        {list("💎 인사이트에 없던 유입 키워드","#58a6ff",cmp.hidden,h=>row(h.keyword,`${h.score}${unit}`,"#58a6ff",h.keyword,h.months>1?`${h.months}개월`:"",h.variantOf?`← ${h.variantOf}`:""),"해당 없음","다음 글 제목 후보")}
+      </div>
+    </>}
+
+    {inflow?.ai&&<div style={{...box,display:"flex",flexDirection:"column",gap:"8px"}}>
+      <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>🤖 AI 비교 분석 <span style={{color:"#484f58",fontWeight:400,fontSize:"12px"}}>· {inflow.aiScope} 기준</span></div>
+      {[["추정 vs 실제",inflow.ai.gap],["실제 먹히는 구간",inflow.ai.realSweetSpot],["허수",inflow.ai.hollow],["놓친 패턴",inflow.ai.hidden],["채널 변화",inflow.ai.channel]].filter(x=>x[1]).map(([l,t])=>(
+        <div key={l} style={{fontSize:"13px",lineHeight:1.7,color:"#8b949e"}}><span style={{color:"#58a6ff",fontWeight:700,marginRight:"6px"}}>{l}</span>{t}</div>
+      ))}
+      {inflow.ai.actions?.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
+        {inflow.ai.actions.map((a,i)=><div key={i} style={{fontSize:"13px",color:"#c9d1d9",lineHeight:1.6}}><span style={{color:"#ffa657",fontWeight:700,marginRight:"6px"}}>{i+1}.</span>{a}</div>)}
+      </div>}
+      {inflow.ai.recommend?.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
+        {inflow.ai.recommend.map((r,i)=>(
+          <div key={i} style={{display:"flex",gap:"8px",alignItems:"baseline",fontSize:"13px",padding:"5px 8px",background:"#161b22",borderRadius:"6px",flexWrap:"wrap"}}>
+            <span style={{color:"#e6edf3",fontWeight:700}}>{r.keyword}</span>
+            <span style={{color:r.monthly!=null?"#3fb950":"#484f58",whiteSpace:"nowrap"}}>월 {fmt(r.monthly)}</span>
+            <span style={{color:"#8b949e",flex:1,minWidth:"180px"}}>{r.reason}</span>
+          </div>
+        ))}
+      </div>}
+    </div>}
+
+    {/* ── 글쓰기 맞춤 프로필 ── */}
+    <div style={{...box,borderColor:profile?"#2ea04366":"#21262d",display:"flex",flexDirection:"column",gap:"8px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+        <span style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>✍️ 글쓰기 맞춤 프로필</span>
+        <span style={{color:"#484f58",fontSize:"12px"}}>
+          {profile?`${bhAgo(profile.createdAt)} 생성 · ${profile.basis}`:"🤖 AI 비교 분석을 돌리면 자동으로 만들어져서 글쓰기 탭에 바로 적용됩니다"}
+        </span>
+        <div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
+          {profile&&<button onClick={()=>setProfOpen(o=>!o)} style={btn(false)}>{profOpen?"접기":"내용 보기"}</button>}
+          <button onClick={()=>makeProfile()} disabled={!!busy||!rows?.length} style={btn(!!busy||!rows?.length)}>{profile?"🔄 다시 만들기":"✨ 프로필 만들기"}</button>
+        </div>
+      </div>
+      {!rows?.length&&<div style={{color:"#484f58",fontSize:"12px"}}>먼저 위 🧠 키워드 인사이트를 돌려주세요. 실제 유입 파일까지 올린 뒤에 만들면 더 정확해요.</div>}
+      {rows?.length>0&&!agg&&!profile&&<div style={{color:"#ffa657",fontSize:"12px"}}>유입 파일 없이도 만들 수 있지만, 순위 기반 추정만 반영됩니다.</div>}
+      {profile&&profOpen&&<div style={{display:"flex",flexDirection:"column",gap:"8px",fontSize:"13px",color:"#8b949e",lineHeight:1.7}}>
+        <div style={{color:"#c9d1d9"}}>{profile.summary}</div>
+        {profile.categories?.length>0&&<div><b style={{color:"#58a6ff"}}>추천 카테고리</b> {profile.categories.map(c=><span key={c.keyword} title={c.reason} style={{display:"inline-block",margin:"0 4px 4px 0",padding:"2px 8px",border:"1px solid #1f6feb66",borderRadius:"10px",color:"#c9d1d9"}}>{c.keyword}</span>)}</div>}
+        {profile.coreTopics?.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
+          {[["🎯 중심 축","#3fb950",profile.coreTopics],["🌿 곁가지","#d29922",profile.sideTopics],["💤 약한 주제","#8b949e",profile.weakTopics]].map(([l,c,arr])=>arr?.length>0&&(
+            <div key={l}><b style={{color:c}}>{l}</b>{arr.map((x,i)=><div key={i} style={{paddingLeft:"10px"}}>· <span style={{color:"#c9d1d9"}}>{x.keyword}</span> <span style={{color:"#484f58"}}>— {x.reason}</span></div>)}</div>))}
+        </div>}
+        {!profile.coreTopics?.length&&<div style={{color:"#484f58",fontSize:"12px"}}>이 프로필은 주제 축(중심 축·곁가지)이 없는 예전 버전이에요. 다시 만들면 추가됩니다.</div>}
+        {[["키워드 규칙",profile.keywordRules],["제목 규칙",profile.titleRules],["본문 규칙",profile.writingRules],["피할 것",profile.avoid]].map(([l,arr])=>arr?.length>0&&(
+          <div key={l}><b style={{color:"#58a6ff"}}>{l}</b>{arr.map((x,i)=><div key={i} style={{paddingLeft:"10px"}}>· {x}</div>)}</div>
+        ))}
+        {profile.seedKeywords?.length>0&&<div><b style={{color:"#58a6ff"}}>공략 후보</b> {profile.seedKeywords.map(x=>x.keyword).join(", ")}</div>}
+        <div style={{color:"#484f58",fontSize:"12px"}}>글쓰기 › 자동 글쓰기 탭 상단에서 이 프로필을 켜고 끌 수 있어요. 지금은 <b style={{color:"#3fb950"}}>{bpGetActiveId()===blogId?"적용 중":"꺼짐"}</b>.</div>
+      </div>}
+    </div>
+  </div>;
+}
+
+// ── 누락 확인 > 블로그 ID별 마지막 조회 결과 저장 (브라우저 localStorage) ──
+// ID 하나당 스냅샷 1개만 유지 → 같은 ID를 다시 분석하면 덮어쓴다.
+const BH_INDEX="mt_blog_hist_index", BH_PREFIX="mt_blog_hist_", BH_MAX=20;
+const bhKey=id=>BH_PREFIX+String(id||"").toLowerCase();
+// 순위조회 응답에 딸려오는 100개짜리 items 등 큰 배열은 저장하지 않는다 (용량 절약, 화면에서도 안 씀)
+function bhSlim(v,inRank=false){
+  if(Array.isArray(v)) return inRank&&v.length>12&&typeof v[0]==="object"?undefined:v.map(x=>bhSlim(x,inRank));
+  if(v&&typeof v==="object"){const o={};Object.entries(v).forEach(([k,x])=>{
+    const rank=inRank||k==="realRank"||k==="titleRank";
+    if(rank&&k==="items")return;
+    const y=bhSlim(x,rank);if(y!==undefined)o[k]=y;});return o;}
+  return v;
+}
+function bhList(){ try{return JSON.parse(localStorage.getItem(BH_INDEX)||"[]")||[];}catch(e){return [];} }
+function bhLoad(id){ try{return JSON.parse(localStorage.getItem(bhKey(id))||"null");}catch(e){return null;} }
+function bhDelete(id){
+  try{localStorage.removeItem(bhKey(id));
+    const idx=bhList().filter(x=>x.blogId.toLowerCase()!==String(id).toLowerCase());
+    localStorage.setItem(BH_INDEX,JSON.stringify(idx));return idx;}catch(e){return bhList();}
+}
+function bhSave(snap,meta){
+  let idx=bhList().filter(x=>x.blogId.toLowerCase()!==snap.blogId.toLowerCase());
+  idx.unshift(meta);
+  // 개수 초과분 + 용량 초과 시 오래된 것부터 삭제
+  while(idx.length>BH_MAX){const old=idx.pop();try{localStorage.removeItem(bhKey(old.blogId));}catch(e){}}
+  const body=JSON.stringify(snap);
+  for(let tries=0;tries<BH_MAX;tries++){
+    try{localStorage.setItem(bhKey(snap.blogId),body);localStorage.setItem(BH_INDEX,JSON.stringify(idx));return idx;}
+    catch(e){ if(idx.length<=1) return null; const old=idx.pop(); try{localStorage.removeItem(bhKey(old.blogId));}catch(_){} }
+  }
+  return null;
+}
+function bhAgo(ts){
+  const m=Math.floor((Date.now()-ts)/60000);
+  if(m<1)return "방금"; if(m<60)return m+"분 전"; if(m<1440)return Math.floor(m/60)+"시간 전";
+  const d=new Date(ts),z=n=>String(n).padStart(2,"0"); return `${String(d.getFullYear()).slice(2)}.${z(d.getMonth()+1)}.${z(d.getDate())}`;
+}
+
+// ── 저장 데이터 백업/복원 — 분석 결과·유입·맞춤 프로필·제목 기록을 JSON 파일 하나로 ──
+// API 키(vm_*)는 파일에 넣지 않는다.
+const BK_PREFIXES=["mt_","bp_"];
+function backupExport(){
+  const data={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k&&BK_PREFIXES.some(p=>k.startsWith(p))) data[k]=localStorage.getItem(k);
+  }
+  const ids=bhList().map(h=>h.blogId);
+  const file={app:"blog-tools",version:1,exportedAt:new Date().toISOString(),blogIds:ids,data};
+  const blob=new Blob([JSON.stringify(file)],{type:"application/json"});
+  const d=new Date(),z=n=>String(n).padStart(2,"0");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`blog-tools-backup-${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}.json`;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  return {keys:Object.keys(data).length,ids,bytes:blob.size};
+}
+// 병합 규칙: 같은 블로그 ID 저장본·프로필은 더 최근 것이 이긴다. 최근 조회 목록은 합친다. 나머지는 파일 값으로 덮는다.
+function backupImport(text){
+  let file;try{file=JSON.parse(text);}catch(e){throw new Error("백업 파일을 읽지 못했어요 (JSON 형식 아님).");}
+  if(!file||file.app!=="blog-tools"||!file.data) throw new Error("blog-tools 백업 파일이 아니에요.");
+  const parse=v=>{try{return JSON.parse(v);}catch(e){return null;}};
+  let added=0,kept=0,failed=[];
+  const put=(k,v)=>{try{localStorage.setItem(k,v);added++;}catch(e){failed.push(k);}};
+  Object.entries(file.data).forEach(([k,v])=>{
+    if(k===BH_INDEX) return;
+    const cur=localStorage.getItem(k);
+    if(cur!=null&&(k.startsWith(BH_PREFIX)||k.startsWith(BP_PREFIX))&&k!==BP_ACTIVE){
+      const a=parse(cur),b=parse(v);
+      const ta=a?.savedAt||a?.createdAt||0, tb=b?.savedAt||b?.createdAt||0;
+      if(ta>tb){kept++;return;}
+    }
+    put(k,v);
+  });
+  // 최근 조회 목록 병합 (실제 저장본이 있는 ID만)
+  const incoming=parse(file.data[BH_INDEX])||[];
+  const map={};
+  [...bhList(),...incoming].forEach(m=>{if(!m?.blogId)return;const key=m.blogId.toLowerCase();if(!map[key]||(m.savedAt||0)>(map[key].savedAt||0))map[key]=m;});
+  const idx=Object.values(map).filter(m=>localStorage.getItem(bhKey(m.blogId))!=null).sort((a,b)=>(b.savedAt||0)-(a.savedAt||0)).slice(0,BH_MAX);
+  try{localStorage.setItem(BH_INDEX,JSON.stringify(idx));}catch(e){failed.push(BH_INDEX);}
+  return {added,kept,failed,idx,exportedAt:file.exportedAt};
+}
+
+// ── 제목 노출 패널: 비율 막대 + 발행순 타임라인 + 최근/이전 비교 ──
+function TitleExposurePanel({ex,count,box}){
+  const [hover,setHover]=useState(null);
+  const ORDER=["top1","top30","out","missing","wait"];
+  const total=ex.length;
+  const dnum=d=>{const m=String(d||"").match(/(\d{4})\.(\d{2})\.(\d{2})/);return m?+(m[1]+m[2]+m[3]):null;};
+  // 발행순(오래된 → 최신). 날짜 없는 글은 원래 순서 유지
+  const chrono=ex.map((t,i)=>({...t,_i:i,_d:dnum(t.date)}))
+    .sort((a,b)=>(a._d!=null&&b._d!=null&&a._d!==b._d)?a._d-b._d:b._i-a._i);
+  const rate=arr=>{const n=arr.filter(t=>t.cat!=="wait").length;return n?Math.round(arr.filter(t=>t.cat==="top1").length/n*100):null;};
+  const recentN=Math.min(20,Math.floor(total/2));
+  const recent=recentN?chrono.slice(-recentN):[], before=recentN?chrono.slice(0,-recentN):[];
+  const rRecent=rate(recent), rBefore=rate(before);
+  const diff=rRecent!=null&&rBefore!=null?rRecent-rBefore:null;
+  const shown=count.top1+count.top30+count.out;
+  const H=64;
+  const tip=hover!=null?chrono[hover]:null;
+  const rankTxt=t=>t.cat==="missing"?"누락":t.cat==="wait"?"반영 대기":t.blogRank!=null?`${t.blogRank}위`:t.quoted?"100위 밖":"30위 밖";
+
+  return <div style={box}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:"6px",marginBottom:"10px"}}>
+      <span style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>🔎 제목 검색 노출 <span style={{color:"#484f58",fontWeight:400,fontSize:"12px"}}>글 제목 그대로 블로그탭 검색 · {total}개 글</span></span>
+      <span style={{fontSize:"12px",color:"#8b949e"}}>검색에 보임 <b style={{color:"#e6edf3",fontSize:"15px"}}>{shown}</b>/{total} · 1위 <b style={{color:"#3fb950",fontSize:"15px"}}>{total?Math.round(count.top1/total*100):0}%</b></span>
+    </div>
+
+    {/* 비율 막대 */}
+    <div style={{display:"flex",height:"26px",borderRadius:"6px",overflow:"hidden",border:"1px solid #21262d"}}>
+      {ORDER.filter(k=>count[k]).map(k=>{const m=TITLE_EX_META[k];const pct=count[k]/total*100;
+        return <div key={k} title={`${m.long} ${count[k]}개`} style={{width:`${pct}%`,background:m.color+(k==="wait"?"66":"cc"),display:"flex",alignItems:"center",justifyContent:"center",color:"#0d1117",fontSize:"12px",fontWeight:800,whiteSpace:"nowrap",overflow:"hidden"}}>
+          {pct>=8?`${m.label} ${count[k]}`:""}</div>;})}
+    </div>
+    <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginTop:"6px",fontSize:"12px",color:"#8b949e"}}>
+      {ORDER.filter(k=>k!=="wait"||count.wait).map(k=>{const m=TITLE_EX_META[k];return <span key={k} style={{display:"flex",alignItems:"center",gap:"4px"}}>
+        <span style={{width:"8px",height:"8px",borderRadius:"50%",background:m.color}}/>{m.long} <b style={{color:"#c9d1d9"}}>{count[k]||0}</b></span>;})}
+    </div>
+
+    {/* 발행순 타임라인 */}
+    <div style={{marginTop:"14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:"12px",color:"#484f58",marginBottom:"4px"}}>
+        <span>발행순 · 막대가 높을수록 제목 순위가 좋아요</span>
+        {tip&&<span style={{color:"#c9d1d9",maxWidth:"60%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          <b style={{color:TITLE_EX_META[tip.cat]?.color}}>{rankTxt(tip)}</b> · {tip.date||""} · {tip.title}</span>}
+      </div>
+      <div onMouseLeave={()=>setHover(null)} style={{display:"flex",alignItems:"flex-end",gap:"2px",height:`${H}px`,padding:"0 2px",borderBottom:"1px solid #30363d",position:"relative"}}>
+        {recentN>0&&<div style={{position:"absolute",right:0,top:0,bottom:0,width:`${recentN/total*100}%`,background:"#58a6ff08",borderLeft:"1px dashed #30363d",pointerEvents:"none"}}/>}
+        {chrono.map((t,i)=>{const m=TITLE_EX_META[t.cat]||TITLE_EX_META.missing;
+          return <a key={t.postNo||i} href={`https://search.naver.com/search.naver?ssc=tab.blog.all&query=${encodeURIComponent('"'+cleanTitleForSearch(t.title)+'"')}`} target="_blank" rel="noreferrer"
+            onMouseEnter={()=>setHover(i)}
+            style={{flex:1,minWidth:"3px",height:`${Math.round(m.h*H)}px`,background:m.color,opacity:hover==null||hover===i?1:0.45,borderRadius:"2px 2px 0 0",transition:"opacity .1s"}}/>;})}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:"11px",color:"#484f58",marginTop:"3px"}}>
+        <span>{chrono[0]?.date||""}</span>{recentN>0&&<span>최근 {recentN}개 ▸</span>}<span>{chrono[chrono.length-1]?.date||""}</span>
+      </div>
+    </div>
+
+    {/* 최근 vs 이전 */}
+    {diff!=null&&<div style={{marginTop:"10px",display:"flex",gap:"8px",flexWrap:"wrap",fontSize:"13px"}}>
+      <span style={{padding:"4px 10px",background:"#0d1117",border:"1px solid #21262d",borderRadius:"6px",color:"#8b949e"}}>이전 {before.length}개 1위 비율 <b style={{color:"#c9d1d9"}}>{rBefore}%</b></span>
+      <span style={{padding:"4px 10px",background:"#0d1117",border:"1px solid #21262d",borderRadius:"6px",color:"#8b949e"}}>최근 {recentN}개 1위 비율 <b style={{color:"#c9d1d9"}}>{rRecent}%</b></span>
+      <span style={{padding:"4px 10px",borderRadius:"6px",fontWeight:700,
+        background:diff>=5?"#23863620":diff<=-5?"#da363320":"#21262d",color:diff>=5?"#3fb950":diff<=-5?"#ff7b72":"#8b949e"}}>
+        {diff>=5?`▲ ${diff}%p 좋아짐`:diff<=-5?`▼ ${-diff}%p 나빠짐`:"비슷함"}</span>
+    </div>}
+
+    {/* 약한 제목 */}
+    {(count.out||0)+(count.missing||0)>0&&<div style={{marginTop:"10px",borderTop:"1px solid #21262d",paddingTop:"6px"}}>
+      <div style={{color:"#d29922",fontSize:"12px",fontWeight:700,marginBottom:"3px"}}>제목이 약한 글 (30위 밖·누락)</div>
+      {ex.filter(t=>t.cat==="out"||t.cat==="missing").slice(0,8).map((t,i)=>(
+        <div key={i} style={{fontSize:"12px",color:"#8b949e",padding:"2px 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          <span style={{color:TITLE_EX_META[t.cat].color,marginRight:"6px",fontWeight:700}}>{rankTxt(t)}</span>{t.title}
+        </div>))}
+    </div>}
+  </div>;
+}
+
+// ── 누락 확인 > 키워드 인사이트 패널 ──
+function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun,scope,setScope,cumDone,cumPages,blogId}){
+  const d=data||{};
+  const [exporting,setExporting]=useState("");
+  const doExport=async(kind)=>{
+    if(exporting||!d.summary) return;
+    setExporting(kind);
+    const meta={blogId,scope,page,topN,scopeLabel:scope==="all"?`누적 (${cumPages.join("·")}페이지)`:`${page}페이지`};
+    try{ if(kind==="xlsx") await exportInsightXlsx(d,meta); else await exportInsightPdf(d,meta); }
+    catch(e){ alert("다운로드 실패: "+(e?.message||e)); }
+    setExporting("");
+  };
+  const fmt=n=>n==null?"—":Number(n).toLocaleString();
+  const box={background:"#0d1117",border:"1px solid #21262d",borderRadius:"8px",padding:"10px 12px"};
+  const chip=(r,rankKey)=>(
+    <div key={r.keyword} style={{display:"flex",alignItems:"center",gap:"8px",padding:"5px 0",borderBottom:"1px solid #161b22",fontSize:"13px"}}>
+      <span style={{color:"#3fb950",fontWeight:800,minWidth:"34px"}}>{r[rankKey]}위</span>
+      <a href={`https://search.naver.com/search.naver?query=${encodeURIComponent(r.keyword)}`} target="_blank" rel="noreferrer"
+        style={{color:"#c9d1d9",textDecoration:"none",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.keyword}</a>
+      <span style={{color:"#8b949e",whiteSpace:"nowrap"}}>월 {fmt(r.monthly)}</span>
+    </div>
+  );
+  const S=d.summary;
+  return <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px 18px",display:"flex",flexDirection:"column",gap:"12px"}}>
+    <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+      <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:700}}>🧠 키워드 인사이트</div>
+      <div style={{display:"flex",border:"1px solid #30363d",borderRadius:"6px",overflow:"hidden"}}>
+        {[["page",`이 페이지 (${page}p)`],["all",`누적 (${cumDone}개)`]].map(([k,l])=>(
+          <button key={k} onClick={()=>setScope(k)} style={{padding:"4px 10px",border:"none",cursor:"pointer",fontSize:"12px",fontWeight:600,
+            fontFamily:"'Noto Sans KR',sans-serif",background:scope===k?"#1f6feb":"#0d1117",color:scope===k?"#fff":"#8b949e"}}>{l}</button>
+        ))}
+      </div>
+      <span style={{color:"#484f58",fontSize:"13px"}}>
+        {scope==="all"?(cumPages.length?`${cumPages.join("·")}페이지 분석분 합산`:"아직 분석한 글 없음"):`분석 완료 ${analyzedCount}/${totalCount}`}
+      </span>
+      <div style={{marginLeft:"auto",display:"flex",gap:"6px",flexWrap:"wrap"}}>
+      {d.summary&&!d.loading&&[["xlsx","📊 엑셀"],["pdf","📄 PDF"]].map(([k,l])=>(
+        <button key={k} onClick={()=>doExport(k)} disabled={!!exporting}
+          style={{padding:"6px 12px",background:"#21262d",color:exporting?"#484f58":"#c9d1d9",border:"1px solid #30363d",borderRadius:"6px",
+            cursor:exporting?"not-allowed":"pointer",fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>
+          {exporting===k?"⏳ 만드는 중...":l}
+        </button>
+      ))}
+      <button onClick={onRun} disabled={busy||d.loading||analyzedCount===0}
+        style={{padding:"6px 12px",background:"#21262d",color:busy||d.loading||analyzedCount===0?"#484f58":"#58a6ff",
+          border:"1px solid #30363d",borderRadius:"6px",cursor:busy||d.loading||analyzedCount===0?"not-allowed":"pointer",
+          fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>
+        {d.loading?"⏳ 분석 중...":S?"🔄 다시 분석":"🧠 인사이트 분석"}
+      </button>
+      </div>
+    </div>
+
+    {!S&&!d.loading&&!d.error&&<div style={{color:"#484f58",fontSize:"13px",lineHeight:1.7}}>
+      {scope==="all"
+        ?"여러 페이지를 ⚡ 전체 분석한 뒤 돌리면, 지금까지 분석한 글 전부를 합쳐서 집계합니다. 순위는 이미 조회한 값을 재사용해요."
+        :"⚡ 전체 분석이 끝나면 자동으로 채워집니다. 일부 글만 분석한 상태에서도 위 버튼으로 돌릴 수 있어요 (분석된 글만 집계)."}
+    </div>}
+    {d.loading&&<div style={{color:"#58a6ff",fontSize:"13px"}}>⏳ {d.step}</div>}
+    {d.error&&<div style={{color:"#ff7b72",fontSize:"13px"}}>⚠️ {d.error}</div>}
+
+    {S&&scope==="all"&&S.postCount!==cumDone&&!d.loading&&<div style={{color:"#ffa657",fontSize:"13px"}}>
+      ⚠️ 아래 결과는 {S.postCount}개 기준입니다. 이후 분석한 글이 더 있어요 ({cumDone}개) — 🔄 다시 분석을 눌러 갱신하세요.
+    </div>}
+    {S&&<>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:"8px"}}>
+        {[
+          ["상위노출 키워드",`${S.topCount} / ${S.kwCount}개`,`${topN}위 이내`],
+          ["상위 키워드 검색량 (중앙값)",fmt(S.medTop),`평균 ${fmt(S.avgTop)}`],
+          ["상위 못 든 키워드 (중앙값)",fmt(S.medNotTop),`평균 ${fmt(S.avgNotTop)}`],
+          ["제목검색 누락",`${S.missingCount} / ${S.postCount}개`,"글 기준"],
+        ].map(([l,v,sub])=>(
+          <div key={l} style={box}>
+            <div style={{color:"#8b949e",fontSize:"12px"}}>{l}</div>
+            <div style={{color:"#e6edf3",fontSize:"18px",fontWeight:800,margin:"2px 0"}}>{v}</div>
+            <div style={{color:"#484f58",fontSize:"11px"}}>{sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {S.titleEx?.length>0&&<TitleExposurePanel ex={S.titleEx} count={S.titleExCount||{}} box={box}/>}
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:"8px"}}>
+        {[["통합검색 상위 키워드",S.mainTop,"mainRank",S.avgMainTop,S.medMainTop],["블로그탭 상위 키워드",S.blogTop,"blogRank",S.avgBlogTop,S.medBlogTop]].map(([title,list,key,av,md])=>(
+          <div key={title} style={box}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
+              <span style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>{title} <span style={{color:"#58a6ff"}}>{list.length}</span></span>
+              <span style={{color:"#484f58",fontSize:"12px"}}>중앙값 {fmt(md)} · 평균 {fmt(av)}</span>
+            </div>
+            {list.length?list.slice(0,10).map(r=>chip(r,key)):<div style={{color:"#484f58",fontSize:"13px",padding:"6px 0"}}>{topN}위 이내 키워드 없음</div>}
+            {list.length>10&&<div style={{color:"#484f58",fontSize:"12px",paddingTop:"4px"}}>외 {list.length-10}개</div>}
+          </div>
+        ))}
+      </div>
+
+      {d.aiError&&<div style={{color:"#ffa657",fontSize:"13px"}}>⚠️ AI 분석 실패: {d.aiError} (집계는 위에 표시됨)</div>}
+      {!d.ai&&!d.loading&&<div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+        <button onClick={()=>onRun(true)} disabled={busy} style={{padding:"5px 12px",background:"#21262d",color:busy?"#484f58":"#8b949e",border:"1px solid #30363d",borderRadius:"6px",cursor:busy?"not-allowed":"pointer",fontSize:"12px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>🤖 AI 진단 (선택 · Sonnet 1회)</button>
+        <span style={{color:"#484f58",fontSize:"12px"}}>위 집계·제목 노출은 AI 없이 만들어졌어요. 글쓰기 반영은 아래 "맞춤 프로필 만들기" 한 번이면 충분합니다.</span>
+      </div>}
+      {d.ai&&<div style={{...box,display:"flex",flexDirection:"column",gap:"8px"}}>
+        <div style={{color:"#c9d1d9",fontSize:"13px",fontWeight:700}}>🤖 AI 분석 — 다음엔 이런 키워드로</div>
+        {[["진단",d.ai.diagnosis],["먹히는 구간",d.ai.sweetSpot],["통합검색 패턴",d.ai.mainPattern],["블로그탭 패턴",d.ai.blogPattern],["피할 것",d.ai.avoid],["먹히는 제목",d.ai.titlePattern],["피할 제목",d.ai.titleAvoid]]
+          .filter(x=>x[1]).map(([l,t])=>(
+          <div key={l} style={{fontSize:"13px",lineHeight:1.7,color:"#8b949e"}}>
+            <span style={{color:"#58a6ff",fontWeight:700,marginRight:"6px"}}>{l}</span>{t}
+          </div>
+        ))}
+        {d.ai.recommend?.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"4px",marginTop:"2px"}}>
+          {d.ai.recommend.map((r,i)=>(
+            <div key={i} style={{display:"flex",gap:"8px",alignItems:"baseline",fontSize:"13px",padding:"5px 8px",background:"#161b22",borderRadius:"6px",flexWrap:"wrap"}}>
+              <span style={{color:"#e6edf3",fontWeight:700}}>{r.keyword}</span>
+              <span style={{color:r.monthly!=null?"#3fb950":"#484f58",whiteSpace:"nowrap"}}>월 {fmt(r.monthly)}</span>
+              {r.commercial&&<span style={{color:"#ffa657",fontSize:"12px"}}>상업성</span>}
+              <span style={{color:"#8b949e",flex:1,minWidth:"180px"}}>{r.reason}</span>
+            </div>
+          ))}
+          <div style={{color:"#484f58",fontSize:"12px"}}>추천 키워드의 월 검색량은 AI 추정이 아니라 네이버 키워드도구 실측값입니다. "—"는 검색량 데이터 없음.</div>
+        </div>}
+      </div>}
+    </>}
+  </div>;
+}
+
 function MissingTab(){
   const [mode,setMode]=useState("blogId");   // "blogId" | "url"
   // 방법1
@@ -2709,7 +3999,21 @@ function MissingTab(){
   const [analyzing,setAnalyzing]=useState(-1);
   const [expanded,setExpanded]=useState(null);
   const [page,setPage]=useState(1);
-  const PER_PAGE=10;
+  const PER_PAGE=20;
+  const yearCapRef=useRef({});   // 블로그별 "1년 이내 글이 끝나는 페이지"
+  // 키워드 인사이트 — 페이지(20개) 단위 집계 + AI 추천
+  const [insights,setInsights]=useState({});          // {page: {loading,step,rows,summary,ai,error}}
+  const [history,setHistory]=useState([]);            // 저장된 블로그 목록 (최근 조회순)
+  const [histOpen,setHistOpen]=useState(false);
+  const [backupMsg,setBackupMsg]=useState("");
+  const [inflow,setInflow]=useState(null);             // 네이버 통계 엑셀(유입분석) — 블로그별로 저장본에 같이 묶인다
+  const [restored,setRestored]=useState(null);         // {blogId,savedAt,count} — 저장본을 불러온 상태 표시
+  useEffect(()=>{setHistory(bhList());},[]);
+  const [insightScope,setInsightScope]=useState("page"); // "page" | "all"(지금까지 분석한 페이지 누적)
+  const scopeRef=useRef("page");
+  const seenRef=useRef({});                            // {postNo: post} — 페이지를 넘겨도 분석한 글 정보를 유지
+  const analysisRef=useRef({});
+  const extraRef=useRef({});
   // 방법3 — 엑셀 업로드
   const [excelHeaders,setExcelHeaders]=useState([]);
   const [excelRows,setExcelRows]=useState([]);
@@ -2725,13 +4029,70 @@ function MissingTab(){
   const [extraResults,setExtraResults]=useState({});  // {postNo: [{keyword,realRank,loading}]}
   const [extraLoading,setExtraLoading]=useState({});  // {postNo: bool}
 
-  // ── 방법1: 블로그 전체 글 목록을 10개씩 페이지 단위로 조회 (과거 글까지) ──
+  useEffect(()=>{analysisRef.current=analysis;},[analysis]);
+  useEffect(()=>{scopeRef.current=insightScope;},[insightScope]);
+  useEffect(()=>{(posts?.current||[]).forEach(p=>{seenRef.current[p.postNo]={...p,_page:posts.page||1};});},[posts]);
+  useEffect(()=>{extraRef.current=extraResults;},[extraResults]);
+
+  // ── 방법1: 블로그 전체 글 목록을 20개씩 페이지 단위로 조회 (과거 글까지) ──
+  // 저장본에서 분석 결과만 꺼내기 (분석 도중 저장돼 순위가 비어 있는 글은 미분석으로 되돌림)
+  const cleanSavedAnalysis=(a)=>{const o={};Object.entries(a||{}).forEach(([k,v])=>{
+    if(!v||v.error) return; if((v.topKeywords||[]).some(x=>x.rankLoading)) return; o[k]=v;});return o;};
+  const cleanSavedExtra=(x)=>{const o={};Object.entries(x||{}).forEach(([k,arr])=>{o[k]=(arr||[]).filter(r=>!r.loading&&!r.rankLoading);});return o;};
+  const applySnapshot=(snap,withPosts)=>{
+    const a=cleanSavedAnalysis(snap.analysis);
+    setAnalysis(a);setExtraResults(cleanSavedExtra(snap.extraResults));setExtraKw({});
+    setInsights(snap.insights||{});setInflow(snap.inflow||null);seenRef.current={...(snap.seen||{})};
+    if(withPosts&&snap.posts){setPosts(snap.posts);setPage(snap.posts.page||1);}
+    setRestored({blogId:snap.blogId,savedAt:snap.savedAt,count:Object.keys(a).length});
+  };
+  // 최근 조회 목록에서 클릭 → 네트워크 호출 없이 저장된 화면 그대로 복원
+  const openHistory=(id)=>{
+    const snap=bhLoad(id);
+    if(!snap){setHistory(bhDelete(id));alert("저장된 데이터를 찾을 수 없어요.");return;}
+    setMode("blogId");setBlogId(snap.blogId);setFeedError("");setExpanded(null);setHistOpen(false);
+    lsSet(LS_BLOGID,snap.blogId);
+    applySnapshot(snap,true);
+  };
+  const removeHistory=(id)=>{setHistory(bhDelete(id));if(restored?.blogId===id)setRestored(null);};
+  // 현재 블로그의 저장본을 지우고 처음부터 다시
+  const resetSaved=()=>{
+    if(!posts?.blogId) return;
+    if(!confirm(`@${posts.blogId} 의 저장된 분석 결과를 지우고 새로 시작할까요?`)) return;
+    setHistory(bhDelete(posts.blogId));setRestored(null);
+    setAnalysis({});setExtraResults({});setExtraKw({});setInsights({});setInflow(null);setExpanded(null);
+    const keepSeen={};(posts.current||[]).forEach(p=>{keepSeen[p.postNo]={...p,_page:posts.page||1};});seenRef.current=keepSeen;
+  };
+
+  // 자동 저장 — 분석/추가검색/인사이트가 바뀔 때마다 (0.8초 디바운스)
+  useEffect(()=>{
+    if(mode!=="blogId"||!posts?.serverPaged||!posts?.blogId) return;
+    const t=setTimeout(()=>{
+      const bid=posts.blogId, seen=seenRef.current||{};
+      const mine=k=>seen[k]&&(seen[k]._blogId||"").toLowerCase()===bid.toLowerCase();
+      const a={};Object.entries(analysis).forEach(([k,v])=>{if(mine(k)&&v&&!v.error)a[k]=v;});
+      const done=Object.values(a).filter(v=>!(v.topKeywords||[]).some(x=>x.rankLoading));
+      if(!done.length) return;
+      const x={};Object.entries(extraResults).forEach(([k,v])=>{if(mine(k)&&v?.length)x[k]=v;});
+      const ins={};Object.entries(insights).forEach(([k,v])=>{if(v&&!v.loading&&v.summary)ins[k]=v;});
+      const seenMine={};Object.entries(seen).forEach(([k,v])=>{if(mine(k))seenMine[k]=v;});
+      let topKw=0;done.forEach(v=>(v.topKeywords||[]).forEach(kw=>{
+        const ar=kw.realRank?.areas;const r=Math.min(ar?.main_search?.rank??999,ar?.blog?.rank??999,ar?999:(kw.realRank?.myRank??999));if(r<=10)topKw++;}));
+      const snap=bhSlim({blogId:bid,savedAt:Date.now(),posts:{...posts,all:posts.current},analysis:a,extraResults:x,insights:ins,inflow:inflow||null,seen:seenMine});
+      const meta={blogId:bid,savedAt:snap.savedAt,total:posts.total||0,analyzed:done.length,
+        missing:done.filter(v=>v.missingStatus==="누락").length,topKw,hasInsight:Object.keys(ins).length>0,hasInflow:!!inflow?.agg};
+      const idx=bhSave(snap,meta);
+      if(idx) setHistory(idx);
+    },800);
+    return ()=>clearTimeout(t);
+  },[analysis,extraResults,insights,inflow,posts,mode]);
+
   const fetchBlogPage=async(id,pg=1,keep=false)=>{
     const bid=(id||"").trim();
     if(!bid){alert("블로그 아이디를 입력해주세요.");return;}
     lsSet(LS_BLOGID, bid);   // 글쓰기 탭에서 제목 반복 단어를 분석할 때 사용
     setLoadingFeed(true);setFeedError("");setExpanded(null);
-    if(!keep){setPosts(null);setAnalysis({});setExtraResults({});setExtraKw({});}
+    if(!keep){setPosts(null);setAnalysis({});setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};setRestored(null);setInflow(null);}
     try{
       const res=await fetch(`/api/blog-posts?blogId=${encodeURIComponent(bid)}&page=${pg}&size=${PER_PAGE}`);
       let data=null;
@@ -2751,14 +4112,29 @@ function MissingTab(){
       }));
       if(!list.length) throw new Error(pg>1?"이 페이지에는 게시글이 없습니다.":"게시글을 찾을 수 없어요. 블로그 아이디를 다시 확인해주세요.");
 
+      // 최근 1년 글만. 1년 넘은 글이 나오기 시작하는 페이지가 마지막 페이지가 된다.
+      const recent=list.filter(p=>isWithinRecent(p.date));
+      const oldCount=list.length-recent.length;
+      const key=(data.blogId||bid).toLowerCase();
+      if(oldCount>0) yearCapRef.current={...yearCapRef.current,[key]:recent.length?pg:Math.max(pg-1,1)};
+      if(!recent.length){
+        if(pg>1){ setFeedError("여기부터는 1년이 넘은 글이라 불러오지 않아요. 이전 페이지가 마지막이에요."); setLoadingFeed(false); return; }
+        throw new Error("최근 1년 안에 쓴 글이 없어요.");
+      }
+
       const totalCount=data.totalCount||list.length;
+      const serverPages=data.totalPages||Math.max(Math.ceil(totalCount/PER_PAGE),1);
+      const cap=yearCapRef.current[key];
       setPosts({
-        all:list, current:list, total:totalCount, page:pg,
+        all:recent, current:recent, total:totalCount, page:pg,
         blogId:data.blogId||bid, serverPaged:true,
-        totalPages:data.totalPages||Math.max(Math.ceil(totalCount/PER_PAGE),1),
-        notice:data.notice||"",
+        totalPages:cap?Math.min(serverPages,cap):serverPages,
+        yearCapped:!!cap,
+        notice:[data.notice||"",oldCount?`1년 넘은 글 ${oldCount}개는 제외했어요`:""].filter(Boolean).join(" · "),
       });
       setPage(pg);
+      // 같은 ID의 저장본이 있으면 분석 결과를 이어받는다 (글 목록은 방금 받은 최신 것 사용 → 새 글만 추가 분석하면 됨)
+      if(!keep){const snap=bhLoad(data.blogId||bid);if(snap&&Object.keys(snap.analysis||{}).length)applySnapshot(snap,false);}
     }catch(e){setFeedError(e.message||"오류가 발생했습니다.");}
     setLoadingFeed(false);
   };
@@ -2776,7 +4152,7 @@ function MissingTab(){
     const postNo=m[2];
     const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual",_blogId:m[1]};
     setPosts({all:[post],current:[post],total:1,page:1,blogId:m[1]});
-    setPage(1);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});
+    setPage(1);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};
     setTimeout(()=>runAnalyze(post,0),80);
   };
 
@@ -2795,9 +4171,11 @@ function MissingTab(){
   };
 
   // ── 네이버 순위 조회 (통합검색/블로그탭 2영역) ──
-  const getNaverRank=async(kw,blogId,postNo)=>{
+  const getNaverRank=async(kw,blogId,postNo,deep,pubDate)=>{
     try{
       const params=new URLSearchParams({keyword:kw});
+      if(deep) params.append("deep",String(deep));
+      if(pubDate) params.append("date",pubDate);
       if(blogId) params.append("blogId",blogId);
       if(postNo) params.append("postNo",postNo);
       const res=await fetch(`/api/naver-rank?${params.toString()}`);
@@ -2809,8 +4187,25 @@ function MissingTab(){
         rankSource: data.rankSource??null,
         areas: data.areas??null, // { main_search:{rank,exposed_area,...}, blog:{...} }
         proxyError: data.proxyError??null,
+        simRank: data.simRank??null,     // 블로그 검색 API 순위 (블로그탭 누락 판정용)
+        dateRank: data.dateRank??null,
+        dated: data.dated??null,
       };
     }catch(e){return null;}
+  };
+
+  // 제목 검색에서 못 찾은 글만: 특수문자 빼고 큰따옴표로 감싸 한 번 더 (판다랭크 방식)
+  // 네이버 검색 API는 따옴표를 무시하므로, 실제 블로그탭 따옴표 검색에 발행일 전후 하루 기간 필터를 건다(집 PC 프록시).
+  // 그날 그 문구로 쓴 글만 남아 첫 페이지에서 찾을 수 있다. 여기서 보이면 = 검색에 반영된 글 → 누락 아님.
+  const quoteRecheck=async(title,blogId,postNo,postDate)=>{
+    const clean=cleanTitleForSearch(title); if(!clean) return null;
+    const m=String(postDate||"").match(/(\d{4})\.(\d{2})\.(\d{2})/);
+    const ymd=m?`${m[1]}${m[2]}${m[3]}`:"";
+    const q=await getNaverRank(`"${clean}"`,blogId,postNo,1,ymd);
+    if(!q) return null;   // 조회 실패는 판정하지 않음 (다음에 다시 시도)
+    if(ymd&&q.dated?.error) return null;   // 기간 검색 실패(프록시 꺼짐·미업데이트)도 판정 보류
+    const r=[q.areas?.blog?.rank,q.dated?.rank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
+    return {quoteChecked:true,quoteDated:!!ymd,quoteRank:r};
   };
 
   // ── 추가검색: 제목 옆 입력창 키워드로 순위 조회 ──
@@ -2834,7 +4229,7 @@ function MissingTab(){
     try{ r=await getNaverRank(kw,bid,pno); }catch(e){ r=null; }
 
     setExtraResults(p=>({...p,[post.postNo]:(p[post.postNo]||[]).map(x=>
-      x.keyword===kw?{keyword:kw,realRank:r,loading:false}:x
+      x.keyword===kw?{keyword:kw,realRank:r,loading:false,checkedAt:Date.now()}:x
     )}));
     setExtraLoading(p=>({...p,[post.postNo]:false}));
   };
@@ -2865,7 +4260,7 @@ function MissingTab(){
 
   // ── AI 분석 ──
   const runAnalyze=async(post,idx)=>{
-    if(analysis[post.postNo])return;
+    if(analysisRef.current[post.postNo])return;
     setAnalyzing(idx);
     try{
       const {text: body, loaded: bodyLoaded} = await fetchPostBody(post);
@@ -3015,8 +4410,13 @@ JSON 배열만 출력:`;
       const extractedPostNo=urlMatch?.[2]||post.postNo||"";
 
       // 제목 전체를 검색어로 넣어서 내 글이 결과에 있는지 확인
-      const titleRank=await getNaverRank(post.title, extractedBlogId, extractedPostNo);
-      const missingStatus = titleRank?.myRank!=null ? "노출" : "누락";
+      let titleRank=await getNaverRank(post.title, extractedBlogId, extractedPostNo);
+      if(titleRank&&titleExposureCat(titleRank,post.date).cat!=="top1"&&titleExposureCat(titleRank,post.date).blogRank==null){
+        const qr=await quoteRecheck(post.title,extractedBlogId,extractedPostNo,post.date);
+        if(qr) titleRank={...titleRank,...qr};
+      }
+      const exCat=titleExposureCat(titleRank,post.date).cat;
+      const missingStatus = exCat==="missing" ? "누락" : exCat==="wait" ? "반영 대기" : "노출";
 
       const kwData=kws.map((kw,i)=>({rank:i+1,keyword:kw,realRank:null,rankLoading:true}));
       setAnalysis(prev=>({...prev,[post.postNo]:{
@@ -3039,7 +4439,7 @@ JSON 배열만 출력:`;
 
       setAnalysis(prev=>({...prev,[post.postNo]:{
         missingStatus, seoScore, seoDetail, titleRank,
-        topKeywords:exposedKeywords
+        topKeywords:exposedKeywords, analyzedAt:Date.now()
       }}));
     }catch(e){
       setAnalysis(prev=>({...prev,[post.postNo]:{error:true, errorMsg: e?.message||String(e)}}));
@@ -3049,9 +4449,162 @@ JSON 배열만 출력:`;
 
   const analyzeAll=async()=>{
     if(!posts?.current)return;
-    for(let i=0;i<posts.current.length;i++){
-      const p=posts.current[i];
-      if(!analysis[p.postNo]){await runAnalyze(p,i);await new Promise(r=>setTimeout(r,300));}
+    const list=posts.current, pg=posts.page||page;
+    for(let i=0;i<list.length;i++){
+      const p=list[i];
+      if(!analysisRef.current[p.postNo]){await runAnalyze(p,i);await new Promise(r=>setTimeout(r,300));}
+    }
+    // 이 페이지(최대 20개) 분석이 끝나면 키워드 인사이트까지 이어서 실행
+    await new Promise(r=>setTimeout(r,150));
+    if(scopeRef.current==="all") runInsight(cumulativeList(),"all");
+    else runInsight(list,pg);
+  };
+
+  // 지금까지 분석을 마친 글 전부 (페이지 누적)
+  const cumulativeList=()=>Object.values(seenRef.current)
+    .filter(p=>analysisRef.current[p.postNo]&&!analysisRef.current[p.postNo].error&&isWithinRecent(p.date));
+
+  // ── 키워드 인사이트: 현재 페이지에서 분석된 글들의 키워드 순위 + 월 검색량 집계 → AI 추천 ──
+  const TOP_N=10; // 이 순위 이내면 "상위노출"로 본다
+  const runInsight=async(list,pg,withAi=false)=>{
+    const A=analysisRef.current, X=extraRef.current;
+    const done=(list||[]).filter(p=>A[p.postNo]&&!A[p.postNo].error);
+    if(!done.length){alert("먼저 글을 분석해주세요. (⚡ 전체 분석)");return;}
+    setInsights(s=>({...s,[pg]:{loading:true,step:"키워드 집계 중..."}}));
+    try{
+      // 0) 누락으로 판정된 글 중 따옴표 재확인을 안 한 글만 재확인 (네이버 검색만, AI 없음)
+      const needQ=done.filter(p=>{const tr=A[p.postNo].titleRank;return tr&&!tr.quoteDated&&titleExposureCat(tr,p.date).cat==="missing";});
+      for(let i=0;i<needQ.length;i++){
+        const p=needQ[i];
+        setInsights(s=>({...s,[pg]:{loading:true,step:`누락 글 따옴표 검색으로 재확인 중... (${i+1}/${needQ.length})`}}));
+        const m=p.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
+        const qr=await quoteRecheck(p.title,m?.[1]||p._blogId||"",m?.[2]||p.postNo,p.date);
+        if(!qr) continue;
+        const tr={...A[p.postNo].titleRank,...qr};
+        const c=titleExposureCat(tr,p.date).cat;
+        A[p.postNo]={...A[p.postNo],titleRank:tr,missingStatus:c==="missing"?"누락":c==="wait"?"반영 대기":"노출"};
+      }
+      if(needQ.length) setAnalysis({...A});
+      // 1) 키워드 수집 (자동 추출 + 추가검색)
+      const flat=k=>String(k||"").replace(/\s+/g,"").toUpperCase();
+      const map={};
+      done.forEach(p=>{
+        const kws=[...(A[p.postNo].topKeywords||[]),...(X[p.postNo]||[])];
+        kws.forEach(k=>{
+          if(!k?.keyword||k.loading||k.rankLoading) return;
+          const areas=k.realRank?.areas;
+          const mainRank=areas?.main_search?.rank??null;
+          const blogRank=areas?.blog?.rank??(areas?null:(k.realRank?.myRank??null));
+          const key=flat(k.keyword);
+          const prev=map[key];
+          const better=(a,b)=>a==null?b:b==null?a:Math.min(a,b);
+          map[key]={
+            keyword:prev?.keyword||k.keyword,
+            mainRank:better(prev?.mainRank??null,mainRank),
+            blogRank:better(prev?.blogRank??null,blogRank),
+            posts:[...(prev?.posts||[]),p.title],
+            monthly:null,commercial:false,
+          };
+        });
+      });
+      const rows=Object.values(map);
+      if(!rows.length) throw new Error("집계할 키워드가 없습니다.");
+
+      // 2) 월 검색량 (네이버 광고 키워드도구, 5개씩)
+      const qc=v=>{const t=String(v??"");if(t.includes("<"))return 5;return Number(t.replace(/,/g,""))||0;};
+      for(let i=0;i<rows.length;i+=5){
+        setInsights(s=>({...s,[pg]:{loading:true,step:`월 검색량 조회 중... (${Math.min(i+5,rows.length)}/${rows.length})`}}));
+        const chunk=rows.slice(i,i+5);
+        try{
+          const r=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(chunk.map(c=>c.keyword).join(","))}`);
+          const d=await r.json();
+          (d.keywordList||[]).forEach(item=>{
+            const hit=chunk.find(c=>flat(c.keyword)===flat(item.relKeyword));
+            if(!hit) return;
+            hit.monthly=qc(item.monthlyPcQcCnt)+qc(item.monthlyMobileQcCnt);
+            hit.commercial=isCommercialStat(item);
+          });
+        }catch(e){}
+        await new Promise(r=>setTimeout(r,150));
+      }
+
+      // 3) 집계
+      const isTop=r=>r!=null&&r<=TOP_N;
+      const avg=arr=>{const v=arr.filter(x=>x.monthly!=null);return v.length?Math.round(v.reduce((a,b)=>a+b.monthly,0)/v.length):null;};
+      const med=arr=>{const v=arr.filter(x=>x.monthly!=null).map(x=>x.monthly).sort((a,b)=>a-b);
+        if(!v.length)return null;const m=Math.floor(v.length/2);return v.length%2?v[m]:Math.round((v[m-1]+v[m])/2);};
+      const byVol=(a,b)=>(b.monthly||0)-(a.monthly||0);
+      const mainTop=rows.filter(r=>isTop(r.mainRank)).sort(byVol);
+      const blogTop=rows.filter(r=>isTop(r.blogRank)).sort(byVol);
+      const anyTop=rows.filter(r=>isTop(r.mainRank)||isTop(r.blogRank));
+      const notTop=rows.filter(r=>!isTop(r.mainRank)&&!isTop(r.blogRank));
+      const missing=done.filter(p=>titleExposureCat(A[p.postNo].titleRank,p.date).cat==="missing");   // 저장된 예전 결과도 블로그탭 기준으로 다시 판정
+      // 제목 노출도 (제목 그대로 검색 → 블로그탭 순위)
+      const titleEx=done.map(p=>{const t=titleExposureCat(A[p.postNo].titleRank,p.date);return {title:p.title,date:p.date||"",postNo:p.postNo,...t};});
+      const titleExCount={top1:0,top30:0,out:0,missing:0,wait:0};
+      titleEx.forEach(t=>{titleExCount[t.cat]=(titleExCount[t.cat]||0)+1;});
+      const summary={
+        postCount:done.length,totalPosts:list.length,kwCount:rows.length,
+        missingCount:missing.length,
+        titleEx,titleExCount,
+        mainTop,blogTop,
+        avgTop:avg(anyTop),avgMainTop:avg(mainTop),avgBlogTop:avg(blogTop),avgNotTop:avg(notTop),
+        medTop:med(anyTop),medMainTop:med(mainTop),medBlogTop:med(blogTop),medNotTop:med(notTop),
+        topCount:anyTop.length,
+      };
+      // 기본은 집계만 (AI 비용 절약). withAi일 때만 아래 AI 진단 실행.
+      if(!withAi){ setInsights(s=>({...s,[pg]:{loading:false,rows,summary,ai:s[pg]?.ai||null,aiError:""}})); return; }
+      setInsights(s=>({...s,[pg]:{loading:true,step:"AI가 다음 키워드 전략 분석 중...",rows,summary}}));
+
+      // 4) AI 분석
+      const line=r=>`${r.keyword} | 통합 ${r.mainRank??"-"} | 블로그탭 ${r.blogRank??"-"} | 월검색 ${r.monthly??"?"}${r.commercial?" | 상업성":""}`;
+      const prompt=`네이버 블로그 @${posts?.blogId||""}의 최근 글 ${done.length}개를 분석한 데이터다. (순위 "-" = 100위 밖, 상위 = ${TOP_N}위 이내)
+
+[글 제목 | 제목 그대로 검색했을 때 블로그탭 순위]
+${titleEx.slice(0,80).map(t=>`- ${t.title} | ${t.cat==="missing"?"누락":t.cat==="top1"?"1위":t.cat==="top30"?`${t.blogRank}위`:`30위 밖${t.blogRank!=null?`(${t.blogRank}위)`:""}`}`).join("\n")}
+- 제목 노출 집계: 1위 ${titleExCount.top1} / 2~30위 ${titleExCount.top30} / 30위 밖 ${titleExCount.out} / 누락 ${titleExCount.missing}
+
+[키워드 | 통합검색 순위 | 블로그탭 순위 | 월 검색량]
+${rows.slice().sort(byVol).slice(0,300).map(line).join("\n")}
+
+[집계]
+- 상위노출 키워드 ${anyTop.length}/${rows.length}개, 월검색량 평균 ${summary.avgTop??"?"} / 중앙값 ${summary.medTop??"?"}
+- 상위 못 든 키워드 월검색량 평균 ${summary.avgNotTop??"?"} / 중앙값 ${summary.medNotTop??"?"}
+- 평균은 검색량 큰 키워드 하나에 튀므로 "먹히는 구간" 판단은 중앙값을 우선해라
+- 제목검색 누락 글 ${missing.length}/${done.length}개
+
+이 블로그가 실제로 상위에 올린 키워드의 주제·형태(단어 수, 수식어 패턴)·검색량 구간을 근거로, 앞으로 어떤 키워드를 노려야 하는지 분석해라. 데이터에 없는 수치는 지어내지 마라. 추천 키워드의 검색량은 모르면 적지 마라.
+제목 노출도도 봐라: "제목 그대로 검색해도 30위 밖/누락"인 제목은 제목 자체가 약한(경쟁 키워드 과다·상업성 단어 반복·너무 길거나 일반적) 신호다. 1위인 제목들과 30위 밖 제목들의 형태 차이(길이, 단어 수, 수식어, 구조)를 데이터에서 읽히는 대로 비교해라.
+
+아래 항목을 채워 report 도구로 제출:
+{"diagnosis":"현재 블로그 체급 진단 2~3문장","sweetSpot":"이 블로그가 먹히는 월검색량 구간과 키워드 형태 1~2문장","mainPattern":"통합검색에서 잘 뜨는 키워드의 공통점 1문장","blogPattern":"블로그탭에서 잘 뜨는 키워드의 공통점 1문장","avoid":"피해야 할 키워드 유형 1~2문장","titlePattern":"제목검색 1위인 제목들의 공통 형태 1~2문장","titleAvoid":"30위 밖·누락 제목들의 공통점과 피할 제목 형태 1~2문장","recommend":[{"keyword":"추천 키워드","reason":"근거 1문장"}]}
+recommend는 8개.`;
+      let ai=null,aiError="";
+      try{
+        ai=await callClaudeJson(prompt,{diagnosis:"string",sweetSpot:"string",mainPattern:"string",blogPattern:"string",avoid:"string",titlePattern:"string",titleAvoid:"string",recommend:"kw[]"},2800);
+      }catch(e){aiError=e?.message||"AI 분석 실패";}
+
+      // 5) 추천 키워드의 실제 월 검색량을 붙여서 검증
+      if(ai?.recommend?.length){
+        const rec=ai.recommend.filter(x=>x?.keyword).slice(0,10);
+        for(let i=0;i<rec.length;i+=5){
+          const chunk=rec.slice(i,i+5);
+          try{
+            const r=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(chunk.map(c=>c.keyword).join(","))}`);
+            const d=await r.json();
+            (d.keywordList||[]).forEach(item=>{
+              const hit=chunk.find(c=>flat(c.keyword)===flat(item.relKeyword));
+              if(!hit) return;
+              hit.monthly=qc(item.monthlyPcQcCnt)+qc(item.monthlyMobileQcCnt);
+              hit.commercial=isCommercialStat(item);
+            });
+          }catch(e){}
+        }
+        ai.recommend=rec;
+      }
+      setInsights(s=>({...s,[pg]:{loading:false,rows,summary,ai,aiError}}));
+    }catch(e){
+      setInsights(s=>({...s,[pg]:{loading:false,error:e?.message||"인사이트 분석 실패"}}));
     }
   };
 
@@ -3180,7 +4733,7 @@ JSON 배열만 출력:`;
       </div>
 
       {loadingFeed&&<div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
-        {["블로그 글 목록 연결 중...",`${posts?.serverPaged?`${page}페이지`:"1페이지"} 게시글 10개 불러오는 중...`,"목록 구성 중..."].map((m,i)=>(
+        {["블로그 글 목록 연결 중...",`${posts?.serverPaged?`${page}페이지`:"1페이지"} 게시글 20개 불러오는 중...`,"목록 구성 중..."].map((m,i)=>(
           <div key={i} style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"7px",padding:"8px 12px",
             color:"#8b949e",fontSize:"14px",animation:`pulse 1.6s ease ${i*0.3}s infinite`,display:"flex",gap:"8px"}}>
             ⏳ {m}
@@ -3193,11 +4746,87 @@ JSON 배열만 출력:`;
         <span style={{flexShrink:0}}>⚠️</span><span>{feedError}</span>
       </div>}
 
+      {/* 저장본 불러옴 안내 */}
+      {restored&&posts?.blogId===restored.blogId&&<div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",background:"#0f2a1a",border:"1px solid #2ea04344",borderRadius:"8px",padding:"8px 12px",fontSize:"13px",color:"#8b949e"}}>
+        <span>💾 저장된 분석 <b style={{color:"#3fb950"}}>{restored.count}개</b>를 불러왔어요 <span style={{color:"#484f58"}}>· {bhAgo(restored.savedAt)} 저장 · 이후 분석은 자동 저장</span></span>
+        <button onClick={resetSaved} style={{marginLeft:"auto",padding:"4px 10px",background:"none",border:"1px solid #30363d",borderRadius:"6px",color:"#ffa657",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>🗑 지우고 새로 분석</button>
+      </div>}
+
+      {/* 저장 데이터 백업 / 복원 */}
+      <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",fontSize:"12px",color:"#484f58"}}>
+        <span>💾 분석 결과는 이 브라우저에만 저장돼요. 사이트 데이터 삭제·다른 PC 대비용 →</span>
+        <button onClick={()=>{try{const r=backupExport();setBackupMsg(`✅ 백업 완료 · 블로그 ${r.ids.length}개 · ${(r.bytes/1024).toFixed(0)}KB`);}catch(e){setBackupMsg("⚠️ 백업 실패: "+(e?.message||e));}}}
+          style={{padding:"4px 10px",background:"#21262d",border:"1px solid #30363d",borderRadius:"6px",color:"#58a6ff",cursor:"pointer",fontSize:"12px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>⬇ 백업 파일 받기</button>
+        <label style={{padding:"4px 10px",background:"#21262d",border:"1px solid #30363d",borderRadius:"6px",color:"#8b949e",cursor:"pointer",fontSize:"12px",fontWeight:600}}>
+          ⬆ 백업 불러오기
+          <input type="file" accept=".json,application/json" style={{display:"none"}} onChange={async e=>{
+            const f=e.target.files?.[0];e.target.value="";if(!f)return;
+            if(!confirm("백업을 불러올까요?\n같은 블로그 ID는 더 최근에 저장된 쪽이 남고, 나머지는 합쳐집니다."))return;
+            try{const r=backupImport(await f.text());setHistory(r.idx);
+              setBackupMsg(`✅ 불러오기 완료 · 항목 ${r.added}개 반영${r.kept?` · 이 브라우저 쪽이 더 최신이라 유지 ${r.kept}개`:""}${r.failed.length?` · ⚠️ 저장공간 부족으로 ${r.failed.length}개 실패`:""}`);
+            }catch(ex){setBackupMsg("⚠️ "+(ex?.message||ex));}
+          }}/>
+        </label>
+        {backupMsg&&<span style={{color:backupMsg.startsWith("✅")?"#3fb950":"#ffa657"}}>{backupMsg}</span>}
+      </div>
+
+      {/* 최근 조회한 블로그 (ID당 마지막 결과 1개 저장) */}
+      {history.length>0&&<div style={{border:"1px solid #21262d",borderRadius:"8px",overflow:"hidden"}}>
+        <button onClick={()=>setHistOpen(o=>!o)} style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 12px",background:"#0d1117",border:"none",cursor:"pointer",color:"#c9d1d9",fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>
+          🕘 최근 조회 <span style={{color:"#58a6ff"}}>{history.length}</span>
+          <span style={{color:"#484f58",fontWeight:400,fontSize:"12px"}}>클릭하면 저장된 결과를 바로 불러옵니다</span>
+          <span style={{marginLeft:"auto",color:"#484f58"}}>{(histOpen||!posts)?"▲":"▼"}</span>
+        </button>
+        {(histOpen||!posts)&&<div style={{overflowX:"auto"}}>
+          <div style={{minWidth:"520px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1.6fr .7fr .7fr .7fr .9fr .9fr 32px",gap:"8px",padding:"6px 12px",fontSize:"12px",color:"#484f58",borderTop:"1px solid #21262d"}}>
+              <span>블로그</span><span>전체 글</span><span>분석</span><span>누락</span><span>상위 키워드</span><span>저장</span><span/>
+            </div>
+            {history.map(h=>{
+              const cur=posts?.blogId&&posts.blogId.toLowerCase()===h.blogId.toLowerCase();
+              return <div key={h.blogId} onClick={()=>openHistory(h.blogId)}
+                style={{display:"grid",gridTemplateColumns:"1.6fr .7fr .7fr .7fr .9fr .9fr 32px",gap:"8px",padding:"8px 12px",fontSize:"13px",alignItems:"center",
+                  borderTop:"1px solid #161b22",cursor:"pointer",background:cur?"#1f6feb18":"transparent",color:"#c9d1d9"}}>
+                <span style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>@{h.blogId}{h.hasInsight&&<span title="키워드 인사이트 저장됨" style={{marginLeft:"6px"}}>🧠</span>}{h.hasInflow&&<span title="실제 유입 데이터 저장됨" style={{marginLeft:"4px"}}>📥</span>}</span>
+                <span style={{color:"#8b949e"}}>{(h.total||0).toLocaleString()}</span>
+                <span style={{color:"#58a6ff"}}>{h.analyzed}</span>
+                <span style={{color:h.missing?"#ff7b72":"#8b949e"}}>{h.missing}</span>
+                <span style={{color:"#3fb950"}}>{h.topKw}</span>
+                <span style={{color:"#8b949e",fontSize:"12px"}}>{bhAgo(h.savedAt)}</span>
+                <span onClick={e=>{e.stopPropagation();if(confirm(`@${h.blogId} 저장 기록을 삭제할까요?`))removeHistory(h.blogId);}}
+                  style={{color:"#484f58",textAlign:"center",cursor:"pointer"}} title="삭제">✕</span>
+              </div>;
+            })}
+          </div>
+        </div>}
+      </div>}
+
       <div style={{background:"#0d1117",border:"1px solid #1f6feb22",borderRadius:"8px",padding:"10px 13px",fontSize:"13px",color:"#484f58",lineHeight:"1.7"}}>
-        💡 게시글을 <strong style={{color:"#8b949e"}}>10개씩</strong> 불러와 누락여부 · 상위노출 키워드를 분석합니다.
-        목록 아래 <strong style={{color:"#8b949e"}}>페이지 버튼</strong>으로 과거 글까지 계속 넘겨서 확인할 수 있어요.
+        💡 게시글을 <strong style={{color:"#8b949e"}}>20개씩</strong> 불러와 누락여부 · 상위노출 키워드를 분석합니다.
+        <strong style={{color:"#8b949e"}}>⚡ 전체 분석</strong>은 지금 보이는 페이지의 20개만 분석하고, 끝나면 아래 키워드 인사이트가 자동으로 채워져요.
       </div>
     </div>}
+
+    {/* ── 키워드 인사이트 (페이지 20개 단위) ── */}
+    {mode==="blogId"&&posts&&(()=>{
+      const okCnt=l=>l.filter(p=>analysis[p.postNo]&&!analysis[p.postNo].error).length;
+      const cum=Object.values(seenRef.current);
+      const cumDone=okCnt(cum);
+      const cumPages=[...new Set(cum.filter(p=>analysis[p.postNo]&&!analysis[p.postNo].error).map(p=>p._page))].sort((a,b)=>a-b);
+      const isAll=insightScope==="all";
+      const postDates={};cum.forEach(p=>{postDates[p.title]=p.date;});
+      const scopeLabel=isAll?`누적 ${cumDone}개`:`${page}페이지`;
+      return <>
+      <InsightPanel
+        data={insights[isAll?"all":page]} page={page} topN={TOP_N}
+        blogId={posts.blogId} scope={insightScope} setScope={setInsightScope} cumDone={cumDone} cumPages={cumPages}
+        analyzedCount={isAll?cumDone:okCnt(posts.current)}
+        totalCount={isAll?cumDone:posts.current.length} busy={analyzing!==-1}
+        onRun={(withAi)=>isAll?runInsight(cumulativeList(),"all",withAi===true):runInsight(posts.current,page,withAi===true)}/>
+      <InflowPanel inflow={inflow} setInflow={setInflow} rows={insights[isAll?"all":page]?.rows||null}
+        insightAi={insights[isAll?"all":page]?.ai||null} insightSummary={insights[isAll?"all":page]?.summary||null} topN={TOP_N} postDates={postDates} blogId={posts.blogId} scopeLabel={scopeLabel}/>
+      </>;
+    })()}
 
     {/* ── 방법2: URL + 제목 + 본문 직접 입력 ── */}
     {mode==="url"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"12px"}}>
@@ -3373,6 +5002,7 @@ JSON 배열만 출력:`;
       <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
         <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:600}}>
           총 <span style={{color:"#58a6ff"}}>{posts.total}개</span>
+          {posts.serverPaged&&<span style={{color:"#484f58",fontSize:"13px",marginLeft:"6px"}}>· 최근 1년 글만{posts.yearCapped?` (${posts.totalPages}p까지)`:""}</span>}
           {posts.blogId&&<span style={{color:"#8b949e",marginLeft:"6px"}}>· @{posts.blogId}</span>}
           {totalPages>1&&<span style={{color:"#484f58",fontSize:"14px",marginLeft:"6px"}}>{page}/{totalPages}p</span>}
           {posts.serverPaged&&loadingFeed&&<span style={{color:"#58a6ff",fontSize:"14px",marginLeft:"6px"}}>⏳ 페이지 불러오는 중...</span>}
@@ -3384,7 +5014,7 @@ JSON 배열만 출력:`;
               borderRadius:"6px",cursor:"pointer",fontSize:"14px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"}}>
               ⚡ 전체 분석
             </button>}
-          <button onClick={()=>{setPosts(null);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});}}
+          <button onClick={()=>{setPosts(null);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};}}
             style={{padding:"6px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",
               borderRadius:"6px",cursor:"pointer",fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif"}}>
             🗑️ 초기화
@@ -3441,12 +5071,12 @@ JSON 배열만 출력:`;
               {/* 뱃지 */}
               {a&&!a.error&&<div style={{display:"flex",flexWrap:"wrap",gap:"5px",marginBottom:"8px"}}>
                 <span style={{
-                  background:a.missingStatus==="노출"?"#2ea04322":"#f8514922",
-                  color:a.missingStatus==="노출"?"#3fb950":"#f85149",
-                  border:`1px solid ${a.missingStatus==="노출"?"#2ea04344":"#f8514944"}`,
+                  background:a.missingStatus==="노출"?"#2ea04322":a.missingStatus==="반영 대기"?"#1f6feb22":"#f8514922",
+                  color:a.missingStatus==="노출"?"#3fb950":a.missingStatus==="반영 대기"?"#58a6ff":"#f85149",
+                  border:`1px solid ${a.missingStatus==="노출"?"#2ea04344":a.missingStatus==="반영 대기"?"#1f6feb44":"#f8514944"}`,
                   borderRadius:"20px",padding:"2px 10px",fontSize:"13px",fontWeight:700
                 }}>
-                  {a.missingStatus==="노출"?"✅ 노출":"🚨 누락"}
+                  {a.missingStatus==="노출"?(a.titleRank?.quoteRank!=null&&!a.titleRank?.areas?.blog?.rank&&a.titleRank?.simRank==null?"✅ 노출 (따옴표 검색)":"✅ 노출"):a.missingStatus==="반영 대기"?"⏳ 반영 대기":"🚨 누락"}
                 </span>
               </div>}
               {/* 분석 중 */}
@@ -4853,8 +6483,18 @@ const NAVER_AUTO_CATEGORIES=[
 
 function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   const [selCat,setSelCat]=useState("");
+  const [profiles,setProfiles]=useState([]);
+  const [activeProfId,setActiveProfId]=useState("");
+  useEffect(()=>{setProfiles(bpList());setActiveProfId(bpGetActiveId());},[]);
+  const activeProf=profiles.find(p=>p.blogId===activeProfId)||null;
+  const pickProfile=(id)=>{setActiveProfId(id);bpSetActiveId(id);};
+  const [costMode,setCostModeState]=useState("save");
+  useEffect(()=>{setCostModeState(getCostMode());},[]);
+  const pickCost=(m)=>{setCostModeState(m);setCostMode(m);};
   const [loadingKw,setLoadingKw]=useState(false);
   const [keywords,setKeywords]=useState([]);
+  const [excludedKw,setExcludedKw]=useState([]);   // 내 글이 이미 상위라 뺀 키워드
+  const [volRange,setVolRange]=useState(null);     // 이 블로그 체급 (상위 키워드 검색량 범위)
   const [err,setErr]=useState("");
   const [trendingCount,setTrendingCount]=useState(0);
   const [googleCount,setGoogleCount]=useState(0);
@@ -4865,7 +6505,7 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
 
   const genKeywords=async()=>{
     if(!selCat) return;
-    setLoadingKw(true); setKeywords([]); setErr("");
+    setLoadingKw(true); setKeywords([]); setExcludedKw([]); setVolRange(null); setErr("");
     setStats({}); setDetail({}); setTrendingCount(0); setGoogleCount(0);
     try{
       const dirNo = NAVER_DIR_MAP[selCat] || 0;
@@ -4890,25 +6530,73 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
         ? `\n\n오늘 구글 트렌드 한국 인기 급상승 검색어 (참고용):\n${googleTrends.map((t,i)=>`${i+1}. ${t}`).join(", ")}\n※ 이 중 "${selCat}" 카테고리와 실제로 연결되는 것만 활용할 것. 억지로 끼워 맞추지 말 것.`
         : "";
 
-      const prompt=`카테고리: "${selCat}"
-${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각각의 메인 키워드를 추천해줘.${trendingBlock}${googleBlock}
+      // 내 블로그가 이미 상위를 차지한 키워드 (누락확인 저장본 기준)
+      const myBid=activeProf?.blogId||myBlogIdForCheck();
+      const occ=occupiedFromSnapshot(myBid);
+      const occCache=occCacheLoad(myBid);
+      const nowTs=Date.now();
+      // 키워드별 최신 판단: 재확인 캐시가 있으면 그게 우선
+      const occNow=k=>{const c=occCache[k];const v=occ[k];
+        if(c&&(!v?.at||c.at>=v.at)) return {...(v||{}),rank:c.rank,area:c.area||v?.area,at:c.at};
+        return v||null;};
+      const isFresh=v=>v?.at&&nowTs-v.at<OCCUPY_FRESH_MS;
+      const occList=Object.keys(occ).filter(k=>k!=="__savedAt").map(occNow)
+        .filter(v=>v&&v.rank!=null&&v.rank<=OCCUPY_TOP&&isFresh(v)).map(v=>v.keyword);
+      const occBlock=occList.length
+        ? `\n\n[내 블로그 글이 최근 7일 안에 ${OCCUPY_TOP}위 안으로 확인된 키워드 — 메인 키워드로 추천 금지]\n${occList.slice(0,80).join(", ")}\n※ 네이버는 같은 검색어에 한 블로그 글을 보통 1개만 노출하므로, 위 키워드를 메인으로 새 글을 쓰면 상위노출 자리가 나지 않는다. 띄어쓰기만 다른 같은 키워드도 금지. 같은 소재라도 검색 의도가 다른 별도 키워드(롱테일)로는 추천해도 된다.`
+        : "";
 
+      const vr=blogVolumeRange(myBid,activeProf);
+      setVolRange(vr);
+      const volRule=vr
+        ? `네이버에서 실제로 검색되는 단어이되, 이 블로그의 체급에 맞는 크기로 고를 것. 이 블로그가 실제로 10위 안에 올린 키워드 ${vr.n}개의 월 검색량은 중앙값 ${vr.med}, 대부분 ${vr.ceil} 이하다. 이보다 훨씬 큰 대표 키워드(예: 누구나 쓰는 넓은 단어)는 노출은 돼도 순위권에 못 드니 피하고, 같은 소재에서 더 구체적인 2형태소 조합을 고를 것`
+        : `네이버에서 실제로 많이 검색되는 단어`;
+
+      const prompt=`카테고리: "${selCat}"
+${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각각의 메인 키워드를 추천해줘.${trendingBlock}${googleBlock}${occBlock}
+${buildProfileBlock(activeProf,"keyword")}
 선정 기준:
 1. 실제 블로거가 쓸 법한 완성된 제목 형태 (경험·후기·정보·비교 등 독자가 클릭하고 싶은 구체적 제목)
 2. ${yearMonth} 최신 트렌드와 시의성 반영${trendingTitles.length > 0 ? " (위 실시간 인기글 소재를 참고해 유사하거나 파생된 주제 우선)" : ""}
-3. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. 네이버에서 실제로 많이 검색되는 단어
+3. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. ${volRule}
 4. 인기글과 너무 똑같은 제목은 피하고, 소재만 참고해서 차별화된 새 주제로 발전시킬 것
 5. 20개의 메인 키워드는 서로 겹치지 않게 분산시킬 것 (같은 단어를 변형만 해서 반복하지 말 것)
 
 ※ 검색량과 경쟁도는 추측하지 말 것. 추천 후 실제 데이터로 따로 조회한다.
 
 반드시 순수 JSON만 출력. 마크다운 없이.
-{"keywords":[{"rank":1,"title":"추천 글 주제 제목","mainKeyword":"메인 키워드 (1~2형태소, 예:옷장정리)","reason":"선정 이유 한 줄 (유행성 포함)"},...]}`
+{"keywords":[{"rank":1,"title":"추천 글 주제 제목","mainKeyword":"메인 키워드 (1~2형태소, 예:옷장정리)","reason":"선정 이유 한 줄 (유행성 포함)"${activeProf?.coreTopics?.length?`,"axis":"core | side | other (위 주제 축 중 어디에 속하는지)"`:""}},...]}`
 
       const raw=await callClaude([{role:"user",content:prompt}],
         "You are a Naver blog SEO expert. Output ONLY valid JSON, no markdown.",3000,"claude-haiku-4-5-20251001");
       const parsed=safeParseJson(raw);
-      const list=parsed.keywords||[];
+      let list=parsed.keywords||[];
+
+      // 판정 규칙
+      //  - 분석에서 상위(10위) 밖이었던 키워드 → 그대로 써도 됨 (재확인 안 함)
+      //  - 상위였고 확인한 지 7일 이내 → 제외
+      //  - 상위였지만 7일 넘음(또는 시각 모름) → 그 키워드만 실제 검색으로 다시 확인
+      //  - 분석에 없는 키워드 → 알 수 없으니 그대로 둠
+      const excluded=[]; const kept=[]; const toRecheck=[];
+      list.forEach(k=>{const mk=k.mainKeyword||k.keyword;const v=occNow(kwFlat(mk));
+        if(v&&v.rank!=null&&v.rank<=OCCUPY_TOP){
+          if(isFresh(v)) excluded.push({keyword:mk,rank:v.rank,area:v.area,title:v.title,basis:"분석"});
+          else toRecheck.push(k);
+        }else kept.push(v&&v.rank!=null?{...k,myRank:v.rank,myArea:v.area,myTitle:v.title}:k);
+      });
+      for(const k of toRecheck){
+        const mk=k.mainKeyword||k.keyword;const prev=occNow(kwFlat(mk));
+        const r=await recheckMyRank(mk,myBid);
+        await new Promise(res=>setTimeout(res,300));
+        if(!r){ excluded.push({keyword:mk,rank:prev.rank,area:prev.area,title:prev.title,basis:"재확인 실패 · 이전 분석"}); continue; }
+        occCache[kwFlat(mk)]={rank:r.rank,area:r.area,at:Date.now()};
+        if(r.rank!=null&&r.rank<=OCCUPY_TOP) excluded.push({keyword:mk,rank:r.rank,area:r.area,title:prev.title,basis:"방금 재확인"});
+        else kept.push(r.rank!=null?{...k,myRank:r.rank,myArea:r.area,myTitle:prev.title}:k);
+      }
+      if(toRecheck.length) occCacheSave(myBid,occCache);
+      const order=new Map(list.map((k,i)=>[k,i]));
+      list=kept.map(k=>[k,order.get(list.find(x=>(x.mainKeyword||x.keyword)===(k.mainKeyword||k.keyword)))]).sort((a,b)=>a[1]-b[1]).map(x=>x[0]);
+      setExcludedKw(excluded);
       setKeywords(list);
       fetchBulkStats(list);
     }catch(ex){setErr("추천 글 주제 생성 오류: "+(ex?.message||String(ex)));}
@@ -5003,6 +6691,46 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+    <div style={{background:"#161b22",border:`1px solid ${activeProf?"#2ea04366":"#30363d"}`,borderRadius:"12px",padding:"16px 20px",display:"flex",flexDirection:"column",gap:"10px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+        <div style={{color:"#e6edf3",fontSize:"15px",fontWeight:700}}>✍️ 블로그 맞춤 프로필</div>
+        <select value={activeProfId} onChange={e=>pickProfile(e.target.value)}
+          style={{padding:"7px 12px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",fontSize:"14px",outline:"none",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"}}>
+          <option value="">사용 안 함 (기본 프롬프트)</option>
+          {profiles.map(p=><option key={p.blogId} value={p.blogId}>@{p.blogId}{p.hasInflow?" · 유입 반영":" · 순위만"}</option>)}
+        </select>
+        {activeProf&&<span style={{color:"#3fb950",fontSize:"13px"}}>● 키워드 추천 + 본문 작성에 적용 중</span>}
+        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:"6px"}}>
+          <span style={{color:"#8b949e",fontSize:"13px"}}>글쓰기 비용</span>
+          <div style={{display:"flex",border:"1px solid #30363d",borderRadius:"6px",overflow:"hidden"}}>
+            {[["save","💰 절약"],["full","🔬 정밀"]].map(([k,l])=>(
+              <button key={k} onClick={()=>pickCost(k)} style={{padding:"5px 11px",border:"none",cursor:"pointer",fontSize:"13px",fontWeight:600,
+                fontFamily:"'Noto Sans KR',sans-serif",background:costMode===k?"#1f6feb":"#0d1117",color:costMode===k?"#fff":"#8b949e"}}>{l}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{color:"#484f58",fontSize:"12px",lineHeight:1.6}}>
+        {costMode==="save"
+          ?"절약: 수치·정책이 핵심인 주제만 웹검색으로 사실 확인하고, 그 확인 작업은 Haiku로 처리합니다. 본문 작성은 그대로 Sonnet. (편당 대략 130~280원)"
+          :"정밀: 모든 글에 Sonnet으로 사전 사실 확인 + 확인필요 항목 재검색. (편당 대략 330~550원)"}
+      </div>
+      {profiles.length===0&&<div style={{color:"#484f58",fontSize:"13px",lineHeight:1.7}}>아직 만든 프로필이 없어요. 누락 확인 탭에서 블로그 분석 → 🧠 인사이트 → (📥 유입 파일) → <b style={{color:"#8b949e"}}>✨ 프로필 만들기</b>를 누르면 여기에 나타납니다.</div>}
+      {activeProf&&<>
+        <div style={{color:"#8b949e",fontSize:"13px",lineHeight:1.7}}>{activeProf.summary}</div>
+        {activeProf.categories?.length>0&&<div style={{display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap"}}>
+          <span style={{color:"#8b949e",fontSize:"13px"}}>추천 카테고리</span>
+          {activeProf.categories.map(c=>(
+            <button key={c.keyword} title={c.reason} onClick={()=>{setSelCat(c.keyword);setKeywords([]);setErr("");setStats({});setDetail({});}}
+              style={{padding:"5px 12px",borderRadius:"14px",cursor:"pointer",fontSize:"13px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif",
+                border:`1px solid ${selCat===c.keyword?"#1f6feb":"#30363d"}`,background:selCat===c.keyword?"#1f6feb":"#0d1117",color:selCat===c.keyword?"#fff":"#c9d1d9"}}>{c.keyword}</button>
+          ))}
+        </div>}
+        {activeProf.categories?.find(c=>c.keyword===selCat)&&<div style={{color:"#484f58",fontSize:"12px"}}>↳ {activeProf.categories.find(c=>c.keyword===selCat).reason}</div>}
+        <div style={{color:"#484f58",fontSize:"12px"}}>{bhAgo(activeProf.createdAt)} 생성 · {activeProf.basis} · 다른 카테고리를 골라도 키워드 크기·형태 기준은 그대로 적용됩니다</div>
+      </>}
+    </div>
+
     <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px 20px"}}>
       <div style={{display:"inline-block",background:"#1f6feb",color:"#fff",fontSize:"12px",fontWeight:700,borderRadius:"4px",padding:"2px 7px",marginBottom:"8px",letterSpacing:"0.05em"}}>STEP 1</div>
       <div style={{color:"#e6edf3",fontSize:"16px",fontWeight:700,marginBottom:"12px"}}>카테고리 선택</div>
@@ -5038,8 +6766,19 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각
       <div style={{color:"#484f58",fontSize:"14px",marginBottom:"14px"}}>
         월 검색량은 네이버 광고 API 실측값입니다 · <span style={{color:"#58a6ff",fontWeight:700}}>연관검색어 · 난이도</span>를 누르면 이번 달 발행량까지 조회합니다 (월 1,000건 미만은 정확한 실측)
       </div>
+      {excludedKw.length>0&&<div style={{background:"#2a1f0a",border:"1px solid #d2992233",borderRadius:"8px",padding:"9px 12px",marginBottom:"10px",fontSize:"13px",color:"#e3b341",lineHeight:1.7}}>
+        <b>🚫 내 글이 이미 상위라 뺀 키워드 {excludedKw.length}개</b> <span style={{color:"#8b949e"}}>— 같은 검색어엔 한 블로그 글이 보통 1개만 떠서 새 글은 자리가 안 나요</span>
+        {excludedKw.map((x,i)=><div key={i} style={{color:"#8b949e",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          <span style={{color:"#e3b341",fontWeight:700}}>{x.keyword}</span> · {x.area} {x.rank}위{x.title?` · ${x.title}`:""} <span style={{color:"#484f58"}}>({x.basis})</span></div>)}
+      </div>}
+      {volRange&&<div style={{color:"#8b949e",fontSize:"13px",marginBottom:"10px"}}>
+        📏 이 블로그 체급: 10위 안에 올린 키워드 {volRange.n}개의 월 검색량 중앙값 <b style={{color:"#e6edf3"}}>{fmt(volRange.med)}</b> · 대부분 <b style={{color:"#e6edf3"}}>{fmt(volRange.ceil)}</b> 이하
+        <span style={{color:"#484f58"}}> ({volRange.src} 기준) · 이보다 큰 키워드는 "체급 초과"로 표시하고 아래로 내립니다</span>
+      </div>}
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-        {keywords.map((kw,idx)=>{
+        {keywords.map((kw,idx)=>({kw,idx,over:!!(volRange&&stats[kw.mainKeyword||kw.keyword]?.monthly>volRange.ceil)}))
+          .sort((a,b)=>(a.over-b.over)||(a.idx-b.idx))
+          .map(({kw,idx,over})=>{
           const mainKw=kw.mainKeyword||kw.keyword;
           const st=stats[mainKw];
           const dt=detail[mainKw];
@@ -5064,6 +6803,12 @@ ${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각
                 {mainKw}
               </span>
               {st&&<span style={{fontSize:"13px",color:"#8b949e"}}>월 검색량 <b style={{color:"#e6edf3"}}>{fmt(st.monthly)}</b></span>}
+              {kw.axis==="core"&&<span title="맞춤 프로필의 중심 축 주제" style={{background:"#23863615",border:"1px solid #23863655",borderRadius:"6px",padding:"2px 8px",color:"#3fb950",fontSize:"12px",fontWeight:700}}>🎯 중심 축</span>}
+              {kw.axis==="side"&&<span title="맞춤 프로필의 곁가지 주제" style={{background:"#d2992210",border:"1px solid #d2992240",borderRadius:"6px",padding:"2px 8px",color:"#d29922",fontSize:"12px",fontWeight:700}}>🌿 곁가지</span>}
+              {over&&<span title={`이 블로그가 10위 안에 올린 키워드는 대부분 월 ${volRange.ceil} 이하예요`} style={{background:"#8957e515",border:"1px solid #8957e544",borderRadius:"6px",padding:"2px 8px",color:"#d2a8ff",fontSize:"12px",fontWeight:700}}>
+                ⚖️ 체급 초과</span>}
+              {kw.myRank!=null&&<span title={`내 글: ${kw.myTitle||""}`} style={{background:"#d2992215",border:"1px solid #d2992244",borderRadius:"6px",padding:"2px 8px",color:"#e3b341",fontSize:"12px",fontWeight:700}}>
+                📌 내 글 {kw.myArea} {kw.myRank}위 있음</span>}
               {st?.commercial&&<span title={`통합검색 평균 광고 노출 ${st.depth}개`}
                 style={{background:"#f8514915",border:"1px solid #f8514944",borderRadius:"6px",padding:"2px 8px",color:"#ff7b72",fontSize:"12px",fontWeight:700}}>
                 💰 상업성 키워드
@@ -7173,7 +8918,7 @@ async function fetchCommercialWords(mainKw) {
 // 누락확인 탭에서 조회한 적 있는 블로그 ID가 있으면 실제 글 제목을 쓰고,
 // 없으면 이 도구로 생성했던 제목들로 대체한다.
 async function fetchAvoidWords() {
-  const bid = lsGet(LS_BLOGID, "");
+  const bid = bpGetActiveId() || lsGet(LS_BLOGID, "");   // 맞춤 프로필이 켜져 있으면 그 블로그 기준
   if (bid) {
     try {
       const r = await fetch(`/api/blog-posts?blogId=${encodeURIComponent(bid)}&page=1&size=30`);
@@ -7284,7 +9029,7 @@ function isCommercialStat(item) {
 // ─── 글쓰기 프롬프트 빌더 ──────────────────────────────────────────────────
 function buildWritePrompt({
   kw, yearMonth, today, category, smartBlockType, blogStrategy, bodies, mainKeyword,
-  topTitles, commercialWords, avoidWords, pattern, factSheetBlock = "",
+  topTitles, commercialWords, avoidWords, pattern, factSheetBlock = "", profileBlock = "", productStatusBlock = "", visitBlock = "",
 }) {
   const mainKw = mainKeyword || kw;
   const ctx = category
@@ -7303,6 +9048,15 @@ function buildWritePrompt({
 
   const pat = pattern || TITLE_PATTERNS[0];
 
+  // 차별화 앵글 — 상위 글을 이미 보고 있으니, 별도 호출 없이 "남들이 안 다룬 각도"를 먼저 정하게 한다
+  const angleBlock = ((bodies && bodies.length > 0) || (topTitles && topTitles.length > 0))
+    ? `\n[차별화 원칙 — 쓰기 전에 먼저 정할 것]
+D1. 위 참고자료·상위 제목들이 공통으로 다루는 내용과 접근 방식을 먼저 파악할 것.
+D2. 그 글들이 빠뜨렸거나 얕게 넘어간 각도를 하나 정해서 이 글의 중심 관점으로 삼을 것. (예: 다들 "방법"만 나열했다면 "어디서 막히는지와 그때 해결법", 다들 장점만 썼다면 "쓰다 보면 드러나는 한계와 대처")
+D3. 도입부·소제목 구성·비유·판단과 의견은 상위 글과 달라야 한다. 같은 순서, 같은 소제목 이름을 따라가지 말 것.
+D4. 차별화는 관점·구성·표현에서만 한다. 사실(수치·날짜·가격·스펙·정책)은 차별화 대상이 아니다 — 남다르게 보이려고 새로운 사실을 만들지 말 것. 주제 원칙(S1~S3)의 범위도 벗어나지 말 것.\n`
+    : "";
+
   const commercialBlock = (commercialWords && commercialWords.length > 0)
     ? `\n[제목에 쓰면 안 되는 상업성 단어]\n${commercialWords.join(", ")}\n※ 이 단어들은 통합검색에서 광고가 먼저 뜨는 상업성 키워드입니다. 제목에 넣으면 저품질로 분류될 확률이 올라갑니다. 본문에서 꼭 필요하면 최소한으로만 쓰고, 제목에는 절대 쓰지 마세요.\n`
     : "";
@@ -7312,7 +9066,7 @@ function buildWritePrompt({
     : "";
 
   return `오늘 날짜: ${today || yearMonth} / 키워드: "${mainKw}" / 주제: "${kw}" / ${ctx}
-${factSheetBlock}${refBlock}${titleBlock}${commercialBlock}${avoidBlock}
+${visitBlock}${productStatusBlock}${factSheetBlock}${refBlock}${titleBlock}${commercialBlock}${avoidBlock}${profileBlock}${angleBlock}
 네이버 블로그 홈판 노출 + AI 브리핑(AEO) 인용 최적화 글을 작성해줘:
 
 [주제 원칙 — 글의 범위를 정하는 기준. 사실 원칙 다음으로 우선한다]
@@ -7359,6 +9113,18 @@ G2. [확인된 사실] 목록의 내용을 쓸 때는 한 글에 2~3번, 출처�
    (O) "과기정통부가 2026년 3월 시행한 개정안에 따라 ~"
    (X) "확인 결과 ~입니다", "확인됩니다" ← 검증 말투를 본문에 쓰지 말 것. 출처는 이름으로만 밝힌다.
    같은 출처를 두 번 이상 반복해서 붙이지 말고, 사실 하나는 글에서 한 번만 쓸 것.
+
+[어조 원칙 — 무엇을 단정하고 무엇을 열어둘지]
+V1. 문장 성격에 따라 어미를 다르게 쓸 것. 모든 문장을 같은 확신도로 쓰지 말 것.
+   - 확인된 사실·정의·설정 방법·절차 → 단정해도 된다. 다만 명령조("~해야 합니다")보다 권유조("~하는 게 좋습니다", "~해두면 됩니다")를 쓸 것.
+   - 필자의 판단·평가("가장 실용적", "제일 낫다", "추천") → 판단인 게 드러나게. "제 기준에선 ~가 가장 실용적이었어요", "저라면 ~쪽을 고르겠어요".
+   - 독자에게 생길 효과·결과("피로가 줄어든다", "빨라진다", "절약된다", "해결된다") → 사람·환경마다 다르므로 단정 금지. 조건부나 가능성으로.
+     (X) "~까지 맞추면 손목 피로 없이 정밀한 제어가 가능합니다"
+     (O) "~까지 맞춰두면 손목 부담이 훨씬 덜하고 세밀하게 다루기도 편해질 거예요"
+V2. 효과·결과 문장에는 절대 표현을 쓰지 말 것: "없이", "완벽하게", "반드시", "확실히 해결", "누구나", "100%". → "훨씬 덜", "대부분", "한결", "~한 편" 같은 정도 표현으로.
+V3. 단, 판단까지 흐리지는 말 것. 결론은 분명하게 내려주되 그게 필자의 결론임을 드러낼 것. "~일 수도 있고 아닐 수도 있습니다"처럼 아무 말도 안 하는 문장은 금지.
+V4. "~것 같습니다", "~듯합니다", "~로 보입니다"는 한 글에 합쳐서 4번 이하. 추측 표현을 한 문장에 두 번 겹치지 말 것 ("~할 것이라고 생각됩니다" 같은 이중 추측 금지).
+V5. 이 원칙은 AEO1(도입부 정의·결론 문장)과 충돌하지 않는다 — 정의·사실은 단정하고, 효과 약속만 조건부로 쓴다.
 
 [브랜드·상표 원칙]
 H. 특정 브랜드·제품·서비스명이 등장하면, 그 대상에 관해 정확한 내용만 쓸 것.
@@ -7429,11 +9195,20 @@ E1. 경험을 소제목 끝에 한 덩어리로 몰아넣지 말 것. 설명하�
 E2. 같은 형태의 문장으로 경험을 반복하지 말 것.
     "저는 ~한 적이 있습니다. 그 뒤로는 ~합니다"를 소제목마다 반복하면 그게 더 기계적으로 읽힌다.
     문장 형태를 매번 바꿀 것.
-E3. 경험 대목에는 장면 하나가 들어 있어야 한다 — 언제, 어디서, 무엇을 하려다, 어떻게 됐는지.
-    "불편했습니다" 같은 평가만 쓰지 말고 그 상황을 보여줄 것.
+E3. 경험 대목은 소소하게. 한 편에 2~3군데, 각 1~2문장이면 충분하다.
+    상황 하나가 짧게 보이면 되고("이 단계에서 서류 하나가 빠져서 다시 다녀온 적이 있습니다"),
+    극적인 실패담·감동·반전으로 키우지 말 것. 과한 경험담은 오히려 지어낸 티가 난다.
+    "불편했습니다" 같은 평가만 쓰는 것도 피할 것 — 무슨 일이 있었는지 한 줄이면 된다.
 E4. 최소 두 군데는 '왜 그렇게 했는지'를 쓸 것. 판단의 이유와 비교해본 선택지가 드러나야 한다.
     정보는 검색하면 나오지만 판단 근거는 겪어본 사람만 쓸 수 있다.
-E5. 경험과 설명의 비중은 대략 3:7. 경험이 부록처럼 붙는 게 아니라 설명의 근거로 쓰여야 한다.
+E5. 경험과 설명의 비중은 대략 2:8. 경험이 부록처럼 붙는 게 아니라 설명의 근거로 쓰여야 한다.
+E6. 경험 대목은 작성자가 나중에 실제 있었던 일로 바꿔 넣는다. 그래서 사람 이름·날짜·정확한 수치·
+    특정 장소명 같은 세부는 넣지 말 것. 바꿔 넣기 쉽게 상황의 뼈대만 쓸 것.
+E7. 화자는 이 분야를 실무로 오래 접한 사람이다. 단, 직업이나 소속을 대놓고 밝히지 말 것.
+    (X) "휴대폰 매장에서 일하고 있어서", "저희 매장에서는", "손님들이 오시면"
+    (O) "이런 경우를 여러 번 봐왔는데", "주변에서 가장 많이 헷갈려하는 부분이", "실제로 해보면 순서가 이렇습니다"
+    무엇을 자주 봐왔는지, 어디서 사람들이 막히는지를 아는 데서 전문성이 드러나야 한다.
+    글 전체에서 한두 번이면 충분하고, 매 소제목마다 반복하지 말 것.
 
 [내용 원칙 — C-Rank / DIA]
 8. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
@@ -7449,6 +9224,10 @@ E5. 경험과 설명의 비중은 대략 3:7. 경험이 부록처럼 붙는 게 
 [마무리]
 15. 본문 마지막에 "▶ 정리" 소제목을 따로 두고 마무리할 것 (앞 소제목 안에 뭉쳐 넣지 말 것):
     - 핵심 내용 요약 2~3줄 (각 줄이 독립적으로 읽히게)
+    - 요약 줄도 [어조 원칙]을 따를 것. 방법·사실은 단정하되, 마지막 줄처럼 "이렇게 하면 ~된다"는 효과 문장은
+      반드시 조건부·필자 관점으로 맺을 것. 정리 3줄이 모두 "~합니다/~가능합니다" 단정으로 끝나면 실패다.
+      (O) "~까지 같이 맞춰두면 오래 작업해도 훨씬 편해질 거예요"
+      (O) "제 기준에선 ~ 방식이 가장 손이 덜 갔어요"
     - 요약으로 끝낼 것. 그 뒤에 아무 말도 덧붙이지 말 것.
     ※ 댓글·공감·구독을 유도하는 문장은 절대 쓰지 말 것.
       "댓글로 경험 공유해주세요", "도움이 되셨다면", "궁금한 점은 댓글로",
@@ -7518,7 +9297,8 @@ ${String(text || "").slice(0, 2000)}
 순수 JSON만 출력:
 {"items":[{"label":"항목명(위 목록과 똑같이)","found":true,"value":"찾은 값","source":"https://...","sourceName":"출처 사이트명","note":"조건·기준 시점","checkAt":"확인할 곳"},{"label":"...","found":false,"approx":"대략 범위 또는 빈 문자열","checkAt":"확인할 곳","reason":"찾지 못한 이유"}]}`;
 
-  const raw = await callClaudeSearch(
+  const _save = getCostMode() === "save";
+  const _run = (model) => callClaudeSearch(
     [{ role: "user", content: prompt }],
     `You verify factual placeholders in Korean blog drafts using web search.
 
@@ -7526,8 +9306,11 @@ Search before answering every item. Never fill value from memory or from what se
 When the search fails but a commonly published range exists, put a hedged range in approx. Never state a single figure there.
 When there is no basis at all, leave approx empty. An empty value is better than a wrong one.
 Prefer official primary sources. Output ONLY valid JSON.`,
-    4000, "claude-sonnet-4-5-20250929", Math.min(placeholders.length * 2 + 2, 10)
+    4000, model, _save ? Math.min(placeholders.length + 1, 5) : Math.min(placeholders.length * 2 + 2, 10)
   );
+  let raw;
+  try { raw = await _run(_save ? MODEL_HAIKU : MODEL_SONNET); }
+  catch (e) { if (!_save) throw e; raw = await _run(MODEL_SONNET); }
 
   return (safeParseJson(raw)?.items || []).filter(x => x && x.label);
 }
@@ -7569,7 +9352,37 @@ function applyResolvedValues(text, items) {
 // 뽑아 공식 출처로 확인한다. 확인된 것만 본문 프롬프트에 [확인된 사실]로 넣고,
 // 참고자료가 주장하지만 확인 안 된 것은 "쓰지 말 것" 목록으로 넘긴다.
 
+// ── 비용 모드: "save"(절약, 기본) | "full"(정밀) ──
+// 절약: 사실표·[확인필요] 해결을 Haiku로, 검색 횟수 축소, 수치가 안 걸린 주제는 사실표 생략. 본문 작성은 항상 Sonnet.
+const LS_COST_MODE = "mt_cost_mode";
+function getCostMode() { try { return localStorage.getItem(LS_COST_MODE) === "full" ? "full" : "save"; } catch(e) { return "save"; } }
+function setCostMode(m) { try { localStorage.setItem(LS_COST_MODE, m === "full" ? "full" : "save"); } catch(e) {} }
+const MODEL_SONNET = "claude-sonnet-4-5-20250929", MODEL_HAIKU = "claude-haiku-4-5-20251001";
+
+// 이 주제가 "틀리면 안 되는 수치·정책"에 기대는 글인지 판정 → 아니면 사실표(웹검색)를 건너뛴다
+const FACT_HEAVY_RE = /요금|가격|얼마|비용|지원금|보조금|할인|혜택|환급|수수료|금리|이자|세금|연말정산|보험|대출|연금|청약|정책|제도|법률|법령|개정|규정|신청 ?자격|지원 ?조건|일정|출시|스펙|사양|성능|용량|배터리|순위|통계|최신|20\d\d/;
+async function needsFactSheet({ kw, mainKw, bodies }) {
+  if (FACT_HEAVY_RE.test(`${kw} ${mainKw}`)) return { need: true, reason: "주제에 수치·정책 관련 단어 포함" };
+  try {
+    const refs = (bodies || []).slice(0, 3).map((b, i) => `(${i + 1}) ${String(b).slice(0, 500)}`).join("\n");
+    const raw = await callClaude([{ role: "user", content:
+`블로그 글 주제: "${kw}" (키워드: "${mainKw}")
+상위 노출 글 발췌:
+${refs || "(없음)"}
+
+이 글을 쓸 때 가격·요금·날짜·정책·스펙·통계처럼 "틀리면 독자에게 피해가 가고 시간이 지나면 바뀌는 사실"이 글의 핵심인가?
+- 핵심이다 (예: 요금제 비교, 지원금 조건, 제품 스펙 비교, 신청 방법·자격) → need=true
+- 아니다 (예: 사용법, 설정 방법, 경험담, 관리 요령, 감상·추천 이유) → need=false
+순수 JSON만: {"need":true,"reason":"한 줄"}` }],
+      "Output ONLY valid JSON.", 150, MODEL_HAIKU);
+    const j = safeParseJson(raw);
+    return { need: j?.need !== false, reason: j?.reason || "" };
+  } catch (e) { return { need: true, reason: "판정 실패 — 안전하게 확인 진행" }; }
+}
+
 async function buildFactSheet({ kw, mainKw, bodies, today }) {
+  const save = getCostMode() === "save";
+  const maxSearch = save ? 3 : 4;
   const refs = (bodies || []).slice(0, 3).map((b, i) => `(${i + 1})\n${String(b).slice(0, 1500)}`).join("\n\n");
   const prompt = `블로그 글을 쓰기 전에 사실 확인을 해주세요.
 
@@ -7600,19 +9413,279 @@ ${refs || "(없음)"}
 순수 JSON만 출력:
 {"items":[{"topic":"항목명","verdict":"confirmed","fact":"글에 쓸 문장","source":"https://...","sourceName":"출처명","note":"기준 시점·조건"},{"topic":"항목명","verdict":"unconfirmed","claim":"참고자료의 주장","note":"확인 못한 이유"},{"topic":"항목명","verdict":"outdated","fact":"현재 맞는 내용","source":"https://...","sourceName":"출처명","note":"무엇이 바뀌었는지"}]}`;
 
-  const raw = await callClaudeSearch(
+  const run = (model) => callClaudeSearch(
     [{ role: "user", content: prompt }],
     `You prepare a verified fact sheet before a Korean blog post is written.
 
-Search before marking anything confirmed; if the search does not settle it, mark it unconfirmed. You have at most 4 searches, so prefer official pages that settle several items at once and put the most important items first. Prefer official primary sources over blogs. Write each confirmed fact as one complete sentence that includes its conditions and the date it applies to. Never invent a value that neither the reference material nor a search supports. Output ONLY valid JSON.`,
-    3000, "claude-sonnet-4-5-20250929", 4
+Search before marking anything confirmed; if the search does not settle it, mark it unconfirmed. You have at most ${maxSearch} searches, so prefer official pages that settle several items at once and put the most important items first. Prefer official primary sources over blogs. Write each confirmed fact as one complete sentence that includes its conditions and the date it applies to. Never invent a value that neither the reference material nor a search supports. Output ONLY valid JSON.`,
+    3000, model, maxSearch
   );
+  // 절약 모드는 Haiku로 먼저, 실패하면 Sonnet으로 한 번 더
+  let raw;
+  try { raw = await run(save ? MODEL_HAIKU : MODEL_SONNET); }
+  catch (e) { if (!save) throw e; raw = await run(MODEL_SONNET); }
 
   return (safeParseJson(raw)?.items || [])
     .filter(x => x && x.topic && ["confirmed", "unconfirmed", "outdated"].includes(x.verdict));
 }
 
 // 사실표를 본문 프롬프트에 넣을 블록으로 만든다
+// ── 제품·서비스 출시 상태 확인 (절약/정밀 공통, 항상 실행) ──
+// "미출시 제품 사용기" 같은 사고를 막는다. 주제에 특정 제품·서비스가 없으면 검색 없이 끝난다.
+// Haiku + 검색 최대 2회 → 편당 20~30원 수준.
+async function checkProductStatus({ kw, mainKw, today }) {
+  const prompt = `블로그 글 주제: "${kw}" / 메인 키워드: "${mainKw}" / 오늘: ${today}
+
+1) 이 주제에 특정 제품(모델명)·서비스·요금제·앱 이름이 들어 있는가?
+   - 없으면(일반적인 방법·개념·생활 주제) 검색하지 말고 {"hasProduct":false,"items":[]} 만 출력.
+2) 있으면 각 이름에 대해 웹 검색으로 "오늘 기준 한국 출시·판매 여부"만 확인할 것 (최대 2개 이름).
+   status 값:
+   - "released_kr": 한국에서 정식 출시되어 지금 살 수 있음
+   - "announced": 발표됐거나 해외 출시됐지만 한국 정식 출시 전 (사전예약 중 포함)
+   - "not_exist": 공식 발표된 적 없음 (루머·추측 단계)
+   - "unknown": 검색으로 확인 안 됨
+   검색으로 확인되지 않으면 추측하지 말고 unknown.
+
+순수 JSON만: {"hasProduct":true,"items":[{"name":"공식 표기 이름","status":"released_kr","note":"한국 출시일 또는 현재 상황 한 줄","sourceName":"출처 사이트명"}]}`;
+  const raw = await callClaudeSearch(
+    [{ role: "user", content: prompt }],
+    "You check whether named products are officially released in Korea as of today, using web search. Never guess. Output ONLY valid JSON.",
+    800, MODEL_HAIKU, 2
+  );
+  const j = safeParseJson(raw);
+  if (!j || j.hasProduct === false) return [];
+  return (j.items || []).filter(x => x && x.name && x.status).slice(0, 2);
+}
+
+// ═══ 방문 리뷰 모드 ═══════════════════════════════════════════════════════
+// 사진은 브라우저에서 긴 변 1024px JPEG로 줄여 보낸다 (Vercel 요청 4.5MB 제한 + 비용 절감)
+async function resizeImageFile(file, maxSide = 1024, quality = 0.78) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = url; });
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    c.getContext("2d").drawImage(img, 0, 0, w, h);
+    const dataUrl = c.toDataURL("image/jpeg", quality);
+    return { name: file.name, dataUrl, base64: dataUrl.split(",")[1], mediaType: "image/jpeg" };
+  } finally { URL.revokeObjectURL(url); }
+}
+
+const VISIT_DISCLOSURE = {
+  self: { label: "내돈내산", text: () => "" },
+  staff: { label: "관계자 내돈내산", text: n => `※ 작성자는 ${n}과(와) 관계가 있는 사람이며, 직접 비용을 내고 이용한 후기입니다.` },
+  sponsor: { label: "협찬·원고료", text: n => `※ 이 글은 ${n}으로부터 서비스 또는 원고료를 제공받아 작성했습니다.` },
+  own: { label: "자사 매장", text: n => `※ 이 글은 ${n}을(를) 운영하는 업체가 직접 작성한 매장 소개 글입니다.` },
+};
+
+// 요청 크기가 한도(4.4MB)에 가까우면 더 작게 다시 줄인다
+async function shrinkDataUrl(dataUrl, maxSide, quality) {
+  const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = dataUrl; });
+  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+  const c = document.createElement("canvas"); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  const u = c.toDataURL("image/jpeg", quality);
+  return { dataUrl: u, base64: u.split(",")[1], mediaType: "image/jpeg" };
+}
+
+// 사진 읽기: 사진마다 무엇이 찍혔는지 (보이는 것만)
+async function analyzeVisitPhotos(photos, placeName) {
+  const total = photos.reduce((a, p) => a + p.base64.length, 0);
+  if (total > 3500000) photos = await Promise.all(photos.map(p => shrinkDataUrl(p.dataUrl, 800, 0.65)));
+  const content = [];
+  photos.forEach((p, i) => {
+    content.push({ type: "text", text: `[사진 ${i + 1}]` });
+    content.push({ type: "image", source: { type: "base64", media_type: p.mediaType, data: p.base64 } });
+  });
+  content.push({ type: "text", text: `위 사진들은 "${placeName}" 방문 때 찍은 사진이다. 사진마다 실제로 보이는 것만 적어라.
+- kind: 외관 | 간판 | 내부 | 메뉴판·가격표 | 음식·음료 | 상품·진열 | 상담·계산 | 주변·주차 | 기타 중 하나
+- items: 사진에 실제로 보이는 것을 짧은 명사구로 3~6개 (예: "통창", "원목 테이블", "라떼 두 잔", "햇빛", "흰색 원형 테이블"). 문장으로 쓰지 말 것. 맛·친절도·가격처럼 보이지 않는 것은 넣지 말 것
+- mood: 이 장면의 분위기를 2~4글자 단어 1~2개 (예: "아늑함", "밝음", "북적임"). 확실하지 않으면 ""
+- text: 사진 속 글자(메뉴명, 가격, 간판 문구, 안내문) 중 또렷하게 읽혀서 확신할 수 있는 것만 그대로. 흐리거나, 일부만 보이거나, 뜻이 통하는 한국어 단어가 아닌 것은 절대 적지 말 것(추측해서 글자를 만들지 말 것). 없으면 ""
+- highlight: 이 장면에서 실제로 방문한 사람이라면 가장 먼저 눈에 들어올 만한 것 1가지 (짧게)
+순수 JSON만: {"photos":[{"n":1,"kind":"외관","items":["...","..."],"mood":"...","text":"...","highlight":"..."}]}` });
+  const model = getCostMode() === "save" ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-5-20250929";
+  const raw = await callClaude([{ role: "user", content }], "You describe photos precisely and never guess what is not visible. Output ONLY valid JSON.", 2000, model);
+  const j = safeParseJson(raw);
+  return (j?.photos || []).filter(x => x && x.n);
+}
+
+// 장소 기본 정보: 검색으로 확인된 것만
+async function searchPlaceInfo({ placeName, address, today }) {
+  const prompt = `오늘: ${today}
+장소: "${placeName}" / 주소: "${address}"
+웹 검색으로 이 장소의 기본 정보를 확인해라 (최대 3회 검색). 주소가 일치하는 같은 장소인지 반드시 확인할 것. 다른 지점·동명 업소 정보는 쓰지 말 것.
+- category: 업종 (예: 휴대폰 판매점, 한식당, 카페)
+- facts: 확인된 항목만 [{"label":"영업시간|주차|전화|대표 메뉴·품목|예약|기타","value":"...","source":"출처 사이트명"}]
+- 검색으로 확인되지 않은 항목은 넣지 말 것. 다른 사람 후기의 개인 경험(맛 평가, 직원 응대 등)은 넣지 말 것.
+순수 JSON만: {"category":"...","facts":[...]}`;
+  const raw = await callClaudeSearch([{ role: "user", content: prompt }],
+    "You verify basic facts about a specific local business using web search. Never guess. Output ONLY valid JSON.",
+    1200, "claude-haiku-4-5-20251001", 3);
+  const j = safeParseJson(raw);
+  return { category: j?.category || "", facts: (j?.facts || []).filter(f => f?.label && f?.value).slice(0, 8) };
+}
+
+// 같은 상호명으로 올라온 블로그 후기를 모아 공통점만 추린다 (다른 사람 경험 → 내 경험으로 쓰지 않음)
+async function gatherPlaceReviews({ placeName, address }) {
+  let bodies = [];
+  try {
+    const r = await fetch(`/api/blog-content?keyword=${encodeURIComponent(placeName)}&n=6`);
+    const d = await r.json(); bodies = d.bodies || [];
+  } catch (e) {}
+  // 같은 매장 글만: 상호명(띄어쓰기 무시) 또는 주소의 도로명·건물번호가 본문에 있어야 함
+  const flat = t => String(t || "").replace(/\s+/g, "");
+  const nameCore = flat(placeName);
+  const road = (String(address || "").match(/[가-힣0-9]+(로|길)\s*\d+/) || [])[0];
+  const same = bodies.filter(b => flat(b).includes(nameCore) || (road && flat(b).includes(flat(road))));
+  if (!same.length) return { count: 0, points: [], facts: [], sponsored: 0 };
+  const sponsored = same.filter(b => /원고료|제공받아|협찬|소정의|체험단/.test(b)).length;
+  const prompt = `아래는 "${placeName}"(주소: ${address || "미입력"})에 대해 다른 사람들이 쓴 블로그 후기 ${same.length}개다.
+여러 후기에서 공통으로 나오는 내용을 추려라.
+- points: 매장 특징·서비스·분위기에 대해 여러 후기가 공통으로 말한 것. 각각 몇 개 후기에서 나왔는지 count. 1개 후기에서만 나온 건 넣지 말 것. 최대 6개.
+- facts: 영업시간, 주차, 휴무일, 예약, 위치 찾는 법 같은 사실 정보. 후기마다 값이 다르면 넣지 말 것. 각각 count.
+- 가격·할인 금액은 시점마다 바뀌므로 넣지 말 것.
+- 이 매장이 아닌 다른 지점·다른 매장 이야기로 보이는 후기는 제외.
+순수 JSON만: {"points":[{"point":"...","count":2}],"facts":[{"label":"주차","value":"...","count":2}]}
+
+${same.map((b, i) => `--- 후기 ${i + 1} ---\n${b.slice(0, 3000)}`).join("\n\n")}`;
+  try {
+    const raw = await callClaude([{ role: "user", content: prompt }], "You summarize only what multiple reviews agree on. Output ONLY valid JSON.", 1200, "claude-haiku-4-5-20251001");
+    const j = safeParseJson(raw);
+    return { count: same.length, sponsored,
+      points: (j?.points || []).filter(x => x?.point && (x.count || 0) >= 2).slice(0, 6),
+      facts: (j?.facts || []).filter(x => x?.label && x?.value && (x.count || 0) >= 2).slice(0, 6) };
+  } catch (e) { return { count: same.length, points: [], facts: [], sponsored }; }
+}
+
+// 다 쓴 글에 사진 자리를 나중에 정한다: 문단별로 나눠 사진마다 이야기상 가장 맞는 문단 뒤에 [사진 N]
+async function placeVisitPhotos(body, photoDescs, photoCount) {
+  if (!photoCount) return body;
+  const paras = body.split(/\n\s*\n/).map(x => x.trim()).filter(Boolean);
+  // 배치 가능한 문단: "📍 기본 정보"·"▶ 정리"가 시작되기 전까지
+  const endIdx = paras.findIndex(t => /^(📍|▶\s*정리)/.test(t));
+  const okAfter = i => endIdx < 0 || i < endIdx;
+  let place = null;
+  try {
+    const plist = Array.from({ length: photoCount }, (_, i) => {
+      const d = photoDescs.find(p => p.n === i + 1);
+      return `사진 ${i + 1}: ${d ? `${d.kind || "기타"} — ${(d.items || []).join(", ")}` : "(설명 없음)"}`;
+    }).join("\n");
+    const prompt = `아래는 방문 후기 글의 문단 목록과, 작성자가 찍은 사진 목록이다.
+사진마다 이야기 흐름상 가장 잘 어울리는 문단을 골라, 그 문단 "뒤"에 사진을 넣을 것.
+- 사진 내용과 문단 내용이 맞아야 한다 (간판·외관 → 찾아가는 문단, 내부 → 들어가서 문단, 상품·음식 → 핵심 경험 문단).
+- 딱 맞는 문단이 없으면 흐름상 그 장면이 나올 법한 위치에.
+- "📍 기본 정보"나 "▶ 정리" 문단 뒤에는 넣지 말 것. 첫 문단(도입) 바로 뒤는 외관·간판 사진일 때만.
+- 한 문단 뒤에 사진은 최대 2장.
+- 모든 사진을 한 번씩.
+
+[문단]
+${paras.map((t, i) => `${i}: ${t.replace(/\n/g, " ").slice(0, 90)}`).join("\n")}
+
+[사진]
+${plist}
+
+순수 JSON만: {"place":[{"n":1,"after":0}]}`;
+    const raw = await callClaude([{ role: "user", content: prompt }], "You place photos into a blog post. Output ONLY valid JSON.", 600, "claude-haiku-4-5-20251001");
+    const seen = new Set();
+    place = (safeParseJson(raw)?.place || []).filter(x => x && Number.isInteger(x.n) && Number.isInteger(x.after) && x.n >= 1 && x.n <= photoCount && x.after >= 0 && x.after < paras.length && okAfter(x.after) && !seen.has(x.n) && seen.add(x.n));
+  } catch (e) { place = null; }
+  // 빠진 사진은 본문 중간 문단들에 고르게
+  const used = new Set((place || []).map(x => x.n));
+  const bodyIdx = paras.map((t, i) => i).filter(okAfter);
+  const missing = Array.from({ length: photoCount }, (_, i) => i + 1).filter(n => !used.has(n));
+  const pool = bodyIdx.length ? bodyIdx : paras.map((_, i) => i);
+  missing.forEach((n, k) => { (place = place || []).push({ n, after: pool[Math.min(pool.length - 1, Math.floor((k + 1) * pool.length / (missing.length + 1)))] }); });
+  const after = {};
+  (place || []).forEach(x => { (after[x.after] = after[x.after] || []).push(x.n); });
+  return paras.map((t, i) => [t, ...(after[i] || []).map(n => `[사진 ${n}]`)].join("\n\n")).join("\n\n");
+}
+
+function formatVisitBlock(visit, photoDescs, placeInfo, reviews) {
+  const toneRef = visit.toneSample ? `
+말투 참고 (작성자가 예전에 직접 쓴 글의 일부 — 말투·문장 길이·줄바꿈 습관·이모지 쓰는 정도만 따라 하고, 내용·정보·경험은 절대 가져오지 말 것):
+"""
+${visit.toneSample}
+"""
+` : "";
+  const own = visit.disclosure === "own";
+  // 사진 번호를 주지 않는다 — 번호가 있으면 AI가 사진 한 장씩 읽어주는 글을 쓴다
+  const byKind = {};
+  photoDescs.forEach(p => {
+    const k = p.kind || "기타";
+    const g = byKind[k] || (byKind[k] = { items: new Set(), moods: new Set(), texts: new Set() });
+    (p.items || []).forEach(x => g.items.add(x));
+    if (p.highlight) g.items.add(p.highlight);
+    if (p.mood) String(p.mood).split(/[,·\s]+/).filter(Boolean).forEach(x => g.moods.add(x));
+    if (p.text) g.texts.add(p.text);
+  });
+  const photos = Object.keys(byKind).length
+    ? Object.entries(byKind).map(([k, g]) => `- ${k}: ${[...g.items].join(", ")}${g.moods.size ? ` (분위기: ${[...g.moods].join(", ")})` : ""}${g.texts.size ? ` / 또렷하게 읽힌 글자: ${[...g.texts].join(" / ")}` : ""}`).join("\n")
+    : "(사진 없음)";
+  const facts = placeInfo.facts.length ? placeInfo.facts.map(f => `- ${f.label}: ${f.value} (출처: ${f.source || "-"})`).join("\n") : "(검색으로 확인된 정보 없음)";
+  const rv = reviews && reviews.count ? `
+같은 상호명으로 올라온 다른 블로그 후기 ${reviews.count}개에서 공통으로 나온 내용${reviews.sponsored ? ` (이 중 ${reviews.sponsored}개는 협찬·체험단 글)` : ""}:
+${reviews.points.length ? reviews.points.map(p => `- ${p.point} (${p.count}개 후기)`).join("\n") : "- (공통으로 나온 내용 없음)"}
+${reviews.facts.length ? `후기들이 일치하게 적은 정보:\n${reviews.facts.map(f => `- ${f.label}: ${f.value} (${f.count}개 후기)`).join("\n")}` : ""}
+사용 규칙: 이건 다른 사람들의 경험이다. 내 경험처럼 쓰지 말고 "다른 후기들 보니 ~라는 얘기가 많더라고요", "찾아보니 ~라고 하더라고요"처럼 출처가 드러나게 1~3군데 자연스럽게 녹인다. 내가 본 것(사진·메모)과 겹치면 "후기대로 ~였어요"처럼 연결해도 된다. 후기들이 일치하게 적은 정보는 📍 기본 정보에 넣어도 되지만, 검색 확인 정보와 다르면 넣지 말 것.
+` : "";
+  return `
+[방문 리뷰 모드 — 이 블록은 아래의 주제 원칙·경험 서술 규칙·AEO 규칙보다 우선한다]
+※ 방문 리뷰에는 AEO1(도입부 정의문), AEO4(소제목마다 질문-답변 묶음), E4(판단 이유 두 군데 이상), 질문형 소제목 규칙을 적용하지 않는다. 어조 원칙의 "단정·권유조" 대신 R1의 후기 말투를 따른다.
+장소: ${visit.placeName} / 주소: ${visit.address || "(미입력)"}${placeInfo.category ? ` / 업종: ${placeInfo.category}` : ""}
+${own ? "작성 관점: 이 매장을 운영하는 업체가 직접 쓰는 매장 소개 글이다. 손님인 척 방문 후기처럼 쓰지 말 것. \"저희 매장\"처럼 운영자 관점으로 쓰되 과장 광고 표현은 쓰지 말 것."
+  : visit.disclosure === "staff" ? "작성 관점: 작성자는 이 매장과 관계가 있지만, 실제로 직접 비용을 내고 이용한 경험을 쓰는 후기다. 방문 후기 관점으로 쓰되, 관계가 있다는 사실을 숨기거나 부정하는 표현(\"광고 아님\", \"순수 손님으로서\" 등)은 쓰지 말고, 과장된 칭찬이나 다른 매장을 깎아내리는 비교는 하지 말 것."
+  : "작성 관점: 작성자가 이 장소에 실제로 방문해서 쓰는 후기다."}
+
+현장에서 본 것 (작성자가 방문 때 본 것들을 정리한 메모 — 이야기에 필요할 때만 꺼내 쓰는 배경 지식):
+${photos}
+
+작성자 메모 (작성자가 직접 적은 경험 — 경험 서술의 유일한 근거):
+${visit.memo?.trim() || "(메모 없음)"}
+
+검색으로 확인된 장소 정보:
+${facts}
+${rv}${toneRef}
+방문 리뷰 규칙:
+R1. 말투: 현장에 다녀온 사람이 친구에게 말하듯 쓰는 1인칭 블로그 후기. "~했어요", "~더라고요", "~였어요", "~잖아요"를 섞는다. "~입니다/~합니다", "~가 특징이며", "~가 배치되어 있습니다", "~가 놓여 있습니다" 같은 안내문·묘사문 어투는 금지.
+R2. 사진 이야기 금지: 본문에 "사진", "찍힌", "사진 속", "보이는데" 같은 표현 금지. 계절·시점도 추측하지 말 것.
+R3. 이야기가 먼저다 (가장 중요): 글은 방문한 순서의 이야기로 쓴다 — 가게 된 계기(메모에 있을 때) → 찾아가서 도착 → 들어가서 → 핵심 경험(상담·식사·이용) → 나오면서 든 생각. "현장에서 본 것"은 이야기에 필요할 때만 한 번씩 곁들인다.
+   (X 묘사) "매장 안에는 흰색 원형 테이블과 정수기가 있고, 벽에는 포스터가 붙어 있어요."
+   (O 이야기) "상담 순서 기다리는 동안 테이블에 앉아 물 한 잔 마시고 있었는데\n생각보다 금방 불러주시더라고요."  ← 메모에 대기 이야기가 있을 때
+   (O 이야기) "길 찾다가 초록색 간판이 보여서 아 여기구나 했어요."
+   - 본 것을 늘어놓는 문단, 인테리어·색깔을 설명하는 문단을 따로 만들지 말 것. 한 문단에 본 것은 많아야 하나.
+   - "현장에서 본 것"을 다 쓸 필요 없다. 이야기에 안 맞으면 버린다.
+R3-1. 느낌: "생각보다 아늑했어요", "간판이 커서 금방 찾았어요"처럼 본 것에 대한 가벼운 반응은 좋다. 맛·친절·가격·만족도 평가는 메모에 있을 때만.
+R3-2. 줄바꿈: 모바일 블로그처럼 호흡 단위로 줄을 바꾼다. 한 줄 대략 15~35자, 2~3줄마다 빈 줄(빈 줄이 문단 구분). 마지막 줄에 단어 하나만 남지 않게.
+R3-3. 도입: 메모에 방문 계기·동행·상황이 있으면 그걸로 시작. 없으면 "○○ 다녀왔어요" 한두 줄로 가볍게 시작하고 계기를 지어내지 말 것.
+R4. 글자 인용: "또렷하게 읽힌 글자"에 있는 것만, 그중에서도 의미가 통하고 글에 도움이 되는 것만 쓴다. 이상하거나 뜻이 안 통하는 문구는 무시한다. 간판 문구로 상호명을 추정하지 말 것.
+R5. 상호명·주소: 반드시 위 "장소"에 적힌 상호명과 주소를 글자 그대로 쓴다. 다른 표기로 바꾸지 말 것.
+R6. 경험의 근거: 사진에 보이는 것 + 작성자 메모만. 방문 시점("지난달" 등), 상담 내용, 가격, 대기 시간, 직원 응대, 평소 습관("제가 이런 매장 갈 때 챙기는 건")은 메모에 없으면 쓰지 말 것. 메모가 짧으면 글도 짧게 — 분량을 채우려고 일반 정보나 주의사항 섹션을 붙이지 말 것.
+R7. 가격·영업시간·주차: 메모, 또렷하게 읽힌 글자, 확인된 장소 정보에 있는 것만. 없으면 한 줄로 "방문 전에 물어보면 좋아요" 정도.
+R8. 형식: 이 글은 정보 글이 아니라 방문 후기다. 도입부를 "○○은 ~에 위치한 ~입니다" 같은 정의문으로 시작하지 말고 "○○ 다녀왔어요"처럼 방문 이야기로 시작한다. 질문-답변 묶음은 넣지 않아도 되고, 넣더라도 이 매장 방문자가 실제로 궁금해할 것 1개까지만. 일반 상식 Q&A(대기 공간은 왜 있나요 등) 금지.
+R9. 흐름: 업종과 이 키워드로 검색하는 사람이 궁금해할 순서(찾아가기 → 외관 → 내부 → 핵심 경험 → 총평 등)로 스스로 구성한다. 참고자료(상위 글)는 독자가 궁금해하는 항목을 파악하는 데만 쓰고, 그 작성자들의 경험을 내 경험처럼 옮기지 말 것.
+R10. 사진 표시([사진 N])는 넣지 말 것. 사진 배치는 글을 다 쓴 뒤 따로 한다.
+R11. ▶ 정리 바로 앞에 "📍 기본 정보" 소제목을 두고 상호명, 주소, 확인된 정보만 한 줄씩. ▶ 정리도 후기 말투로 2~3줄.
+R12. 광고·협찬 표기 문구는 코드가 글 맨 앞에 붙이므로 본문에 쓰지 말 것.
+R13. 메인 키워드는 제목과 첫 문단에 자연스럽게 넣고, 상호명도 제목이나 첫 문단에 넣는다.
+`;
+}
+
+function formatProductStatusBlock(items) {
+  if (!items || !items.length) return "";
+  const label = { released_kr: "한국 정식 출시됨", announced: "한국 미출시 (발표·해외 출시·사전예약 단계)", not_exist: "공식 발표 없음 (루머 단계)", unknown: "출시 여부 확인 안 됨" };
+  const lines = items.map(x => `- ${x.name}: ${label[x.status] || x.status}${x.note ? ` — ${x.note}` : ""}${x.sourceName ? ` (출처: ${x.sourceName})` : ""}`).join("\n");
+  const notReleased = items.filter(x => x.status !== "released_kr");
+  const rule = notReleased.length
+    ? `\n※ 위에서 "한국 정식 출시됨"이 아닌 제품은 절대 직접 써봤다·샀다·개통했다·매장에서 만져봤다는 식으로 쓰지 말 것. 1인칭 사용 경험 서술 금지.
+  → 공개된 정보 정리, 해외 반응, 국내 출시 전망, 지금 쓰는 제품과 비교했을 때 기대되는 점처럼 "아직 안 나온 제품"이라는 전제가 드러나는 관점으로만 쓸 것.
+  → 주제에 "후기", "써보니" 같은 표현이 있어도 이 규칙이 우선한다 (주제 원칙 S5보다 우선).
+  → 한국 출시일·가격을 단정하지 말 것.`
+    : `\n※ 위 제품은 한국에 출시된 제품이다. 다만 스펙·가격은 [확인된 사실]에 있는 것만 쓸 것.`;
+  return `\n[제품 출시 상태 — 오늘 기준 검색으로 확인. 사실 원칙보다도 먼저 지킬 것]\n${lines}${rule}\n`;
+}
+
 function formatFactSheetBlock(items) {
   const ok = (items || []).filter(x => (x.verdict === "confirmed" || x.verdict === "outdated") && x.fact);
   const no = (items || []).filter(x => x.verdict === "unconfirmed");
@@ -7846,7 +9919,7 @@ export default function BlogTools(){
   const [analyzeActiveSection,setAnalyzeActiveSection]=useState("morpheme");
   const [analyzePostMeta,setAnalyzePostMeta]=useState(null); // 부모로 올려서 안전하게 공유
   // 키워드탭 글쓰기: 자동 생성 후 분석탭으로 이동
-  const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy, mainKeyword)=>{
+  const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy, mainKeyword, visit)=>{
     setAnalyzePostMeta(null);
     setAnalyzeText("");
     setAnalyzeAiResult(null);
@@ -7880,14 +9953,50 @@ export default function BlogTools(){
 
       const pattern = pickTitlePattern();
 
+      // ── 제품 출시 상태 확인 (항상, 사실표와 병렬) ──
+      const productStatusP = withTimeout(
+        checkProductStatus({ kw, mainKw, today: todayStr }).catch(() => []), 30000, []
+      );
+
+      // ── 방문 리뷰 모드: 사진 읽기 + 장소 정보 검색 (일반 사실표 대신) ──
+      let visitBlock = "", photoDescs = [], placeInfo = { category: "", facts: [] }, placeReviews = null;
+      if (visit) {
+        setPendingAnalyzeText(`__loading__:사진 ${visit.photos.length}장 읽는 중 · 장소 정보 검색 · 같은 매장 후기 모으는 중`);
+        if (visit.toneUrl && !visit.toneSample) {
+          try {
+            const r = await fetch(`/api/blog-content?url=${encodeURIComponent(visit.toneUrl)}`);
+            const d = await r.json();
+            const b = (d.bodies || [])[0] || "";
+            visit = { ...visit, toneSample: b.replace(/\n{3,}/g, "\n\n").slice(0, 1500) };
+          } catch (e) {}
+        }
+        const [pd, pi, rv] = await Promise.all([
+          visit.photos.length ? withTimeout(analyzeVisitPhotos(visit.photos, visit.placeName).catch(() => []), 60000, []) : Promise.resolve([]),
+          withTimeout(searchPlaceInfo({ placeName: visit.placeName, address: visit.address, today: todayStr }).catch(() => ({ category: "", facts: [] })), 45000, { category: "", facts: [] }),
+          withTimeout(gatherPlaceReviews({ placeName: visit.placeName, address: visit.address }).catch(() => null), 45000, null),
+        ]);
+        photoDescs = pd; placeInfo = pi; placeReviews = rv;
+        visitBlock = formatVisitBlock(visit, photoDescs, placeInfo, placeReviews);
+      }
+
       // ── 사전 사실표: 참고자료의 수치·정책을 공식 출처로 확인해 프롬프트에 넣는다 ──
       let factSheet = [];
-      try {
-        setPendingAnalyzeText("__loading__:사실 확인 중 — 참고자료의 수치·정책을 공식 출처로 검색하고 있습니다");
-        factSheet = await withTimeout(
-          buildFactSheet({ kw, mainKw, bodies, today: todayStr }), 90000, []
-        );
+      if (!visit) try {
+        // 절약 모드: 수치·정책이 핵심이 아닌 주제(사용법·경험담 등)는 웹검색 사실표를 건너뛴다
+        let needFacts = { need: true };
+        if (getCostMode() === "save") {
+          setPendingAnalyzeText("__loading__:사실 확인이 필요한 주제인지 판단 중");
+          needFacts = await withTimeout(needsFactSheet({ kw, mainKw, bodies }), 10000, { need: true });
+        }
+        if (needFacts.need) {
+          setPendingAnalyzeText("__loading__:사실 확인 중 — 참고자료의 수치·정책을 공식 출처로 검색하고 있습니다");
+          factSheet = await withTimeout(
+            buildFactSheet({ kw, mainKw, bodies, today: todayStr }), 90000, []
+          );
+        }
       } catch(e) { factSheet = []; /* 실패해도 글쓰기는 진행 */ }
+      setPendingAnalyzeText("__loading__:제품 출시 상태 확인 중");
+      const productStatus = await productStatusP;
       setPendingAnalyzeText("__loading__:본문 작성 중");
 
       const prompt = buildWritePrompt({
@@ -7895,9 +10004,32 @@ export default function BlogTools(){
         bodies, mainKeyword: mainKw,
         topTitles, commercialWords: banWords, avoidWords, pattern,
         factSheetBlock: formatFactSheetBlock(factSheet),
+        profileBlock: buildProfileBlock(bpGetActive(), "write"),
+        productStatusBlock: formatProductStatusBlock(productStatus),
+        visitBlock,
       });
 
-      const sysPrompt = `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation (AEO).
+      const visitSys = `You are writing a first-person Korean Naver blog visit review ("방문 후기") in a warm, natural conversational tone (~했어요, ~더라고요). The [방문 리뷰 모드] block in the user message overrides any conflicting rule there.
+
+Today is ${todayStr}.
+
+FACTUAL DISCIPLINE:
+- Experience must come only from the photo notes and the author's memo. Never invent dates of visit, prices, waiting times, conversations with staff, taste or service judgments, or the author's habits.
+- The photo notes are private notes about what the author saw on site. Never mention photos in the body ("사진", "찍힌", "사진 속", "보이는데"). Write them as things the author saw in person.
+- Quote only clearly legible sign or menu text from the notes, and only when it makes sense. Always use the exact place name and address given by the author.
+- Prices, hours and parking: only from the memo, legible text, or the verified place info.
+- A shorter, honest review is better than a padded one. Do not add generic advice sections or general-knowledge Q&A to fill length.
+
+STYLE:
+- Open with the visit itself, not a definition sentence.
+- Write the visit as a story in the order it happened. The "현장에서 본 것" notes are background knowledge: mention a seen thing only when the story needs it (finding the sign while looking for the place, sitting at the table while waiting). Never write paragraphs that describe interiors, colors or objects. Do not insert [사진 N] markers; photos are placed afterwards.
+- Light feelings about what was seen ("괜히 기분이 좋아지더라고요", "생각보다 아늑했어요") are encouraged. Judgments of taste, kindness, price or satisfaction only if they are in the memo.
+- Break lines by breath like a mobile Naver blog: about 15~35 characters per line, a blank line every two or three lines.
+- Do not write hashtags in the body; they belong only in the tags array. No engagement bait or sign-off pleasantries.
+
+Output ONLY valid JSON, no markdown.`;
+
+      const sysPrompt = visit ? visitSys : `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation (AEO).
 
 Today is ${todayStr}. You cannot search the web, and your knowledge of recent events may be outdated or wrong.
 
@@ -7906,6 +10038,9 @@ FACTUAL DISCIPLINE — this overrides every stylistic instruction in the user me
 - When you are unsure of a specific figure, DO NOT vague the whole sentence away. Keep the sentence concrete and specific, and leave only the unknown value as a [확인필요: ...] placeholder for the author to fill in (max 3 per post). Falling back to qualitative phrasing is a last resort, reserved for details too peripheral to be worth a placeholder.
 - Do NOT claim anything is "current as of ${yearMonth}" unless you genuinely know it. Prefer hedged or timeless phrasing over confident but unverified recency.
 - Opinions, judgments, preferences and narrative experience are encouraged — but write them as opinions, not as verified facts. Make experience concrete through process and reasoning, not through fabricated measurements.
+- Calibrate certainty per sentence: state verified facts, definitions and procedures plainly; mark evaluations as the writer's own judgment; and never promise the reader an outcome ("no wrist fatigue", "solves it", "guaranteed") — phrase effects conditionally with degree words. Especially in the closing ▶ 정리 lines, the final takeaway about effects must be conditional or first-person, not an absolute claim. Keep hedges ("~것 같습니다") to four or fewer per post and never stack two in one sentence.
+- If a [제품 출시 상태] block says a product is not officially released in Korea, never write first-person use, purchase or activation of it, even if the topic says "후기".
+- If a [방문 리뷰 모드] block is present, first-person experience must be grounded ONLY in its photo descriptions and the author's memo. Never invent dishes eaten, prices, waiting times, staff behavior or taste judgments that are not there.
 - A shorter, less specific post that is true is better than a specific post that is false. If a [확인된 사실] list is provided, figures, dates and conditions must come from that list; treat anything under [확인 안 된 주장] as unverified. Reference material may inform structure and context but is not a source of figures on its own (never copy its wording).
 
 BRAND ACCURACY:
@@ -7962,7 +10097,10 @@ Output ONLY valid JSON, no markdown.`;
       let factItems = [];
       let factSummary = null;
       const placeholders = extractPlaceholders(bodyText);
-      if (placeholders.length > 0) {
+      // 사실표를 이미 만든 글은 남은 [확인필요]가 대개 사실표에서도 못 찾은 항목이라 재검색하지 않는다.
+      // → 아래 정리 단계(검색 없음)에서 "확인처 안내" 문장으로 바꾸거나 삭제. 사실표를 건너뛴 글만 검색으로 채운다.
+      const hadFactSheet = (factSheet || []).length > 0;
+      if (placeholders.length > 0 && !hadFactSheet) {
         try {
           factItems = await resolveUncertainValues({
             placeholders, title: parsed.title, mainKw, text: bodyText,
@@ -8014,6 +10152,7 @@ Output ONLY valid JSON, no markdown.`;
 ${(topTitles||[]).slice(0,10).map((t,i)=>`  ${i+1}. ${t}`).join("\n") || "  (없음)"}
 - 아래 단어는 제목에 쓰지 말 것: ${[...banWords, ...avoidWords].join(", ") || "(없음)"}
 - 가격·기간·퍼센트 같은 수치는 제목에 쓰지 말 것
+${(()=>{const bp=bpGetActive();if(!bp)return "";const rules=(bp.titleRules||[]).map(r=>`  - ${r}`).join("\n");const bad=(bp.titleBad||[]).slice(0,6).map(t=>`  · ${t}`).join("\n");return `- 이 블로그의 제목 규칙:\n${rules||"  (없음)"}${bad?`\n- 이 블로그에서 제목검색 30위 밖이었던 제목 형태 (피할 것):\n${bad}`:""}`;})()}
 
 글 앞부분:
 ${cleanContent(parsed.content||"").slice(0, 700)}
@@ -8052,6 +10191,21 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
       const tagBlock = tags.length > 0
         ? "\n\n" + tags.map(t => "#" + String(t).replace(/^#/, "")).join(" ")
         : "";
+      // 방문 리뷰: 광고 표기 문구를 맨 앞에 코드로 보장 + 사진 배치 누락 확인
+      let visitMeta = null;
+      if (visit) {
+        if (visit.photos.length) {
+          setPendingAnalyzeText("__loading__:사진 자리 정하는 중");
+          bodyText = bodyText.replace(/^\s*\[사진\s*\d+\]\s*$/gm, "").replace(/\n{3,}/g, "\n\n");   // AI가 규칙을 어기고 넣은 표시 제거
+          bodyText = await withTimeout(placeVisitPhotos(bodyText, photoDescs, visit.photos.length).catch(() => bodyText), 30000, bodyText);
+        }
+        const disc = (VISIT_DISCLOSURE[visit.disclosure] || VISIT_DISCLOSURE.self).text(visit.placeName);
+        if (disc) bodyText = disc + "\n\n" + bodyText;
+        const placed = new Set([...bodyText.matchAll(/\[사진\s*(\d+)\]/g)].map(m => +m[1]));
+        const missingPhotos = visit.photos.map((_, i) => i + 1).filter(n => !placed.has(n));
+        visitMeta = { placeName: visit.placeName, address: visit.address, disclosure: visit.disclosure,
+          thumbs: visit.photos.map(p => p.dataUrl), photoDescs, placeInfo, placeReviews, missingPhotos };
+      }
       const fullContent = (bodyText + tagBlock).replace(/\n{3,}/g, "\n\n");
 
       const meta = {
@@ -8065,6 +10219,7 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
         factSummary,
         factItems,
         factSheet,
+        visit: visitMeta,
         _source: "keyword",
       };
       setAnalyzePostMeta(meta);
