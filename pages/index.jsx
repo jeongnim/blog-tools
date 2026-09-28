@@ -4208,27 +4208,54 @@ function MissingTab(){
     return {quoteChecked:true,quoteDated:!!ymd,quoteRank:r};
   };
 
-  // ── 제목 노출만 다시 확인 (AI 없음 · 키워드 분석은 그대로 둠) ──
-  // 누락이던 글을 고친 뒤 확인할 때 쓴다. 목록을 새로 불러왔다면 바뀐 제목으로 검색한다.
+  // ── 순위 재확인: 제목 노출 + 이미 뽑아둔 키워드 순위 + 추가검색 키워드 순위 (AI 없음) ──
+  // 키워드는 새로 뽑지 않고 저장된 것 그대로 순위만 다시 조회한다. 목록을 새로 불러왔다면 바뀐 제목으로 검색한다.
   const [titleRechecking,setTitleRechecking]=useState({});
   const recheckTitle=async(post)=>{
     const a=analysisRef.current[post.postNo]; if(!a||a.error) return;
     const m=(post.link||"").match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
     const bid=m?.[1]||post._blogId||posts?.blogId||"", pno=m?.[2]||post.postNo;
-    setTitleRechecking(r=>({...r,[post.postNo]:true}));
+    const setStep=t=>setTitleRechecking(r=>({...r,[post.postNo]:t}));
+    setStep("제목");
     try{
+      // 1) 제목 노출
       let tr=await getNaverRank(post.title,bid,pno);
-      if(!tr) return;
-      const c0=titleExposureCat(tr,post.date);
-      if(c0.cat!=="top1"&&c0.blogRank==null){ const qr=await quoteRecheck(post.title,bid,pno,post.date); if(qr) tr={...tr,...qr}; }
-      const c=titleExposureCat(tr,post.date).cat;
-      const next={...a,titleRank:tr,missingStatus:c==="missing"?"누락":c==="wait"?"반영 대기":"노출",titleRecheckedAt:Date.now()};
+      if(tr){
+        const c0=titleExposureCat(tr,post.date);
+        if(c0.cat!=="top1"&&c0.blogRank==null){ const qr=await quoteRecheck(post.title,bid,pno,post.date); if(qr) tr={...tr,...qr}; }
+      }
+      const c=tr?titleExposureCat(tr,post.date).cat:null;
+      // 2) 키워드 순위 (저장된 키워드 그대로)
+      const kwsOld=a.topKeywords||[];
+      const kwsNew=[];
+      for(let i=0;i<kwsOld.length;i++){
+        setStep(`키워드 ${i+1}/${kwsOld.length}`);
+        const r=await getNaverRank(kwsOld[i].keyword,bid,pno);
+        kwsNew.push({...kwsOld[i],realRank:r??kwsOld[i].realRank??null,rankLoading:false});
+        await new Promise(res=>setTimeout(res,200));
+      }
+      const next={...a,
+        ...(tr?{titleRank:tr,missingStatus:c==="missing"?"누락":c==="wait"?"반영 대기":"노출"}:{}),
+        topKeywords:kwsNew, analyzedAt:Date.now(), titleRecheckedAt:Date.now()};
       analysisRef.current={...analysisRef.current,[post.postNo]:next};
       setAnalysis(x=>({...x,[post.postNo]:next}));
+      // 3) 추가검색 키워드
+      const extras=extraRef.current?.[post.postNo]||[];
+      if(extras.length){
+        const upd=[];
+        for(let i=0;i<extras.length;i++){
+          setStep(`추가검색 ${i+1}/${extras.length}`);
+          const r=await getNaverRank(extras[i].keyword,bid,pno);
+          upd.push({...extras[i],realRank:r??extras[i].realRank??null,loading:false,rankLoading:false,checkedAt:Date.now()});
+          await new Promise(res=>setTimeout(res,200));
+        }
+        setExtraResults(x=>({...x,[post.postNo]:upd}));
+      }
     }finally{ setTitleRechecking(r=>{const o={...r};delete o[post.postNo];return o;}); }
   };
-  const recheckMissingOnPage=async()=>{
-    const list=(posts?.current||[]).filter(p=>{const a=analysisRef.current[p.postNo];return a&&!a.error&&a.missingStatus!=="노출";});
+  const recheckPage=async(onlyMissing)=>{
+    const list=(posts?.current||[]).filter(p=>{const a=analysisRef.current[p.postNo];return a&&!a.error&&(!onlyMissing||a.missingStatus!=="노출");});
+    if(!onlyMissing&&list.length>5&&!confirm(`이 페이지 글 ${list.length}개의 제목·키워드 순위를 모두 다시 조회할까요?\n(AI 비용은 없고, 네이버 검색을 글당 5~7번 해서 몇 분 걸려요)`)) return;
     for(const p of list){ await recheckTitle(p); await new Promise(r=>setTimeout(r,300)); }
   };
 
@@ -5033,9 +5060,14 @@ recommend는 8개.`;
           {posts.notice&&<span style={{color:"#ffa657",fontSize:"13px",marginLeft:"6px"}}>· {posts.notice}</span>}
           {(()=>{const n=(posts.current||[]).filter(p=>{const a=analysis[p.postNo];return a&&!a.error&&a.missingStatus!=="노출";}).length;
             const busy=Object.keys(titleRechecking).length>0;
-            return n>0&&<button onClick={recheckMissingOnPage} disabled={busy} title="이 페이지의 누락·반영 대기 글만 제목 노출을 다시 확인해요 (AI 비용 없음)"
-              style={{marginLeft:"8px",padding:"3px 10px",background:"#f8514915",border:"1px solid #f8514944",borderRadius:"14px",color:busy?"#484f58":"#ff7b72",cursor:busy?"wait":"pointer",fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}>
-              {busy?"재확인 중...":`🔄 누락 ${n}건 재확인`}</button>;})()}
+            const total=(posts.current||[]).filter(p=>{const a=analysis[p.postNo];return a&&!a.error;}).length;
+            const bs=(on)=>({marginLeft:"8px",padding:"3px 10px",borderRadius:"14px",cursor:busy?"wait":"pointer",fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",...on});
+            return <>
+              {n>0&&<button onClick={()=>recheckPage(true)} disabled={busy} title="이 페이지의 누락·반영 대기 글만 제목·키워드 순위를 다시 조회해요 (AI 비용 없음)"
+                style={bs({background:"#f8514915",border:"1px solid #f8514944",color:busy?"#484f58":"#ff7b72"})}>{busy?"재확인 중...":`🔄 누락 ${n}건 재확인`}</button>}
+              {total>0&&!busy&&<button onClick={()=>recheckPage(false)} disabled={busy} title="이 페이지 분석된 글 전체의 제목·키워드 순위를 다시 조회해요 (AI 비용 없음)"
+                style={bs({background:"transparent",border:"1px solid #30363d",color:busy?"#484f58":"#8b949e"})}>🔄 페이지 순위 재확인</button>}
+            </>;})()}
         </div>
         <div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
           {posts.current.some(p=>!analysis[p.postNo])&&analyzing===-1&&
@@ -5108,10 +5140,10 @@ recommend는 8개.`;
                   {a.missingStatus==="노출"?(a.titleRank?.quoteRank!=null&&!a.titleRank?.areas?.blog?.rank&&a.titleRank?.simRank==null?"✅ 노출 (따옴표 검색)":"✅ 노출"):a.missingStatus==="반영 대기"?"⏳ 반영 대기":"🚨 누락"}
                 </span>
                 <button onClick={()=>recheckTitle(post)} disabled={!!titleRechecking[post.postNo]}
-                  title="제목 노출만 다시 확인해요 (AI 비용 없음 · 키워드 분석은 그대로)"
+                  title="제목 노출과 키워드 순위를 다시 조회해요 (AI 비용 없음 · 키워드는 새로 뽑지 않고 그대로)"
                   style={{padding:"2px 9px",background:"transparent",border:"1px solid #30363d",borderRadius:"20px",color:titleRechecking[post.postNo]?"#484f58":"#8b949e",
                     cursor:titleRechecking[post.postNo]?"wait":"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-                  {titleRechecking[post.postNo]?"확인 중...":"🔄 재확인"}
+                  {titleRechecking[post.postNo]?`${titleRechecking[post.postNo]} 확인 중...`:"🔄 순위 재확인"}
                 </button>
                 {a.titleRecheckedAt&&!titleRechecking[post.postNo]&&<span style={{color:"#484f58",fontSize:"12px",alignSelf:"center"}}>
                   {new Date(a.titleRecheckedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 재확인</span>}
