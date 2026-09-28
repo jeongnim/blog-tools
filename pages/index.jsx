@@ -1587,7 +1587,7 @@ JSON 형식:
         <span style={{color:"#8b949e",lineHeight:1.6}}>
           📍 {postMeta.visit.placeName}{postMeta.visit.address?` · ${postMeta.visit.address}`:""} · {VISIT_DISCLOSURE[postMeta.visit.disclosure]?.label}
           {postMeta.visit.placeInfo?.facts?.length>0&&<span style={{display:"block",fontSize:"13px"}}>검색 확인: {postMeta.visit.placeInfo.facts.map(f=>f.label).join(", ")}</span>}
-          {postMeta.visit.placeReviews&&<span style={{display:"block",fontSize:"13px"}}>같은 매장 후기: {postMeta.visit.placeReviews.count}개 참고{postMeta.visit.placeReviews.count?` · 공통 내용 ${postMeta.visit.placeReviews.points.length}개 · 일치 정보 ${postMeta.visit.placeReviews.facts.length}개`:" (같은 매장 글을 못 찾았어요)"}</span>}
+          {postMeta.visit.placeReviews&&<span style={{display:"block",fontSize:"13px"}}>같은 매장 후기: 검색 {postMeta.visit.placeReviews.count}개{postMeta.visit.placeReviews.refCount?` + 참고 링크 ${postMeta.visit.placeReviews.refCount}개`:""}{(postMeta.visit.placeReviews.count||postMeta.visit.placeReviews.refCount)?` · 공통 내용 ${postMeta.visit.placeReviews.points.length}개 · 일치 정보 ${postMeta.visit.placeReviews.facts.length}개${postMeta.visit.placeInfo?.facts?.length?"":" · 웹 검색 생략"}`:" (같은 매장 글을 못 찾았어요)"}</span>}
           {postMeta.visit.missingPhotos?.length>0&&<span style={{display:"block",color:"#d29922",fontSize:"13px"}}>⚠️ 본문에 배치 안 된 사진: {postMeta.visit.missingPhotos.map(n=>`[사진 ${n}]`).join(", ")} — 원하는 위치에 직접 넣어주세요</span>}
           <span style={{display:"flex",gap:"5px",flexWrap:"wrap",marginTop:"5px"}}>
             {postMeta.visit.thumbs.map((u,i)=><span key={i} style={{position:"relative"}}>
@@ -2349,6 +2349,7 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
   const [disclosure,setDisclosure]=useState("self");
   const [visitPhotos,setVisitPhotos]=useState([]);
   const [toneUrl,setToneUrl]=useState(()=>{try{return localStorage.getItem("mt_visit_tone_url")||"";}catch(e){return "";}});
+  const [refLinks,setRefLinks]=useState("");
   const [photoBusy,setPhotoBusy]=useState(false);
   const addVisitPhotos=async(files)=>{
     const list=[...files].filter(f=>f.type.startsWith("image/")).slice(0,20-visitPhotos.length);
@@ -2362,7 +2363,8 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
     if(!placeName.trim()||!goAutoWrite) return;
     const t=customTopic.trim()||`${result?.keyword||""} ${placeName.trim()} ${disclosure==="own"?"매장 소개":"방문 후기"}`.trim();
     goAutoWrite(t,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword,
-      {placeName:placeName.trim(),address:placeAddr.trim(),memo:visitMemo,disclosure,photos:visitPhotos,toneUrl:toneUrl.trim()});
+      {placeName:placeName.trim(),address:placeAddr.trim(),memo:visitMemo,disclosure,photos:visitPhotos,toneUrl:toneUrl.trim(),
+       refUrls:refLinks.split(/[\s,]+/).map(x=>x.trim()).filter(x=>/^https?:\/\//.test(x)).slice(0,3)});
     try{localStorage.setItem("mt_visit_tone_url",toneUrl.trim());}catch(e){}
   };
 
@@ -2848,6 +2850,9 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
                 <input value={placeAddr} onChange={e=>setPlaceAddr(e.target.value)} placeholder="주소 (예: 경기 안산시 단원구 ...)" style={{...inp,flex:"2 1 280px"}}/>
               </div>
               <input value={toneUrl} onChange={e=>setToneUrl(e.target.value)} placeholder="말투 참고할 내 글 주소 (선택 · 예전에 직접 쓴 방문 후기 URL — 말투·줄바꿈만 따라 해요)" style={{...inp,flex:"none",width:"100%",boxSizing:"border-box"}}/>
+              <textarea value={refLinks} onChange={e=>setRefLinks(e.target.value)} rows={2}
+                placeholder={"참고할 이 매장 리뷰 링크 (선택 · 최대 3개, 한 줄에 하나)\n매장 정보와 다룰 항목만 참고하고, 문장·사진은 가져오지 않아요"}
+                style={{...inp,flex:"none",width:"100%",boxSizing:"border-box",resize:"vertical",lineHeight:1.5}}/>
               <textarea value={visitMemo} onChange={e=>setVisitMemo(e.target.value)} rows={3}
                 placeholder={"방문 메모 (선택 · 경험은 여기 적은 것과 사진에 보이는 것만 글에 들어가요)\n예: 9/20 토요일 오후 방문, 갤럭시 S26 번호이동 상담, 대기 10분, 요금제 설명이 자세했음, 주차는 건물 뒤편"}
                 style={{...inp,flex:"none",width:"100%",boxSizing:"border-box",resize:"vertical",lineHeight:1.5}}/>
@@ -9603,91 +9608,61 @@ async function analyzeVisitPhotosBatch(photos, placeName, offset = 0) {
 async function searchPlaceInfo({ placeName, address, today }) {
   const prompt = `오늘: ${today}
 장소: "${placeName}" / 주소: "${address}"
-웹 검색으로 이 장소의 기본 정보를 확인해라 (최대 3회 검색). 주소가 일치하는 같은 장소인지 반드시 확인할 것. 다른 지점·동명 업소 정보는 쓰지 말 것.
+웹 검색으로 이 장소의 기본 정보를 확인해라 (최대 2회 검색). 주소가 일치하는 같은 장소인지 반드시 확인할 것. 다른 지점·동명 업소 정보는 쓰지 말 것.
 - category: 업종 (예: 휴대폰 판매점, 한식당, 카페)
 - facts: 확인된 항목만 [{"label":"영업시간|주차|전화|대표 메뉴·품목|예약|기타","value":"...","source":"출처 사이트명"}]
 - 검색으로 확인되지 않은 항목은 넣지 말 것. 다른 사람 후기의 개인 경험(맛 평가, 직원 응대 등)은 넣지 말 것.
 순수 JSON만: {"category":"...","facts":[...]}`;
   const raw = await callClaudeSearch([{ role: "user", content: prompt }],
     "You verify basic facts about a specific local business using web search. Never guess. Output ONLY valid JSON.",
-    1200, "claude-haiku-4-5-20251001", 3);
+    1200, "claude-haiku-4-5-20251001", 2);
   const j = safeParseJson(raw);
   return { category: j?.category || "", facts: (j?.facts || []).filter(f => f?.label && f?.value).slice(0, 8) };
 }
 
-// 같은 상호명으로 올라온 블로그 후기를 모아 공통점만 추린다 (다른 사람 경험 → 내 경험으로 쓰지 않음)
-async function gatherPlaceReviews({ placeName, address }) {
+// 같은 상호명 후기 + 사용자가 준 참고 리뷰 링크를 한 번의 Haiku 호출로 정리한다 (다른 사람 경험 → 내 경험으로 쓰지 않음)
+async function gatherPlaceReviews({ placeName, address, refUrls = [] }) {
+  const cut = t => String(t || "").replace(/\n{3,}/g, "\n\n").slice(0, 3000);
   let bodies = [];
   try {
     const r = await fetch(`/api/blog-content?keyword=${encodeURIComponent(placeName)}&n=6`);
     const d = await r.json(); bodies = d.bodies || [];
   } catch (e) {}
+  // 사용자가 준 참고 링크 (최대 3개)
+  const refs = [];
+  for (const u of refUrls.slice(0, 3)) {
+    try {
+      const r = await fetch(`/api/blog-content?url=${encodeURIComponent(u)}`);
+      const d = await r.json(); const b = (d.bodies || [])[0];
+      if (b) refs.push(b);
+    } catch (e) {}
+  }
   // 같은 매장 글만: 상호명(띄어쓰기 무시) 또는 주소의 도로명·건물번호가 본문에 있어야 함
   const flat = t => String(t || "").replace(/\s+/g, "");
   const nameCore = flat(placeName);
   const road = (String(address || "").match(/[가-힣0-9]+(로|길)\s*\d+/) || [])[0];
-  const same = bodies.filter(b => flat(b).includes(nameCore) || (road && flat(b).includes(flat(road))));
-  if (!same.length) return { count: 0, points: [], facts: [], sponsored: 0 };
-  const sponsored = same.filter(b => /원고료|제공받아|협찬|소정의|체험단/.test(b)).length;
-  const prompt = `아래는 "${placeName}"(주소: ${address || "미입력"})에 대해 다른 사람들이 쓴 블로그 후기 ${same.length}개다.
-여러 후기에서 공통으로 나오는 내용을 추려라.
-- points: 매장 특징·서비스·분위기에 대해 여러 후기가 공통으로 말한 것. 각각 몇 개 후기에서 나왔는지 count. 1개 후기에서만 나온 건 넣지 말 것. 최대 6개.
-- facts: 영업시간, 주차, 휴무일, 예약, 위치 찾는 법 같은 사실 정보. 후기마다 값이 다르면 넣지 말 것. 각각 count.
-- 가격·할인 금액은 시점마다 바뀌므로 넣지 말 것.
-- 이 매장이 아닌 다른 지점·다른 매장 이야기로 보이는 후기는 제외.
-순수 JSON만: {"points":[{"point":"...","count":2}],"facts":[{"label":"주차","value":"...","count":2}]}
+  const refFlat = new Set(refs.map(b => flat(b).slice(0, 200)));
+  const same = bodies.filter(b => (flat(b).includes(nameCore) || (road && flat(b).includes(flat(road)))) && !refFlat.has(flat(b).slice(0, 200))).slice(0, refs.length ? 4 : 6);
+  if (!same.length && !refs.length) return { count: 0, refCount: 0, points: [], facts: [], coverage: [], category: "", sponsored: 0 };
+  const sponsored = [...same, ...refs].filter(b => /원고료|제공받아|협찬|소정의|체험단/.test(b)).length;
+  const prompt = `"${placeName}"(주소: ${address || "미입력"})에 대한 다른 사람들의 블로그 후기다.
+${same.length ? `[검색으로 찾은 후기 ${same.length}개]\n${same.map((b, i) => `--- 후기 S${i + 1} ---\n${cut(b)}`).join("\n\n")}` : ""}
+${refs.length ? `\n[작성자가 참고하라고 준 리뷰 ${refs.length}개]\n${refs.map((b, i) => `--- 참고 R${i + 1} ---\n${cut(b)}`).join("\n\n")}` : ""}
 
-${same.map((b, i) => `--- 후기 ${i + 1} ---\n${b.slice(0, 3000)}`).join("\n\n")}`;
+아래를 추려라. 이 매장이 아닌 다른 지점·다른 매장 이야기는 제외.
+- category: 업종 (예: 휴대폰 판매점, 한식당)
+- points: 매장 특징·서비스·분위기에 대해 여러 후기가 공통으로 말한 것 (count = 몇 개 후기에서 나왔는지). 검색 후기에서는 2개 이상에서 나온 것만. 참고 리뷰에서 나온 건 1개여도 되지만 count 1로. 최대 6개.
+- facts: 영업시간, 주차, 휴무일, 예약, 위치 찾는 법 같은 사실 정보. 후기끼리 값이 다르면 넣지 말 것. 가격·할인 금액은 넣지 말 것.
+- coverage: 참고 리뷰(R)들이 다룬 항목을 짧은 명사구로 (예: "찾아가는 길", "대표 메뉴", "주차", "영수증 리뷰 이벤트"). 문장·표현은 옮기지 말고 항목 이름만. 참고 리뷰가 없으면 [].
+순수 JSON만: {"category":"...","points":[{"point":"...","count":2}],"facts":[{"label":"주차","value":"...","count":2}],"coverage":["..."]}`;
   try {
-    const raw = await callClaude([{ role: "user", content: prompt }], "You summarize only what multiple reviews agree on. Output ONLY valid JSON.", 1200, "claude-haiku-4-5-20251001");
+    const raw = await callClaude([{ role: "user", content: prompt }], "You summarize what reviews say without copying their sentences. Output ONLY valid JSON.", 1200, "claude-haiku-4-5-20251001");
     const j = safeParseJson(raw);
-    return { count: same.length, sponsored,
-      points: (j?.points || []).filter(x => x?.point && (x.count || 0) >= 2).slice(0, 6),
-      facts: (j?.facts || []).filter(x => x?.label && x?.value && (x.count || 0) >= 2).slice(0, 6) };
-  } catch (e) { return { count: same.length, points: [], facts: [], sponsored }; }
-}
-
-// 다 쓴 글에 사진 자리를 나중에 정한다: 문단별로 나눠 사진마다 이야기상 가장 맞는 문단 뒤에 [사진 N]
-async function placeVisitPhotos(body, photoDescs, photoCount) {
-  if (!photoCount) return body;
-  const paras = body.split(/\n\s*\n/).map(x => x.trim()).filter(Boolean);
-  // 배치 가능한 문단: "📍 기본 정보"·"▶ 정리"가 시작되기 전까지
-  const endIdx = paras.findIndex(t => /^(📍|▶\s*정리)/.test(t));
-  const okAfter = i => endIdx < 0 || i < endIdx;
-  let place = null;
-  try {
-    const plist = Array.from({ length: photoCount }, (_, i) => {
-      const d = photoDescs.find(p => p.n === i + 1);
-      return `사진 ${i + 1}: ${d ? `${d.kind || "기타"} — ${(d.items || []).join(", ")}` : "(설명 없음)"}`;
-    }).join("\n");
-    const prompt = `아래는 방문 후기 글의 문단 목록과, 작성자가 찍은 사진 목록이다.
-사진마다 이야기 흐름상 가장 잘 어울리는 문단을 골라, 그 문단 "뒤"에 사진을 넣을 것.
-- 사진 내용과 문단 내용이 맞아야 한다 (간판·외관 → 찾아가는 문단, 내부 → 들어가서 문단, 상품·음식 → 핵심 경험 문단).
-- 딱 맞는 문단이 없으면 흐름상 그 장면이 나올 법한 위치에.
-- "📍 기본 정보"나 "▶ 정리" 문단 뒤에는 넣지 말 것. 첫 문단(도입) 바로 뒤는 외관·간판 사진일 때만.
-- 한 문단 뒤에 사진은 최대 2장.
-- 모든 사진을 한 번씩.
-
-[문단]
-${paras.map((t, i) => `${i}: ${t.replace(/\n/g, " ").slice(0, 90)}`).join("\n")}
-
-[사진]
-${plist}
-
-순수 JSON만: {"place":[{"n":1,"after":0}]}`;
-    const raw = await callClaude([{ role: "user", content: prompt }], "You place photos into a blog post. Output ONLY valid JSON.", 600, "claude-haiku-4-5-20251001");
-    const seen = new Set();
-    place = (safeParseJson(raw)?.place || []).filter(x => x && Number.isInteger(x.n) && Number.isInteger(x.after) && x.n >= 1 && x.n <= photoCount && x.after >= 0 && x.after < paras.length && okAfter(x.after) && !seen.has(x.n) && seen.add(x.n));
-  } catch (e) { place = null; }
-  // 빠진 사진은 본문 중간 문단들에 고르게
-  const used = new Set((place || []).map(x => x.n));
-  const bodyIdx = paras.map((t, i) => i).filter(okAfter);
-  const missing = Array.from({ length: photoCount }, (_, i) => i + 1).filter(n => !used.has(n));
-  const pool = bodyIdx.length ? bodyIdx : paras.map((_, i) => i);
-  missing.forEach((n, k) => { (place = place || []).push({ n, after: pool[Math.min(pool.length - 1, Math.floor((k + 1) * pool.length / (missing.length + 1)))] }); });
-  const after = {};
-  (place || []).forEach(x => { (after[x.after] = after[x.after] || []).push(x.n); });
-  return paras.map((t, i) => [t, ...(after[i] || []).map(n => `[사진 ${n}]`)].join("\n\n")).join("\n\n");
+    return { count: same.length, refCount: refs.length, sponsored, category: j?.category || "",
+      points: (j?.points || []).filter(x => x?.point && ((x.count || 0) >= 2 || refs.length)).slice(0, 6),
+      facts: (j?.facts || []).filter(x => x?.label && x?.value && ((x.count || 0) >= 2 || refs.length)).slice(0, 6),
+      coverage: (j?.coverage || []).filter(Boolean).slice(0, 8) };
+  } catch (e) { return { count: same.length, refCount: refs.length, points: [], facts: [], coverage: [], category: "", sponsored }; }
 }
 
 function formatVisitBlock(visit, photoDescs, placeInfo, reviews) {
@@ -9712,11 +9687,11 @@ ${visit.toneSample}
     ? Object.entries(byKind).map(([k, g]) => `- ${k}: ${[...g.items].join(", ")}${g.moods.size ? ` (분위기: ${[...g.moods].join(", ")})` : ""}${g.texts.size ? ` / 또렷하게 읽힌 글자: ${[...g.texts].join(" / ")}` : ""}`).join("\n")
     : "(사진 없음)";
   const facts = placeInfo.facts.length ? placeInfo.facts.map(f => `- ${f.label}: ${f.value} (출처: ${f.source || "-"})`).join("\n") : "(검색으로 확인된 정보 없음)";
-  const rv = reviews && reviews.count ? `
-같은 상호명으로 올라온 다른 블로그 후기 ${reviews.count}개에서 공통으로 나온 내용${reviews.sponsored ? ` (이 중 ${reviews.sponsored}개는 협찬·체험단 글)` : ""}:
+  const rv = reviews && (reviews.count || reviews.refCount) ? `
+다른 사람들의 후기 (검색 ${reviews.count || 0}개${reviews.refCount ? ` + 작성자가 준 참고 리뷰 ${reviews.refCount}개` : ""})에서 나온 내용${reviews.sponsored ? ` (이 중 ${reviews.sponsored}개는 협찬·체험단 글)` : ""}:
 ${reviews.points.length ? reviews.points.map(p => `- ${p.point} (${p.count}개 후기)`).join("\n") : "- (공통으로 나온 내용 없음)"}
 ${reviews.facts.length ? `후기들이 일치하게 적은 정보:\n${reviews.facts.map(f => `- ${f.label}: ${f.value} (${f.count}개 후기)`).join("\n")}` : ""}
-사용 규칙: 이건 다른 사람들의 경험이다. 내 경험처럼 쓰지 말고 "다른 후기들 보니 ~라는 얘기가 많더라고요", "찾아보니 ~라고 하더라고요"처럼 출처가 드러나게 1~3군데 자연스럽게 녹인다. 내가 본 것(사진·메모)과 겹치면 "후기대로 ~였어요"처럼 연결해도 된다. 후기들이 일치하게 적은 정보는 📍 기본 정보에 넣어도 되지만, 검색 확인 정보와 다르면 넣지 말 것.
+${reviews.coverage?.length ? `참고 리뷰가 다룬 항목: ${reviews.coverage.join(", ")}\n→ 독자가 이 매장에서 궁금해할 항목을 파악하는 데만 쓴다. 내 메모·사진에 근거가 있는 항목만 다루고, 참고 리뷰의 문장·표현·소제목·순서를 따라 하지 말 것 (네이버 유사문서 판정 위험).\n` : ""}사용 규칙: 이건 다른 사람들의 경험이다. 내 경험처럼 쓰지 말고 "다른 후기들 보니 ~라는 얘기가 많더라고요", "찾아보니 ~라고 하더라고요"처럼 출처가 드러나게 1~3군데 자연스럽게 녹인다. 내가 본 것(사진·메모)과 겹치면 "후기대로 ~였어요"처럼 연결해도 된다. 후기들이 일치하게 적은 정보는 📍 기본 정보에 넣어도 되지만, 검색 확인 정보와 다르면 넣지 말 것.
 ` : "";
   return `
 [방문 리뷰 모드 — 이 블록은 아래의 주제 원칙·경험 서술 규칙·AEO 규칙보다 우선한다]
@@ -10058,12 +10033,19 @@ export default function BlogTools(){
             visit = { ...visit, toneSample: b.replace(/\n{3,}/g, "\n\n").slice(0, 1500) };
           } catch (e) {}
         }
-        const [pd, pi, rv] = await Promise.all([
-          visit.photos.length ? withTimeout(analyzeVisitPhotos(visit.photos, visit.placeName).catch(() => []), 60000, []) : Promise.resolve([]),
-          withTimeout(searchPlaceInfo({ placeName: visit.placeName, address: visit.address, today: todayStr }).catch(() => ({ category: "", facts: [] })), 45000, { category: "", facts: [] }),
-          withTimeout(gatherPlaceReviews({ placeName: visit.placeName, address: visit.address }).catch(() => null), 45000, null),
+        const [pd, rv] = await Promise.all([
+          visit.photos.length ? withTimeout(analyzeVisitPhotos(visit.photos, visit.placeName).catch(() => []), 90000, []) : Promise.resolve([]),
+          withTimeout(gatherPlaceReviews({ placeName: visit.placeName, address: visit.address, refUrls: visit.refUrls || [] }).catch(() => null), 45000, null),
         ]);
-        photoDescs = pd; placeInfo = pi; placeReviews = rv;
+        photoDescs = pd; placeReviews = rv;
+        // 후기에서 사실 정보가 2개 이상 나왔으면 웹 검색은 건너뛴다 (편당 약 50~70원 절약)
+        if ((rv?.facts?.length || 0) >= 2) {
+          placeInfo = { category: rv.category || "", facts: [] };
+        } else {
+          setPendingAnalyzeText("__loading__:장소 기본 정보 검색 중");
+          placeInfo = await withTimeout(searchPlaceInfo({ placeName: visit.placeName, address: visit.address, today: todayStr }).catch(() => ({ category: "", facts: [] })), 45000, { category: "", facts: [] });
+          if (!placeInfo.category && rv?.category) placeInfo.category = rv.category;
+        }
         visitBlock = formatVisitBlock(visit, photoDescs, placeInfo, placeReviews);
       }
 
@@ -10188,7 +10170,7 @@ Output ONLY valid JSON, no markdown.`;
       // 사실표를 이미 만든 글은 남은 [확인필요]가 대개 사실표에서도 못 찾은 항목이라 재검색하지 않는다.
       // → 아래 정리 단계(검색 없음)에서 "확인처 안내" 문장으로 바꾸거나 삭제. 사실표를 건너뛴 글만 검색으로 채운다.
       const hadFactSheet = (factSheet || []).length > 0;
-      if (placeholders.length > 0 && !hadFactSheet) {
+      if (placeholders.length > 0 && !hadFactSheet && !visit) {   // 방문 리뷰는 검색 없이 아래 정리 단계로
         try {
           factItems = await resolveUncertainValues({
             placeholders, title: parsed.title, mainKw, text: bodyText,
