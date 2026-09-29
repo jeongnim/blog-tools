@@ -10085,7 +10085,8 @@ function ApiKeySwitch(){
       style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${own?"#d2992266":"#30363d"}`,background:own?"#d2992215":"#161b22",color:own?"#e3b341":"#8b949e",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
       🔑 {own?`@${info.id} 전용 키`:"기본 키"}
     </button>
-    {open&&<div style={{position:"absolute",right:0,top:"38px",zIndex:50,width:"340px",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",boxShadow:"0 8px 24px #0008",fontSize:"13px",color:"#c9d1d9"}}>
+    {open&&<div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:999}}/>}
+    {open&&<div style={{position:"absolute",right:0,top:"38px",zIndex:1000,width:"340px",maxWidth:"calc(100vw - 24px)",maxHeight:"70vh",overflowY:"auto",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",boxShadow:"0 8px 24px #0008",fontSize:"13px",color:"#c9d1d9"}}>
       <div style={{fontWeight:700,marginBottom:"4px"}}>블로그 ID별 API 키</div>
       <div style={{color:"#8b949e",fontSize:"12px",lineHeight:1.5,marginBottom:"8px"}}>맞춤 프로필에서 고른 블로그 ID에 키가 있으면 그 키로, 없으면 기본 키(개인)로 과금돼요. 지금 선택: {info.id?`@${info.id}`:"프로필 없음"}</div>
       {ids.length===0&&<div style={{color:"#484f58",fontSize:"12px"}}>아직 프로필이 없어요. 아래에 블로그 ID를 직접 추가할 수 있어요.</div>}
@@ -10561,8 +10562,8 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
       input[type=range]{height:6px}
     `}</style>
 
-    {/* 헤더 */}
-    <div style={{borderBottom:"1px solid #21262d",background:"#0d1117"}}>
+    {/* 헤더 — 탭 줄(zIndex 300)보다 위에 있어야 🔑 패널이 가려지지 않는다 */}
+    <div style={{borderBottom:"1px solid #21262d",background:"#0d1117",position:"relative",zIndex:400}}>
       <div style={{padding:"10px 12px",display:"flex",alignItems:"center",gap:"10px"}}>
         <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"19px"}}>✍️</div>
         <div style={{fontSize:"18px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div>
