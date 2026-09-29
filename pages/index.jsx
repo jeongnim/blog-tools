@@ -407,13 +407,32 @@ function salvageTruncatedJson(raw) {
   return out;
 }
 
+// ── 블로그 ID별 API 키 ──
+// 맞춤 프로필에서 고른 블로그 ID에 키가 등록돼 있으면 그 키로, 없으면 서버 기본 키(Vercel 환경변수)로 AI를 부른다.
+// 키는 이 브라우저에만 저장하고(백업 파일에 포함 안 됨: mt_/bp_ 접두어가 아님), 화면에는 가려서 보여준다.
+const LS_BLOG_KEYS="vk_blog_api_keys";
+function blogKeysLoad(){ try{ return JSON.parse(localStorage.getItem(LS_BLOG_KEYS)||"{}")||{}; }catch(e){ return {}; } }
+function blogKeysSave(m){ try{ localStorage.setItem(LS_BLOG_KEYS,JSON.stringify(m)); }catch(e){} }
+function activeKeyInfo(){
+  const id=(bpGetActiveId()||"").toLowerCase();
+  const k=id?blogKeysLoad()[id]:"";
+  return k?{id,key:k}:{id,key:""};
+}
+function maskKey(k){ return k?`${k.slice(0,10)}…${k.slice(-4)}`:""; }
+function claudeHeaders(){
+  const h={"Content-Type":"application/json"};
+  const {key}=activeKeyInfo();
+  if(key) h["x-user-api-key"]=key;
+  return h;
+}
+
 async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5-20251001"){
   const body={model,max_tokens:maxTokens,messages};
   if(system) body.system=system;
 
   const res=await fetch("/api/claude",{
     method:"POST",
-    headers:{"Content-Type":"application/json"},
+    headers:claudeHeaders(),
     body:JSON.stringify(body)
   });
 
@@ -449,7 +468,7 @@ async function callClaudeSearch(messages, system, maxTokens=3000, model="claude-
 
   const res = await fetch("/api/claude", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: claudeHeaders(),
     body: JSON.stringify(body),
   });
 
@@ -494,7 +513,7 @@ async function callClaudeStream(messages, system, maxTokens=3500, model="claude-
 
   const res = await fetch("/api/claude", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: claudeHeaders(),
     body: JSON.stringify(body),
   });
 
@@ -3284,7 +3303,7 @@ async function callClaudeJson(prompt,fields,maxTokens=3000,model="claude-sonnet-
       :t==="string[]"?{type:"array",items:{type:"string"}}
       :{type:"array",items:{type:"object",properties:{keyword:{type:"string"},reason:{type:"string"}},required:["keyword","reason"]}};
   });
-  const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},
+  const res=await fetch("/api/claude",{method:"POST",headers:claudeHeaders(),
     body:JSON.stringify({model,max_tokens:maxTokens,messages:[{role:"user",content:prompt}],
       tools:[{name:"report",description:"분석 결과를 제출한다",input_schema:{type:"object",properties:props,required:Object.keys(fields)}}],
       tool_choice:{type:"tool",name:"report"}})});
@@ -4355,7 +4374,7 @@ JSON 배열만 출력:`;
 
         const aiRes = await fetch('/api/claude', {
           method: 'POST',
-          headers: {'Content-Type':'application/json'},
+          headers: claudeHeaders(),
           body: JSON.stringify({
             model: 'claude-haiku-4-5-20251001',
             max_tokens: 200,
@@ -9937,6 +9956,53 @@ function PasswordGate({children}){
   );
 }
 
+// 헤더: 블로그 ID별 API 키 등록·확인
+function ApiKeySwitch(){
+  const [open,setOpen]=useState(false);
+  const [keys,setKeys]=useState({});
+  const [draft,setDraft]=useState({});
+  const [newId,setNewId]=useState("");
+  const [,tick]=useState(0);
+  useEffect(()=>{ setKeys(blogKeysLoad()); },[]);
+  useEffect(()=>{ const t=setInterval(()=>tick(x=>x+1),3000); return ()=>clearInterval(t); },[]);   // 프로필 전환 반영
+  const info=typeof window!=="undefined"?activeKeyInfo():{id:"",key:""};
+  const ids=[...new Set([...(typeof window!=="undefined"?bpList():[]).map(p=>String(p.blogId||"").toLowerCase()),...Object.keys(keys)])].filter(Boolean);
+  const setKey=(id,v)=>{ const m={...blogKeysLoad()}; if(v) m[id]=v.trim(); else delete m[id]; blogKeysSave(m); setKeys(m); setDraft(d=>({...d,[id]:""})); };
+  const own=!!info.key;
+  const inp={flex:1,minWidth:0,padding:"5px 7px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"monospace"};
+  return <div style={{marginLeft:"auto",position:"relative"}}>
+    <button onClick={()=>setOpen(o=>!o)} title="AI 비용을 어느 API 키로 낼지"
+      style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${own?"#d2992266":"#30363d"}`,background:own?"#d2992215":"#161b22",color:own?"#e3b341":"#8b949e",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
+      🔑 {own?`@${info.id} 전용 키`:"기본 키"}
+    </button>
+    {open&&<div style={{position:"absolute",right:0,top:"38px",zIndex:50,width:"340px",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",boxShadow:"0 8px 24px #0008",fontSize:"13px",color:"#c9d1d9"}}>
+      <div style={{fontWeight:700,marginBottom:"4px"}}>블로그 ID별 API 키</div>
+      <div style={{color:"#8b949e",fontSize:"12px",lineHeight:1.5,marginBottom:"8px"}}>맞춤 프로필에서 고른 블로그 ID에 키가 있으면 그 키로, 없으면 기본 키(개인)로 과금돼요. 지금 선택: {info.id?`@${info.id}`:"프로필 없음"}</div>
+      {ids.length===0&&<div style={{color:"#484f58",fontSize:"12px"}}>아직 프로필이 없어요. 아래에 블로그 ID를 직접 추가할 수 있어요.</div>}
+      {ids.map(id=>(
+        <div key={id} style={{padding:"6px 0",borderTop:"1px solid #21262d"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <b style={{color:info.id===id?"#58a6ff":"#c9d1d9"}}>@{id}{info.id===id?" · 선택됨":""}</b>
+            {keys[id]&&<span style={{color:"#3fb950",fontSize:"12px",fontFamily:"monospace"}}>{maskKey(keys[id])}</span>}
+          </div>
+          <div style={{display:"flex",gap:"5px",marginTop:"4px"}}>
+            <input type="password" value={draft[id]||""} onChange={e=>setDraft(d=>({...d,[id]:e.target.value}))} placeholder={keys[id]?"새 키로 바꾸려면 입력":"sk-ant-... (없으면 기본 키 사용)"} style={inp}/>
+            <button onClick={()=>{const v=(draft[id]||"").trim(); if(!/^sk-ant-/.test(v)){alert("Anthropic API 키는 sk-ant- 로 시작해요.");return;} setKey(id,v);}} disabled={!(draft[id]||"").trim()}
+              style={{padding:"4px 8px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px"}}>저장</button>
+            {keys[id]&&<button onClick={()=>{if(confirm(`@${id} 키를 지울까요?`)) setKey(id,"");}}
+              style={{padding:"4px 8px",borderRadius:"6px",border:"1px solid #f8514944",background:"transparent",color:"#ff7b72",cursor:"pointer",fontSize:"12px"}}>삭제</button>}
+          </div>
+        </div>))}
+      <div style={{display:"flex",gap:"5px",marginTop:"8px",paddingTop:"8px",borderTop:"1px solid #21262d"}}>
+        <input value={newId} onChange={e=>setNewId(e.target.value)} placeholder="블로그 ID 추가" style={{...inp,fontFamily:"'Noto Sans KR',sans-serif"}}/>
+        <button onClick={()=>{const id=newId.trim().toLowerCase(); if(!id) return; setDraft(d=>({...d,[id]:""})); setKeys(k=>({...k,[id]:k[id]||""})); setNewId("");}}
+          style={{padding:"4px 8px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px"}}>추가</button>
+      </div>
+      <div style={{marginTop:"8px",color:"#484f58",fontSize:"11px",lineHeight:1.5}}>키는 이 브라우저에만 저장되고 백업 파일에는 들어가지 않아요. 다른 PC에서는 다시 입력해주세요.</div>
+    </div>}
+  </div>;
+}
+
 export default function BlogTools(){
   const [active,setActive]=useState("keyword");
 
@@ -10390,8 +10456,9 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
       <div style={{padding:"10px 12px",display:"flex",alignItems:"center",gap:"10px"}}>
         <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"19px"}}>✍️</div>
         <div style={{fontSize:"18px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div>
+        <ApiKeySwitch/>
         <button onClick={doLogout} title="자리를 뜰 때 눌러주세요"
-          style={{marginLeft:"auto",padding:"5px 12px",borderRadius:"6px",
+          style={{padding:"5px 12px",borderRadius:"6px",
             border:"1px solid #30363d",background:"#161b22",color:"#8b949e",
             fontSize:"13px",fontWeight:600,cursor:"pointer",
             fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}
