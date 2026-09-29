@@ -2339,6 +2339,103 @@ async function fetchNaverKeywordStats(keywords) {
   return { keywordList: data.keywordList || [], autoComplete: data.autoComplete || [] };
 }
 
+// ═══ 키워드 글쓰기 > 🌐 구글 칸: 자동완성 연관검색어 + 네이버·구글 트렌드 12개월 비교 (AI 비용 없음) ═══
+function trendSummary(naver, google){
+  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
+  const change=ser=>{ if(ser.length<24) return null; const v=ser.map(x=>x.value); const a=avg(v.slice(-12)), b=avg(v.slice(-24,-12)); if(b<1&&a<1) return null; return b<1?100:Math.round((a-b)/b*100); };
+  const peak=ser=>{ if(!ser.length) return null; const m={}; ser.forEach(x=>{const k=+x.date.slice(5,7); (m[k]=m[k]||[]).push(x.value);}); const best=Object.entries(m).map(([k,v])=>[+k,avg(v)]).sort((a,b)=>b[1]-a[1])[0]; return best&&best[1]>0?best[0]:null; };
+  // 주 단위로 맞춰 상관·시차 계산 (구글이 먼저 움직이면 lag>0)
+  let lead=null;
+  if(naver.length>=20&&google.length>=20){
+    const wk=d=>Math.floor(new Date(d).getTime()/(7*864e5));
+    const nm=new Map(naver.map(x=>[wk(x.date),x.value])), gm=new Map(google.map(x=>[wk(x.date),x.value]));
+    const weeks=[...nm.keys()].filter(w=>gm.has(w)||gm.has(w+1)||gm.has(w-1));
+    const corr=(a,b)=>{const n=a.length;if(n<10)return 0;const ma=avg(a),mb=avg(b);let c=0,va=0,vb=0;for(let i=0;i<n;i++){c+=(a[i]-ma)*(b[i]-mb);va+=(a[i]-ma)**2;vb+=(b[i]-mb)**2;}return va&&vb?c/Math.sqrt(va*vb):0;};
+    let best={lag:0,r:-1};
+    for(let lag=-4;lag<=4;lag++){
+      const a=[],b=[];
+      weeks.forEach(w=>{const g=gm.get(w-lag)??gm.get(w-lag+1); if(g!=null){a.push(nm.get(w));b.push(g);}});
+      const r=corr(a,b); if(r>best.r) best={lag,r};
+    }
+    lead=best;
+  }
+  return {nChange:change(naver),gChange:change(google),nPeak:peak(naver),gPeak:peak(google),lead};
+}
+
+function TrendChart({naver,google}){
+  const W=640,H=150,P=24;
+  const all=[...naver,...google].map(x=>new Date(x.date).getTime());
+  if(!all.length) return null;
+  const t0=Math.min(...all),t1=Math.max(...all);
+  const X=t=>P+(t1>t0?(new Date(t).getTime()-t0)/(t1-t0):0)*(W-P*2);
+  const Y=v=>H-P-(v/100)*(H-P*2);
+  const path=ser=>ser.map((x,i)=>`${i?"L":"M"}${X(x.date).toFixed(1)},${Y(x.value).toFixed(1)}`).join(" ");
+  const months=[];{const d=new Date(t0);d.setDate(1);d.setMonth(d.getMonth()+1);while(d.getTime()<=t1){months.push(new Date(d));d.setMonth(d.getMonth()+2);}}
+  return <div style={{overflowX:"auto"}}>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",minWidth:"420px",height:"auto",display:"block"}}>
+      {[0,50,100].map(v=><g key={v}><line x1={P} x2={W-P} y1={Y(v)} y2={Y(v)} stroke="#21262d"/><text x={4} y={Y(v)+4} fill="#484f58" fontSize="10">{v}</text></g>)}
+      {months.map((m,i)=><text key={i} x={X(m)} y={H-6} fill="#484f58" fontSize="10" textAnchor="middle">{m.getMonth()+1}월</text>)}
+      {naver.length>0&&<path d={path(naver)} fill="none" stroke="#03c75a" strokeWidth="2"/>}
+      {google.length>0&&<path d={path(google)} fill="none" stroke="#4285f4" strokeWidth="2"/>}
+    </svg>
+  </div>;
+}
+
+function GoogleKeywordPanel({keyword,data,onPick}){
+  const box={background:"#0d1117",border:"1px solid #21262d",borderRadius:"10px",padding:"12px 14px"};
+  const chip={padding:"3px 10px",borderRadius:"14px",border:"1px solid #30363d",background:"#161b22",color:"#c9d1d9",fontSize:"13px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"};
+  if(!data||data.loading) return <div style={{...box,color:"#8b949e",fontSize:"14px"}}>🌐 구글 연관검색어·트렌드 불러오는 중...</div>;
+  const d=data.data||{};
+  const sm=trendSummary(d.naver||[],d.google||[]);
+  const chg=v=>v==null?"-":v>=15?`▲ ${v}% 상승`:v<=-15?`▼ ${-v}% 하락`:"비슷";
+  const chgColor=v=>v==null?"#8b949e":v>=15?"#3fb950":v<=-15?"#ff7b72":"#8b949e";
+  let leadTxt="";
+  if(sm.lead){ const {lag,r}=sm.lead;
+    leadTxt=r<0.4?"두 곳의 흐름이 서로 달라요":lag>0?`구글이 약 ${lag}주 먼저 움직여요 (구글에서 뜨면 곧 네이버도 올라올 가능성)`:lag<0?`네이버가 약 ${-lag}주 먼저 움직여요`:"두 곳이 비슷한 시기에 움직여요"; }
+  return <div style={{...box,display:"flex",flexDirection:"column",gap:"12px"}}>
+    <div style={{display:"flex",alignItems:"baseline",gap:"8px",flexWrap:"wrap"}}>
+      <span style={{color:"#e6edf3",fontSize:"16px",fontWeight:700}}>🌐 구글</span>
+      <span style={{color:"#484f58",fontSize:"12px"}}>연관검색어 · 네이버/구글 트렌드 비교 (지난 12개월, 주 단위)</span>
+    </div>
+
+    {/* 트렌드 */}
+    <div>
+      <div style={{display:"flex",gap:"14px",flexWrap:"wrap",fontSize:"13px",marginBottom:"4px"}}>
+        <span style={{color:"#03c75a",fontWeight:700}}>━ 네이버</span>
+        <span style={{color:"#4285f4",fontWeight:700}}>━ 구글</span>
+        <span style={{color:"#484f58"}}>각자 기간 최고점 = 100인 상대 지수 (절대 검색량 비교 아님)</span>
+      </div>
+      {(d.naver?.length||d.google?.length)?<TrendChart naver={d.naver||[]} google={d.google||[]}/>:null}
+      {d.naverError&&<div style={{color:"#ffa657",fontSize:"12px"}}>네이버 트렌드: {d.naverError}</div>}
+      {d.googleError&&<div style={{color:"#ffa657",fontSize:"12px"}}>구글 트렌드: {d.googleError}</div>}
+      {(d.naver?.length>0||d.google?.length>0)&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:"6px",marginTop:"8px",fontSize:"13px"}}>
+        <div style={{background:"#161b22",borderRadius:"8px",padding:"7px 10px"}}><div style={{color:"#484f58",fontSize:"12px"}}>최근 3개월 (직전 3개월 대비)</div>
+          <span style={{color:chgColor(sm.nChange)}}>네이버 {chg(sm.nChange)}</span> · <span style={{color:chgColor(sm.gChange)}}>구글 {chg(sm.gChange)}</span></div>
+        <div style={{background:"#161b22",borderRadius:"8px",padding:"7px 10px"}}><div style={{color:"#484f58",fontSize:"12px"}}>가장 많이 찾는 달</div>
+          <span style={{color:"#c9d1d9"}}>네이버 {sm.nPeak?`${sm.nPeak}월`:"-"} · 구글 {sm.gPeak?`${sm.gPeak}월`:"-"}</span></div>
+        {leadTxt&&<div style={{background:"#161b22",borderRadius:"8px",padding:"7px 10px"}}><div style={{color:"#484f58",fontSize:"12px"}}>어디서 먼저 뜨나</div>
+          <span style={{color:"#c9d1d9"}}>{leadTxt}</span></div>}
+      </div>}
+    </div>
+
+    {/* 자동완성 */}
+    <div>
+      <div style={{color:"#8b949e",fontSize:"13px",fontWeight:700,marginBottom:"6px"}}>구글 자동완성 연관검색어 {d.suggest?.length?`${d.suggest.length}개`:""} <span style={{color:"#484f58",fontWeight:400}}>· 누르면 그 키워드로 분석</span></div>
+      {d.suggest?.length?<div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>{d.suggest.map((k,i)=><button key={i} onClick={()=>onPick(k)} style={chip}>{k}</button>)}</div>
+        :<div style={{color:"#484f58",fontSize:"13px"}}>{d.suggestError||"자동완성 결과가 없어요"}</div>}
+    </div>
+
+    {/* 트렌드 관련 검색어 */}
+    {(d.googleRising?.length>0||d.googleTop?.length>0)&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:"10px"}}>
+      {[["🔥 급상승 관련 검색어",d.googleRising],["⭐ 인기 관련 검색어",d.googleTop]].map(([t,list])=>list?.length>0&&<div key={t}>
+        <div style={{color:"#8b949e",fontSize:"13px",fontWeight:700,marginBottom:"6px"}}>{t}</div>
+        {list.map((x,i)=><div key={i} onClick={()=>onPick(x.query)} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",fontSize:"13px",cursor:"pointer",color:"#c9d1d9",borderBottom:"1px solid #161b22"}}>
+          <span>{x.query}</span><span style={{color:"#484f58"}}>{x.value}</span></div>)}
+      </div>)}
+    </div>}
+  </div>;
+}
+
 function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pendingKeywordSearch, setPendingKeywordSearch}){
   const [inputVal,setInputVal]=useState(kwResult?._inputVal||"");
 
@@ -2399,6 +2496,16 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
     goAutoWrite(t,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword);
   };
   const fmtNum = n => { if(n===null||n===undefined) return "-"; const num=Number(n); if(isNaN(num)) return "-"; if(num<=10) return "10 이하"; return num.toLocaleString(); };
+
+  // 🌐 구글 칸 데이터 (키워드별 캐시)
+  const [gk,setGk]=useState({});
+  useEffect(()=>{
+    const kw=kwResult?.keyword; if(!kw||gk[kw]) return;
+    setGk(m=>({...m,[kw]:{loading:true}}));
+    fetch(`/api/google-keyword?keyword=${encodeURIComponent(kw)}`).then(r=>r.json())
+      .then(d=>setGk(m=>({...m,[kw]:{loading:false,data:d}})))
+      .catch(e=>setGk(m=>({...m,[kw]:{loading:false,data:{suggestError:"불러오기 실패",naverError:e.message}}})));
+  },[kwResult?.keyword]);
 
   const analyze=async(overrideKw)=>{
     const kw=(overrideKw||inputVal).trim(); if(!kw) return;
@@ -2817,6 +2924,9 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
             </div>
           </div>
         </div>
+
+        {/* ── 🌐 구글 ── */}
+        <GoogleKeywordPanel keyword={result.keyword} data={gk[result.keyword]} onPick={k=>{window.scrollTo({top:0,behavior:"smooth"});analyze(k);}}/>
 
         {/* ── 글 주제 정하기 (직접 입력 + AI 추천) ── */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
