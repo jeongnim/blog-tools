@@ -3226,14 +3226,29 @@ const BP_PREFIX="mt_blog_profile_", BP_ACTIVE="mt_blog_profile_active";
 const bpKey=id=>BP_PREFIX+String(id||"").toLowerCase();
 function bpLoad(id){ try{return JSON.parse(localStorage.getItem(bpKey(id))||"null");}catch(e){return null;} }
 function bpSave(profile){ try{localStorage.setItem(bpKey(profile.blogId),JSON.stringify(profile));return true;}catch(e){return false;} }
-function bpDelete(id){ try{localStorage.removeItem(bpKey(id)); if(bpGetActiveId().toLowerCase()===String(id).toLowerCase()) localStorage.removeItem(BP_ACTIVE);}catch(e){} }
+function bpDelete(id){ try{localStorage.removeItem(bpKey(id)); if(bpGetActiveId().toLowerCase()===String(id).toLowerCase()) bpSetActiveId("");}catch(e){} }
 function bpList(){
   const out=[];
   try{ for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(k&&k.startsWith(BP_PREFIX)&&k!==BP_ACTIVE){const p=JSON.parse(localStorage.getItem(k)||"null"); if(p?.blogId) out.push(p);} } }catch(e){}
   return out.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
 }
-function bpGetActiveId(){ try{return localStorage.getItem(BP_ACTIVE)||"";}catch(e){return "";} }
-function bpSetActiveId(id){ try{ if(id) localStorage.setItem(BP_ACTIVE,id); else localStorage.removeItem(BP_ACTIVE);}catch(e){} }
+// 선택한 프로필은 "탭마다" 따로 기억한다 (sessionStorage). 그래야 한 탭에서 회사 블로그로 글 쓰는 중에
+// 다른 탭에서 개인 블로그로 바꿔도 API 키·프로필이 섞이지 않는다.
+// localStorage에는 "마지막 선택"만 남겨서, 새 탭을 열면 그걸로 시작한다.
+const BP_TAB_ACTIVE="bp_tab_active";
+function bpGetActiveId(){
+  try{
+    const t=sessionStorage.getItem(BP_TAB_ACTIVE);
+    if(t!==null) return t;
+    const last=localStorage.getItem(BP_ACTIVE)||"";
+    sessionStorage.setItem(BP_TAB_ACTIVE,last);   // 이 탭의 시작값으로 고정
+    return last;
+  }catch(e){ try{return localStorage.getItem(BP_ACTIVE)||"";}catch(_){return "";} }
+}
+function bpSetActiveId(id){
+  try{ sessionStorage.setItem(BP_TAB_ACTIVE,id||""); }catch(e){}
+  try{ if(id) localStorage.setItem(BP_ACTIVE,id); else localStorage.removeItem(BP_ACTIVE);}catch(e){}
+}
 function bpGetActive(){ const id=bpGetActiveId(); return id?bpLoad(id):null; }
 
 // ── 키워드 점유 확인: 내 블로그 글이 이미 상위에 있는 키워드는 새 글 추천에서 뺀다 ──
