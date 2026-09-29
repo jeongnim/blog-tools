@@ -77,7 +77,13 @@ export default async function handler(req, res) {
 
   if (req.method !== "POST") return res.status(405).json({ error: "POST만 허용" });
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  // API 키: 화면에서 블로그 ID별로 등록한 키가 오면 그 키로, 없으면 서버 기본 키(Vercel 환경변수)로.
+  const userKey = String(req.headers["x-user-api-key"] || "").trim();
+  if (userKey && !/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(userKey)) {
+    return res.status(400).json({ error: { type: "bad_user_key", message: "등록한 API 키 형식이 올바르지 않아요. 상단 🔑 버튼에서 확인해주세요." } });
+  }
+  const usingUserKey = !!userKey;
+  const apiKey = userKey || process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(200).json({ content: [] });
 
   const invalid = validateRequest(req.body);
@@ -96,6 +102,11 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify(req.body),
     });
+
+    // 등록한 키가 거절되면(잘못된 키·잔액 부족 등) 어느 키 문제인지 알 수 있게 알려준다
+    if (usingUserKey && (response.status === 401 || response.status === 403)) {
+      return res.status(200).json({ error: { type: "user_key_rejected", message: "블로그 ID에 등록한 API 키가 거절됐어요. 상단 🔑 버튼에서 키를 확인해주세요." } });
+    }
 
     // ── 스트리밍: 받은 SSE를 그대로 흘려보낸다 ──
     // 토큰이 나오는 즉시 전달되므로 중간에 끊겨도 이미 받은 부분은 살릴 수 있다.
