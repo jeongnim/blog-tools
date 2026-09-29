@@ -1078,6 +1078,7 @@ For "scene":
 - Describe ONE PHOTOGRAPHABLE REAL MOMENT: a specific person/hands/object in a specific place doing a specific thing, plus composition, lighting and mood. Ask yourself "could a photographer actually take this shot?" — if not, rewrite it.
 - Concepts, comparisons, lists of options, steps, pros/cons, prices, numbers, charts, graphs, calendars, documents, signs, price tags, screens with readable text, whiteboards: NEVER visualise these. Instead pick a concrete everyday moment that IMPLIES the idea (e.g. "비교" → a person holding two items side by side; "절약" → someone checking a receipt at a kitchen table, receipt blurred).
 - No readable text, no logos, no recognizable real people or celebrity faces.
+- IDENTITY & PAYMENT DOCUMENTS: never depict realistic ID cards (주민등록증, 운전면허증, 여권, 외국인등록증), credit/debit cards, bank books, cheques, certificates, contracts or official forms — image generators block these as potential fraud. If the section is about them, show a plain blank single-color plastic card with only a gold IC chip (no photo, name, numbers, logo or pattern), or show the situation instead (a hand holding a smartphone, a wallet on a desk, a person at a service counter seen from behind).
 
 General rules:
 - GROUNDING: every section and every scene must come STRICTLY from what the post actually says. Follow the post's real order. Do not add objects, places, activities, situations or facts that do not appear in the post.
