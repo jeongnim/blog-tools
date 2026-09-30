@@ -4221,165 +4221,24 @@ function cleanPastedBody(t){
     .replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
 }
 
-// ═══ 노출 확인 > 방법4 · 링크별 순위 (블로그·카페 글) ═══════════════════════════════
-// 글 주소 + 제목 + 키워드를 넣으면, 키워드마다 통합검색·블로그탭/카페탭·API 순위를 확인한다 (AI 비용 없음)
-const LS_LINKRANK="mt_linkrank_last";
-function linkKind(u){ return /blog\.naver\.com/i.test(u)?"blog":/cafe\.naver\.com/i.test(u)?"cafe":null; }
-function parseLinkLines(text){
-  return String(text||"").split(/\r?\n/).map(l=>l.trim()).filter(l=>/https?:\/\//.test(l)).map(l=>{
-    const cells=l.includes("\t")?l.split("\t"):l.split("|");
-    const link=(cells[0]||"").trim().match(/https?:\/\/\S+/)?.[0]||"";
-    const title=(cells[1]||"").trim();
-    const keywords=cells.slice(2).join(",").split(/[,;/]/).map(x=>x.trim()).filter(Boolean);
-    return {link,title,keywords:[...new Set(keywords)],kind:linkKind(link)};
-  }).filter(r=>r.link);
-}
-async function linkRankOne(row,q){
-  if(row.kind==="cafe"){
-    const r=await fetch(`/api/cafe-rank?keyword=${encodeURIComponent(q)}&link=${encodeURIComponent(row.link)}`); const d=await r.json();
-    if(d.error) return {error:d.error};
-    return {main:d.mainRank,tab:d.cafeRank,api:d.apiRank,proxyError:d.proxyError,apiError:d.apiError};
-  }
-  const m=row.link.match(/blog\.naver\.com\/([^/?#&]+)\/(\d+)/)||row.link.match(/blogId=([^&]+).*?logNo=(\d+)/);
-  if(!m) return {error:"블로그 글 주소를 읽지 못했어요"};
-  const r=await fetch(`/api/naver-rank?keyword=${encodeURIComponent(q)}&blogId=${encodeURIComponent(m[1])}&postNo=${encodeURIComponent(m[2])}`); const d=await r.json();
-  if(d.error) return {error:d.error};
-  return {main:d.areas?.main_search?.rank??null,tab:d.areas?.blog?.rank??null,api:d.simRank??null,proxyError:d.proxyError||null};
-}
-function RankCell({v}){
-  const c=v==null?"#484f58":v<=3?"#3fb950":v<=10?"#58a6ff":v<=30?"#d29922":"#8b949e";
-  return <span style={{color:c,fontWeight:v!=null&&v<=10?700:400}}>{v==null?"–":`${v}위`}</span>;
-}
-function LinkRankPanel(){
-  const [text,setText]=useState("");
-  const [rows,setRows]=useState([]);
-  const [busy,setBusy]=useState(false);
-  const [prog,setProg]=useState("");
-  const [err,setErr]=useState("");
-  const stopRef=useRef(false);
-  const fileRef=useRef(null);
-  useEffect(()=>{ try{const d=JSON.parse(localStorage.getItem(LS_LINKRANK)||"null"); if(d){setText(d.text||"");setRows(d.rows||[]);}}catch(e){} },[]);
-  const persist=(t,r)=>{ try{localStorage.setItem(LS_LINKRANK,JSON.stringify({text:t,rows:r,savedAt:Date.now()}));}catch(e){} };
-
-  const onFile=async e=>{
-    const f=e.target.files?.[0]; e.target.value=""; if(!f) return;
-    setErr("");
-    try{
-      const XLSX=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js","XLSX");
-      const wb=XLSX.read(await f.arrayBuffer());
-      const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""});
-      if(!data.length) throw new Error("빈 파일이에요");
-      const head=data[0].map(x=>String(x).trim());
-      let li=head.findIndex(h=>/링크|url|주소/i.test(h)), ti=head.findIndex(h=>/제목|title/i.test(h));
-      const ki=head.map((h,i)=>/키워드|keyword/i.test(h)?i:-1).filter(i=>i>=0);
-      const hasHead=li>=0;
-      if(!hasHead){ li=0; ti=1; }
-      const body=hasHead?data.slice(1):data;
-      const lines=body.map(r=>{
-        const kws=(ki.length?ki.map(i=>r[i]):r.slice(hasHead?Math.max(li,ti)+1:2)).map(x=>String(x||"").trim()).filter(Boolean).join(",");
-        return [String(r[li]||"").trim(),ti>=0?String(r[ti]||"").trim():"",kws].join("\t");
-      }).filter(l=>/https?:\/\//.test(l));
-      if(!lines.length) throw new Error("링크가 있는 행을 찾지 못했어요. 첫 열에 글 주소를 넣어주세요.");
-      setText(lines.join("\n"));
-    }catch(ex){ setErr("엑셀 읽기 실패: "+(ex?.message||ex)); }
-  };
-
-  const run=async()=>{
-    const parsed=parseLinkLines(text);
-    if(!parsed.length){ setErr("글 주소가 있는 줄이 없어요."); return; }
-    const bad=parsed.filter(r=>!r.kind);
-    if(bad.length){ setErr(`블로그·카페 글 주소가 아닌 줄 ${bad.length}개는 건너뛸게요.`); }
-    const list=parsed.filter(r=>r.kind).map(r=>({...r,results:{},checkedAt:null}));
-    const total=list.reduce((a,r)=>a+(r.title?1:0)+r.keywords.length,0);
-    if(!total){ setErr("확인할 제목이나 키워드가 없어요."); return; }
-    setRows(list); setBusy(true); stopRef.current=false;
-    let n=0;
-    try{
-      for(const row of list){
-        const qs=[...(row.title?[{q:row.title,label:"제목"}]:[]),...row.keywords.map(k=>({q:k,label:"키워드"}))];
-        for(const {q,label} of qs){
-          if(stopRef.current) throw new Error("__stop");
-          n++; setProg(`${n}/${total} · ${q.slice(0,24)}`);
-          let res; try{ res=await linkRankOne(row,q); }catch(e){ res={error:e.message}; }
-          if(res.proxyError&&/연결 실패|TIMEOUT|미설정|기능 없음/i.test(res.proxyError)&&!row._warned){
-            row._warned=true; setErr(`집 PC 프록시 문제로 통합검색·탭 순위를 못 봤어요 (${res.proxyError}). API 순위만 표시돼요.`);
-          }
-          row.results[q]={...res,label};
-          row.checkedAt=Date.now();
-          setRows([...list]);
-          await new Promise(r=>setTimeout(r,300));
-        }
-      }
-    }catch(e){ if(e.message!=="__stop") setErr(e.message); }
-    finally{ setBusy(false); setProg(""); persist(text,list); }
-  };
-
-  const exportXlsx=async()=>{
-    try{
-      const ExcelJS=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js","ExcelJS");
-      const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet("링크별 순위");
-      ws.columns=[{header:"링크",key:"link",width:46},{header:"종류",key:"kind",width:7},{header:"제목",key:"title",width:36},{header:"구분",key:"label",width:7},
-        {header:"검색어",key:"q",width:24},{header:"통합검색",key:"main",width:10},{header:"블로그탭/카페탭",key:"tab",width:14},{header:"API(정확도순)",key:"api",width:13},{header:"확인 시각",key:"at",width:18}];
-      ws.getRow(1).font={bold:true};
-      rows.forEach(r=>Object.entries(r.results||{}).forEach(([q,v])=>ws.addRow({link:r.link,kind:r.kind==="cafe"?"카페":"블로그",title:r.title,label:v.label,q,
-        main:v.main??"",tab:v.tab??"",api:v.api??"",at:r.checkedAt?new Date(r.checkedAt).toLocaleString("ko-KR"):""})));
-      const buf=await wb.xlsx.writeBuffer();
-      const d=new Date(),z=x=>String(x).padStart(2,"0");
-      saveBlob(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`링크별순위_${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}.xlsx`);
-    }catch(e){ setErr("엑셀 저장 실패: "+e.message); }
-  };
-
-  const box={background:"#0d1117",border:"1px solid #21262d",borderRadius:"10px",padding:"12px 14px"};
-  const btn=(on)=>({padding:"8px 14px",borderRadius:"8px",border:"1px solid #30363d",background:on?"#1f6feb":"#21262d",color:on?"#fff":"#c9d1d9",fontWeight:700,fontSize:"14px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"});
-  const preview=parseLinkLines(text);
-  return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-    <div style={box}>
-      <div style={{color:"#e6edf3",fontWeight:700,marginBottom:"4px"}}>블로그·카페 글 주소 + 제목 + 키워드</div>
-      <div style={{color:"#8b949e",fontSize:"13px",lineHeight:1.6,marginBottom:"8px"}}>
-        한 줄에 글 하나: <code style={{color:"#c9d1d9"}}>글주소 | 제목 | 키워드1, 키워드2</code> (엑셀에서 복사해 붙이면 칸 구분도 돼요). 제목을 넣으면 제목 그대로 검색했을 때 순위도 봐요.
-        엑셀은 첫 줄에 "링크 / 제목 / 키워드" 머리글을 두면 알아서 찾아요. 키워드 칸이 여러 개여도 돼요.
-      </div>
-      <textarea value={text} onChange={e=>setText(e.target.value)} rows={7}
-        placeholder={"https://cafe.naver.com/joonggonara/123456 | 아이폰 18 사전예약 후기 | 아이폰18 사전예약, 아이폰18 성지\nhttps://blog.naver.com/myid/224000000000 | 카톡멤버십 혜택 정리 | 카톡멤버십"}
-        style={{width:"100%",boxSizing:"border-box",padding:"10px",background:"#010409",border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",fontSize:"13px",lineHeight:1.6,fontFamily:"monospace",resize:"vertical"}}/>
-      <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginTop:"8px"}}>
-        {!busy?<button onClick={run} style={btn(true)}>🔎 순위 확인 ({preview.reduce((a,r)=>a+(r.title?1:0)+r.keywords.length,0)}건)</button>
-          :<button onClick={()=>{stopRef.current=true;}} style={btn(false)}>⏹ 멈추기</button>}
-        <button onClick={()=>fileRef.current?.click()} style={btn(false)}>📂 엑셀 불러오기</button>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={onFile}/>
-        {rows.length>0&&!busy&&<button onClick={exportXlsx} style={btn(false)}>📊 결과 엑셀</button>}
-        <span style={{color:"#8b949e",fontSize:"13px"}}>{busy?`확인 중 ${prog}`:preview.length?`글 ${preview.length}개 (카페 ${preview.filter(r=>r.kind==="cafe").length} · 블로그 ${preview.filter(r=>r.kind==="blog").length})`:""}</span>
-      </div>
-      {err&&<div style={{color:"#ffa657",fontSize:"13px",marginTop:"8px"}}>⚠️ {err}</div>}
-    </div>
-
-    {rows.length>0&&<div style={{...box,overflowX:"auto"}}>
-      <div style={{display:"flex",gap:"12px",fontSize:"12px",color:"#484f58",marginBottom:"8px",flexWrap:"wrap"}}>
-        <span>통합검색 = 네이버 첫 화면 검색 결과 카드 순서</span><span>탭 = 블로그탭·카페탭 첫 페이지</span><span>API = 네이버 검색 API 정확도순 100위까지 (프록시가 안 될 때 참고)</span>
-      </div>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:"13px",minWidth:"640px"}}>
-        <thead><tr style={{color:"#8b949e",textAlign:"left"}}>
-          {["글","검색어","통합검색","블로그탭·카페탭","API"].map(h=><th key={h} style={{padding:"6px 8px",borderBottom:"1px solid #21262d",fontWeight:600}}>{h}</th>)}
-        </tr></thead>
-        <tbody>
-          {rows.map((r,ri)=>{const ents=Object.entries(r.results||{});const n=Math.max(ents.length,1);
-            return (ents.length?ents:[["(대기 중)",{}]]).map(([q,v],qi)=>(
-              <tr key={ri+"-"+qi} style={{borderBottom:qi===n-1?"1px solid #21262d":"none"}}>
-                {qi===0&&<td rowSpan={n} style={{padding:"6px 8px",verticalAlign:"top",maxWidth:"260px"}}>
-                  <span style={{fontSize:"11px",padding:"1px 6px",borderRadius:"8px",background:r.kind==="cafe"?"#03c75a22":"#1f6feb22",color:r.kind==="cafe"?"#3fb950":"#58a6ff",marginRight:"5px"}}>{r.kind==="cafe"?"카페":"블로그"}</span>
-                  <a href={r.link} target="_blank" rel="noreferrer" style={{color:"#c9d1d9",textDecoration:"none"}}>{r.title||r.link.replace(/^https?:\/\//,"").slice(0,40)}</a>
-                </td>}
-                <td style={{padding:"4px 8px",color:"#c9d1d9"}}>{v.label==="제목"&&<span style={{color:"#484f58",fontSize:"11px",marginRight:"4px"}}>제목</span>}{q}
-                  {v.error&&<span style={{color:"#ff7b72",fontSize:"11px",marginLeft:"6px"}}>{v.error}</span>}</td>
-                <td style={{padding:"4px 8px"}}><RankCell v={v.main}/></td>
-                <td style={{padding:"4px 8px"}}><RankCell v={v.tab}/></td>
-                <td style={{padding:"4px 8px"}}><RankCell v={v.api}/></td>
-              </tr>));})}
-        </tbody>
-      </table>
-      {rows[0]?.checkedAt&&!busy&&<div style={{color:"#484f58",fontSize:"12px",marginTop:"6px"}}>마지막 확인: {new Date(Math.max(...rows.map(r=>r.checkedAt||0))).toLocaleString("ko-KR")} · 입력과 결과는 이 브라우저에 저장돼요 (백업 파일에도 포함)</div>}
-    </div>}
-  </div>;
+// 노출 확인 결과 → 엑셀 (글·검색어별 한 줄: 통합검색 / 블로그탭·카페탭 / API)
+async function exportExposureXlsx(list,analysis,extra){
+  const ExcelJS=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js","ExcelJS");
+  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet("노출 확인");
+  ws.columns=[{header:"링크",key:"link",width:46},{header:"종류",key:"kind",width:7},{header:"제목",key:"title",width:38},{header:"노출",key:"status",width:9},
+    {header:"구분",key:"label",width:12},{header:"검색어",key:"q",width:26},{header:"통합검색",key:"main",width:10},{header:"블로그탭/카페탭",key:"tab",width:14},{header:"API(정확도순)",key:"api",width:13}];
+  ws.getRow(1).font={bold:true};
+  const rowOf=(p,a,label,q,rr)=>({link:p.link,kind:p._kind==="cafe"?"카페":"블로그",title:p.title,status:a.missingStatus||"",label,q,
+    main:rr?.areas?.main_search?.rank??"",tab:rr?.areas?.blog?.rank??"",api:rr?.simRank??(rr?.areas?"":(rr?.myRank??""))});
+  list.forEach(p=>{
+    const a=analysis[p.postNo]; if(!a||a.error) return;
+    ws.addRow(rowOf(p,a,"제목",p.title,a.titleRank));
+    (a.topKeywords||[]).forEach(k=>ws.addRow(rowOf(p,a,a.kwSource==="manual"?"키워드(직접)":"키워드(AI)",k.keyword,k.realRank)));
+    (extra[p.postNo]||[]).forEach(k=>ws.addRow(rowOf(p,a,"추가검색",k.keyword,k.realRank)));
+  });
+  const buf=await wb.xlsx.writeBuffer();
+  const d=new Date(),z=x=>String(x).padStart(2,"0");
+  saveBlob(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`노출확인_${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.xlsx`);
 }
 
 function MissingTab(){
@@ -4392,6 +4251,7 @@ function MissingTab(){
   const [singleUrl,setSingleUrl]=useState("");
   const [singleTitle,setSingleTitle]=useState("");
   const [singleBody,setSingleBody]=useState("");
+  const [singleKw,setSingleKw]=useState("");   // 방법2: 확인할 키워드 직접 입력 (비우면 AI가 뽑음)
   // 공통
   const [posts,setPosts]=useState(null);
   const [analysis,setAnalysis]=useState({});
@@ -4543,6 +4403,7 @@ function MissingTab(){
   // ── 방법2: URL+제목+본문 직접 입력 → 즉시 분석 ──
   const analyzeManual=()=>{
     const url=singleUrl.trim();
+    const manualKeywords=[...new Set(String(singleKw||"").split(/[,;/\n]/).map(x=>x.trim()).filter(Boolean))];
     const title=singleTitle.trim();
     if(!url){alert("URL을 입력해주세요.");return;}
     if(!title){alert("제목을 입력해주세요.");return;}
@@ -4550,7 +4411,7 @@ function MissingTab(){
     const cafe=!m?parseCafeUrl(url):null;
     if(!m&&!cafe){alert("네이버 블로그 또는 카페 글 주소를 입력해주세요.\n예: https://blog.naver.com/아이디/글번호\n    https://cafe.naver.com/카페주소/글번호");return;}
     const postNo=m?m[2]:`cafe-${cafe.cafe}-${cafe.articleId}`;
-    const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual",
+    const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual",...(manualKeywords.length?{manualKeywords}:{}),
       ...(m?{_blogId:m[1]}:{_kind:"cafe",_cafe:cafe.cafe,_articleId:cafe.articleId})};
     setPosts({all:[post],current:[post],total:1,page:1,blogId:m?m[1]:""});
     setPage(1);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};
@@ -4744,8 +4605,10 @@ function MissingTab(){
 
       // ── Step 1: 본문 크롤링 + Claude AI 키워드 추출 ──
       // 본문은 이미 위에서 fetchPostBody로 가져온 body 사용
-      let kws = [];
-      try {
+      // 엑셀 키워드 칸·직접 입력 키워드가 있으면 그걸로 순위를 보고, 없을 때만 AI가 뽑는다
+      let kws = (post.manualKeywords||[]).map(k=>String(k).trim()).filter(Boolean).slice(0,10);
+      const kwSource = kws.length ? "manual" : "ai";
+      if (!kws.length) try {
         const tagStr = (post.tags||[]).slice(0,10).join(', ');
         const bodySnippet = body.slice(0, 800); // 본문 앞 800자만 사용
         const prompt = `네이버 ${post._kind==="cafe"?"카페":"블로그"} 글의 제목, 해시태그, 본문을 보고 이 글이 네이버 검색에서 상위노출될 가능성이 있는 핵심 키워드 5개를 추출해줘.
@@ -4915,7 +4778,7 @@ JSON 배열만 출력:`;
         .map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i]??null,rankLoading:false}));
 
       setAnalysis(prev=>({...prev,[post.postNo]:{
-        missingStatus, seoScore, seoDetail, titleRank,
+        missingStatus, seoScore, seoDetail, titleRank, kwSource,
         topKeywords:exposedKeywords, analyzedAt:Date.now()
       }}));
     }catch(e){
@@ -5148,10 +5011,13 @@ recommend는 8개.`;
       const title=tIdx>=0?String(row[tIdx]||"").trim():"";
       const bIdx=excelHeaders.findIndex(h=>/본문|내용|body|content/i.test(h));
       const bodyText=bIdx>=0?String(row[bIdx]||"").trim():"";
+      // "키워드" 머리글이 붙은 칸(여러 개 가능) — 한 칸에 쉼표로 여러 개 써도 됨
+      const kIdx=excelHeaders.map((h,k)=>/키워드|keyword/i.test(h)&&k!==uIdx&&k!==tIdx?k:-1).filter(k=>k>=0);
+      const manualKeywords=[...new Set(kIdx.flatMap(k=>String(row[k]||"").split(/[,;/\n]/)).map(x=>x.trim()).filter(Boolean))];
       const m=url.match(/blog\.naver\.com\/([^/\s?#]+)\/(\d+)/);
       const cafe=!m?parseCafeUrl(url):null;
       if(!m&&!cafe) return null;
-      const base={title:title||`게시글 ${i+1}`,link:url,date:"",description:bodyText.slice(0,300),source:"excel",...(bodyText?{bodyText}:{})};
+      const base={title:title||`게시글 ${i+1}`,link:url,date:"",description:bodyText.slice(0,300),source:"excel",...(bodyText?{bodyText}:{}),...(manualKeywords.length?{manualKeywords}:{})};
       return m?{...base,postNo:m[2],_blogId:m[1]}:{...base,postNo:`cafe-${cafe.cafe}-${cafe.articleId}`,_kind:"cafe",_cafe:cafe.cafe,_articleId:cafe.articleId};
     }).filter(Boolean);
     if(!validPosts.length){setExcelError("유효한 네이버 블로그·카페 글 주소가 없습니다.\nblog.naver.com/아이디/번호 또는 cafe.naver.com/카페/번호 형식인지 확인해주세요.");return;}
@@ -5177,7 +5043,7 @@ recommend는 8개.`;
 
     {/* ── 모드 탭 ── */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",background:"#0d1117",borderRadius:"10px",border:"1px solid #21262d",overflow:"hidden"}}>
-      {[["blogId","📋 방법1 · 블로그 ID"],["url","🔗 방법2 · URL 직접 입력"],["excel","📊 방법3 · 엑셀 업로드"],["links","☕ 방법4 · 링크별 순위 (블로그·카페)"]].map(([id,lbl])=>(
+      {[["blogId","📋 방법1 · 블로그 ID"],["url","🔗 방법2 · URL 직접 입력"],["excel","📊 방법3 · 엑셀 업로드"]].map(([id,lbl])=>(
         <button key={id} data-mode-url={id==="url"?"true":undefined} onClick={()=>{setMode(id);setPosts(null);setAnalysis({});setExpanded(null);setFeedError("");setExtraResults({});setExtraKw({});}} style={{
           padding:"13px 8px",border:"none",background:mode===id?"#161b22":"transparent",
           color:mode===id?"#e6edf3":"#8b949e",cursor:"pointer",
@@ -5187,8 +5053,6 @@ recommend는 8개.`;
         </button>
       ))}
     </div>
-
-    {mode==="links"&&<LinkRankPanel/>}
 
     {/* ── 방법1: 블로그 ID ── */}
     {mode==="blogId"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"12px"}}>
@@ -5340,6 +5204,16 @@ recommend는 8개.`;
             onFocus={e=>e.target.style.borderColor="#58a6ff"} onBlur={e=>e.target.style.borderColor="#30363d"}/>
         </div>
 
+        {/* 키워드 (선택) */}
+        <div style={{marginBottom:"8px"}}>
+          <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"5px"}}>🔑 확인할 키워드 <span style={{color:"#484f58"}}>(선택 · 쉼표로 여러 개 · 넣으면 AI 대신 이 키워드로 순위 확인)</span></div>
+          <input value={singleKw} onChange={e=>setSingleKw(e.target.value)}
+            placeholder="예: 카톡멤버십, 카톡 멤버십 가격"
+            style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",background:"#0d1117",
+              border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
+              fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",outline:"none"}}/>
+        </div>
+
         {/* 본문 */}
         <div style={{marginBottom:"12px"}}>
           <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"5px"}}>📄 본문 내용 <span style={{color:"#484f58"}}>(선택 · 있으면 더 정확 · 카페 글은 본문을 붙여넣어야 본문 기준으로 키워드를 뽑아요)</span></div>
@@ -5368,7 +5242,8 @@ recommend는 8개.`;
       <div>
         <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:700,marginBottom:"4px"}}>엑셀 / CSV 파일 업로드</div>
         <div style={{color:"#484f58",fontSize:"13px",marginBottom:"12px"}}>
-          첫 번째 행은 헤더 · URL 컬럼 + 제목 컬럼이 있으면 더 정확합니다 · .xlsx .xls .csv 지원
+          첫 번째 행은 헤더 · URL 컬럼 + 제목 컬럼이 있으면 더 정확합니다 · .xlsx .xls .csv 지원<br/>
+          블로그·카페 글 주소 둘 다 돼요 · <b style={{color:"#8b949e"}}>"키워드"</b> 머리글 칸이 있으면 그 키워드로 순위를 보고(칸 여러 개 또는 쉼표로 여러 개), 없으면 AI가 키워드를 뽑아요 · <b style={{color:"#8b949e"}}>"본문"</b> 칸이 있으면 본문 기준으로 뽑아요
         </div>
         {/* 파일 드롭존 */}
         <div
@@ -5498,6 +5373,9 @@ recommend는 8개.`;
             return <>
               {n>0&&<button onClick={()=>recheckPage(true)} disabled={busy} title="이 페이지의 누락·반영 대기 글만 제목·키워드 순위를 다시 조회해요 (AI 비용 없음)"
                 style={bs({background:"#f8514915",border:"1px solid #f8514944",color:busy?"#484f58":"#ff7b72"})}>{busy?"재확인 중...":`🔄 누락 ${n}건 재확인`}</button>}
+              {total>0&&!busy&&<button onClick={()=>exportExposureXlsx(posts.all||posts.current||[],analysis,extraResults).catch(e=>alert("엑셀 저장 실패: "+e.message))}
+                title="분석한 글의 제목·키워드별 순위를 엑셀로 받아요"
+                style={bs({background:"transparent",border:"1px solid #30363d",color:"#8b949e"})}>📊 결과 엑셀</button>}
               {total>0&&!busy&&<button onClick={()=>recheckPage(false)} disabled={busy} title="이 페이지 분석된 글 전체의 제목·키워드 순위를 다시 조회해요 (AI 비용 없음)"
                 style={bs({background:"transparent",border:"1px solid #30363d",color:busy?"#484f58":"#8b949e"})}>🔄 페이지 순위 재확인</button>}
             </>;})()}
