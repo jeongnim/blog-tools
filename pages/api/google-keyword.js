@@ -33,21 +33,32 @@ async function googleSuggest(q) {
   return out.slice(0, 20);
 }
 
-// ── 네이버 데이터랩 ──
+// ── 네이버 검색어 트렌드 ──
+// 2026-07-31부터 개발자센터에서 검색어 트렌드 신규 신청이 막혀 NAVER API HUB(네이버 클라우드)로 옮겼다.
+// NAVER_HUB_CLIENT_ID / NAVER_HUB_CLIENT_SECRET 이 있으면 HUB로, 없으면 예전 개발자센터 키로 시도.
 function ymd(d) { return d.toISOString().slice(0, 10); }
 async function naverDatalab(q) {
-  const id = process.env.NAVER_CLIENT_ID, secret = process.env.NAVER_CLIENT_SECRET;
+  const hubId = process.env.NAVER_HUB_CLIENT_ID, hubSecret = process.env.NAVER_HUB_CLIENT_SECRET;
+  const useHub = !!(hubId && hubSecret);
+  const id = useHub ? hubId : process.env.NAVER_CLIENT_ID, secret = useHub ? hubSecret : process.env.NAVER_CLIENT_SECRET;
   if (!id || !secret) throw new Error("네이버 API 키 미설정");
   const end = new Date(); const start = new Date(end); start.setFullYear(end.getFullYear() - 1);
-  const r = await fetch("https://openapi.naver.com/v1/datalab/search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Naver-Client-Id": id, "X-Naver-Client-Secret": secret },
+  const url = useHub ? "https://naverapihub.apigw.ntruss.com/search-trend/v1/search" : "https://openapi.naver.com/v1/datalab/search";
+  const headers = useHub
+    ? { "Content-Type": "application/json", "X-NCP-APIGW-API-KEY-ID": id, "X-NCP-APIGW-API-KEY": secret }
+    : { "Content-Type": "application/json", "X-Naver-Client-Id": id, "X-Naver-Client-Secret": secret };
+  const r = await fetch(url, {
+    method: "POST", headers,
     body: JSON.stringify({ startDate: ymd(start), endDate: ymd(end), timeUnit: "week", keywordGroups: [{ groupName: q, keywords: [q] }] }),
   });
   const j = await r.json().catch(() => null);
   if (!r.ok) {
-    const msg = j?.errorMessage || j?.message || ("응답 " + r.status);
-    if (r.status === 401 || r.status === 403) throw new Error("데이터랩 API 권한 없음 — 네이버 개발자센터 앱에 '데이터랩(검색어트렌드)'를 추가해주세요 (" + msg + ")");
+    const msg = j?.error?.message || j?.errMsg || j?.errorMessage || j?.message || ("응답 " + r.status);
+    if (r.status === 401 || r.status === 403) {
+      throw new Error(useHub
+        ? "NAVER API HUB 인증 실패 — HUB 애플리케이션에 '검색어 트렌드'가 선택돼 있는지, Vercel의 NAVER_HUB_CLIENT_ID/SECRET이 맞는지 확인해주세요 (" + msg + ")"
+        : "검색어 트렌드는 이제 NAVER API HUB(네이버 클라우드)에서만 신청할 수 있어요. HUB 키를 Vercel에 NAVER_HUB_CLIENT_ID / NAVER_HUB_CLIENT_SECRET 로 넣어주세요 (" + msg + ")");
+    }
     throw new Error(msg);
   }
   const data = j?.results?.[0]?.data || [];
