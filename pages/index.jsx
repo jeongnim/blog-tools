@@ -585,7 +585,7 @@ async function callClaudeStream(messages, system, maxTokens=3500, model="claude-
 // 메인 탭 (네비바에 표시)
 const TABS=[
   {id:"write",   icon:"✍️",  label:"글쓰기",     isGroup:true},
-  {id:"missing", icon:"📡",  label:"누락 확인"},
+  {id:"missing", icon:"📡",  label:"노출 확인"},
   {id:"image",   icon:"🖼️", label:"이미지 편집", isGroup:true},
 ];
 
@@ -4205,6 +4205,183 @@ function InsightPanel({data,page,topN,analyzedCount,totalCount,busy,onRun,scope,
   </div>;
 }
 
+// 카페 글 주소 → { cafe, articleId } (여러 주소 형태 지원)
+function parseCafeUrl(url){
+  const u=String(url||"");
+  let m=u.match(/cafe\.naver\.com\/(?:ca-fe\/web|f-e)\/cafes\/([^/?#&]+)\/articles\/(\d+)/i);
+  if(m) return {cafe:m[1].toLowerCase(),articleId:m[2]};
+  m=u.match(/clubid=(\d+)[^#]*?articleid=(\d+)/i); if(m) return {cafe:m[1],articleId:m[2]};
+  m=u.match(/articleid=(\d+)[^#]*?clubid=(\d+)/i); if(m) return {cafe:m[2],articleId:m[1]};
+  m=u.match(/cafe\.naver\.com\/([A-Za-z0-9_\-]+)\/(\d+)/i); if(m) return {cafe:m[1].toLowerCase(),articleId:m[2]};
+  return null;
+}
+// 블로그·카페에서 복사해 붙인 본문 정리: 눈에 안 보이는 공백, 이미지 넘김 문구, 과한 빈 줄
+function cleanPastedBody(t){
+  return String(t||"").replace(/[\u200B-\u200D\uFEFF\u00A0]/g," ").replace(/Previous image\s*Next image/gi,"")
+    .replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
+}
+
+// ═══ 노출 확인 > 방법4 · 링크별 순위 (블로그·카페 글) ═══════════════════════════════
+// 글 주소 + 제목 + 키워드를 넣으면, 키워드마다 통합검색·블로그탭/카페탭·API 순위를 확인한다 (AI 비용 없음)
+const LS_LINKRANK="mt_linkrank_last";
+function linkKind(u){ return /blog\.naver\.com/i.test(u)?"blog":/cafe\.naver\.com/i.test(u)?"cafe":null; }
+function parseLinkLines(text){
+  return String(text||"").split(/\r?\n/).map(l=>l.trim()).filter(l=>/https?:\/\//.test(l)).map(l=>{
+    const cells=l.includes("\t")?l.split("\t"):l.split("|");
+    const link=(cells[0]||"").trim().match(/https?:\/\/\S+/)?.[0]||"";
+    const title=(cells[1]||"").trim();
+    const keywords=cells.slice(2).join(",").split(/[,;/]/).map(x=>x.trim()).filter(Boolean);
+    return {link,title,keywords:[...new Set(keywords)],kind:linkKind(link)};
+  }).filter(r=>r.link);
+}
+async function linkRankOne(row,q){
+  if(row.kind==="cafe"){
+    const r=await fetch(`/api/cafe-rank?keyword=${encodeURIComponent(q)}&link=${encodeURIComponent(row.link)}`); const d=await r.json();
+    if(d.error) return {error:d.error};
+    return {main:d.mainRank,tab:d.cafeRank,api:d.apiRank,proxyError:d.proxyError,apiError:d.apiError};
+  }
+  const m=row.link.match(/blog\.naver\.com\/([^/?#&]+)\/(\d+)/)||row.link.match(/blogId=([^&]+).*?logNo=(\d+)/);
+  if(!m) return {error:"블로그 글 주소를 읽지 못했어요"};
+  const r=await fetch(`/api/naver-rank?keyword=${encodeURIComponent(q)}&blogId=${encodeURIComponent(m[1])}&postNo=${encodeURIComponent(m[2])}`); const d=await r.json();
+  if(d.error) return {error:d.error};
+  return {main:d.areas?.main_search?.rank??null,tab:d.areas?.blog?.rank??null,api:d.simRank??null,proxyError:d.proxyError||null};
+}
+function RankCell({v}){
+  const c=v==null?"#484f58":v<=3?"#3fb950":v<=10?"#58a6ff":v<=30?"#d29922":"#8b949e";
+  return <span style={{color:c,fontWeight:v!=null&&v<=10?700:400}}>{v==null?"–":`${v}위`}</span>;
+}
+function LinkRankPanel(){
+  const [text,setText]=useState("");
+  const [rows,setRows]=useState([]);
+  const [busy,setBusy]=useState(false);
+  const [prog,setProg]=useState("");
+  const [err,setErr]=useState("");
+  const stopRef=useRef(false);
+  const fileRef=useRef(null);
+  useEffect(()=>{ try{const d=JSON.parse(localStorage.getItem(LS_LINKRANK)||"null"); if(d){setText(d.text||"");setRows(d.rows||[]);}}catch(e){} },[]);
+  const persist=(t,r)=>{ try{localStorage.setItem(LS_LINKRANK,JSON.stringify({text:t,rows:r,savedAt:Date.now()}));}catch(e){} };
+
+  const onFile=async e=>{
+    const f=e.target.files?.[0]; e.target.value=""; if(!f) return;
+    setErr("");
+    try{
+      const XLSX=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js","XLSX");
+      const wb=XLSX.read(await f.arrayBuffer());
+      const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""});
+      if(!data.length) throw new Error("빈 파일이에요");
+      const head=data[0].map(x=>String(x).trim());
+      let li=head.findIndex(h=>/링크|url|주소/i.test(h)), ti=head.findIndex(h=>/제목|title/i.test(h));
+      const ki=head.map((h,i)=>/키워드|keyword/i.test(h)?i:-1).filter(i=>i>=0);
+      const hasHead=li>=0;
+      if(!hasHead){ li=0; ti=1; }
+      const body=hasHead?data.slice(1):data;
+      const lines=body.map(r=>{
+        const kws=(ki.length?ki.map(i=>r[i]):r.slice(hasHead?Math.max(li,ti)+1:2)).map(x=>String(x||"").trim()).filter(Boolean).join(",");
+        return [String(r[li]||"").trim(),ti>=0?String(r[ti]||"").trim():"",kws].join("\t");
+      }).filter(l=>/https?:\/\//.test(l));
+      if(!lines.length) throw new Error("링크가 있는 행을 찾지 못했어요. 첫 열에 글 주소를 넣어주세요.");
+      setText(lines.join("\n"));
+    }catch(ex){ setErr("엑셀 읽기 실패: "+(ex?.message||ex)); }
+  };
+
+  const run=async()=>{
+    const parsed=parseLinkLines(text);
+    if(!parsed.length){ setErr("글 주소가 있는 줄이 없어요."); return; }
+    const bad=parsed.filter(r=>!r.kind);
+    if(bad.length){ setErr(`블로그·카페 글 주소가 아닌 줄 ${bad.length}개는 건너뛸게요.`); }
+    const list=parsed.filter(r=>r.kind).map(r=>({...r,results:{},checkedAt:null}));
+    const total=list.reduce((a,r)=>a+(r.title?1:0)+r.keywords.length,0);
+    if(!total){ setErr("확인할 제목이나 키워드가 없어요."); return; }
+    setRows(list); setBusy(true); stopRef.current=false;
+    let n=0;
+    try{
+      for(const row of list){
+        const qs=[...(row.title?[{q:row.title,label:"제목"}]:[]),...row.keywords.map(k=>({q:k,label:"키워드"}))];
+        for(const {q,label} of qs){
+          if(stopRef.current) throw new Error("__stop");
+          n++; setProg(`${n}/${total} · ${q.slice(0,24)}`);
+          let res; try{ res=await linkRankOne(row,q); }catch(e){ res={error:e.message}; }
+          if(res.proxyError&&/연결 실패|TIMEOUT|미설정|기능 없음/i.test(res.proxyError)&&!row._warned){
+            row._warned=true; setErr(`집 PC 프록시 문제로 통합검색·탭 순위를 못 봤어요 (${res.proxyError}). API 순위만 표시돼요.`);
+          }
+          row.results[q]={...res,label};
+          row.checkedAt=Date.now();
+          setRows([...list]);
+          await new Promise(r=>setTimeout(r,300));
+        }
+      }
+    }catch(e){ if(e.message!=="__stop") setErr(e.message); }
+    finally{ setBusy(false); setProg(""); persist(text,list); }
+  };
+
+  const exportXlsx=async()=>{
+    try{
+      const ExcelJS=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js","ExcelJS");
+      const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet("링크별 순위");
+      ws.columns=[{header:"링크",key:"link",width:46},{header:"종류",key:"kind",width:7},{header:"제목",key:"title",width:36},{header:"구분",key:"label",width:7},
+        {header:"검색어",key:"q",width:24},{header:"통합검색",key:"main",width:10},{header:"블로그탭/카페탭",key:"tab",width:14},{header:"API(정확도순)",key:"api",width:13},{header:"확인 시각",key:"at",width:18}];
+      ws.getRow(1).font={bold:true};
+      rows.forEach(r=>Object.entries(r.results||{}).forEach(([q,v])=>ws.addRow({link:r.link,kind:r.kind==="cafe"?"카페":"블로그",title:r.title,label:v.label,q,
+        main:v.main??"",tab:v.tab??"",api:v.api??"",at:r.checkedAt?new Date(r.checkedAt).toLocaleString("ko-KR"):""})));
+      const buf=await wb.xlsx.writeBuffer();
+      const d=new Date(),z=x=>String(x).padStart(2,"0");
+      saveBlob(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`링크별순위_${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}.xlsx`);
+    }catch(e){ setErr("엑셀 저장 실패: "+e.message); }
+  };
+
+  const box={background:"#0d1117",border:"1px solid #21262d",borderRadius:"10px",padding:"12px 14px"};
+  const btn=(on)=>({padding:"8px 14px",borderRadius:"8px",border:"1px solid #30363d",background:on?"#1f6feb":"#21262d",color:on?"#fff":"#c9d1d9",fontWeight:700,fontSize:"14px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"});
+  const preview=parseLinkLines(text);
+  return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+    <div style={box}>
+      <div style={{color:"#e6edf3",fontWeight:700,marginBottom:"4px"}}>블로그·카페 글 주소 + 제목 + 키워드</div>
+      <div style={{color:"#8b949e",fontSize:"13px",lineHeight:1.6,marginBottom:"8px"}}>
+        한 줄에 글 하나: <code style={{color:"#c9d1d9"}}>글주소 | 제목 | 키워드1, 키워드2</code> (엑셀에서 복사해 붙이면 칸 구분도 돼요). 제목을 넣으면 제목 그대로 검색했을 때 순위도 봐요.
+        엑셀은 첫 줄에 "링크 / 제목 / 키워드" 머리글을 두면 알아서 찾아요. 키워드 칸이 여러 개여도 돼요.
+      </div>
+      <textarea value={text} onChange={e=>setText(e.target.value)} rows={7}
+        placeholder={"https://cafe.naver.com/joonggonara/123456 | 아이폰 18 사전예약 후기 | 아이폰18 사전예약, 아이폰18 성지\nhttps://blog.naver.com/myid/224000000000 | 카톡멤버십 혜택 정리 | 카톡멤버십"}
+        style={{width:"100%",boxSizing:"border-box",padding:"10px",background:"#010409",border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",fontSize:"13px",lineHeight:1.6,fontFamily:"monospace",resize:"vertical"}}/>
+      <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginTop:"8px"}}>
+        {!busy?<button onClick={run} style={btn(true)}>🔎 순위 확인 ({preview.reduce((a,r)=>a+(r.title?1:0)+r.keywords.length,0)}건)</button>
+          :<button onClick={()=>{stopRef.current=true;}} style={btn(false)}>⏹ 멈추기</button>}
+        <button onClick={()=>fileRef.current?.click()} style={btn(false)}>📂 엑셀 불러오기</button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={onFile}/>
+        {rows.length>0&&!busy&&<button onClick={exportXlsx} style={btn(false)}>📊 결과 엑셀</button>}
+        <span style={{color:"#8b949e",fontSize:"13px"}}>{busy?`확인 중 ${prog}`:preview.length?`글 ${preview.length}개 (카페 ${preview.filter(r=>r.kind==="cafe").length} · 블로그 ${preview.filter(r=>r.kind==="blog").length})`:""}</span>
+      </div>
+      {err&&<div style={{color:"#ffa657",fontSize:"13px",marginTop:"8px"}}>⚠️ {err}</div>}
+    </div>
+
+    {rows.length>0&&<div style={{...box,overflowX:"auto"}}>
+      <div style={{display:"flex",gap:"12px",fontSize:"12px",color:"#484f58",marginBottom:"8px",flexWrap:"wrap"}}>
+        <span>통합검색 = 네이버 첫 화면 검색 결과 카드 순서</span><span>탭 = 블로그탭·카페탭 첫 페이지</span><span>API = 네이버 검색 API 정확도순 100위까지 (프록시가 안 될 때 참고)</span>
+      </div>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:"13px",minWidth:"640px"}}>
+        <thead><tr style={{color:"#8b949e",textAlign:"left"}}>
+          {["글","검색어","통합검색","블로그탭·카페탭","API"].map(h=><th key={h} style={{padding:"6px 8px",borderBottom:"1px solid #21262d",fontWeight:600}}>{h}</th>)}
+        </tr></thead>
+        <tbody>
+          {rows.map((r,ri)=>{const ents=Object.entries(r.results||{});const n=Math.max(ents.length,1);
+            return (ents.length?ents:[["(대기 중)",{}]]).map(([q,v],qi)=>(
+              <tr key={ri+"-"+qi} style={{borderBottom:qi===n-1?"1px solid #21262d":"none"}}>
+                {qi===0&&<td rowSpan={n} style={{padding:"6px 8px",verticalAlign:"top",maxWidth:"260px"}}>
+                  <span style={{fontSize:"11px",padding:"1px 6px",borderRadius:"8px",background:r.kind==="cafe"?"#03c75a22":"#1f6feb22",color:r.kind==="cafe"?"#3fb950":"#58a6ff",marginRight:"5px"}}>{r.kind==="cafe"?"카페":"블로그"}</span>
+                  <a href={r.link} target="_blank" rel="noreferrer" style={{color:"#c9d1d9",textDecoration:"none"}}>{r.title||r.link.replace(/^https?:\/\//,"").slice(0,40)}</a>
+                </td>}
+                <td style={{padding:"4px 8px",color:"#c9d1d9"}}>{v.label==="제목"&&<span style={{color:"#484f58",fontSize:"11px",marginRight:"4px"}}>제목</span>}{q}
+                  {v.error&&<span style={{color:"#ff7b72",fontSize:"11px",marginLeft:"6px"}}>{v.error}</span>}</td>
+                <td style={{padding:"4px 8px"}}><RankCell v={v.main}/></td>
+                <td style={{padding:"4px 8px"}}><RankCell v={v.tab}/></td>
+                <td style={{padding:"4px 8px"}}><RankCell v={v.api}/></td>
+              </tr>));})}
+        </tbody>
+      </table>
+      {rows[0]?.checkedAt&&!busy&&<div style={{color:"#484f58",fontSize:"12px",marginTop:"6px"}}>마지막 확인: {new Date(Math.max(...rows.map(r=>r.checkedAt||0))).toLocaleString("ko-KR")} · 입력과 결과는 이 브라우저에 저장돼요 (백업 파일에도 포함)</div>}
+    </div>}
+  </div>;
+}
+
 function MissingTab(){
   const [mode,setMode]=useState("blogId");   // "blogId" | "url"
   // 방법1
@@ -4370,10 +4547,12 @@ function MissingTab(){
     if(!url){alert("URL을 입력해주세요.");return;}
     if(!title){alert("제목을 입력해주세요.");return;}
     const m=url.match(/blog\.naver\.com\/([^/\s?#]+)\/(\d+)/);
-    if(!m){alert("올바른 네이버 블로그 URL을 입력해주세요.\n예: https://blog.naver.com/아이디/포스트번호");return;}
-    const postNo=m[2];
-    const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual",_blogId:m[1]};
-    setPosts({all:[post],current:[post],total:1,page:1,blogId:m[1]});
+    const cafe=!m?parseCafeUrl(url):null;
+    if(!m&&!cafe){alert("네이버 블로그 또는 카페 글 주소를 입력해주세요.\n예: https://blog.naver.com/아이디/글번호\n    https://cafe.naver.com/카페주소/글번호");return;}
+    const postNo=m?m[2]:`cafe-${cafe.cafe}-${cafe.articleId}`;
+    const post={title,link:url,postNo,date:"",description:singleBody.slice(0,300),bodyText:singleBody,source:"manual",
+      ...(m?{_blogId:m[1]}:{_kind:"cafe",_cafe:cafe.cafe,_articleId:cafe.articleId})};
+    setPosts({all:[post],current:[post],total:1,page:1,blogId:m?m[1]:""});
     setPage(1);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});setInsights({});seenRef.current={};
     setTimeout(()=>runAnalyze(post,0),80);
   };
@@ -4394,6 +4573,19 @@ function MissingTab(){
 
   // ── 네이버 순위 조회 (통합검색/블로그탭 2영역) ──
   const getNaverRank=async(kw,blogId,postNo,deep,pubDate)=>{
+    // 카페 글: blogId 자리에 "cafe:글주소" — 통합검색·카페탭·카페글 API 순위를 블로그와 같은 모양으로 돌려준다
+    if(String(blogId||"").startsWith("cafe:")){
+      try{
+        const r=await fetch(`/api/cafe-rank?keyword=${encodeURIComponent(kw)}&link=${encodeURIComponent(blogId.slice(5))}`);
+        if(!r.ok) return null;
+        const d=await r.json(); if(d.error) return null;
+        const proxyDown=!!d.proxyError&&d.mainRank==null&&d.cafeRank==null&&/연결 실패|TIMEOUT|미설정|기능 없음|응답 오류/i.test(d.proxyError);
+        const areas=proxyDown?null:{main_search:{rank:d.mainRank,exposed_area:"통합검색"},blog:{rank:d.cafeRank,exposed_area:"카페탭",total:d.cafeTotal}};
+        const best=[d.mainRank,d.cafeRank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
+        return { myRank: best??d.apiRank??null, rankSource: best!=null?(best===d.cafeRank?"카페탭":"통합검색"):(d.apiRank!=null?"sim":null),
+          areas, proxyError: d.proxyError||null, simRank: d.apiRank??null, dateRank: null, dated: null, kind: "cafe" };
+      }catch(e){ return null; }
+    }
     try{
       const params=new URLSearchParams({keyword:kw});
       if(deep) params.append("deep",String(deep));
@@ -4425,7 +4617,7 @@ function MissingTab(){
     const q=await getNaverRank(`"${clean}"`,blogId,postNo,1,ymd);
     const diag={quoteQuery:clean,quoteYmd:ymd,quoteAt:Date.now(),
       quoteBlogTotal:q?.areas?.blog?.total??null,quoteDatedTotal:q?.dated?.total??null,
-      quoteError:!q?"조회 실패":(q.proxyError||(ymd&&q.dated?.error)||(ymd?"":"발행일을 읽지 못해 기간 검색 생략"))||null};
+      quoteError:!q?"조회 실패":(q.proxyError||(ymd&&q.dated?.error)||(ymd||String(blogId).startsWith("cafe:")?"":"발행일을 읽지 못해 기간 검색 생략"))||null};
     if(!q) return {quoteChecked:false,...diag};
     // 기간 검색 실패(프록시 꺼짐·미업데이트)면 판정 보류 — 이유만 남기고 다음에 다시 시도
     if(ymd&&q.dated?.error) return {quoteChecked:false,quoteDated:false,quoteRank:null,...diag};
@@ -4440,7 +4632,7 @@ function MissingTab(){
   const recheckTitle=async(post)=>{
     const a=analysisRef.current[post.postNo]; if(!a||a.error) return;
     const m=(post.link||"").match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
-    const bid=m?.[1]||post._blogId||posts?.blogId||"", pno=m?.[2]||post.postNo;
+    const bid=post._kind==="cafe"?`cafe:${post.link}`:(m?.[1]||post._blogId||posts?.blogId||""), pno=m?.[2]||post.postNo;
     const setStep=t=>setTitleRechecking(r=>({...r,[post.postNo]:t}));
     setStep("제목");
     try{
@@ -4524,8 +4716,9 @@ function MissingTab(){
 
   // ── 본문 크롤링 — blog-content API 통해 서버에서 모바일 URL 크롤링 ──
   const fetchPostBody=async(post)=>{
-    if(post.bodyText) return {text: post.bodyText, loaded: true};
+    if(post.bodyText) return {text: cleanPastedBody(post.bodyText), loaded: true};
     if(!post.link) return {text: post.description||"", loaded: false};
+    if(post._kind==="cafe") return {text: post.description||"", loaded: false};   // 카페 본문은 붙여넣은 경우에만 (멤버공개 글이 많아 서버에서 못 읽음)
     try{
       const m=post.link.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
       if(!m) return {text: post.description||"", loaded: false};
@@ -4555,7 +4748,7 @@ function MissingTab(){
       try {
         const tagStr = (post.tags||[]).slice(0,10).join(', ');
         const bodySnippet = body.slice(0, 800); // 본문 앞 800자만 사용
-        const prompt = `네이버 블로그 글의 제목, 해시태그, 본문을 보고 이 글이 네이버 검색에서 상위노출될 가능성이 있는 핵심 키워드 5개를 추출해줘.
+        const prompt = `네이버 ${post._kind==="cafe"?"카페":"블로그"} 글의 제목, 해시태그, 본문을 보고 이 글이 네이버 검색에서 상위노출될 가능성이 있는 핵심 키워드 5개를 추출해줘.
 
 제목: ${post.title}
 해시태그: ${tagStr||'없음'}
@@ -4690,7 +4883,7 @@ JSON 배열만 출력:`;
 
       // ── Step 2: 글 제목으로 네이버 검색 → 실제 누락 여부 확인 ──
       const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
-      const extractedBlogId=urlMatch?.[1]||post._blogId||"";
+      const extractedBlogId=post._kind==="cafe"?`cafe:${post.link}`:(urlMatch?.[1]||post._blogId||"");
       const extractedPostNo=urlMatch?.[2]||post.postNo||"";
 
       // 제목 전체를 검색어로 넣어서 내 글이 결과에 있는지 확인
@@ -4751,6 +4944,7 @@ JSON 배열만 출력:`;
   // ── 키워드 인사이트: 현재 페이지에서 분석된 글들의 키워드 순위 + 월 검색량 집계 → AI 추천 ──
   const TOP_N=10; // 이 순위 이내면 "상위노출"로 본다
   const runInsight=async(list,pg,withAi=false)=>{
+    list=(list||[]).filter(p=>p._kind!=="cafe");   // 인사이트·프로필은 내 블로그 분석용 — 카페 글은 순위 확인만
     const A=analysisRef.current, X=extraRef.current;
     const done=(list||[]).filter(p=>A[p.postNo]&&!A[p.postNo].error);
     if(!done.length){alert("먼저 글을 분석해주세요. (⚡ 전체 분석)");return;}
@@ -4952,11 +5146,15 @@ recommend는 8개.`;
     const validPosts=excelRows.map((row,i)=>{
       const url=String(row[uIdx]||"").trim();
       const title=tIdx>=0?String(row[tIdx]||"").trim():"";
+      const bIdx=excelHeaders.findIndex(h=>/본문|내용|body|content/i.test(h));
+      const bodyText=bIdx>=0?String(row[bIdx]||"").trim():"";
       const m=url.match(/blog\.naver\.com\/([^/\s?#]+)\/(\d+)/);
-      if(!m) return null;
-      return{title:title||`게시글 ${i+1}`,link:url,postNo:m[2],date:"",description:"",source:"excel",_blogId:m[1]};
+      const cafe=!m?parseCafeUrl(url):null;
+      if(!m&&!cafe) return null;
+      const base={title:title||`게시글 ${i+1}`,link:url,date:"",description:bodyText.slice(0,300),source:"excel",...(bodyText?{bodyText}:{})};
+      return m?{...base,postNo:m[2],_blogId:m[1]}:{...base,postNo:`cafe-${cafe.cafe}-${cafe.articleId}`,_kind:"cafe",_cafe:cafe.cafe,_articleId:cafe.articleId};
     }).filter(Boolean);
-    if(!validPosts.length){setExcelError("유효한 네이버 블로그 URL이 없습니다.\nblog.naver.com/아이디/번호 형식인지 확인해주세요.");return;}
+    if(!validPosts.length){setExcelError("유효한 네이버 블로그·카페 글 주소가 없습니다.\nblog.naver.com/아이디/번호 또는 cafe.naver.com/카페/번호 형식인지 확인해주세요.");return;}
     setPosts({all:validPosts,current:validPosts.slice(0,PER_PAGE),total:validPosts.length,page:1,blogId:""});
     setPage(1);setAnalysis({});setExpanded(null);setExtraResults({});setExtraKw({});
     setBatchRunning(true);setBatchProgress({done:0,total:validPosts.length});
@@ -4978,8 +5176,8 @@ recommend는 8개.`;
     <style>{`@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`}</style>
 
     {/* ── 모드 탭 ── */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",background:"#0d1117",borderRadius:"10px",border:"1px solid #21262d",overflow:"hidden"}}>
-      {[["blogId","📋 방법1 · 블로그 ID"],["url","🔗 방법2 · URL 직접 입력"],["excel","📊 방법3 · 엑셀 업로드"]].map(([id,lbl])=>(
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",background:"#0d1117",borderRadius:"10px",border:"1px solid #21262d",overflow:"hidden"}}>
+      {[["blogId","📋 방법1 · 블로그 ID"],["url","🔗 방법2 · URL 직접 입력"],["excel","📊 방법3 · 엑셀 업로드"],["links","☕ 방법4 · 링크별 순위 (블로그·카페)"]].map(([id,lbl])=>(
         <button key={id} data-mode-url={id==="url"?"true":undefined} onClick={()=>{setMode(id);setPosts(null);setAnalysis({});setExpanded(null);setFeedError("");setExtraResults({});setExtraKw({});}} style={{
           padding:"13px 8px",border:"none",background:mode===id?"#161b22":"transparent",
           color:mode===id?"#e6edf3":"#8b949e",cursor:"pointer",
@@ -4989,6 +5187,8 @@ recommend는 8개.`;
         </button>
       ))}
     </div>
+
+    {mode==="links"&&<LinkRankPanel/>}
 
     {/* ── 방법1: 블로그 ID ── */}
     {mode==="blogId"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"12px"}}>
@@ -5122,7 +5322,7 @@ recommend는 8개.`;
         <div style={{marginBottom:"8px"}}>
           <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"5px"}}>📎 게시글 URL</div>
           <input value={singleUrl} onChange={e=>setSingleUrl(e.target.value)}
-            placeholder="https://blog.naver.com/아이디/포스트번호"
+            placeholder="https://blog.naver.com/아이디/글번호  또는  https://cafe.naver.com/카페주소/글번호"
             style={{width:"100%",boxSizing:"border-box",padding:"10px 14px",background:"#0d1117",
               border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",
               fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",outline:"none"}}
@@ -5142,7 +5342,7 @@ recommend는 8개.`;
 
         {/* 본문 */}
         <div style={{marginBottom:"12px"}}>
-          <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"5px"}}>📄 본문 내용 <span style={{color:"#484f58"}}>(선택 · 있으면 더 정확)</span></div>
+          <div style={{color:"#8b949e",fontSize:"13px",fontWeight:600,marginBottom:"5px"}}>📄 본문 내용 <span style={{color:"#484f58"}}>(선택 · 있으면 더 정확 · 카페 글은 본문을 붙여넣어야 본문 기준으로 키워드를 뽑아요)</span></div>
           <textarea value={singleBody} onChange={e=>setSingleBody(e.target.value)}
             placeholder="본문 텍스트를 붙여넣으세요 (일부만 있어도 됩니다)"
             rows={4}
@@ -5430,6 +5630,7 @@ recommend는 8개.`;
                             {areas ? AREA_LABELS.map(({key,label})=>{
                               const area=areas[key];
                               const r=area?.rank??null;
+                              label=area?.exposed_area||label;
                               const ac=rankColor(r);
                               return <div key={key} style={{
                                 background: r!=null ? ac+"22" : "#161b22",
@@ -5520,6 +5721,7 @@ recommend는 8개.`;
                             {areas ? AREA_LABELS.map(({key,label})=>{
                               const area=areas[key];
                               const r=area?.rank??null;
+                              label=area?.exposed_area||label;
                               const ac=rankColor(r);
                               return <div key={key} style={{
                                 background: r!=null ? ac+"22" : "#161b22",
