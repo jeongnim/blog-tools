@@ -1635,6 +1635,11 @@ JSON 형식:
         <span style={{color:"#8b949e"}}>{(workingText||text).length.toLocaleString()}자</span>
         {postMeta.tags?.length>0&&<><span style={{color:"#484f58"}}>해시태그</span>
         <span style={{color:"#58a6ff",lineHeight:"1.8"}}>{postMeta.tags.map(t=>"#"+t).join(" ")}</span></>}
+        {postMeta.kwCount&&<><span style={{color:"#484f58"}}>키워드 반복</span>
+        <span style={{color:postMeta.kwCount.after>=5?"#3fb950":"#ffa657"}}>
+          "{postMeta.main_keyword}" 본문 {postMeta.kwCount.after}회{postMeta.kwCount.after<5?" · 5회 미만이라 직접 몇 군데 넣어주세요":""}
+          {postMeta.kwCount.after>postMeta.kwCount.before&&<span style={{color:"#8b949e"}}> (작성 {postMeta.kwCount.before}회 → {postMeta.kwCount.variants.slice(0,3).map(v=>`"${v}"`).join(", ")} 일부를 바꿔 맞춤)</span>}
+        </span></>}
         {postMeta.visit&&<><span style={{color:"#484f58"}}>방문 리뷰</span>
         <span style={{color:"#8b949e",lineHeight:1.6}}>
           📍 {postMeta.visit.placeName}{postMeta.visit.address?` · ${postMeta.visit.address}`:""} · {VISIT_DISCLOSURE[postMeta.visit.disclosure]?.label}
@@ -9263,14 +9268,14 @@ function lsSet(key, val) {
 }
 
 // 최근 2회에 쓴 패턴은 제외하고, 누적 사용이 가장 적은 패턴을 고름
-function pickTitlePattern() {
+function pickTitlePattern(exclude = []) {
   const recent = lsGet(LS_PATTERNS, []);
-  const blocked = new Set(recent.slice(0, 2));
+  const blocked = new Set([...recent.slice(0, 2), ...exclude]);
   const count = {};
   TITLE_PATTERNS.forEach(p => { count[p.id] = 0; });
   recent.forEach(id => { if (count[id] !== undefined) count[id] += 1; });
   const pool = TITLE_PATTERNS.filter(p => !blocked.has(p.id));
-  const candidates = pool.length > 0 ? pool : TITLE_PATTERNS;
+  const candidates = pool.length > 0 ? pool : TITLE_PATTERNS.filter(p => !exclude.includes(p.id));
   let best = candidates[0];
   candidates.forEach(p => { if (count[p.id] < count[best.id]) best = p; });
   return best;
@@ -9437,6 +9442,8 @@ V5. 이 원칙은 AEO1(도입부 정의·결론 문장)과 충돌하지 않는�
 [브랜드·상표 원칙]
 H. 특정 브랜드·제품·서비스명이 등장하면, 그 대상에 관해 정확한 내용만 쓸 것.
 I. 공식 표기를 그대로 사용할 것 — 임의 축약, 오탈자, 존재하지 않는 모델명·세대 표기 금지.
+   ※ 예외: 메인 키워드 "${mainKw}"는 사람들이 실제로 검색하는 표기라서, 공식 명칭과 달라도(줄임말·띄어쓰기 포함) 반드시 그 표기 그대로 쓴다.
+     공식 명칭은 처음 한 번만 괄호로 덧붙일 수 있다 (예: "카톡 멤버십(카카오톡 멤버십)"). 그 뒤로는 메인 키워드 표기로 통일.
    모델명·세대·스펙이 확실하지 않으면 아예 언급하지 말고 카테고리 수준으로 쓸 것 (예: "최근 폴더블 모델").
 J. 브랜드에 사실이 아닌 기능·가격·정책·혜택을 갖다 붙이지 말 것.
    A사의 기능을 B사 것처럼 쓰거나, 제조사·통신사·유통점의 역할과 책임을 섞지 말 것.
@@ -9519,7 +9526,9 @@ E7. 화자는 이 분야를 실무로 오래 접한 사람이다. 단, 직업이
     글 전체에서 한두 번이면 충분하고, 매 소제목마다 반복하지 말 것.
 
 [내용 원칙 — C-Rank / DIA]
-8. 메인 키워드 최대 6회, 첫 줄 자기소개 금지, 광고성 표현 금지
+8. 메인 키워드 "${mainKw}"는 본문에 글자 그대로(띄어쓰기까지 같게) 5~6회. 제목에 들어간 것은 세지 않는다.
+   도입부 첫 문단에 1회, 나머지는 소제목·본문에 고르게. 같은 뜻의 다른 표기(공식 명칭, 띄어쓰기 다른 형태)로 바꿔 쓰면 횟수에 안 들어간다.
+   첫 줄 자기소개 금지, 광고성 표현 금지
 9. 경험에서 나온 구체적 사례 포함 — 위 [경험 원칙]을 따를 것
    (지어낸 수치·날짜·모델명으로 구체성을 만들지 말 것. 구체성은 '과정 묘사'로 낼 것)
 10. 창작자 고유의 시선과 인사이트 포함 — AI가 쉽게 만들 수 없는 개인 관점
@@ -9738,6 +9747,77 @@ Search before marking anything confirmed; if the search does not settle it, mark
 }
 
 // 사실표를 본문 프롬프트에 넣을 블록으로 만든다
+// ── 제목 사실 검사: 제목이 본문과 어긋나거나 본문에 근거 없는 경험·사실을 주장하는지 ──
+const TITLE_EXP_RE = /(써\s?봤|써\s?보니|써\s?본|사용해\s?봤|사용해\s?보니|사용\s?후기|실사용|사용기|직접\s?(써|사용|구매|개통)|개통\s?(후기|해\s?봤)|구매\s?(후기|해\s?봤)|샀(습니다|어요|다))/;
+async function checkTitleFacts(title, body, productStatus){
+  const reasons = [];
+  const unreleased = (productStatus || []).filter(x => x.status && x.status !== "released_kr");
+  if (unreleased.length && TITLE_EXP_RE.test(title))
+    reasons.push(`${unreleased.map(x => x.name).join(", ")}은(는) 한국 미출시인데 제목이 직접 사용·구매 경험을 주장함`);
+  try {
+    const raw = await callClaude([{ role: "user", content: `블로그 제목이 본문과 맞는지 검사해라.
+제목: ${title}
+${unreleased.length ? `확인된 사실: ${unreleased.map(x => `${x.name} — 한국 미출시(${x.note || x.status})`).join(" / ")}
+` : ""}
+본문 앞부분:
+${String(body || "").slice(0, 1800)}
+
+아래 중 하나라도 해당하면 ok=false:
+- 제목이 본문과 모순된다 (예: 제목은 "써봤다"인데 본문은 "아직 출시 전")
+- 제목이 본문에 없는 경험(직접 사용·구매·방문)을 주장한다
+- 제목이 본문에 없는 사실(날짜·가격·순위·결과)을 단정한다
+표현이 과장되지 않고 본문 내용을 요약하면 ok=true.
+순수 JSON만: {"ok":true,"reason":"문제면 한 줄로"}` }], "You check whether a Korean blog title is consistent with its body. Output ONLY valid JSON.", 200, "claude-haiku-4-5-20251001");
+    const j = safeParseJson(raw);
+    if (j && j.ok === false && j.reason) reasons.push(String(j.reason));
+  } catch (e) {}
+  return { ok: reasons.length === 0, reasons };
+}
+
+// ── 메인 키워드 표기 횟수 보정 ──
+// 본문에 메인 키워드가 글자 그대로 5회 미만이면, 같은 뜻의 다른 표기(띄어쓰기 다른 형태·공식 명칭 등)를 메인 키워드로 바꿔 5회를 맞춘다.
+// 공식 명칭을 괄호로 덧붙인 "메인(공식)" 형태는 건드리지 않는다.
+function countExact(text, kw){ if(!kw) return 0; let n=0,i=0; while((i=text.indexOf(kw,i))!==-1){n++;i+=kw.length;} return n; }
+async function enforceMainKeyword(body, mainKw, target=5){
+  if(!mainKw||!body) return {body,before:0,after:0,variants:[]};
+  const before=countExact(body,mainKw);
+  if(before>=target) return {body,before,after:before,variants:[]};
+  const esc=t=>t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  // ① 띄어쓰기만 다른 형태 (예: "카톡 멤버십" ↔ "카톡멤버십")
+  const flat=mainKw.replace(/\s+/g,"");
+  const spaced=new RegExp(flat.split("").map(esc).join("\\s?"),"g");
+  let variants=[...new Set((body.match(spaced)||[]).filter(v=>v!==mainKw))];
+  // ② 다른 표기 (공식 명칭·풀네임 등) — Haiku가 본문에서 찾아준다
+  try{
+    const raw=await callClaude([{role:"user",content:`블로그 본문에서 "${mainKw}"와 같은 대상을 가리키지만 표기가 다른 말을 찾아라 (공식 명칭, 줄임말을 푼 말, 띄어쓰기 다른 형태 등).
+본문에 실제로 그대로 나오는 문자열만. "${mainKw}" 자체는 제외. 뜻이 다른 말(상위 개념, 다른 상품)은 넣지 말 것. 최대 5개.
+순수 JSON만: {"variants":["..."]}
+
+본문:
+${body.slice(0,6000)}`}],"You find alternative spellings of a keyword in a text. Output ONLY valid JSON.",300,"claude-haiku-4-5-20251001");
+    const j=safeParseJson(raw);
+    (j?.variants||[]).forEach(v=>{v=String(v||"").trim(); if(v&&v!==mainKw&&v.length>=2&&!mainKw.includes(v)&&body.includes(v)) variants.push(v);});
+  }catch(e){}
+  variants=[...new Set(variants)].sort((a,b)=>b.length-a.length);
+  if(!variants.length) return {body,before,after:before,variants:[]};
+  // 등장 위치를 모아 앞에서부터 바꾸되, 괄호 병기 "메인(공식)" 안의 것은 건너뛴다
+  const hits=[];
+  variants.forEach(v=>{let i=0;while((i=body.indexOf(v,i))!==-1){hits.push({i,v});i+=v.length;}});
+  hits.sort((a,b)=>a.i-b.i);
+  const taken=[]; const overlap=h=>taken.some(t=>h.i<t.i+t.v.length&&t.i<h.i+h.v.length);
+  const picks=[];
+  for(const h of hits){
+    if(before+picks.length>=target) break;
+    if(overlap(h)) continue;
+    const prev=body.slice(Math.max(0,h.i-mainKw.length-1),h.i);
+    if(prev.endsWith(mainKw+"(")||prev.endsWith(mainKw+" (")) { taken.push(h); continue; }   // 괄호 병기는 유지
+    taken.push(h); picks.push(h);
+  }
+  let out=body;
+  picks.sort((a,b)=>b.i-a.i).forEach(h=>{ out=out.slice(0,h.i)+mainKw+out.slice(h.i+h.v.length); });
+  return {body:out,before,after:countExact(out,mainKw),variants};
+}
+
 // ── 제품·서비스 출시 상태 확인 (절약/정밀 공통, 항상 실행) ──
 // "미출시 제품 사용기" 같은 사고를 막는다. 주제에 특정 제품·서비스가 없으면 검색 없이 끝난다.
 // Haiku + 검색 최대 2회 → 편당 20~30원 수준.
@@ -10288,7 +10368,7 @@ export default function BlogTools(){
       const avoidWords = avoidWordsRaw.filter(w => !flat(mainKw).includes(flat(w)));
       const banWords   = commercialWords.filter(w => !flat(mainKw).includes(flat(w)));
 
-      const pattern = pickTitlePattern();
+      let pattern = pickTitlePattern(visit?.disclosure === "own" ? ["experience"] : []);
 
       // ── 제품 출시 상태 확인 (항상, 사실표와 병렬) ──
       const productStatusP = withTimeout(
@@ -10341,6 +10421,9 @@ export default function BlogTools(){
       } catch(e) { factSheet = []; /* 실패해도 글쓰기는 진행 */ }
       setPendingAnalyzeText("__loading__:제품 출시 상태 확인 중");
       const productStatus = await productStatusP;
+      // 한국 미출시·미발표 제품이 있으면 "직접 써봤습니다" 같은 경험담형 제목을 쓰지 않는다
+      const hasUnreleased = (productStatus || []).some(x => x.status && x.status !== "released_kr");
+      if (hasUnreleased && pattern.id === "experience") pattern = pickTitlePattern(["experience"]);
       setPendingAnalyzeText("__loading__:본문 작성 중");
 
       const prompt = buildWritePrompt({
@@ -10440,6 +10523,13 @@ Output ONLY valid JSON, no markdown.`;
       // ── [확인필요:] 항목을 웹 검색으로 자동 해결 ──
       let factItems = [];
       let factSummary = null;
+      // 메인 키워드가 본문에 글자 그대로 5회 이상 들어갔는지 확인하고, 모자라면 다른 표기를 바꿔 채운다
+      let kwFix = null;
+      try {
+        kwFix = await withTimeout(enforceMainKeyword(bodyText, mainKw), 20000, null);
+        if (kwFix) bodyText = kwFix.body;
+      } catch (e) {}
+
       const placeholders = extractPlaceholders(bodyText);
       // 사실표를 이미 만든 글은 남은 [확인필요]가 대개 사실표에서도 못 찾은 항목이라 재검색하지 않는다.
       // → 아래 정리 단계(검색 없음)에서 "확인처 안내" 문장으로 바꾸거나 삭제. 사실표를 건너뛴 글만 검색으로 채운다.
@@ -10476,6 +10566,10 @@ Output ONLY valid JSON, no markdown.`;
 
       let finalTitle = parsed.title || "";
       const check = validateTitle(finalTitle, { mainKw, topTitles, commercialWords: banWords, avoidWords });
+      // 형식 검사에 더해 "제목이 본문·확인된 사실과 맞는가"도 본다 (Haiku 1회)
+      setPendingAnalyzeText("__loading__:제목이 본문과 맞는지 확인 중");
+      const titleFact = await withTimeout(checkTitleFacts(finalTitle, bodyText, productStatus), 15000, { ok: true, reasons: [] });
+      if (!titleFact.ok) { check.ok = false; check.reasons = [...(check.reasons || []), ...titleFact.reasons.map(r => "사실 불일치: " + r)]; }
 
       // ── 제목이 기준에 안 맞으면 제목만 1회 재생성 ──
       let titleNotice = "";
@@ -10496,6 +10590,9 @@ Output ONLY valid JSON, no markdown.`;
 ${(topTitles||[]).slice(0,10).map((t,i)=>`  ${i+1}. ${t}`).join("\n") || "  (없음)"}
 - 아래 단어는 제목에 쓰지 말 것: ${[...banWords, ...avoidWords].join(", ") || "(없음)"}
 - 가격·기간·퍼센트 같은 수치는 제목에 쓰지 말 것
+- 제목은 아래 글 내용과 맞아야 한다. 글에 없는 경험(직접 써봤다·샀다·개통했다·방문했다)이나 글에 없는 사실을 주장하지 말 것.
+  제목 패턴과 글 내용이 충돌하면 글 내용을 따를 것.${hasUnreleased ? `
+- ${productStatus.filter(x => x.status !== "released_kr").map(x => x.name).join(", ")}은(는) 한국 미출시 제품이다. "써봤다·후기·사용기·개통" 같은 표현 금지.` : ""}
 ${(()=>{const bp=bpGetActive();if(!bp)return "";const rules=(bp.titleRules||[]).map(r=>`  - ${r}`).join("\n");const bad=(bp.titleBad||[]).slice(0,6).map(t=>`  · ${t}`).join("\n");return `- 이 블로그의 제목 규칙:\n${rules||"  (없음)"}${bad?`\n- 이 블로그에서 제목검색 30위 밖이었던 제목 형태 (피할 것):\n${bad}`:""}`;})()}
 
 글 앞부분:
@@ -10510,6 +10607,10 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
           );
           const retitled = safeParseJson(retitleRaw)?.title || "";
           const recheck = validateTitle(retitled, { mainKw, topTitles, commercialWords: banWords, avoidWords });
+          if (retitled) {
+            const rf = await withTimeout(checkTitleFacts(retitled, bodyText, productStatus), 15000, { ok: true, reasons: [] });
+            if (!rf.ok) { recheck.ok = false; recheck.reasons = [...(recheck.reasons || []), ...rf.reasons.map(r => "사실 불일치: " + r)]; }
+          }
           if (retitled && (recheck.ok || recheck.reasons.length < check.reasons.length)) {
             finalTitle = retitled;
             if (!recheck.ok) titleNotice = recheck.reasons.join(" · ");
@@ -10564,6 +10665,7 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
         factItems,
         factSheet,
         visit: visitMeta,
+        kwCount: kwFix ? { before: kwFix.before, after: kwFix.after, variants: kwFix.variants } : null,
         _source: "keyword",
       };
       setAnalyzePostMeta(meta);
