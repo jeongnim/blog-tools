@@ -723,6 +723,37 @@ function SectionTitle({children}){
 }
 
 // ─── 금칙어 섹션 (AI 추천 포함) ──────────────────────────────────────────
+function NaverAdultCheck({workingText,forbidden}){
+  const [st,setSt]=useState(null);
+  const run=async()=>{
+    const lines=String(workingText||"").split("\n").map(x=>x.trim()).filter(Boolean);
+    const title=(lines[0]||"").replace(/^제목\s*[:：]\s*/,"").slice(0,60);
+    const tags=[...String(workingText||"").matchAll(/#([^\s#]{2,30})/g)].map(m=>m[1]);
+    const words=[...new Set((forbidden||[]).map(f=>f.word))];
+    const qs=[title,...tags,...words].filter(Boolean).slice(0,20);
+    setSt({loading:true});
+    const d=await checkNaverAdult(qs);
+    setSt({loading:false,error:d.error,results:d.results||[]});
+  };
+  const bad=(st?.results||[]).filter(r=>r.adult===true);
+  return <div style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"10px",padding:"10px 14px",fontSize:"14px"}}>
+    <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+      <b style={{color:"#c9d1d9"}}>🔎 네이버 성인 검색어 판별</b>
+      <span style={{color:"#484f58",fontSize:"12px"}}>제목·해시태그·위에서 걸린 단어를 네이버 기준으로 확인 (무료)</span>
+      <button onClick={run} disabled={st?.loading} style={{marginLeft:"auto",padding:"4px 12px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",cursor:st?.loading?"wait":"pointer",fontSize:"13px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+        {st?.loading?"확인 중...":st?"다시 확인":"확인하기"}</button>
+    </div>
+    {st&&!st.loading&&<div style={{marginTop:"8px"}}>
+      {st.error&&<div style={{color:"#ffa657",fontSize:"13px"}}>⚠️ {st.error}</div>}
+      {!st.error&&(bad.length
+        ?<div style={{color:"#ff7b72"}}>🔞 성인 검색어로 분류된 것 {bad.length}개: {bad.map(r=>`"${r.query}"`).join(", ")}
+          <div style={{color:"#8b949e",fontSize:"13px"}}>제목이나 태그에 있으면 바꾸는 게 좋아요. 본문 단어는 문맥에 따라 괜찮을 수 있지만, 네이버가 이 단어 자체를 성인으로 본다는 뜻이에요.</div></div>
+        :<div style={{color:"#3fb950"}}>✓ 확인한 {st.results.length}개 모두 일반 검색어예요</div>)}
+      {st.results.some(r=>r.adult===null)&&<div style={{color:"#484f58",fontSize:"12px"}}>일부는 확인 실패: {st.results.filter(r=>r.adult===null).map(r=>r.query).join(", ")}</div>}
+    </div>}
+  </div>;
+}
+
 function ForbiddenSection({workingText,forbidden,hp,replacements,setReplacements,doReplace,doReplaceAll}){
   const [aiLoading,setAiLoading]=useState(false);
   const [perLoading,setPerLoading]=useState({});
@@ -820,6 +851,7 @@ ${RULES}
   return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
     {!workingText&&<div style={{background:"#161b22",borderRadius:"10px",padding:"24px",border:"1px solid #30363d",color:"#484f58",fontSize:"16px",textAlign:"center"}}>글 입력 후 잠시 기다리면 자동으로 분석됩니다</div>}
     {workingText&&<>
+      <NaverAdultCheck workingText={workingText} forbidden={forbidden}/>
       {aiError&&<div style={{background:"#2d0b0b",border:"1px solid #f8514944",borderRadius:"8px",padding:"8px 12px",color:"#f85149",fontSize:"13px",wordBreak:"break-all"}}>⚠️ {aiError}</div>}
       {/* 요약 헤더 */}
       <div style={{background:highCount>0?"#2d0b0b":"#0d2019",border:`1px solid ${highCount>0?"#f8514944":"#2ea04344"}`,borderRadius:"12px",padding:"14px 16px",display:"flex",alignItems:"center",gap:"14px"}}>
@@ -2340,6 +2372,14 @@ async function fetchNaverKeywordStats(keywords) {
   return { keywordList: data.keywordList || [], autoComplete: data.autoComplete || [] };
 }
 
+// ── 네이버 성인 검색어 판별 (NAVER API HUB, 무료) ──  → [{query, adult:true|false|null}]
+async function checkNaverAdult(list){
+  const qs=[...new Set((list||[]).map(x=>String(x||"").trim()).filter(Boolean))].slice(0,20);
+  if(!qs.length) return {results:[]};
+  try{ const r=await fetch(`/api/naver-adult?${qs.map(q=>"q="+encodeURIComponent(q)).join("&")}`); return await r.json(); }
+  catch(e){ return {error:e.message,results:[]}; }
+}
+
 // ═══ 키워드 글쓰기 > 🌐 구글 칸: 자동완성 연관검색어 + 네이버·구글 트렌드 12개월 비교 (AI 비용 없음) ═══
 function trendSummary(naver, google){
   const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
@@ -2497,6 +2537,14 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
     goAutoWrite(t,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword);
   };
   const fmtNum = n => { if(n===null||n===undefined) return "-"; const num=Number(n); if(isNaN(num)) return "-"; if(num<=10) return "10 이하"; return num.toLocaleString(); };
+
+  // 🔞 네이버 성인 검색어 판별 (키워드별 캐시)
+  const [adultKw,setAdultKw]=useState({});
+  useEffect(()=>{
+    const kw=kwResult?.keyword; if(!kw||adultKw[kw]!==undefined) return;
+    setAdultKw(m=>({...m,[kw]:null}));
+    checkNaverAdult([kw]).then(d=>{const r=d.results?.[0]; setAdultKw(m=>({...m,[kw]:r?.adult??false}));});
+  },[kwResult?.keyword]);
 
   // 🌐 구글 칸 데이터 (키워드별 캐시)
   const [gk,setGk]=useState({});
@@ -2925,6 +2973,11 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
             </div>
           </div>
         </div>
+
+        {adultKw[result.keyword]===true&&<div style={{background:"#2d0b0b",border:"1px solid #f8514966",borderRadius:"10px",padding:"10px 14px",color:"#ff7b72",fontSize:"14px",lineHeight:1.6}}>
+          <b>🔞 네이버가 "{result.keyword}"를 성인 검색어로 분류해요.</b>
+          <div style={{color:"#8b949e",fontSize:"13px"}}>이 키워드로 검색하면 블로그 결과가 성인 인증 뒤로 가려지거나 노출이 제한될 수 있어요. 메인 키워드로는 피하는 게 좋아요.</div>
+        </div>}
 
         {/* ── 🌐 구글 ── */}
         <GoogleKeywordPanel keyword={result.keyword} data={gk[result.keyword]} onPick={k=>{window.scrollTo({top:0,behavior:"smooth"});analyze(k);}}/>
@@ -6848,6 +6901,11 @@ ${buildProfileBlock(activeProf,"keyword")}
       setExcludedKw(excluded);
       setKeywords(list);
       fetchBulkStats(list);
+      // 🔞 네이버 성인 검색어 판별 (무료) — 해당되면 배지
+      checkNaverAdult(list.map(k=>k.mainKeyword||k.keyword)).then(d=>{
+        const bad=new Set((d.results||[]).filter(r=>r.adult===true).map(r=>r.query));
+        if(bad.size) setKeywords(cur=>cur.map(k=>bad.has(k.mainKeyword||k.keyword)?{...k,adult:true}:k));
+      });
     }catch(ex){setErr("추천 글 주제 생성 오류: "+(ex?.message||String(ex)));}
     setLoadingKw(false);
   };
@@ -7052,6 +7110,7 @@ ${buildProfileBlock(activeProf,"keyword")}
                 {mainKw}
               </span>
               {st&&<span style={{fontSize:"13px",color:"#8b949e"}}>월 검색량 <b style={{color:"#e6edf3"}}>{fmt(st.monthly)}</b></span>}
+              {kw.adult&&<span title="네이버가 성인 검색어로 분류한 키워드 — 블로그 노출이 제한될 수 있어요" style={{background:"#da363320",border:"1px solid #f8514966",borderRadius:"6px",padding:"2px 8px",color:"#ff7b72",fontSize:"12px",fontWeight:700}}>🔞 성인 검색어</span>}
               {kw.axis==="core"&&<span title="맞춤 프로필의 중심 축 주제" style={{background:"#23863615",border:"1px solid #23863655",borderRadius:"6px",padding:"2px 8px",color:"#3fb950",fontSize:"12px",fontWeight:700}}>🎯 중심 축</span>}
               {kw.axis==="side"&&<span title="맞춤 프로필의 곁가지 주제" style={{background:"#d2992210",border:"1px solid #d2992240",borderRadius:"6px",padding:"2px 8px",color:"#d29922",fontSize:"12px",fontWeight:700}}>🌿 곁가지</span>}
               {over&&<span title={`이 블로그가 10위 안에 올린 키워드는 대부분 월 ${volRange.ceil} 이하예요`} style={{background:"#8957e515",border:"1px solid #8957e544",borderRadius:"6px",padding:"2px 8px",color:"#d2a8ff",fontSize:"12px",fontWeight:700}}>
