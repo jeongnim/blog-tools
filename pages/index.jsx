@@ -3344,10 +3344,24 @@ function isWithinRecent(date,days=RECENT_DAYS){
 
 // 제목 따옴표 검색용: 괄호·구두점·특수문자는 검색을 흐트러뜨리므로 공백으로
 function cleanTitleForSearch(t){ return String(t||"").replace(/[()\[\]{}<>!?.,~"'“”‘’…·|:;#*/\\^&%$@+=]/g," ").replace(/\s+/g," ").trim(); }
+// 발행일 → YYYYMMDD. "2026.09.22.", "3시간 전", "25분 전", "어제" 모두 처리 (KST 기준)
+function postYmd(date){
+  const d=String(date||"").trim();
+  const m=d.match(/(\d{4})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})/);
+  if(m) return `${m[1]}${String(m[2]).padStart(2,"0")}${String(m[3]).padStart(2,"0")}`;
+  let t=null;
+  const h=d.match(/(\d+)\s*시간\s*전/), mi=d.match(/(\d+)\s*분\s*전/);
+  if(h) t=Date.now()-(+h[1])*3600e3;
+  else if(mi||/방금/.test(d)) t=Date.now()-(mi?+mi[1]:0)*60e3;
+  else if(/어제/.test(d)) t=Date.now()-864e5;
+  if(t==null) return "";
+  const k=new Date(t+9*3600e3);   // KST
+  return `${k.getUTCFullYear()}${String(k.getUTCMonth()+1).padStart(2,"0")}${String(k.getUTCDate()).padStart(2,"0")}`;
+}
 // 발행 당일 글(네이버 반영 전일 수 있음)
 function isRecentPost(date){
   const d=String(date||"");
-  if(/전\s*$/.test(d)) return true;   // "3시간 전" 같은 표기
+  if(/전\s*$|방금/.test(d)) return true;   // "3시간 전" 같은 표기
   const m=d.match(/(\d{4})\.(\d{2})\.(\d{2})/); if(!m) return false;
   const now=new Date(); const z=n=>String(n).padStart(2,"0");
   return `${m[1]}.${m[2]}.${m[3]}`===`${now.getFullYear()}.${z(now.getMonth()+1)}.${z(now.getDate())}`;
@@ -4349,13 +4363,16 @@ function MissingTab(){
   // 그날 그 문구로 쓴 글만 남아 첫 페이지에서 찾을 수 있다. 여기서 보이면 = 검색에 반영된 글 → 누락 아님.
   const quoteRecheck=async(title,blogId,postNo,postDate)=>{
     const clean=cleanTitleForSearch(title); if(!clean) return null;
-    const m=String(postDate||"").match(/(\d{4})\.(\d{2})\.(\d{2})/);
-    const ymd=m?`${m[1]}${m[2]}${m[3]}`:"";
+    const ymd=postYmd(postDate);
     const q=await getNaverRank(`"${clean}"`,blogId,postNo,1,ymd);
-    if(!q) return null;   // 조회 실패는 판정하지 않음 (다음에 다시 시도)
-    if(ymd&&q.dated?.error) return null;   // 기간 검색 실패(프록시 꺼짐·미업데이트)도 판정 보류
+    const diag={quoteQuery:clean,quoteYmd:ymd,quoteAt:Date.now(),
+      quoteBlogTotal:q?.areas?.blog?.total??null,quoteDatedTotal:q?.dated?.total??null,
+      quoteError:!q?"조회 실패":(q.proxyError||(ymd&&q.dated?.error)||(ymd?"":"발행일을 읽지 못해 기간 검색 생략"))||null};
+    if(!q) return {quoteChecked:false,...diag};
+    // 기간 검색 실패(프록시 꺼짐·미업데이트)면 판정 보류 — 이유만 남기고 다음에 다시 시도
+    if(ymd&&q.dated?.error) return {quoteChecked:false,quoteDated:false,quoteRank:null,...diag};
     const r=[q.areas?.blog?.rank,q.dated?.rank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
-    return {quoteChecked:true,quoteDated:!!ymd,quoteRank:r};
+    return {quoteChecked:true,quoteDated:!!ymd,quoteRank:r,...diag};
   };
 
   // ── 순위 재확인: 제목 노출 + 이미 뽑아둔 키워드 순위 + 추가검색 키워드 순위 (AI 없음) ──
@@ -5303,6 +5320,11 @@ recommend는 8개.`;
                     cursor:titleRechecking[post.postNo]?"wait":"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
                   {titleRechecking[post.postNo]?`${titleRechecking[post.postNo]} 확인 중...`:"🔄 순위 재확인"}
                 </button>
+                {a.missingStatus==="누락"&&a.titleRank&&<span title={a.titleRank.quoteQuery?`검색어: "${a.titleRank.quoteQuery}"`:""} style={{color:"#8b949e",fontSize:"12px",alignSelf:"center",flexBasis:"100%"}}>
+                  {!a.titleRank.quoteAt?"따옴표 재확인 전 — 🔄 순위 재확인을 눌러주세요"
+                    :a.titleRank.quoteError&&a.titleRank.quoteRank==null?`따옴표 재확인: ${a.titleRank.quoteError}`
+                    :`따옴표 검색에서도 못 찾음 · 블로그탭 ${a.titleRank.quoteBlogTotal??"?"}개${a.titleRank.quoteYmd?` · 발행일(${a.titleRank.quoteYmd.slice(4,6)}.${a.titleRank.quoteYmd.slice(6)}) 전후 ${a.titleRank.quoteDatedTotal??"?"}개`:""} 확인`}
+                </span>}
                 {a.titleRecheckedAt&&!titleRechecking[post.postNo]&&<span style={{color:"#484f58",fontSize:"12px",alignSelf:"center"}}>
                   {new Date(a.titleRecheckedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 재확인</span>}
               </div>}
