@@ -1635,6 +1635,8 @@ JSON 형식:
         <span style={{color:"#8b949e"}}>{(workingText||text).length.toLocaleString()}자</span>
         {postMeta.tags?.length>0&&<><span style={{color:"#484f58"}}>해시태그</span>
         <span style={{color:"#58a6ff",lineHeight:"1.8"}}>{postMeta.tags.map(t=>"#"+t).join(" ")}</span></>}
+        {postMeta.topicDrift&&<><span style={{color:"#484f58"}}>주제 확인</span>
+        <span style={{color:"#ffa657"}}>⚠️ 고른 주제 "{postMeta.topicDrift.topic}"의 {postMeta.topicDrift.missing.map(w=>`"${w}"`).join(", ")}이(가) 본문에 한 번도 안 나와요 — 글이 주제에서 벗어났을 수 있어요</span></>}
         {postMeta.kwCount&&<><span style={{color:"#484f58"}}>키워드 반복</span>
         <span style={{color:postMeta.kwCount.after>=5?"#3fb950":"#ffa657"}}>
           "{postMeta.main_keyword}" 본문 {postMeta.kwCount.after}회{postMeta.kwCount.after<5?" · 5회 미만이라 직접 몇 군데 넣어주세요":""}
@@ -9490,6 +9492,10 @@ S4. 참고자료는 사실 확인용이다. 참고자료의 소제목 구성이�
     다른 글이 다섯 가지를 다뤘다고 해서 이 글도 그럴 이유는 없다.
 S5. 주제에 "직접 써보고", "후기", "정리", "비교" 같은 표현이 있으면 그 관점을 글 전체에서 유지할 것.
     주제가 경험담이면 끝까지 경험담으로 쓸 것.
+S6. 제목은 주제 "${kw}"의 핵심 요소(누가·무엇을·어떤 상황에서)를 빠짐없이 담아야 한다.
+    제목 패턴은 "형식"만 정한다 — 패턴에 맞추려고 주제의 대상이나 상황을 빼거나 다른 상황으로 바꾸지 말 것.
+    예: 주제가 "갤럭시 아이폰 기종변경 전 카톡 백업 옮기기"면 제목에 기종변경(갤럭시↔아이폰)이 반드시 남아야 하고, "용량 부족" 같은 다른 상황으로 바꾸면 안 된다.
+    참고자료(상위 글)가 다른 상황을 많이 다뤘더라도 이 글의 범위는 주제가 정한다.
 
 [사실 원칙 — 다른 모든 규칙보다 우선]
 A. 확실하지 않은 정보를 사실처럼 단정하지 말 것. 애매하면 아예 쓰지 않는 쪽을 택할 것.
@@ -9844,6 +9850,22 @@ Search before marking anything confirmed; if the search does not settle it, mark
 }
 
 // 사실표를 본문 프롬프트에 넣을 블록으로 만든다
+// ── 주제 유지 검사: 고른 주제의 핵심 단어가 제목·본문에 남아 있는지 (AI 없음) ──
+const TOPIC_STOP=new Set(["방법","정리","총정리","꿀팁","팁","완벽","완벽하게","확인","확인사항","확인해야","가지","해결법","해결","이유","알아보기","알아봤어요","하는","하는법","하기","쉽게","제대로","간단하게","간단히","총","전","후","때","시","꼭","필수","체크","포인트","주의","주의사항","것","까지","부터","직접","처음","하는데","해야","있는","없는","좋은","가장","최신"]);
+function topicCoreTokens(topic, mainKw){
+  const flat=t=>String(t||"").replace(/\s+/g,"");
+  const mk=flat(mainKw);
+  return [...new Set((String(topic||"").match(/[가-힣A-Za-z0-9]+/g)||[])
+    .map(w=>w.replace(/(을|를|이|가|은|는|의|에|에서|으로|로|과|와|도|만)$/,""))
+    .filter(w=>w.length>=2&&!TOPIC_STOP.has(w)&&!mk.includes(w)))];
+}
+function topicCoverage(topic, mainKw, text){
+  const toks=topicCoreTokens(topic, mainKw);
+  const t=String(text||"").replace(/\s+/g,"");
+  const missing=toks.filter(w=>!t.includes(w));
+  return {toks, missing, ratio: toks.length?(toks.length-missing.length)/toks.length:1};
+}
+
 // ── 제목 사실 검사: 제목이 본문과 어긋나거나 본문에 근거 없는 경험·사실을 주장하는지 ──
 const TITLE_EXP_RE = /(써\s?봤|써\s?보니|써\s?본|사용해\s?봤|사용해\s?보니|사용\s?후기|실사용|사용기|직접\s?(써|사용|구매|개통)|개통\s?(후기|해\s?봤)|구매\s?(후기|해\s?봤)|샀(습니다|어요|다))/;
 async function checkTitleFacts(title, body, productStatus){
@@ -10667,6 +10689,12 @@ Output ONLY valid JSON, no markdown.`;
       setPendingAnalyzeText("__loading__:제목이 본문과 맞는지 확인 중");
       const titleFact = await withTimeout(checkTitleFacts(finalTitle, bodyText, productStatus), 15000, { ok: true, reasons: [] });
       if (!titleFact.ok) { check.ok = false; check.reasons = [...(check.reasons || []), ...titleFact.reasons.map(r => "사실 불일치: " + r)]; }
+      // 고른 주제의 핵심 단어가 제목에서 빠졌는지 (예: "갤럭시 아이폰 기종변경"이 사라짐)
+      const topicCov = topicCoverage(kw, mainKw, finalTitle);
+      if (topicCov.toks.length >= 2 && topicCov.ratio < 0.6) {
+        check.ok = false;
+        check.reasons = [...(check.reasons || []), `주제 이탈: 고른 주제의 핵심 요소(${topicCov.missing.join(", ")})가 제목에 없음`];
+      }
 
       // ── 제목이 기준에 안 맞으면 제목만 1회 재생성 ──
       let titleNotice = "";
@@ -10687,6 +10715,7 @@ Output ONLY valid JSON, no markdown.`;
 ${(topTitles||[]).slice(0,10).map((t,i)=>`  ${i+1}. ${t}`).join("\n") || "  (없음)"}
 - 아래 단어는 제목에 쓰지 말 것: ${[...banWords, ...avoidWords].join(", ") || "(없음)"}
 - 가격·기간·퍼센트 같은 수치는 제목에 쓰지 말 것
+- 고른 주제 "${kw}"의 핵심 요소(대상·상황)는 제목에 그대로 남길 것. 다른 상황으로 바꾸지 말 것.
 - 제목은 아래 글 내용과 맞아야 한다. 글에 없는 경험(직접 써봤다·샀다·개통했다·방문했다)이나 글에 없는 사실을 주장하지 말 것.
   제목 패턴과 글 내용이 충돌하면 글 내용을 따를 것.${hasUnreleased ? `
 - ${productStatus.filter(x => x.status !== "released_kr").map(x => x.name).join(", ")}은(는) 한국 미출시 제품이다. "써봤다·후기·사용기·개통" 같은 표현 금지.` : ""}
@@ -10707,6 +10736,8 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
           if (retitled) {
             const rf = await withTimeout(checkTitleFacts(retitled, bodyText, productStatus), 15000, { ok: true, reasons: [] });
             if (!rf.ok) { recheck.ok = false; recheck.reasons = [...(recheck.reasons || []), ...rf.reasons.map(r => "사실 불일치: " + r)]; }
+            const rc = topicCoverage(kw, mainKw, retitled);
+            if (rc.toks.length >= 2 && rc.ratio < 0.6) { recheck.ok = false; recheck.reasons = [...(recheck.reasons || []), `주제 이탈: ${rc.missing.join(", ")} 없음`]; }
           }
           if (retitled && (recheck.ok || recheck.reasons.length < check.reasons.length)) {
             finalTitle = retitled;
@@ -10763,6 +10794,8 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
         factSheet,
         visit: visitMeta,
         kwCount: kwFix ? { before: kwFix.before, after: kwFix.after, variants: kwFix.variants } : null,
+        // 본문: 동작 표현(옮기기·하기 등)은 활용형이 달라 빼고, 대상 단어(갤럭시·아이폰 등)가 아예 안 나오면 경고
+        topicDrift: (() => { const c = topicCoverage(kw, mainKw, bodyText); const miss = c.missing.filter(w => !/기$/.test(w)); return c.toks.length >= 2 && miss.length ? { topic: kw, missing: miss } : null; })(),
         _source: "keyword",
       };
       setAnalyzePostMeta(meta);
