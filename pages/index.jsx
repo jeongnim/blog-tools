@@ -3643,9 +3643,19 @@ function InflowPanel({inflow,setInflow,rows,insightAi,topN,postDates,blogId,scop
           if(p) parsed.push(p);
         }catch(e){}
       }
-      if(!parsed.some(x=>x.type==="inflow")) throw new Error("유입분석 파일을 찾지 못했어요. 지표 다운로드에서 '유입분석'을 받아 올려주세요.");
-      const a=aggregateInflow(parsed);
-      setInflow({agg:{...a,keywords:a.keywords.slice(0,400)},fileCount:parsed.length,uploadedAt:Date.now(),ai:null});
+      if(!parsed.length) throw new Error("네이버 블로그 통계 파일을 찾지 못했어요. 지표 다운로드에서 '유입분석'을 받아 올려주세요.");
+      // 기존에 올린 달은 유지하고, 새 파일을 합친다. 같은 달·같은 종류 파일은 새로 올린 것으로 교체.
+      const keyOf=x=>`${x.type}|${x.period}`;
+      const prevRaw=inflow?.raw||[];
+      const map=new Map(prevRaw.map(x=>[keyOf(x),x]));
+      let added=0,replaced=0;
+      parsed.forEach(x=>{ if(map.has(keyOf(x))) replaced++; else added++; map.set(keyOf(x),x); });
+      const merged=[...map.values()];
+      if(!merged.some(x=>x.type==="inflow")) throw new Error("유입분석 파일을 찾지 못했어요. 지표 다운로드에서 '유입분석'을 받아 올려주세요.");
+      const a=aggregateInflow(merged);
+      const legacy=!!(inflow?.agg&&!inflow?.raw);   // 예전 방식으로 저장된 데이터는 달별 원본이 없어 합칠 수 없음
+      setInflow({agg:{...a,keywords:a.keywords.slice(0,400)},raw:merged,fileCount:merged.length,uploadedAt:Date.now(),ai:null,
+        lastUpload:{added,replaced,legacy}});
     }catch(ex){setErr(ex?.message||"파일을 읽지 못했습니다.");}
     setBusy("");
   };
@@ -3836,13 +3846,18 @@ ${extraTop.length?extraTop.join("\n"):""}
       {agg&&<span style={{color:"#484f58",fontSize:"13px"}}>{agg.months.map(m=>m.period).join(" · ")} · 유입 키워드 {agg.keywords.length}개{!agg.hasViews&&" · 조회수 순위 파일 없음(비율로 표시)"}</span>}
       <div style={{marginLeft:"auto",display:"flex",gap:"6px",flexWrap:"wrap"}}>
         {agg&&<button onClick={()=>{if(confirm("올린 유입 데이터를 지울까요?"))setInflow(null);}} style={btn(false)}>🗑</button>}
-        <button onClick={()=>fileRef.current?.click()} disabled={!!busy} style={btn(!!busy)}>{agg?"📂 파일 다시 올리기":"📂 통계 엑셀 올리기"}</button>
+        <button onClick={()=>fileRef.current?.click()} disabled={!!busy} style={btn(!!busy)}>{agg?"📂 파일 추가로 올리기":"📂 통계 엑셀 올리기"}</button>
         {agg&&cmp&&<button onClick={()=>makeProfile()} disabled={!!busy||!rows?.length} style={{...btn(!!busy||!rows?.length),background:busy?"#21262d":"#1f6feb",color:busy?"#484f58":"#fff",border:"none"}}>{profile?"🔄 맞춤 프로필 다시 만들기":"✨ 맞춤 프로필 만들기"} <span style={{opacity:.7,fontSize:"11px"}}>(AI 1회)</span></button>}
         {agg&&<button onClick={runAi} disabled={!!busy} style={btn(!!busy)} title="비교 결과에 대한 AI 서술 진단. 프로필 생성과 별개이며 비용이 추가로 듭니다.">{inflow?.ai?"🔄 AI 서술 진단 다시":"🤖 AI 서술 진단 (선택)"}</button>}
       </div>
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.zip" multiple onChange={onFiles} style={{display:"none"}}/>
     </div>
 
+    {agg&&inflow?.lastUpload&&<div style={{color:"#8b949e",fontSize:"13px"}}>
+      📥 방금 올린 파일: 새로 추가 {inflow.lastUpload.added}개{inflow.lastUpload.replaced?` · 같은 달이라 교체 ${inflow.lastUpload.replaced}개`:""} · 지금 반영된 기간 {agg.months.length}개월
+      {inflow.lastUpload.legacy&&<div style={{color:"#ffa657"}}>⚠️ 예전에 올린 데이터는 달별 원본이 저장돼 있지 않아 이번 파일로 교체됐어요. 빠진 달이 있으면 그 달 파일을 한 번만 더 올려주세요. 다음부터는 계속 쌓여요.</div>}
+    </div>}
+    {agg&&!inflow?.raw&&<div style={{color:"#ffa657",fontSize:"13px"}}>⚠️ 이 유입 데이터는 예전 방식으로 저장돼 있어서, 새 파일을 올리면 합쳐지지 않고 교체돼요. 지금 반영된 달 파일까지 같이 한 번 올려두면 그다음부터는 새 달만 올려도 쌓여요.</div>}
     {!agg&&!busy&&<div style={{color:"#484f58",fontSize:"13px",lineHeight:1.8}}>
       내 블로그일 때만 쓸 수 있어요. 네이버 블로그 관리 → 내 블로그 통계 → <b style={{color:"#8b949e"}}>지표 다운로드</b>에서
       <b style={{color:"#8b949e"}}> 유입분석</b>(월간)과 <b style={{color:"#8b949e"}}>조회수 순위</b>(월간)를 받아서, 여러 달 치를 <b style={{color:"#8b949e"}}>한 번에 선택</b>하거나 <b style={{color:"#8b949e"}}>ZIP으로 묶어서</b> 올리면 됩니다.
