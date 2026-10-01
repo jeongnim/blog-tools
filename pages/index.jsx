@@ -2409,7 +2409,7 @@ function trendSummary(naver, google){
 }
 
 function TrendChart({naver,google}){
-  const W=640,H=150,P=24;
+  const W=900,H=170,P=26;
   const all=[...naver,...google].map(x=>new Date(x.date).getTime());
   if(!all.length) return null;
   const t0=Math.min(...all),t1=Math.max(...all);
@@ -2979,13 +2979,15 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
           </div>
         </div>
 
-        {adultKw[result.keyword]===true&&<div style={{background:"#2d0b0b",border:"1px solid #f8514966",borderRadius:"10px",padding:"10px 14px",color:"#ff7b72",fontSize:"14px",lineHeight:1.6}}>
+        {adultKw[result.keyword]===true&&<div style={{...(!isMobile&&{gridColumn:"1/3"}),background:"#2d0b0b",border:"1px solid #f8514966",borderRadius:"10px",padding:"10px 14px",color:"#ff7b72",fontSize:"14px",lineHeight:1.6}}>
           <b>🔞 네이버가 "{result.keyword}"를 성인 검색어로 분류해요.</b>
           <div style={{color:"#8b949e",fontSize:"13px"}}>이 키워드로 검색하면 블로그 결과가 성인 인증 뒤로 가려지거나 노출이 제한될 수 있어요. 메인 키워드로는 피하는 게 좋아요.</div>
         </div>}
 
         {/* ── 🌐 구글 ── */}
-        <GoogleKeywordPanel keyword={result.keyword} data={gk[result.keyword]} onPick={k=>{window.scrollTo({top:0,behavior:"smooth"});analyze(k);}}/>
+        <div style={{...(!isMobile&&{gridColumn:"1/3"}),minWidth:0}}>
+          <GoogleKeywordPanel keyword={result.keyword} data={gk[result.keyword]} onPick={k=>{window.scrollTo({top:0,behavior:"smooth"});analyze(k);}}/>
+        </div>
 
         {/* ── 글 주제 정하기 (직접 입력 + AI 추천) ── */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
