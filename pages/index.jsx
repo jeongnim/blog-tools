@@ -419,9 +419,10 @@ function activeKeyInfo(){
   return k?{id,key:k}:{id,key:""};
 }
 function maskKey(k){ return k?`${k.slice(0,10)}…${k.slice(-4)}`:""; }
-function claudeHeaders(){
+// forceId: undefined → 선택한 프로필 기준 / "" → 기본 키 / "블로그ID" → 그 ID에 등록한 키
+function claudeHeaders(forceId){
   const h={"Content-Type":"application/json"};
-  const {key}=activeKeyInfo();
+  const key=forceId===undefined?activeKeyInfo().key:(forceId?blogKeysLoad()[String(forceId).toLowerCase()]||"":"");
   if(key) h["x-user-api-key"]=key;
   return h;
 }
@@ -4245,15 +4246,15 @@ async function exportExposureXlsx(list,analysis,extra){
   const ExcelJS=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js","ExcelJS");
   const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet("노출 확인");
   ws.columns=[{header:"링크",key:"link",width:46},{header:"종류",key:"kind",width:7},{header:"제목",key:"title",width:38},{header:"노출",key:"status",width:9},
-    {header:"구분",key:"label",width:12},{header:"검색어",key:"q",width:26},{header:"통합검색",key:"main",width:10},{header:"블로그탭/카페탭",key:"tab",width:14},{header:"API(정확도순)",key:"api",width:13}];
+    {header:"구분",key:"label",width:12},{header:"검색어",key:"q",width:26},{header:"월 검색수",key:"vol",width:10},{header:"통합검색",key:"main",width:10},{header:"블로그탭/카페탭",key:"tab",width:14},{header:"API(정확도순)",key:"api",width:13}];
   ws.getRow(1).font={bold:true};
-  const rowOf=(p,a,label,q,rr)=>({link:p.link,kind:p._kind==="cafe"?"카페":"블로그",title:p.title,status:a.missingStatus||"",label,q,
+  const rowOf=(p,a,label,q,rr,vol)=>({link:p.link,kind:p._kind==="cafe"?"카페":"블로그",title:p.title,status:a.missingStatus||"",label,q,vol:vol??"",
     main:rr?.areas?.main_search?.rank??"",tab:rr?.areas?.blog?.rank??"",api:rr?.simRank??(rr?.areas?"":(rr?.myRank??""))});
   list.forEach(p=>{
     const a=analysis[p.postNo]; if(!a||a.error) return;
     ws.addRow(rowOf(p,a,"제목",p.title,a.titleRank));
-    (a.topKeywords||[]).forEach(k=>ws.addRow(rowOf(p,a,a.kwSource==="manual"?"키워드(직접)":"키워드(AI)",k.keyword,k.realRank)));
-    (extra[p.postNo]||[]).forEach(k=>ws.addRow(rowOf(p,a,"추가검색",k.keyword,k.realRank)));
+    (a.topKeywords||[]).forEach(k=>ws.addRow(rowOf(p,a,a.kwSource==="manual"?"키워드(직접)":"키워드(AI)",k.keyword,k.realRank,k.monthly)));
+    (extra[p.postNo]||[]).forEach(k=>ws.addRow(rowOf(p,a,"추가검색",k.keyword,k.realRank,k.monthly)));
   });
   const buf=await wb.xlsx.writeBuffer();
   const d=new Date(),z=x=>String(x).padStart(2,"0");
@@ -4270,7 +4271,17 @@ function MissingTab(){
   const [singleUrl,setSingleUrl]=useState("");
   const [singleTitle,setSingleTitle]=useState("");
   const [singleBody,setSingleBody]=useState("");
-  const [singleKw,setSingleKw]=useState("");   // 방법2: 확인할 키워드 직접 입력 (비우면 AI가 뽑음)
+  const [singleKw,setSingleKw]=useState("");
+  // 노출 확인에서 AI(키워드 추출)에 쓸 키 — 방법2·3은 여기서 고른 키, 방법1은 분석하는 블로그 ID에 키가 있으면 그 키
+  const [missingKeyId,setMissingKeyId]=useState(()=>{try{
+    const saved=localStorage.getItem("mt_missing_key_id");
+    if(saved!==null) return saved;
+    const ids=Object.keys(blogKeysLoad()); return ids[0]||"";
+  }catch(e){return "";}});
+  const keyForAnalyze=()=>{
+    if(mode==="blogId"){ const id=(posts?.blogId||"").toLowerCase(); return id&&blogKeysLoad()[id]?id:undefined; }
+    return missingKeyId;
+  };   // 방법2: 확인할 키워드 직접 입력 (비우면 AI가 뽑음)
   // 공통
   const [posts,setPosts]=useState(null);
   const [analysis,setAnalysis]=useState({});
@@ -4538,6 +4549,9 @@ function MissingTab(){
         kwsNew.push({...kwsOld[i],realRank:r??kwsOld[i].realRank??null,rankLoading:false});
         await new Promise(res=>setTimeout(res,200));
       }
+      // 예전에 분석해서 월 검색수가 없는 키워드는 이번에 채운다 (무료)
+      const needVol=kwsNew.filter(k=>k.monthly==null).map(k=>k.keyword);
+      if(needVol.length){ const v=await fetchMonthlyVolumes(needVol); kwsNew.forEach(k=>{ if(k.monthly==null&&v[k.keyword]){ k.monthly=v[k.keyword].monthly; k.commercial=v[k.keyword].commercial; } }); }
       const next={...a,
         ...(tr?{titleRank:tr,missingStatus:c==="missing"?"누락":c==="wait"?"반영 대기":"노출"}:{}),
         topKeywords:kwsNew, analyzedAt:Date.now(), titleRecheckedAt:Date.now()};
@@ -4553,6 +4567,8 @@ function MissingTab(){
           upd.push({...extras[i],realRank:r??extras[i].realRank??null,loading:false,rankLoading:false,checkedAt:Date.now()});
           await new Promise(res=>setTimeout(res,200));
         }
+        const nv=upd.filter(k=>k.monthly==null).map(k=>k.keyword);
+        if(nv.length){ const v=await fetchMonthlyVolumes(nv); upd.forEach(k=>{ if(k.monthly==null&&v[k.keyword]){ k.monthly=v[k.keyword].monthly; k.commercial=v[k.keyword].commercial; } }); }
         setExtraResults(x=>({...x,[post.postNo]:upd}));
       }
     }finally{ setTitleRechecking(r=>{const o={...r};delete o[post.postNo];return o;}); }
@@ -4570,7 +4586,7 @@ function MissingTab(){
     if(!kw) return;
     if(extraLoading[post.postNo]) return;
     const urlMatch=post.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
-    const bid=urlMatch?.[1]||post._blogId||"";
+    const bid=post._kind==="cafe"?`cafe:${post.link}`:(urlMatch?.[1]||post._blogId||"");
     const pno=urlMatch?.[2]||post.postNo||"";
 
     setExtraLoading(p=>({...p,[post.postNo]:true}));
@@ -4581,11 +4597,11 @@ function MissingTab(){
       {keyword:kw,realRank:null,loading:true},
     ]}));
 
-    let r=null;
-    try{ r=await getNaverRank(kw,bid,pno); }catch(e){ r=null; }
+    let r=null, vol={};
+    try{ [r,vol]=await Promise.all([getNaverRank(kw,bid,pno),fetchMonthlyVolumes([kw]).catch(()=>({}))]); }catch(e){ r=null; }
 
     setExtraResults(p=>({...p,[post.postNo]:(p[post.postNo]||[]).map(x=>
-      x.keyword===kw?{keyword:kw,realRank:r,loading:false,checkedAt:Date.now()}:x
+      x.keyword===kw?{keyword:kw,realRank:r,loading:false,checkedAt:Date.now(),monthly:vol[kw]?.monthly??null,commercial:vol[kw]?.commercial??false}:x
     )}));
     setExtraLoading(p=>({...p,[post.postNo]:false}));
   };
@@ -4650,7 +4666,7 @@ JSON 배열만 출력:`;
 
         const aiRes = await fetch('/api/claude', {
           method: 'POST',
-          headers: claudeHeaders(),
+          headers: claudeHeaders(keyForAnalyze()),
           body: JSON.stringify({
             model: 'claude-haiku-4-5-20251001',
             max_tokens: 200,
@@ -4784,6 +4800,8 @@ JSON 배열만 출력:`;
         topKeywords:kwData
       }}));
 
+      // 월 검색량은 순위 조회와 동시에 (무료 API, 글당 1번)
+      const volP=fetchMonthlyVolumes(kws).catch(()=>({}));
       // 키워드 순위 순차 조회 (200ms 간격 — rate limit 방지)
       const rankResults=[];
       for(const kw of kws){
@@ -4793,8 +4811,10 @@ JSON 배열만 출력:`;
       }
 
       // 전체 키워드 저장 — null은 100위 밖으로 표시
+      const vols=await volP;
       const exposedKeywords=kws
-        .map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i]??null,rankLoading:false}));
+        .map((kw,i)=>({rank:i+1,keyword:kw,realRank:rankResults[i]??null,rankLoading:false,
+          monthly:vols[kw]?.monthly??null,commercial:vols[kw]?.commercial??false}));
 
       setAnalysis(prev=>({...prev,[post.postNo]:{
         missingStatus, seoScore, seoDetail, titleRank, kwSource,
@@ -5072,6 +5092,21 @@ recommend는 8개.`;
         </button>
       ))}
     </div>
+
+    {/* AI 키 선택 (키워드 추출용) */}
+    {(()=>{const keys=blogKeysLoad();const ids=Object.keys(keys);
+      const bid=(posts?.blogId||"").toLowerCase();
+      return <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",fontSize:"13px",color:"#8b949e"}}>
+        <span>🔑 키워드 추출 AI 키</span>
+        {mode==="blogId"
+          ?<span style={{color:keys[bid]?"#e3b341":"#8b949e"}}>{bid&&keys[bid]?`@${bid} 전용 키 (분석하는 블로그 ID 기준)`:"선택한 프로필 기준 (분석하는 블로그 ID에 등록된 키가 있으면 그 키)"}</span>
+          :<select value={missingKeyId} onChange={e=>{setMissingKeyId(e.target.value);try{localStorage.setItem("mt_missing_key_id",e.target.value);}catch(_){}}}
+            style={{padding:"4px 8px",background:"#0d1117",border:`1px solid ${missingKeyId?"#d2992266":"#30363d"}`,borderRadius:"6px",color:missingKeyId?"#e3b341":"#c9d1d9",fontSize:"13px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+            <option value="">기본 키 (개인)</option>
+            {ids.map(id=><option key={id} value={id}>@{id} 전용 키</option>)}
+          </select>}
+        {mode!=="blogId"&&!ids.length&&<span style={{color:"#484f58"}}>· 상단 🔑 버튼에서 블로그 ID별 키를 먼저 등록해주세요</span>}
+      </div>;})()}
 
     {/* ── 방법1: 블로그 ID ── */}
     {mode==="blogId"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"12px"}}>
@@ -5523,6 +5558,7 @@ recommend는 8개.`;
                             onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#c9d1d9"}>
                             {kw.keyword} ↗
                           </a>
+                          {kw.monthly!=null&&<span title="네이버 월 검색수 (PC+모바일)" style={{marginLeft:"8px",color:"#8b949e",fontSize:"12px"}}>월 {kw.monthly.toLocaleString()}{kw.commercial?" · 상업성":""}</span>}
                           <div style={{display:"flex",gap:"6px",marginTop:"5px",flexWrap:"wrap"}}>
                             {areas ? AREA_LABELS.map(({key,label})=>{
                               const area=areas[key];
@@ -5563,6 +5599,7 @@ recommend는 8개.`;
                               onMouseEnter={e=>e.target.style.color="#8b949e"} onMouseLeave={e=>e.target.style.color="#484f58"}>
                               {kw.keyword}
                             </a>
+                            {kw.monthly!=null&&<span style={{color:"#30363d",fontSize:"12px",marginLeft:"3px"}}>({kw.monthly.toLocaleString()})</span>}
                             {i<outOf.length-1&&<span style={{margin:"0 4px",color:"#21262d"}}>·</span>}
                           </span>
                         ))}
@@ -5604,6 +5641,7 @@ recommend는 8개.`;
                           onMouseEnter={e=>e.target.style.color="#58a6ff"} onMouseLeave={e=>e.target.style.color="#c9d1d9"}>
                           {kw.keyword} ↗
                         </a>
+                        {kw.monthly!=null&&<span title="네이버 월 검색수 (PC+모바일)" style={{color:"#8b949e",fontSize:"12px"}}>월 {kw.monthly.toLocaleString()}{kw.commercial?" · 상업성":""}</span>}
                         <button onClick={()=>removeExtraKeyword(post.postNo,kw.keyword)}
                           title="이 키워드 결과 삭제"
                           style={{marginLeft:"auto",padding:"0 5px",background:"transparent",color:"#484f58",
@@ -9850,6 +9888,27 @@ Search before marking anything confirmed; if the search does not settle it, mark
 }
 
 // 사실표를 본문 프롬프트에 넣을 블록으로 만든다
+// ── 키워드 월 검색량 (네이버 검색광고 키워드도구 · 무료 · 5개씩) → {키워드: {monthly, commercial}} ──
+async function fetchMonthlyVolumes(keywords){
+  const flat=t=>String(t||"").replace(/\s+/g,"").toUpperCase();
+  const qc=v=>{const t=String(v??"");if(t.includes("<"))return 5;return Number(t.replace(/,/g,""))||0;};
+  const list=[...new Set((keywords||[]).map(k=>String(k||"").trim()).filter(Boolean))];
+  const out={};
+  for(let i=0;i<list.length;i+=5){
+    const chunk=list.slice(i,i+5);
+    try{
+      const r=await fetch(`/api/keyword-stats?keywords=${encodeURIComponent(chunk.join(","))}`);
+      const d=await r.json();
+      (d.keywordList||[]).forEach(item=>{
+        const hit=chunk.find(c=>flat(c)===flat(item.relKeyword));
+        if(hit&&out[hit]==null) out[hit]={monthly:qc(item.monthlyPcQcCnt)+qc(item.monthlyMobileQcCnt),commercial:typeof isCommercialStat==="function"?isCommercialStat(item):false};
+      });
+    }catch(e){}
+    if(i+5<list.length) await new Promise(r=>setTimeout(r,150));
+  }
+  return out;
+}
+
 // ── 주제 유지 검사: 고른 주제의 핵심 단어가 제목·본문에 남아 있는지 (AI 없음) ──
 const TOPIC_STOP=new Set(["방법","정리","총정리","꿀팁","팁","완벽","완벽하게","확인","확인사항","확인해야","가지","해결법","해결","이유","알아보기","알아봤어요","하는","하는법","하기","쉽게","제대로","간단하게","간단히","총","전","후","때","시","꼭","필수","체크","포인트","주의","주의사항","것","까지","부터","직접","처음","하는데","해야","있는","없는","좋은","가장","최신"]);
 function topicCoreTokens(topic, mainKw){
