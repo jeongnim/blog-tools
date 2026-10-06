@@ -1636,6 +1636,11 @@ JSON 형식:
         <span style={{color:"#8b949e"}}>{(workingText||text).length.toLocaleString()}자</span>
         {postMeta.tags?.length>0&&<><span style={{color:"#484f58"}}>해시태그</span>
         <span style={{color:"#58a6ff",lineHeight:"1.8"}}>{postMeta.tags.map(t=>"#"+t).join(" ")}</span></>}
+        {postMeta.news&&<><span style={{color:"#484f58"}}>뉴스 근거</span>
+        <span style={{color:"#8b949e"}}>📰 {postMeta.news.link?<a href={postMeta.news.link} target="_blank" rel="noreferrer" style={{color:"#58a6ff",textDecoration:"none"}}>{postMeta.news.title}</a>:postMeta.news.title}{postMeta.news.source?` · ${postMeta.news.source}`:""}
+          {!postMeta.news.bodyOk&&<span style={{color:"#ffa657"}}> · 본문을 못 가져와 제목만 근거로 썼어요</span>}
+          {postMeta.news.bodiesFrom&&postMeta.news.bodiesFrom!==postMeta.main_keyword&&<span style={{display:"block",fontSize:"12px"}}>이 키워드의 블로그 글이 아직 적어서 "{postMeta.news.bodiesFrom}" 블로그 글을 참고했어요</span>}
+        </span></>}
         {postMeta.topicDrift&&<><span style={{color:"#484f58"}}>주제 확인</span>
         <span style={{color:"#ffa657"}}>⚠️ 고른 주제 "{postMeta.topicDrift.topic}"의 {postMeta.topicDrift.missing.map(w=>`"${w}"`).join(", ")}이(가) 본문에 한 번도 안 나와요 — 글이 주제에서 벗어났을 수 있어요</span></>}
         {postMeta.kwCount&&<><span style={{color:"#484f58"}}>키워드 반복</span>
@@ -6932,29 +6937,39 @@ const ISSUE_TTL=30*60*1000;
 async function loadIssueKeywords(category, force){
   const ck="issue_kw_"+category;
   if(!force){ try{ const c=JSON.parse(sessionStorage.getItem(ck)||"null"); if(c&&Date.now()-c.at<ISSUE_TTL) return c.data; }catch(e){} }
-  const r=await fetch(`/api/issue-keywords?category=${encodeURIComponent(category)}`); const d=await r.json();
+  const r=await fetch(`/api/issue-keywords?category=${encodeURIComponent(category)}&days=7`); const d=await r.json();
   if(d.error) throw new Error(d.error);
   const titles=(d.titles||[]);
-  if(titles.length<5) return {keywords:[],titleCount:titles.length,fetchedAt:Date.now()};
-  const prompt=`아래는 최근 하루 사이 "${category}" 분야 뉴스 기사 제목 ${titles.length}개다.
-지금 이 분야에서 화제가 된 "이슈 키워드"를 뽑아라.
-- 사람들이 네이버 검색창에 실제로 칠 법한 2~4어절 검색어로 (예: "아이폰18 사전예약", "카톡 멤버십 해지")
-- 여러 기사에 반복해서 나온 것 우선. 기사 1개에만 나온 건 정말 화제성이 클 때만.
-- "${category}" 블로그 글 소재로 쓸 수 있는 것만. 정치·사건사고·인물 가십처럼 이 분야와 무관한 건 제외.
-- mentions = 관련 기사 수, title = 대표 기사 제목 하나 그대로, angle = 블로그로 쓴다면 어떤 각도인지 한 줄
-- 최대 15개, mentions 많은 순
-순수 JSON만: {"keywords":[{"keyword":"...","mentions":3,"title":"...","angle":"..."}]}
+  // 기사를 거의 못 모았으면 "이슈 없음"이 아니라 "뉴스를 못 가져옴" — 출처별 원인을 같이 돌려준다
+  if(titles.length<5) return {keywords:[],titleCount:titles.length,stats:d.stats,sectionError:d.sectionError,failed:true,fetchedAt:Date.now()};
+  const md=t=>{const x=new Date(t);return isNaN(x)?"":`${x.getMonth()+1}/${x.getDate()} `;};
+  const section=d.mode==="section";
+  const prompt=`아래는 ${section?`지금 네이버 뉴스 "${category}" 관련 섹션의 헤드라인·최신 기사 제목 ${titles.length}개다 ([관련 N]은 그 이슈에 붙은 관련 기사 수 — 클수록 큰 이슈)`:`최근 일주일 "${category}" 분야 뉴스 기사 제목 ${titles.length}개다 (앞의 날짜는 기사 날짜, 최신순)`}.
+지금 이 분야에서 화제가 된 "이슈 키워드"를 뽑고, 키워드마다 블로그 글 주제를 1~2개 만들어라.
+- keyword: 사람들이 네이버 검색창에 실제로 칠 법한 2~4어절 (예: "아이폰18 프로 먹통", "카톡 멤버십 해지")
+- 관련 기사 수가 많거나 여러 제목에 반복된 이슈 우선. 제품 결함·먹통·업데이트 오류·가격 인상·출시·사전예약·지원금처럼 사람들이 직접 검색해볼 이슈를 특히 잘 잡을 것.
+- "${category}" 블로그 소재로 쓸 수 있는 것만. 정치·사건사고·인물 가십처럼 무관한 건 제외.
+- article: 그 이슈를 가장 잘 보여주는 기사 번호 1개
+- topics: 그 기사를 출발점으로, 독자가 실제로 궁금해할 질문에 답하는 블로그 글 주제 1~2개. 기사 내용을 그대로 옮기는 주제가 아니라 한 발 더 나간 실용 주제로.
+  (예: 이슈 "아이폰18 프로 먹통" → "아이폰18 프로 먹통, 새 폰 교환 가능할까?", "아이폰18 프로 먹통 생겼을 때 먼저 해볼 것")
+  주제에는 keyword를 그대로 넣을 것. 아직 확인 안 된 사실(보상 확정 등)을 주제에서 단정하지 말 것.
+- mentions: 관련 기사 수 (모르면 제목 반복 횟수)
+- 최대 10개, 큰 이슈 순
+순수 JSON만: {"keywords":[{"keyword":"...","mentions":3,"article":1,"topics":["...","..."]}]}
 
 기사 제목:
-${titles.map((t,i)=>`${i+1}. ${t.title}`).join("\n")}`;
-  const raw=await callClaude([{role:"user",content:prompt}],"You extract trending search keywords from Korean news headlines. Output ONLY valid JSON.",1500,"claude-haiku-4-5-20251001");
-  const list=(safeParseJson(raw)?.keywords||[]).filter(k=>k?.keyword).slice(0,15);
+${titles.map((t,i)=>`${i+1}. ${section?(t.relatedCount?`[관련 ${t.relatedCount}] `:""):md(t.date)}${t.title}`).join("\n")}`;
+  const raw=await callClaude([{role:"user",content:prompt}],"You extract trending search keywords from Korean news headlines and propose practical blog topics. Output ONLY valid JSON.",1800,"claude-haiku-4-5-20251001");
+  const list=(safeParseJson(raw)?.keywords||[]).filter(k=>k?.keyword).slice(0,10);
   const vols=await fetchMonthlyVolumes(list.map(k=>k.keyword)).catch(()=>({}));
-  const data={keywords:list.map(k=>({...k,monthly:vols[k.keyword]?.monthly??null,commercial:vols[k.keyword]?.commercial??false})),titleCount:titles.length,fetchedAt:Date.now()};
-  try{ sessionStorage.setItem(ck,JSON.stringify({at:Date.now(),data})); }catch(e){}
+  const data={keywords:list.map(k=>{const a=titles[(Number(k.article)||0)-1];
+      return {...k,topics:(k.topics||[]).filter(Boolean).slice(0,2),article:a?{title:a.title,link:a.link||"",source:a.source||"",date:a.date||""}:null,
+        monthly:vols[k.keyword]?.monthly??null,commercial:vols[k.keyword]?.commercial??false};}),
+    titleCount:titles.length,mode:d.mode,stats:d.stats,sectionError:d.sectionError,fetchedAt:Date.now()};
+  if(data.keywords.length) try{ sessionStorage.setItem(ck,JSON.stringify({at:Date.now(),data})); }catch(e){}
   return data;
 }
-function IssueKeywordPanel({category,onPick}){
+function IssueKeywordPanel({category,onPick,onWrite}){
   const [st,setSt]=useState({loading:false});
   const load=async(force)=>{
     setSt({loading:true});
@@ -6964,26 +6979,42 @@ function IssueKeywordPanel({category,onPick}){
   useEffect(()=>{ if(category) load(false); },[category]);
   const d=st.data;
   const ago=d?.fetchedAt?Math.max(0,Math.round((Date.now()-d.fetchedAt)/60000)):null;
+  const srcTxt=d?.mode==="section"?`네이버 뉴스 "${category}" 섹션 헤드라인·최신 ${d.titleCount}건`
+    :`최근 7일 "${category}" 뉴스 ${d?.titleCount??"…"}건${d?.stats?` (구글 ${d.stats.google?.count||0} · Bing ${d.stats.bing?.count||0} · 네이버 ${d.stats.naver?.count||0})`:""}`;
+  const chip={padding:"3px 10px",borderRadius:"6px",cursor:"pointer",fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"};
   return <div style={{background:"#0d1117",border:"1px solid #f0883e44",borderRadius:"10px",padding:"12px 14px",marginTop:"12px"}}>
     <div style={{display:"flex",alignItems:"baseline",gap:"8px",flexWrap:"wrap",marginBottom:"8px"}}>
       <span style={{color:"#f0883e",fontSize:"15px",fontWeight:700}}>🔥 실시간 이슈 키워드</span>
-      <span style={{color:"#484f58",fontSize:"12px"}}>최근 1일 "{category}" 뉴스 {d?.titleCount??"…"}건에서 추림 · 월 검색수는 지난 한 달 기준이라 막 뜬 이슈는 아직 작게 나올 수 있어요</span>
+      <span style={{color:"#484f58",fontSize:"12px"}}>{srcTxt}에서 추림 · 월 검색수는 지난 한 달 기준이라 막 뜬 이슈는 작게 나올 수 있어요</span>
       <button onClick={()=>load(true)} disabled={st.loading} style={{marginLeft:"auto",padding:"3px 10px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#8b949e",cursor:st.loading?"wait":"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
         {st.loading?"불러오는 중...":`🔄 새로고침${ago!=null?` · ${ago}분 전`:""}`}</button>
     </div>
+    {d?.sectionError&&<div style={{color:"#8b949e",fontSize:"12px",marginBottom:"6px"}}>※ 네이버 뉴스 섹션을 못 읽어서({d.sectionError}) 검색어 방식으로 대신 모았어요</div>}
     {st.error&&<div style={{color:"#ffa657",fontSize:"13px"}}>⚠️ {st.error}</div>}
     {st.loading&&!d&&<div style={{color:"#8b949e",fontSize:"13px"}}>뉴스 모으는 중...</div>}
-    {d&&!d.keywords.length&&!st.loading&&<div style={{color:"#484f58",fontSize:"13px"}}>지금 이 분야에서 뚜렷하게 뜨는 이슈가 없어요</div>}
-    {d?.keywords?.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"2px"}}>
+    {d&&d.failed&&!st.loading&&<div style={{color:"#ffa657",fontSize:"13px",lineHeight:1.6}}>
+      ⚠️ 뉴스를 {d.titleCount}건밖에 못 가져와서 이슈를 뽑지 못했어요 (이슈가 없는 게 아니라 뉴스 출처 문제예요)
+      {d.stats&&Object.entries(d.stats).map(([k,v])=><div key={k} style={{color:"#8b949e",fontSize:"12px"}}>
+        · {k==="google"?"구글 뉴스":k==="bing"?"Bing 뉴스":"네이버 뉴스 API"}: {v.count}건{v.errors?.length?` — ${v.errors.join(" / ")}`:""}</div>)}
+    </div>}
+    {d&&!d.failed&&!d.keywords.length&&!st.loading&&<div style={{color:"#484f58",fontSize:"13px"}}>뉴스 {d.titleCount}건을 봤지만 이 분야에서 뚜렷하게 반복되는 이슈가 없어요</div>}
+    {d?.keywords?.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
       {d.keywords.map((k,i)=>(
-        <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"5px 2px",borderBottom:"1px solid #161b22",flexWrap:"wrap"}}>
-          <span style={{color:"#484f58",fontSize:"12px",width:"18px",textAlign:"right"}}>{i+1}</span>
-          <span title={k.title} style={{color:"#e6edf3",fontSize:"14px",fontWeight:600}}>{k.keyword}</span>
-          <span style={{color:"#f0883e",fontSize:"12px"}}>기사 {k.mentions||1}</span>
-          <span style={{color:"#8b949e",fontSize:"12px"}}>{k.monthly!=null?`월 ${k.monthly.toLocaleString()}`:"월 -"}{k.commercial?" · 상업성":""}</span>
-          {k.angle&&<span style={{color:"#484f58",fontSize:"12px",flex:"1 1 200px",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>· {k.angle}</span>}
-          <button onClick={()=>onPick(k.keyword)} title="키워드 글쓰기에서 이 키워드 분석"
-            style={{marginLeft:"auto",padding:"3px 10px",borderRadius:"6px",border:"1px solid #1f6feb66",background:"#1f6feb22",color:"#58a6ff",cursor:"pointer",fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}>🔍 분석</button>
+        <div key={i} style={{padding:"8px 4px",borderBottom:"1px solid #161b22"}}>
+          <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+            <span style={{color:"#484f58",fontSize:"12px",width:"18px",textAlign:"right"}}>{i+1}</span>
+            <span style={{color:"#e6edf3",fontSize:"15px",fontWeight:700}}>{k.keyword}</span>
+            <span style={{color:"#f0883e",fontSize:"12px"}}>기사 {k.mentions||1}</span>
+            <span style={{color:"#8b949e",fontSize:"12px"}}>{k.monthly!=null?`월 ${k.monthly.toLocaleString()}`:"월 -"}{k.commercial?" · 상업성":""}</span>
+            <button onClick={()=>onPick(k.keyword)} title="키워드 글쓰기에서 이 키워드 분석" style={{...chip,marginLeft:"auto",border:"1px solid #30363d",background:"#21262d",color:"#8b949e"}}>🔍 키워드 분석</button>
+          </div>
+          {k.article&&<div style={{marginLeft:"26px",marginTop:"3px",fontSize:"12px",color:"#484f58",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            📰 {k.article.link?<a href={k.article.link} target="_blank" rel="noreferrer" style={{color:"#8b949e",textDecoration:"none"}}>{k.article.title}</a>:k.article.title}{k.article.source?` · ${k.article.source}`:""}</div>}
+          {k.topics?.map((t,ti)=>(
+            <div key={ti} style={{display:"flex",alignItems:"center",gap:"8px",marginLeft:"26px",marginTop:"4px"}}>
+              <span style={{color:"#c9d1d9",fontSize:"13px",flex:1,minWidth:0}}>✏️ {t}</span>
+              <button onClick={()=>onWrite(t,k)} title="이 기사를 근거로 글쓰기" style={{...chip,border:"none",background:"linear-gradient(135deg,#1f6feb,#388bfd)",color:"#fff",whiteSpace:"nowrap"}}>✍️ 글쓰기</button>
+            </div>))}
         </div>))}
     </div>}
   </div>;
@@ -7258,7 +7289,8 @@ ${buildProfileBlock(activeProf,"keyword")}
           </optgroup>
         ))}
       </select>
-      {selCat&&<IssueKeywordPanel category={selCat} onPick={goKeywordSearch}/>}
+      {selCat&&<IssueKeywordPanel category={selCat} onPick={goKeywordSearch}
+        onWrite={(topic,k)=>goAutoWrite&&goAutoWrite(topic,null,null,null,k.keyword,null,{news:k.article})}/>}
       <button onClick={genKeywords} disabled={!selCat||loadingKw}
         style={{marginTop:"12px",padding:"10px 22px",background:!selCat||loadingKw?"#21262d":"#1f6feb",
           color:!selCat||loadingKw?"#484f58":"#fff",border:"none",borderRadius:"8px",
@@ -10579,7 +10611,7 @@ export default function BlogTools(){
   const [analyzeActiveSection,setAnalyzeActiveSection]=useState("morpheme");
   const [analyzePostMeta,setAnalyzePostMeta]=useState(null); // 부모로 올려서 안전하게 공유
   // 키워드탭 글쓰기: 자동 생성 후 분석탭으로 이동
-  const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy, mainKeyword, visit)=>{
+  const goAutoWrite=async(kw, smartBlockType, smartBlockReason, blogStrategy, mainKeyword, visit, opts)=>{
     setAnalyzePostMeta(null);
     setAnalyzeText("");
     setAnalyzeAiResult(null);
@@ -10599,12 +10631,39 @@ export default function BlogTools(){
       const withTimeout = (p, ms, fallback) =>
         Promise.race([p, new Promise(r => setTimeout(() => r(fallback), ms))]);
 
-      const [bodies, topTitles, commercialWords, avoidWordsRaw] = await Promise.all([
+      // 이슈 기사에서 시작한 글: 기사 1개 본문(앞부분)을 근거로 가져온다
+      const newsP = opts?.news?.link
+        ? withTimeout(fetch(`/api/news-article?url=${encodeURIComponent(opts.news.link)}`).then(r => r.json()).catch(() => null), 15000, null)
+        : Promise.resolve(null);
+      let [bodies, topTitles, commercialWords, avoidWordsRaw] = await Promise.all([
         withTimeout(fetchBlogBodies(mainKw), 12000, []),
         withTimeout(fetchTopTitles(mainKw), 8000, []),
         withTimeout(fetchCommercialWords(mainKw), 8000, []),
         withTimeout(fetchAvoidWords(), 8000, []),
       ]);
+
+      // 막 뜬 이슈 키워드는 블로그 글이 아직 없을 수 있다 → 한 단계 넓은 키워드로 참고 글을 대신 찾는다
+      let bodiesFrom = mainKw;
+      if ((bodies || []).length < 2 && opts?.news) {
+        const words = String(mainKw).trim().split(/\s+/);
+        for (let n = words.length - 1; n >= 1 && (bodies || []).length < 2; n--) {
+          const broader = words.slice(0, n).join(" ");
+          const more = await withTimeout(fetchBlogBodies(broader), 10000, []);
+          if ((more || []).length > (bodies || []).length) { bodies = more; bodiesFrom = broader; }
+        }
+      }
+      const news = await newsP;
+      const newsBlock = opts?.news ? `
+[뉴스 근거 — 이 글의 출발점이 된 기사 1개]
+기사 제목: ${news?.title || opts.news.title}
+언론사: ${news?.press || opts.news.source || "-"}${news?.date ? ` / 기사 시각: ${news.date}` : ""}
+${news?.body ? `기사 본문(앞부분):\n"""\n${news.body}\n"""` : "(본문을 가져오지 못해 제목만 있음 — 제목에 있는 사실만 근거로 쓸 것)"}
+사용 규칙:
+N1. 이 이슈에서 "무슨 일이 있었는지"(언제, 어떤 제품·서비스에서, 무슨 문제·변화가, 회사 입장은)는 이 기사에 있는 사실만 쓴다. 기사에 없는 피해 규모·원인·보상 여부를 지어내지 말 것.
+N2. 기사 문장을 그대로 옮기지 말고 내 말로 풀어 쓴다. 출처는 본문에서 한 번 "${news?.press || opts.news.source || "언론"} 보도에 따르면"처럼 밝힌다.
+N3. 기사 내용은 글의 도입·배경으로 짧게 쓰고, 글의 본론은 주제가 묻는 질문(교환·환불 가능 여부, 대처법, 확인할 것 등)에 답하는 데 쓴다. 그 답의 근거는 [확인된 사실]과 참고자료(블로그 글)에서 가져온다.
+N4. 기사 시점 이후 상황이 바뀌었을 수 있으니, 진행 중인 이슈는 "${news?.date ? news.date.slice(0, 10) : "기사"} 기준"처럼 시점을 밝히고, 최신 안내는 공식 채널에서 확인하라고 한 줄 덧붙인다.
+` : "";
 
       // 메인 키워드는 제목에 반드시 들어가야 하므로 금지 목록에서 제외
       const flat = s => String(s||"").replace(/\s+/g,"");
@@ -10676,7 +10735,7 @@ export default function BlogTools(){
         factSheetBlock: formatFactSheetBlock(factSheet),
         profileBlock: buildProfileBlock(bpGetActive(), "write"),
         productStatusBlock: formatProductStatusBlock(productStatus),
-        visitBlock,
+        visitBlock: visitBlock + newsBlock,
       });
 
       const visitSys = `You are writing a first-person Korean Naver blog visit review ("방문 후기") in a warm, natural conversational tone (~했어요, ~더라고요). The [방문 리뷰 모드] block in the user message overrides any conflicting rule there.
@@ -10918,6 +10977,7 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
         factSheet,
         visit: visitMeta,
         kwCount: kwFix ? { before: kwFix.before, after: kwFix.after, variants: kwFix.variants } : null,
+        news: opts?.news ? { title: news?.title || opts.news.title, link: opts.news.link, source: news?.press || opts.news.source || "", bodyOk: !!news?.body, bodiesFrom } : null,
         // 본문: 동작 표현(옮기기·하기 등)은 활용형이 달라 빼고, 대상 단어(갤럭시·아이폰 등)가 아예 안 나오면 경고
         topicDrift: (() => { const c = topicCoverage(kw, mainKw, bodyText); const miss = c.missing.filter(w => !/기$/.test(w)); return c.toks.length >= 2 && miss.length ? { topic: kw, missing: miss } : null; })(),
         _source: "keyword",
