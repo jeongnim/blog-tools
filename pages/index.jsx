@@ -6925,6 +6925,70 @@ const NAVER_AUTO_CATEGORIES=[
   ]},
 ];
 
+// ═══ 카테고리별 키워드추출 > 🔥 실시간 이슈 키워드 ═══
+// 최근 1일 뉴스 제목(구글 뉴스 RSS + 네이버 뉴스)에서 Haiku가 이슈 키워드를 뽑고, 검색광고 API로 월 검색수를 붙인다.
+// 카테고리별 30분 캐시 (이 탭 안에서) — 새로고침 누를 때만 다시
+const ISSUE_TTL=30*60*1000;
+async function loadIssueKeywords(category, force){
+  const ck="issue_kw_"+category;
+  if(!force){ try{ const c=JSON.parse(sessionStorage.getItem(ck)||"null"); if(c&&Date.now()-c.at<ISSUE_TTL) return c.data; }catch(e){} }
+  const r=await fetch(`/api/issue-keywords?category=${encodeURIComponent(category)}`); const d=await r.json();
+  if(d.error) throw new Error(d.error);
+  const titles=(d.titles||[]);
+  if(titles.length<5) return {keywords:[],titleCount:titles.length,fetchedAt:Date.now()};
+  const prompt=`아래는 최근 하루 사이 "${category}" 분야 뉴스 기사 제목 ${titles.length}개다.
+지금 이 분야에서 화제가 된 "이슈 키워드"를 뽑아라.
+- 사람들이 네이버 검색창에 실제로 칠 법한 2~4어절 검색어로 (예: "아이폰18 사전예약", "카톡 멤버십 해지")
+- 여러 기사에 반복해서 나온 것 우선. 기사 1개에만 나온 건 정말 화제성이 클 때만.
+- "${category}" 블로그 글 소재로 쓸 수 있는 것만. 정치·사건사고·인물 가십처럼 이 분야와 무관한 건 제외.
+- mentions = 관련 기사 수, title = 대표 기사 제목 하나 그대로, angle = 블로그로 쓴다면 어떤 각도인지 한 줄
+- 최대 15개, mentions 많은 순
+순수 JSON만: {"keywords":[{"keyword":"...","mentions":3,"title":"...","angle":"..."}]}
+
+기사 제목:
+${titles.map((t,i)=>`${i+1}. ${t.title}`).join("\n")}`;
+  const raw=await callClaude([{role:"user",content:prompt}],"You extract trending search keywords from Korean news headlines. Output ONLY valid JSON.",1500,"claude-haiku-4-5-20251001");
+  const list=(safeParseJson(raw)?.keywords||[]).filter(k=>k?.keyword).slice(0,15);
+  const vols=await fetchMonthlyVolumes(list.map(k=>k.keyword)).catch(()=>({}));
+  const data={keywords:list.map(k=>({...k,monthly:vols[k.keyword]?.monthly??null,commercial:vols[k.keyword]?.commercial??false})),titleCount:titles.length,fetchedAt:Date.now()};
+  try{ sessionStorage.setItem(ck,JSON.stringify({at:Date.now(),data})); }catch(e){}
+  return data;
+}
+function IssueKeywordPanel({category,onPick}){
+  const [st,setSt]=useState({loading:false});
+  const load=async(force)=>{
+    setSt({loading:true});
+    try{ const d=await loadIssueKeywords(category,force); setSt({loading:false,data:d}); }
+    catch(e){ setSt({loading:false,error:e.message}); }
+  };
+  useEffect(()=>{ if(category) load(false); },[category]);
+  const d=st.data;
+  const ago=d?.fetchedAt?Math.max(0,Math.round((Date.now()-d.fetchedAt)/60000)):null;
+  return <div style={{background:"#0d1117",border:"1px solid #f0883e44",borderRadius:"10px",padding:"12px 14px",marginTop:"12px"}}>
+    <div style={{display:"flex",alignItems:"baseline",gap:"8px",flexWrap:"wrap",marginBottom:"8px"}}>
+      <span style={{color:"#f0883e",fontSize:"15px",fontWeight:700}}>🔥 실시간 이슈 키워드</span>
+      <span style={{color:"#484f58",fontSize:"12px"}}>최근 1일 "{category}" 뉴스 {d?.titleCount??"…"}건에서 추림 · 월 검색수는 지난 한 달 기준이라 막 뜬 이슈는 아직 작게 나올 수 있어요</span>
+      <button onClick={()=>load(true)} disabled={st.loading} style={{marginLeft:"auto",padding:"3px 10px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#8b949e",cursor:st.loading?"wait":"pointer",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+        {st.loading?"불러오는 중...":`🔄 새로고침${ago!=null?` · ${ago}분 전`:""}`}</button>
+    </div>
+    {st.error&&<div style={{color:"#ffa657",fontSize:"13px"}}>⚠️ {st.error}</div>}
+    {st.loading&&!d&&<div style={{color:"#8b949e",fontSize:"13px"}}>뉴스 모으는 중...</div>}
+    {d&&!d.keywords.length&&!st.loading&&<div style={{color:"#484f58",fontSize:"13px"}}>지금 이 분야에서 뚜렷하게 뜨는 이슈가 없어요</div>}
+    {d?.keywords?.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"2px"}}>
+      {d.keywords.map((k,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:"8px",padding:"5px 2px",borderBottom:"1px solid #161b22",flexWrap:"wrap"}}>
+          <span style={{color:"#484f58",fontSize:"12px",width:"18px",textAlign:"right"}}>{i+1}</span>
+          <span title={k.title} style={{color:"#e6edf3",fontSize:"14px",fontWeight:600}}>{k.keyword}</span>
+          <span style={{color:"#f0883e",fontSize:"12px"}}>기사 {k.mentions||1}</span>
+          <span style={{color:"#8b949e",fontSize:"12px"}}>{k.monthly!=null?`월 ${k.monthly.toLocaleString()}`:"월 -"}{k.commercial?" · 상업성":""}</span>
+          {k.angle&&<span style={{color:"#484f58",fontSize:"12px",flex:"1 1 200px",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>· {k.angle}</span>}
+          <button onClick={()=>onPick(k.keyword)} title="키워드 글쓰기에서 이 키워드 분석"
+            style={{marginLeft:"auto",padding:"3px 10px",borderRadius:"6px",border:"1px solid #1f6feb66",background:"#1f6feb22",color:"#58a6ff",cursor:"pointer",fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}>🔍 분석</button>
+        </div>))}
+    </div>}
+  </div>;
+}
+
 function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   const [selCat,setSelCat]=useState("");
   const [profiles,setProfiles]=useState([]);
@@ -7194,6 +7258,7 @@ ${buildProfileBlock(activeProf,"keyword")}
           </optgroup>
         ))}
       </select>
+      {selCat&&<IssueKeywordPanel category={selCat} onPick={goKeywordSearch}/>}
       <button onClick={genKeywords} disabled={!selCat||loadingKw}
         style={{marginTop:"12px",padding:"10px 22px",background:!selCat||loadingKw?"#21262d":"#1f6feb",
           color:!selCat||loadingKw?"#484f58":"#fff",border:"none",borderRadius:"8px",
