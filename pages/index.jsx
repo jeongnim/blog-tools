@@ -1046,39 +1046,10 @@ function buildFullPrompt(item,styleId,ratio,lang){
   return `${sceneEn} ${st.en}. Shot like a candid documentary photograph of a real moment, not a staged advertisement. ${ratio} aspect ratio. ${NO_TEXT_EN}`;
 }
 
-function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading,setImgLoading,imgError,setImgError,imgSections,setImgSections}){
-  const [styleId,setStyleId]=useState("photo");
-  const [ratio,setRatio]=useState("16:9");
-  const [lang,setLang]=useState("ko");
-  const [copied,setCopied]=useState(null);
-
-  const copyText=async(txt,key)=>{
-    try{
-      await navigator.clipboard.writeText(txt);
-    }catch(_){
-      const ta=document.createElement("textarea");
-      ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0";
-      document.body.appendChild(ta); ta.select();
-      try{ document.execCommand("copy"); }catch(_e){}
-      document.body.removeChild(ta);
-    }
-    setCopied(key);
-    setTimeout(()=>setCopied(c=>c===key?null:c),1500);
-  };
-
-  const startGenerate=async()=>{
-    if(!postContent||postContent.trim().length<50){
-      setImgError("본문이 너무 짧습니다. 글을 먼저 입력해주세요.");
-      return;
-    }
-    setImgLoading(true);
-    setGenImages([]);
-    setImgSections([]);
-    setImgError("");
-
-    try{
-      // ── Claude가 본문을 5개 단락으로 나누고 각 단락의 '장면'을 묘사 ──
-      const analysisReq=`You are a blog image art director. Read the Korean blog post below and split it into exactly 5 key sections, following the flow of the post from beginning to end. For each section, describe ONE concrete visual that would illustrate it well.
+// ── 본문을 5개 단락으로 나눠 단락별 이미지 장면을 뽑는다 (화면 상태와 무관 — 자동화에서도 호출) ──
+async function analyzeImageSections(postMeta, postContent) {
+  // ── Claude가 본문을 5개 단락으로 나누고 각 단락의 '장면'을 묘사 ──
+  const analysisReq=`You are a blog image art director. Read the Korean blog post below and split it into exactly 5 key sections, following the flow of the post from beginning to end. For each section, describe ONE concrete visual that would illustrate it well.
 
 Blog Title: ${postMeta.title||""}
 Main Keyword: ${postMeta.main_keyword||""}
@@ -1133,17 +1104,52 @@ Return ONLY valid JSON, no markdown:
   {"sectionTitle":"...","sectionDesc":"...","imageType":"...","scene":"...","sceneKo":"..."}
 ]}`;
 
-      const raw=await callClaude([{role:"user",content:analysisReq}],
-        "You are an expert at analyzing blog posts and writing image generation prompts. Base every section and scene strictly on the given post content — never invent details or facts the post does not contain. When the post is about a specific named program, app or product, name it explicitly and reproduce its real screen or real design as accurately as you can from your knowledge; only fall back to a generic scene when the section is not about a specific product/program. Output ONLY valid JSON.",3500,"claude-haiku-4-5-20251001");
+  const raw=await callClaude([{role:"user",content:analysisReq}],
+    "You are an expert at analyzing blog posts and writing image generation prompts. Base every section and scene strictly on the given post content — never invent details or facts the post does not contain. When the post is about a specific named program, app or product, name it explicitly and reproduce its real screen or real design as accurately as you can from your knowledge; only fall back to a generic scene when the section is not about a specific product/program. Output ONLY valid JSON.",3500,"claude-haiku-4-5-20251001");
 
-      if(!raw||raw.trim()==="") throw new Error("단락 분석 응답이 비어있습니다.");
-      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
-      if(s===-1||e===-1) throw new Error("단락 분석 JSON 형식 오류: "+raw.slice(0,100));
-      const parsed=safeParseJson(raw);
-      const sections=(parsed.sections||[]).filter(x=>x&&(x.scene||x.sceneKo)).slice(0,5)
-        .map(x=>({...x,imageType:["ui","product","scene"].includes(x.imageType)?x.imageType:"scene",productName:typeof x.productName==="string"?x.productName.trim():""}));
-      if(sections.length===0) throw new Error("단락 분석 실패");
+  if(!raw||raw.trim()==="") throw new Error("단락 분석 응답이 비어있습니다.");
+  const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
+  if(s===-1||e===-1) throw new Error("단락 분석 JSON 형식 오류: "+raw.slice(0,100));
+  const parsed=safeParseJson(raw);
+  const sections=(parsed.sections||[]).filter(x=>x&&(x.scene||x.sceneKo)).slice(0,5)
+    .map(x=>({...x,imageType:["ui","product","scene"].includes(x.imageType)?x.imageType:"scene",productName:typeof x.productName==="string"?x.productName.trim():""}));
+  if(sections.length===0) throw new Error("단락 분석 실패");
 
+  return sections;
+}
+
+function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading,setImgLoading,imgError,setImgError,imgSections,setImgSections}){
+  const [styleId,setStyleId]=useState("photo");
+  const [ratio,setRatio]=useState("16:9");
+  const [lang,setLang]=useState("ko");
+  const [copied,setCopied]=useState(null);
+
+  const copyText=async(txt,key)=>{
+    try{
+      await navigator.clipboard.writeText(txt);
+    }catch(_){
+      const ta=document.createElement("textarea");
+      ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.select();
+      try{ document.execCommand("copy"); }catch(_e){}
+      document.body.removeChild(ta);
+    }
+    setCopied(key);
+    setTimeout(()=>setCopied(c=>c===key?null:c),1500);
+  };
+
+  const startGenerate=async()=>{
+    if(!postContent||postContent.trim().length<50){
+      setImgError("본문이 너무 짧습니다. 글을 먼저 입력해주세요.");
+      return;
+    }
+    setImgLoading(true);
+    setGenImages([]);
+    setImgSections([]);
+    setImgError("");
+
+    try{
+      const sections=await analyzeImageSections(postMeta,postContent);
       setImgSections(sections);
       setGenImages(sections);
 
@@ -7020,6 +7026,151 @@ function IssueKeywordPanel({category,onPick,onWrite}){
   </div>;
 }
 
+// ── 카테고리 + 맞춤 프로필로 글 주제 20개 추천 (화면 상태와 무관 — 자동화에서도 호출) ──
+// extra: 프롬프트에 덧붙일 추가 규칙(자동화의 블로그 성격·이미 쓴 키워드 등)
+async function recommendTopics({ category, profile, blogId, extra }) {
+    const dirNo = NAVER_DIR_MAP[category] || 0;
+
+    // ── 트렌드 소스: 구글 트렌드(일간) + 네이버 주제별 인기글 ──
+    let trendingTitles = [];
+    let googleTrends   = [];
+    try {
+      const tr = await fetch(`/api/trending-keywords?dirNo=${dirNo}`);
+      const td = await tr.json();
+      trendingTitles = td.naverTopPosts || [];
+      googleTrends   = (td.google || []).map(g => g.keyword).filter(Boolean);
+    } catch(e) { /* 실패해도 AI 추천은 계속 진행 */ }
+
+    const trendingBlock = trendingTitles.length > 0
+      ? `\n\n현재 네이버 블로그 "${category}" 카테고리 실시간 인기글 제목 (참고용):\n${trendingTitles.map((t,i)=>`${i+1}. ${t}`).join("\n")}`
+      : "";
+
+    const googleBlock = googleTrends.length > 0
+      ? `\n\n오늘 구글 트렌드 한국 인기 급상승 검색어 (참고용):\n${googleTrends.map((t,i)=>`${i+1}. ${t}`).join(", ")}\n※ 이 중 "${category}" 카테고리와 실제로 연결되는 것만 활용할 것. 억지로 끼워 맞추지 말 것.`
+      : "";
+
+    // 내 블로그가 이미 상위를 차지한 키워드 (누락확인 저장본 기준)
+    const myBid=blogId||profile?.blogId||myBlogIdForCheck();
+    const occ=occupiedFromSnapshot(myBid);
+    const occCache=occCacheLoad(myBid);
+    const nowTs=Date.now();
+    // 키워드별 최신 판단: 재확인 캐시가 있으면 그게 우선
+    const occNow=k=>{const c=occCache[k];const v=occ[k];
+      if(c&&(!v?.at||c.at>=v.at)) return {...(v||{}),rank:c.rank,area:c.area||v?.area,at:c.at};
+      return v||null;};
+    const isFresh=v=>v?.at&&nowTs-v.at<OCCUPY_FRESH_MS;
+    const occList=Object.keys(occ).filter(k=>k!=="__savedAt").map(occNow)
+      .filter(v=>v&&v.rank!=null&&v.rank<=OCCUPY_TOP&&isFresh(v)).map(v=>v.keyword);
+    const occBlock=occList.length
+      ? `\n\n[내 블로그 글이 최근 7일 안에 ${OCCUPY_TOP}위 안으로 확인된 키워드 — 메인 키워드로 추천 금지]\n${occList.slice(0,80).join(", ")}\n※ 네이버는 같은 검색어에 한 블로그 글을 보통 1개만 노출하므로, 위 키워드를 메인으로 새 글을 쓰면 상위노출 자리가 나지 않는다. 띄어쓰기만 다른 같은 키워드도 금지. 같은 소재라도 검색 의도가 다른 별도 키워드(롱테일)로는 추천해도 된다.`
+      : "";
+
+    const vr=blogVolumeRange(myBid,profile);
+    const volRule=vr
+      ? `네이버에서 실제로 검색되는 단어이되, 이 블로그의 체급에 맞는 크기로 고를 것. 이 블로그가 실제로 10위 안에 올린 키워드 ${vr.n}개의 월 검색량은 중앙값 ${vr.med}, 대부분 ${vr.ceil} 이하다. 이보다 훨씬 큰 대표 키워드(예: 누구나 쓰는 넓은 단어)는 노출은 돼도 순위권에 못 드니 피하고, 같은 소재에서 더 구체적인 2형태소 조합을 고를 것`
+      : `네이버에서 실제로 많이 검색되는 단어`;
+
+    const prompt=`카테고리: "${category}"
+${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각각의 메인 키워드를 추천해줘.${trendingBlock}${googleBlock}${occBlock}${extra||""}
+${buildProfileBlock(profile,"keyword")}
+선정 기준:
+1. 실제 블로거가 쓸 법한 완성된 제목 형태 (경험·후기·정보·비교 등 독자가 클릭하고 싶은 구체적 제목)
+2. ${yearMonth} 최신 트렌드와 시의성 반영${trendingTitles.length > 0 ? " (위 실시간 인기글 소재를 참고해 유사하거나 파생된 주제 우선)" : ""}
+3. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. ${volRule}
+4. 인기글과 너무 똑같은 제목은 피하고, 소재만 참고해서 차별화된 새 주제로 발전시킬 것
+5. 20개의 메인 키워드는 서로 겹치지 않게 분산시킬 것 (같은 단어를 변형만 해서 반복하지 말 것)
+
+※ 검색량과 경쟁도는 추측하지 말 것. 추천 후 실제 데이터로 따로 조회한다.
+
+반드시 순수 JSON만 출력. 마크다운 없이.
+{"keywords":[{"rank":1,"title":"추천 글 주제 제목","mainKeyword":"메인 키워드 (1~2형태소, 예:옷장정리)","reason":"선정 이유 한 줄 (유행성 포함)"${profile?.coreTopics?.length?`,"axis":"core | side | other (위 주제 축 중 어디에 속하는지)"`:""}},...]}`
+
+    const raw=await callClaude([{role:"user",content:prompt}],
+      "You are a Naver blog SEO expert. Output ONLY valid JSON, no markdown.",3000,"claude-haiku-4-5-20251001");
+    const parsed=safeParseJson(raw);
+    let list=parsed.keywords||[];
+
+    // 판정 규칙
+    //  - 분석에서 상위(10위) 밖이었던 키워드 → 그대로 써도 됨 (재확인 안 함)
+    //  - 상위였고 확인한 지 7일 이내 → 제외
+    //  - 상위였지만 7일 넘음(또는 시각 모름) → 그 키워드만 실제 검색으로 다시 확인
+    //  - 분석에 없는 키워드 → 알 수 없으니 그대로 둠
+    const excluded=[]; const kept=[]; const toRecheck=[];
+    list.forEach(k=>{const mk=k.mainKeyword||k.keyword;const v=occNow(kwFlat(mk));
+      if(v&&v.rank!=null&&v.rank<=OCCUPY_TOP){
+        if(isFresh(v)) excluded.push({keyword:mk,rank:v.rank,area:v.area,title:v.title,basis:"분석"});
+        else toRecheck.push(k);
+      }else kept.push(v&&v.rank!=null?{...k,myRank:v.rank,myArea:v.area,myTitle:v.title}:k);
+    });
+    for(const k of toRecheck){
+      const mk=k.mainKeyword||k.keyword;const prev=occNow(kwFlat(mk));
+      const r=await recheckMyRank(mk,myBid);
+      await new Promise(res=>setTimeout(res,300));
+      if(!r){ excluded.push({keyword:mk,rank:prev.rank,area:prev.area,title:prev.title,basis:"재확인 실패 · 이전 분석"}); continue; }
+      occCache[kwFlat(mk)]={rank:r.rank,area:r.area,at:Date.now()};
+      if(r.rank!=null&&r.rank<=OCCUPY_TOP) excluded.push({keyword:mk,rank:r.rank,area:r.area,title:prev.title,basis:"방금 재확인"});
+      else kept.push(r.rank!=null?{...k,myRank:r.rank,myArea:r.area,myTitle:prev.title}:k);
+    }
+    if(toRecheck.length) occCacheSave(myBid,occCache);
+    const order=new Map(list.map((k,i)=>[k,i]));
+    list=kept.map(k=>[k,order.get(list.find(x=>(x.mainKeyword||x.keyword)===(k.mainKeyword||k.keyword)))]).sort((a,b)=>a[1]-b[1]).map(x=>x[0]);
+  return { list, excluded, volRange: vr, trendingCount: trendingTitles.length, googleCount: googleTrends.length };
+}
+
+// ── 자동화 미리 실행: 실행기가 매일 할 일을 이 화면에서 1편만 돌려본다 (임시저장·발행 안 함) ──
+function AutoTestPanel({ category, blogId }){
+  const [open,setOpen]=useState(false);
+  const [mode,setMode]=useState("hq");
+  const [region,setRegion]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [res,setRes]=useState(null);
+  const [step,setStep]=useState("");
+  useEffect(()=>{ if(!busy) return; const t=setInterval(()=>setStep(window.__blogAuto?.status()?.step||""),1000); return ()=>clearInterval(t); },[busy]);
+  const go=async()=>{
+    if(!category||!blogId) return;
+    setBusy(true); setRes(null);
+    try{ setRes(await window.__blogAuto.run({ blogId, mode, category, count:1, region:region.trim(), regionChance:region.trim()?1:0 })); }
+    catch(e){ setRes({ error:e.message }); }
+    setBusy(false);
+  };
+  const box={background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px",padding:"10px 12px",fontSize:"13px",color:"#c9d1d9",whiteSpace:"pre-wrap",lineHeight:1.6};
+  const p=res?.posts?.[0];
+  return <div style={{background:"#161b22",border:"1px solid #8957e555",borderRadius:"12px",padding:"12px 16px"}}>
+    <div onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer",display:"flex",alignItems:"center",gap:"8px"}}>
+      <span style={{color:"#d2a8ff",fontSize:"14px",fontWeight:700}}>🤖 자동화 미리 실행</span>
+      <span style={{color:"#484f58",fontSize:"12px"}}>실행기가 매일 하는 일(주제 고르기 → 글 → 이미지 프롬프트)을 1편만 돌려봐요 · 임시저장·발행은 안 함</span>
+      <span style={{marginLeft:"auto",color:"#8b949e"}}>{open?"▲":"▼"}</span>
+    </div>
+    {open&&<div style={{marginTop:"10px",display:"flex",flexDirection:"column",gap:"8px"}}>
+      <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",fontSize:"13px",color:"#8b949e"}}>
+        <span>블로그 <b style={{color:"#e6edf3"}}>{blogId?`@${blogId}`:"(위에서 프로필 선택)"}</b></span>
+        <span>카테고리 <b style={{color:"#e6edf3"}}>{category||"(아래에서 선택)"}</b></span>
+        <select value={mode} onChange={e=>setMode(e.target.value)} style={{padding:"4px 8px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3"}}>
+          <option value="hq">본사 (체급 안 큰 키워드)</option><option value="branch">지점 (롱테일·AI 인용형)</option>
+        </select>
+        <input value={region} onChange={e=>setRegion(e.target.value)} placeholder="지역 각도 (선택, 예: 천안)" style={{padding:"4px 8px",width:"170px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3"}}/>
+        <button onClick={go} disabled={busy||!category||!blogId} style={{marginLeft:"auto",padding:"6px 14px",borderRadius:"6px",border:"none",background:busy||!category||!blogId?"#21262d":"#8957e5",color:"#fff",fontWeight:700,cursor:busy?"wait":"pointer"}}>{busy?"실행 중...":"▶ 1편 돌려보기"}</button>
+      </div>
+      {busy&&<div style={{color:"#8b949e",fontSize:"12px"}}>{step||"시작 중..."}</div>}
+      {res?.error&&<div style={{color:"#ff7b72",fontSize:"13px"}}>⚠️ {res.error}</div>}
+      {res&&!res.error&&<>
+        {!p&&<div style={{color:"#ffa657",fontSize:"13px"}}>통과한 글이 없어요 (보류 {res.skipped?.length||0}편)</div>}
+        {res.skipped?.map((x,i)=><div key={i} style={{color:"#8b949e",fontSize:"12px"}}>⏸ 보류: {x.mainKeyword} — {(x.reasons||[]).join(" / ")}</div>)}
+        {p&&<>
+          <div style={{color:"#e6edf3",fontSize:"15px",fontWeight:700}}>{p.title}</div>
+          <div style={{color:"#8b949e",fontSize:"12px"}}>메인 키워드 {p.mainKeyword}{p.monthly!=null?` · 월 ${p.monthly.toLocaleString()}`:""}{p.region?` · 지역 ${p.region}`:""} · 태그 {p.tags.join(", ")}</div>
+          {p.notes?.length>0&&<div style={{color:"#ffa657",fontSize:"12px"}}>ℹ️ {p.notes.join(" · ")}</div>}
+          <div style={{...box,maxHeight:"360px",overflow:"auto"}}>{p.bodyWithImages}</div>
+          {p.images.map(im=><div key={im.n} style={{...box,fontSize:"12px",color:"#8b949e"}}><b style={{color:"#d2a8ff"}}>[이미지 {im.n}] {im.sectionTitle}</b>{"\n"}{im.prompt}</div>)}
+        </>}
+        <details><summary style={{color:"#484f58",fontSize:"12px",cursor:"pointer"}}>진행 기록 · 제외된 후보</summary>
+          <div style={{...box,fontSize:"12px",color:"#8b949e"}}>{(res.log||[]).join("\n")}{res.dropped?.length?"\n\n제외: "+res.dropped.map(d=>`${d.mainKeyword}(${d.why})`).join(", "):""}</div>
+        </details>
+      </>}
+    </div>}
+  </div>;
+}
+
 function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   const [selCat,setSelCat]=useState("");
   const [profiles,setProfiles]=useState([]);
@@ -7047,95 +7198,10 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
     setLoadingKw(true); setKeywords([]); setExcludedKw([]); setVolRange(null); setErr("");
     setStats({}); setDetail({}); setTrendingCount(0); setGoogleCount(0);
     try{
-      const dirNo = NAVER_DIR_MAP[selCat] || 0;
-
-      // ── 트렌드 소스: 구글 트렌드(일간) + 네이버 주제별 인기글 ──
-      let trendingTitles = [];
-      let googleTrends   = [];
-      try {
-        const tr = await fetch(`/api/trending-keywords?dirNo=${dirNo}`);
-        const td = await tr.json();
-        trendingTitles = td.naverTopPosts || [];
-        googleTrends   = (td.google || []).map(g => g.keyword).filter(Boolean);
-        setTrendingCount(trendingTitles.length);
-        setGoogleCount(googleTrends.length);
-      } catch(e) { /* 실패해도 AI 추천은 계속 진행 */ }
-
-      const trendingBlock = trendingTitles.length > 0
-        ? `\n\n현재 네이버 블로그 "${selCat}" 카테고리 실시간 인기글 제목 (참고용):\n${trendingTitles.map((t,i)=>`${i+1}. ${t}`).join("\n")}`
-        : "";
-
-      const googleBlock = googleTrends.length > 0
-        ? `\n\n오늘 구글 트렌드 한국 인기 급상승 검색어 (참고용):\n${googleTrends.map((t,i)=>`${i+1}. ${t}`).join(", ")}\n※ 이 중 "${selCat}" 카테고리와 실제로 연결되는 것만 활용할 것. 억지로 끼워 맞추지 말 것.`
-        : "";
-
-      // 내 블로그가 이미 상위를 차지한 키워드 (누락확인 저장본 기준)
-      const myBid=activeProf?.blogId||myBlogIdForCheck();
-      const occ=occupiedFromSnapshot(myBid);
-      const occCache=occCacheLoad(myBid);
-      const nowTs=Date.now();
-      // 키워드별 최신 판단: 재확인 캐시가 있으면 그게 우선
-      const occNow=k=>{const c=occCache[k];const v=occ[k];
-        if(c&&(!v?.at||c.at>=v.at)) return {...(v||{}),rank:c.rank,area:c.area||v?.area,at:c.at};
-        return v||null;};
-      const isFresh=v=>v?.at&&nowTs-v.at<OCCUPY_FRESH_MS;
-      const occList=Object.keys(occ).filter(k=>k!=="__savedAt").map(occNow)
-        .filter(v=>v&&v.rank!=null&&v.rank<=OCCUPY_TOP&&isFresh(v)).map(v=>v.keyword);
-      const occBlock=occList.length
-        ? `\n\n[내 블로그 글이 최근 7일 안에 ${OCCUPY_TOP}위 안으로 확인된 키워드 — 메인 키워드로 추천 금지]\n${occList.slice(0,80).join(", ")}\n※ 네이버는 같은 검색어에 한 블로그 글을 보통 1개만 노출하므로, 위 키워드를 메인으로 새 글을 쓰면 상위노출 자리가 나지 않는다. 띄어쓰기만 다른 같은 키워드도 금지. 같은 소재라도 검색 의도가 다른 별도 키워드(롱테일)로는 추천해도 된다.`
-        : "";
-
-      const vr=blogVolumeRange(myBid,activeProf);
-      setVolRange(vr);
-      const volRule=vr
-        ? `네이버에서 실제로 검색되는 단어이되, 이 블로그의 체급에 맞는 크기로 고를 것. 이 블로그가 실제로 10위 안에 올린 키워드 ${vr.n}개의 월 검색량은 중앙값 ${vr.med}, 대부분 ${vr.ceil} 이하다. 이보다 훨씬 큰 대표 키워드(예: 누구나 쓰는 넓은 단어)는 노출은 돼도 순위권에 못 드니 피하고, 같은 소재에서 더 구체적인 2형태소 조합을 고를 것`
-        : `네이버에서 실제로 많이 검색되는 단어`;
-
-      const prompt=`카테고리: "${selCat}"
-${yearMonth} 현재 네이버 블로그로 쓰기 좋은 글 주제 20개와 각각의 메인 키워드를 추천해줘.${trendingBlock}${googleBlock}${occBlock}
-${buildProfileBlock(activeProf,"keyword")}
-선정 기준:
-1. 실제 블로거가 쓸 법한 완성된 제목 형태 (경험·후기·정보·비교 등 독자가 클릭하고 싶은 구체적 제목)
-2. ${yearMonth} 최신 트렌드와 시의성 반영${trendingTitles.length > 0 ? " (위 실시간 인기글 소재를 참고해 유사하거나 파생된 주제 우선)" : ""}
-3. 메인 키워드는 반드시 1~2개의 형태소로만 구성 (예: "옷장정리", "옷장 정리"). "옷장 정리 방법"처럼 3형태소 이상은 절대 불가. ${volRule}
-4. 인기글과 너무 똑같은 제목은 피하고, 소재만 참고해서 차별화된 새 주제로 발전시킬 것
-5. 20개의 메인 키워드는 서로 겹치지 않게 분산시킬 것 (같은 단어를 변형만 해서 반복하지 말 것)
-
-※ 검색량과 경쟁도는 추측하지 말 것. 추천 후 실제 데이터로 따로 조회한다.
-
-반드시 순수 JSON만 출력. 마크다운 없이.
-{"keywords":[{"rank":1,"title":"추천 글 주제 제목","mainKeyword":"메인 키워드 (1~2형태소, 예:옷장정리)","reason":"선정 이유 한 줄 (유행성 포함)"${activeProf?.coreTopics?.length?`,"axis":"core | side | other (위 주제 축 중 어디에 속하는지)"`:""}},...]}`
-
-      const raw=await callClaude([{role:"user",content:prompt}],
-        "You are a Naver blog SEO expert. Output ONLY valid JSON, no markdown.",3000,"claude-haiku-4-5-20251001");
-      const parsed=safeParseJson(raw);
-      let list=parsed.keywords||[];
-
-      // 판정 규칙
-      //  - 분석에서 상위(10위) 밖이었던 키워드 → 그대로 써도 됨 (재확인 안 함)
-      //  - 상위였고 확인한 지 7일 이내 → 제외
-      //  - 상위였지만 7일 넘음(또는 시각 모름) → 그 키워드만 실제 검색으로 다시 확인
-      //  - 분석에 없는 키워드 → 알 수 없으니 그대로 둠
-      const excluded=[]; const kept=[]; const toRecheck=[];
-      list.forEach(k=>{const mk=k.mainKeyword||k.keyword;const v=occNow(kwFlat(mk));
-        if(v&&v.rank!=null&&v.rank<=OCCUPY_TOP){
-          if(isFresh(v)) excluded.push({keyword:mk,rank:v.rank,area:v.area,title:v.title,basis:"분석"});
-          else toRecheck.push(k);
-        }else kept.push(v&&v.rank!=null?{...k,myRank:v.rank,myArea:v.area,myTitle:v.title}:k);
-      });
-      for(const k of toRecheck){
-        const mk=k.mainKeyword||k.keyword;const prev=occNow(kwFlat(mk));
-        const r=await recheckMyRank(mk,myBid);
-        await new Promise(res=>setTimeout(res,300));
-        if(!r){ excluded.push({keyword:mk,rank:prev.rank,area:prev.area,title:prev.title,basis:"재확인 실패 · 이전 분석"}); continue; }
-        occCache[kwFlat(mk)]={rank:r.rank,area:r.area,at:Date.now()};
-        if(r.rank!=null&&r.rank<=OCCUPY_TOP) excluded.push({keyword:mk,rank:r.rank,area:r.area,title:prev.title,basis:"방금 재확인"});
-        else kept.push(r.rank!=null?{...k,myRank:r.rank,myArea:r.area,myTitle:prev.title}:k);
-      }
-      if(toRecheck.length) occCacheSave(myBid,occCache);
-      const order=new Map(list.map((k,i)=>[k,i]));
-      list=kept.map(k=>[k,order.get(list.find(x=>(x.mainKeyword||x.keyword)===(k.mainKeyword||k.keyword)))]).sort((a,b)=>a[1]-b[1]).map(x=>x[0]);
-      setExcludedKw(excluded);
+      const r=await recommendTopics({ category: selCat, profile: activeProf });
+      setTrendingCount(r.trendingCount); setGoogleCount(r.googleCount); setVolRange(r.volRange);
+      const list=r.list;
+      setExcludedKw(r.excluded);
       setKeywords(list);
       fetchBulkStats(list);
       // 🔞 네이버 성인 검색어 판별 (무료) — 해당되면 배지
@@ -7235,6 +7301,7 @@ ${buildProfileBlock(activeProf,"keyword")}
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+    <AutoTestPanel category={selCat} blogId={activeProfId}/>
     <div style={{background:"#161b22",border:`1px solid ${activeProf?"#2ea04366":"#30363d"}`,borderRadius:"12px",padding:"16px 20px",display:"flex",flexDirection:"column",gap:"10px"}}>
       <div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
         <div style={{color:"#e6edf3",fontSize:"15px",fontWeight:700}}>✍️ 블로그 맞춤 프로필</div>
@@ -10437,6 +10504,591 @@ function validateTitle(title, { mainKw, topTitles, commercialWords, avoidWords }
   return { ok: reasons.length === 0, reasons };
 }
 
+// ── 키워드·주제 하나로 글 한 편 생성 (화면 상태와 무관 — 자동화에서도 그대로 호출) ──
+// progress("__loading__:...") 로 진행 상황을 알린다. 맞춤 프로필·API 키는 이 탭에서 고른 블로그 기준.
+async function generatePost({ kw, smartBlockType, smartBlockReason, blogStrategy, mainKeyword, visit, opts }, progress = () => {}) {
+    const now = new Date();
+    const yearMonth = `${now.getFullYear()}년 ${now.getMonth()+1}월`;
+    const todayStr  = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일`;
+    const mainKw = mainKeyword || kw;
+
+    // 상위 노출 글 본문 / 상위 제목 / 상업성 단어 / 최근 반복 단어를 병렬로 확보
+    // (12초 안에 안 오는 항목은 비워둔 채 그냥 진행)
+    const withTimeout = (p, ms, fallback) =>
+      Promise.race([p, new Promise(r => setTimeout(() => r(fallback), ms))]);
+
+    // 이슈 기사에서 시작한 글: 기사 1개 본문(앞부분)을 근거로 가져온다
+    const newsP = opts?.news?.link
+      ? withTimeout(fetch(`/api/news-article?url=${encodeURIComponent(opts.news.link)}`).then(r => r.json()).catch(() => null), 15000, null)
+      : Promise.resolve(null);
+    let [bodies, topTitles, commercialWords, avoidWordsRaw] = await Promise.all([
+      withTimeout(fetchBlogBodies(mainKw), 12000, []),
+      withTimeout(fetchTopTitles(mainKw), 8000, []),
+      withTimeout(fetchCommercialWords(mainKw), 8000, []),
+      withTimeout(fetchAvoidWords(), 8000, []),
+    ]);
+
+    // 막 뜬 이슈 키워드는 블로그 글이 아직 없을 수 있다 → 한 단계 넓은 키워드로 참고 글을 대신 찾는다
+    let bodiesFrom = mainKw;
+    if ((bodies || []).length < 2 && opts?.news) {
+      const words = String(mainKw).trim().split(/\s+/);
+      for (let n = words.length - 1; n >= 1 && (bodies || []).length < 2; n--) {
+        const broader = words.slice(0, n).join(" ");
+        const more = await withTimeout(fetchBlogBodies(broader), 10000, []);
+        if ((more || []).length > (bodies || []).length) { bodies = more; bodiesFrom = broader; }
+      }
+    }
+    const news = await newsP;
+    const newsBlock = opts?.news ? `
+[뉴스 근거 — 이 글의 출발점이 된 기사 1개]
+기사 제목: ${news?.title || opts.news.title}
+언론사: ${news?.press || opts.news.source || "-"}${news?.date ? ` / 기사 시각: ${news.date}` : ""}
+${news?.body ? `기사 본문(앞부분):\n"""\n${news.body}\n"""` : "(본문을 가져오지 못해 제목만 있음 — 제목에 있는 사실만 근거로 쓸 것)"}
+사용 규칙:
+N1. 이 이슈에서 "무슨 일이 있었는지"(언제, 어떤 제품·서비스에서, 무슨 문제·변화가, 회사 입장은)는 이 기사에 있는 사실만 쓴다. 기사에 없는 피해 규모·원인·보상 여부를 지어내지 말 것.
+N2. 기사 문장을 그대로 옮기지 말고 내 말로 풀어 쓴다. 출처는 본문에서 한 번 "${news?.press || opts.news.source || "언론"} 보도에 따르면"처럼 밝힌다.
+N3. 기사 내용은 글의 도입·배경으로 짧게 쓰고, 글의 본론은 주제가 묻는 질문(교환·환불 가능 여부, 대처법, 확인할 것 등)에 답하는 데 쓴다. 그 답의 근거는 [확인된 사실]과 참고자료(블로그 글)에서 가져온다.
+N4. 기사 시점 이후 상황이 바뀌었을 수 있으니, 진행 중인 이슈는 "${news?.date ? news.date.slice(0, 10) : "기사"} 기준"처럼 시점을 밝히고, 최신 안내는 공식 채널에서 확인하라고 한 줄 덧붙인다.
+` : "";
+
+    // 메인 키워드는 제목에 반드시 들어가야 하므로 금지 목록에서 제외
+    const flat = s => String(s||"").replace(/\s+/g,"");
+    const avoidWords = avoidWordsRaw.filter(w => !flat(mainKw).includes(flat(w)));
+    const banWords   = commercialWords.filter(w => !flat(mainKw).includes(flat(w)));
+
+    let pattern = pickTitlePattern(visit?.disclosure === "own" ? ["experience"] : []);
+
+    // ── 제품 출시 상태 확인 (항상, 사실표와 병렬) ──
+    const productStatusP = withTimeout(
+      checkProductStatus({ kw, mainKw, today: todayStr }).catch(() => []), 30000, []
+    );
+
+    // ── 방문 리뷰 모드: 사진 읽기 + 장소 정보 검색 (일반 사실표 대신) ──
+    let visitBlock = "", photoDescs = [], placeInfo = { category: "", facts: [] }, placeReviews = null;
+    if (visit) {
+      progress(`__loading__:사진 ${visit.photos.length}장 읽는 중 · 장소 정보 검색 · 같은 매장 후기 모으는 중`);
+      if (visit.toneUrl && !visit.toneSample) {
+        try {
+          const r = await fetch(`/api/blog-content?url=${encodeURIComponent(visit.toneUrl)}`);
+          const d = await r.json();
+          const b = (d.bodies || [])[0] || "";
+          visit = { ...visit, toneSample: b.replace(/\n{3,}/g, "\n\n").slice(0, 1500) };
+        } catch (e) {}
+      }
+      const [pd, rv] = await Promise.all([
+        visit.photos.length ? withTimeout(analyzeVisitPhotos(visit.photos, visit.placeName).catch(() => []), 90000, []) : Promise.resolve([]),
+        withTimeout(gatherPlaceReviews({ placeName: visit.placeName, address: visit.address, refUrls: visit.refUrls || [] }).catch(() => null), 45000, null),
+      ]);
+      photoDescs = pd; placeReviews = rv;
+      // 후기에서 사실 정보가 2개 이상 나왔으면 웹 검색은 건너뛴다 (편당 약 50~70원 절약)
+      if ((rv?.facts?.length || 0) >= 2) {
+        placeInfo = { category: rv.category || "", facts: [] };
+      } else {
+        progress("__loading__:장소 기본 정보 검색 중");
+        placeInfo = await withTimeout(searchPlaceInfo({ placeName: visit.placeName, address: visit.address, today: todayStr }).catch(() => ({ category: "", facts: [] })), 45000, { category: "", facts: [] });
+        if (!placeInfo.category && rv?.category) placeInfo.category = rv.category;
+      }
+      visitBlock = formatVisitBlock(visit, photoDescs, placeInfo, placeReviews);
+    }
+
+    // ── 사전 사실표: 참고자료의 수치·정책을 공식 출처로 확인해 프롬프트에 넣는다 ──
+    let factSheet = [];
+    if (!visit) try {
+      // 절약 모드: 수치·정책이 핵심이 아닌 주제(사용법·경험담 등)는 웹검색 사실표를 건너뛴다
+      let needFacts = { need: true };
+      if (getCostMode() === "save") {
+        progress("__loading__:사실 확인이 필요한 주제인지 판단 중");
+        needFacts = await withTimeout(needsFactSheet({ kw, mainKw, bodies }), 10000, { need: true });
+      }
+      if (needFacts.need) {
+        progress("__loading__:사실 확인 중 — 참고자료의 수치·정책을 공식 출처로 검색하고 있습니다");
+        factSheet = await withTimeout(
+          buildFactSheet({ kw, mainKw, bodies, today: todayStr }), 90000, []
+        );
+      }
+    } catch(e) { factSheet = []; /* 실패해도 글쓰기는 진행 */ }
+    progress("__loading__:제품 출시 상태 확인 중");
+    const productStatus = await productStatusP;
+    // 한국 미출시·미발표 제품이 있으면 "직접 써봤습니다" 같은 경험담형 제목을 쓰지 않는다
+    const hasUnreleased = (productStatus || []).some(x => x.status && x.status !== "released_kr");
+    if (hasUnreleased && pattern.id === "experience") pattern = pickTitlePattern(["experience"]);
+    progress("__loading__:본문 작성 중");
+
+    const prompt = buildWritePrompt({
+      kw, yearMonth, today: todayStr, smartBlockType, blogStrategy,
+      bodies, mainKeyword: mainKw,
+      topTitles, commercialWords: banWords, avoidWords, pattern,
+      factSheetBlock: formatFactSheetBlock(factSheet),
+      profileBlock: buildProfileBlock(bpGetActive(), "write"),
+      productStatusBlock: formatProductStatusBlock(productStatus),
+      visitBlock: visitBlock + newsBlock + autoRulesBlock(opts?.auto),
+    });
+
+    const visitSys = `You are writing a first-person Korean Naver blog visit review ("방문 후기") in a warm, natural conversational tone (~했어요, ~더라고요). The [방문 리뷰 모드] block in the user message overrides any conflicting rule there.
+
+Today is ${todayStr}.
+
+FACTUAL DISCIPLINE:
+- Experience must come only from the photo notes and the author's memo. Never invent dates of visit, prices, waiting times, conversations with staff, taste or service judgments, or the author's habits.
+- The photo notes are private notes about what the author saw on site. Never mention photos in the body ("사진", "찍힌", "사진 속", "보이는데"). Write them as things the author saw in person.
+- Quote only clearly legible sign or menu text from the notes, and only when it makes sense. Always use the exact place name and address given by the author.
+- Prices, hours and parking: only from the memo, legible text, or the verified place info.
+- A shorter, honest review is better than a padded one. Do not add generic advice sections or general-knowledge Q&A to fill length.
+
+STYLE:
+- Open with the visit itself, not a definition sentence.
+- Write the visit as a story in the order it happened. The "현장에서 본 것" notes are background knowledge: mention a seen thing only when the story needs it (finding the sign while looking for the place, sitting at the table while waiting). Never write paragraphs that describe interiors, colors or objects. Do not insert [사진 N] markers; photos are placed afterwards.
+- Light feelings about what was seen ("괜히 기분이 좋아지더라고요", "생각보다 아늑했어요") are encouraged. Judgments of taste, kindness, price or satisfaction only if they are in the memo.
+- Break lines by breath like a mobile Naver blog: about 15~35 characters per line, a blank line every two or three lines.
+- Do not write hashtags in the body; they belong only in the tags array. No engagement bait or sign-off pleasantries.
+
+Output ONLY valid JSON, no markdown.`;
+
+    const sysPrompt = visit ? visitSys : `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation (AEO).
+
+Today is ${todayStr}. You cannot search the web, and your knowledge of recent events may be outdated or wrong.
+
+FACTUAL DISCIPLINE — this overrides every stylistic instruction in the user message:
+- Never assert a specific fact you are not confident is true. Do not invent prices, fees, subsidy amounts, statistics, percentages, sales figures, ratings, release dates, effective dates, model names, specs, laws, policies, terms, official statements, quotes, studies, or institutions.
+- When you are unsure of a specific figure, DO NOT vague the whole sentence away. Keep the sentence concrete and specific, and leave only the unknown value as a [확인필요: ...] placeholder for the author to fill in (max 3 per post). Falling back to qualitative phrasing is a last resort, reserved for details too peripheral to be worth a placeholder.
+- Do NOT claim anything is "current as of ${yearMonth}" unless you genuinely know it. Prefer hedged or timeless phrasing over confident but unverified recency.
+- Opinions, judgments, preferences and narrative experience are encouraged — but write them as opinions, not as verified facts. Make experience concrete through process and reasoning, not through fabricated measurements.
+- Calibrate certainty per sentence: state verified facts, definitions and procedures plainly; mark evaluations as the writer's own judgment; and never promise the reader an outcome ("no wrist fatigue", "solves it", "guaranteed") — phrase effects conditionally with degree words. Especially in the closing ▶ 정리 lines, the final takeaway about effects must be conditional or first-person, not an absolute claim. Keep hedges ("~것 같습니다") to four or fewer per post and never stack two in one sentence.
+- If a [제품 출시 상태] block says a product is not officially released in Korea, never write first-person use, purchase or activation of it, even if the topic says "후기".
+- If a [방문 리뷰 모드] block is present, first-person experience must be grounded ONLY in its photo descriptions and the author's memo. Never invent dishes eaten, prices, waiting times, staff behavior or taste judgments that are not there.
+- A shorter, less specific post that is true is better than a specific post that is false. If a [확인된 사실] list is provided, figures, dates and conditions must come from that list; treat anything under [확인 안 된 주장] as unverified. Reference material may inform structure and context but is not a source of figures on its own (never copy its wording).
+
+BRAND ACCURACY:
+- When a specific brand, product line or service is named, everything you write about it must be accurate. Use official naming exactly as it is written; never invent model names, generation numbers, product tiers or spec details.
+- If you are not certain which model, generation or specification applies, stay at category level instead of guessing.
+- Never attribute one brand's feature, price, policy or benefit to another, never confuse the roles of manufacturer, carrier and retailer, and never make an unverified superiority claim or a disparaging comparison about a real brand.
+
+TOPIC DISCIPLINE — second only to factual discipline:
+- The 주제 given in the user message defines the entire scope of the post. Every subheading must be a subdivision of it.
+- Go deeper, never wider. If the topic feels too narrow to fill the length, add steps, edge cases, failure modes and situational detail within the topic — do not import an adjacent axis (product comparison, pricing, device compatibility, vendor recommendations) to pad it out.
+- Reference material is for verifying facts only. Never mirror its outline or section structure.
+
+LIVED EXPERIENCE — do not let the AEO rules flatten this:
+- Weave first-person experience into the explanation rather than appending it as a closing anecdote to each section.
+- Vary the sentence shape every time. Repeating one narrative template across sections reads more machine-made than no anecdote at all.
+- Show a scene: when, where, what was attempted, what happened. Evaluative summaries ("it was inconvenient") are not experience.
+- Twice or more, explain the reasoning behind a choice and what alternative was weighed. Anyone can look up the facts; only someone who did it can explain the judgment.
+- The self-contained-paragraph rule below applies to explanatory paragraphs, not narrative ones. Narrative may flow.
+
+CITATION READINESS (AEO) — apply this within the limits of factual discipline above:
+- Lead with the answer. The opening lines and the first sentence under every subheading must state the conclusion before any background.
+- Write self-contained paragraphs. Each paragraph must make sense when lifted out of the post on its own; avoid pronouns and back-references that depend on earlier paragraphs.
+- Preserve quotable sentence structure. A sentence with a [확인필요:] placeholder is still quotable; a sentence that hedges away its own subject is not.
+- Embed at least three question-and-answer pairs inside the sections, never as a closing FAQ block. Each question must be a complete, search-query-shaped sentence standing alone on its own line, followed immediately by a 2-3 sentence answer that leads with the conclusion. Do not soften the question into narrative prose, and do not prefix it with "Q." or any label. After the answer, return to the explanation.
+- Do not write hashtags in the body; they belong only in the tags array.
+- Never write engagement bait: no requests for comments, likes, subscriptions, and no sign-off pleasantries. End on the summary.
+
+Output ONLY valid JSON, no markdown.`;
+
+    const raw = await callClaudeStream(
+      [{ role: "user", content: prompt }],
+      sysPrompt,
+      7000, "claude-sonnet-4-5-20250929"
+    );
+    const parsed = safeParseJson(raw);
+    const cleanContent = (str="") =>
+      str.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/\n{3,}/g, "\n\n");
+
+    // 모델이 규칙을 어기고 해시태그나 하단 FAQ 블록을 붙이는 경우가 있어 잘라낸다
+    // (해시태그는 코드에서 따로 붙이고, Q&A는 본문 안에 녹여 쓰는 게 원칙이다)
+    const stripAppendix = (t="") => t
+      .replace(/\n+▶\s*자주\s*묻는\s*질문[\s\S]*$/g, "")
+      .replace(/(?:\n+#[^\n]*)+\s*$/g, "")
+      .trimEnd();
+
+    let bodyText = stripAppendix(cleanContent(parsed.content||""));
+    if (parsed._truncated) {
+      // 마지막 줄은 잘렸을 가능성이 크므로 마지막 문장 경계까지만 남긴다
+      const cut = Math.max(bodyText.lastIndexOf(".\n"), bodyText.lastIndexOf("다.\n"));
+      if (cut > bodyText.length * 0.6) bodyText = bodyText.slice(0, cut + 2).trimEnd();
+    }
+
+    // ── [확인필요:] 항목을 웹 검색으로 자동 해결 ──
+    let factItems = [];
+    let factSummary = null;
+    // 메인 키워드가 본문에 글자 그대로 5회 이상 들어갔는지 확인하고, 모자라면 다른 표기를 바꿔 채운다
+    let kwFix = null;
+    try {
+      kwFix = await withTimeout(enforceMainKeyword(bodyText, mainKw), 20000, null);
+      if (kwFix) bodyText = kwFix.body;
+    } catch (e) {}
+
+    const placeholders = extractPlaceholders(bodyText);
+    // 사실표를 이미 만든 글은 남은 [확인필요]가 대개 사실표에서도 못 찾은 항목이라 재검색하지 않는다.
+    // → 아래 정리 단계(검색 없음)에서 "확인처 안내" 문장으로 바꾸거나 삭제. 사실표를 건너뛴 글만 검색으로 채운다.
+    const hadFactSheet = (factSheet || []).length > 0;
+    if (placeholders.length > 0 && !hadFactSheet && !visit) {   // 방문 리뷰는 검색 없이 아래 정리 단계로
+      try {
+        factItems = await resolveUncertainValues({
+          placeholders, title: parsed.title, mainKw, text: bodyText,
+        });
+        const applied = applyResolvedValues(bodyText, factItems);
+        bodyText = applied.text;
+        factSummary = {
+          resolved: factItems.filter(x => x.found && x.value).length,
+          approx: applied.approxUsed.length,
+          unresolved: applied.unresolved,
+          sources: applied.sources,
+        };
+      } catch(e) { /* 조사 실패해도 본문은 살린다 — 아래에서 남은 자리는 정리한다 */ }
+    }
+
+    // ── 끝내 못 채운 [확인필요:]는 문장을 고쳐서 없앤다 ──
+    // 값 대신 "어디서 확인하면 되는지"로 바꾸거나, 그 값이 없으면 의미가 없는 문장은 지운다.
+    if (extractPlaceholders(bodyText).length > 0) {
+      try {
+        progress("__loading__:확인 안 된 수치 정리 중");
+        bodyText = await settleUnresolvedPlaceholders(bodyText, factItems);
+      } catch(e) {}
+      // 그래도 남으면 그 줄을 통째로 뺀다 (문장 단위 줄바꿈 규칙이라 줄 = 문장)
+      bodyText = bodyText.split("\n")
+        .filter(l => !/\[확인필요:[^\]]*\]/.test(l))
+        .join("\n").replace(/\n{3,}/g, "\n\n");
+      if (factSummary) factSummary.unresolved = [];
+    }
+
+    let finalTitle = parsed.title || "";
+    const check = validateTitle(finalTitle, { mainKw, topTitles, commercialWords: banWords, avoidWords });
+    // 형식 검사에 더해 "제목이 본문·확인된 사실과 맞는가"도 본다 (Haiku 1회)
+    progress("__loading__:제목이 본문과 맞는지 확인 중");
+    const titleFact = await withTimeout(checkTitleFacts(finalTitle, bodyText, productStatus), 15000, { ok: true, reasons: [] });
+    if (!titleFact.ok) { check.ok = false; check.reasons = [...(check.reasons || []), ...titleFact.reasons.map(r => "사실 불일치: " + r)]; }
+    // 고른 주제의 핵심 단어가 제목에서 빠졌는지 (예: "갤럭시 아이폰 기종변경"이 사라짐)
+    const topicCov = topicCoverage(kw, mainKw, finalTitle);
+    if (topicCov.toks.length >= 2 && topicCov.ratio < 0.6) {
+      check.ok = false;
+      check.reasons = [...(check.reasons || []), `주제 이탈: 고른 주제의 핵심 요소(${topicCov.missing.join(", ")})가 제목에 없음`];
+    }
+
+    // ── 제목이 기준에 안 맞으면 제목만 1회 재생성 ──
+    let titleNotice = "";
+    if (!check.ok) {
+      try {
+        const retitlePrompt = `아래 블로그 글에 붙일 제목을 다시 지어줘. 이전 제목이 기준에 맞지 않았다.
+
+이전 제목: ${finalTitle}
+탈락 사유: ${check.reasons.join(" / ")}
+
+메인 키워드: "${mainKw}"
+제목 패턴: ${pattern.label} — ${pattern.guide}
+
+지켜야 할 조건:
+- 공백 포함 15~32자
+- "${mainKw}"를 그대로 포함
+- 아래 제목들과 2글자 이상 단어가 3개 넘게 겹치면 안 됨
+${(topTitles||[]).slice(0,10).map((t,i)=>`  ${i+1}. ${t}`).join("\n") || "  (없음)"}
+- 아래 단어는 제목에 쓰지 말 것: ${[...banWords, ...avoidWords].join(", ") || "(없음)"}
+- 가격·기간·퍼센트 같은 수치는 제목에 쓰지 말 것
+- 고른 주제 "${kw}"의 핵심 요소(대상·상황)는 제목에 그대로 남길 것. 다른 상황으로 바꾸지 말 것.
+- 제목은 아래 글 내용과 맞아야 한다. 글에 없는 경험(직접 써봤다·샀다·개통했다·방문했다)이나 글에 없는 사실을 주장하지 말 것.
+제목 패턴과 글 내용이 충돌하면 글 내용을 따를 것.${hasUnreleased ? `
+- ${productStatus.filter(x => x.status !== "released_kr").map(x => x.name).join(", ")}은(는) 한국 미출시 제품이다. "써봤다·후기·사용기·개통" 같은 표현 금지.` : ""}
+${(()=>{const bp=bpGetActive();if(!bp)return "";const rules=(bp.titleRules||[]).map(r=>`  - ${r}`).join("\n");const bad=(bp.titleBad||[]).slice(0,6).map(t=>`  · ${t}`).join("\n");return `- 이 블로그의 제목 규칙:\n${rules||"  (없음)"}${bad?`\n- 이 블로그에서 제목검색 30위 밖이었던 제목 형태 (피할 것):\n${bad}`:""}`;})()}
+
+글 앞부분:
+${cleanContent(parsed.content||"").slice(0, 700)}
+
+순수 JSON만: {"title":"새 제목"}`;
+
+        const retitleRaw = await callClaude(
+          [{ role: "user", content: retitlePrompt }],
+          "You write Korean blog titles. Output ONLY valid JSON.",
+          300, "claude-haiku-4-5-20251001"
+        );
+        const retitled = safeParseJson(retitleRaw)?.title || "";
+        const recheck = validateTitle(retitled, { mainKw, topTitles, commercialWords: banWords, avoidWords });
+        if (retitled) {
+          const rf = await withTimeout(checkTitleFacts(retitled, bodyText, productStatus), 15000, { ok: true, reasons: [] });
+          if (!rf.ok) { recheck.ok = false; recheck.reasons = [...(recheck.reasons || []), ...rf.reasons.map(r => "사실 불일치: " + r)]; }
+          const rc = topicCoverage(kw, mainKw, retitled);
+          if (rc.toks.length >= 2 && rc.ratio < 0.6) { recheck.ok = false; recheck.reasons = [...(recheck.reasons || []), `주제 이탈: ${rc.missing.join(", ")} 없음`]; }
+        }
+        if (retitled && (recheck.ok || recheck.reasons.length < check.reasons.length)) {
+          finalTitle = retitled;
+          if (!recheck.ok) titleNotice = recheck.reasons.join(" · ");
+        } else {
+          titleNotice = check.reasons.join(" · ");
+        }
+      } catch(e) {
+        titleNotice = check.reasons.join(" · ");
+      }
+    }
+
+    if (parsed._truncated) {
+      titleNotice = (titleNotice ? titleNotice + " · " : "") + "본문이 길어 출력이 잘렸습니다 — 끝부분을 확인하세요";
+    }
+
+    recordTitleUse(pattern.id, finalTitle);
+
+    // 본문에 녹아 있는 질문 줄을 뽑아 meta.faq로 남긴다 (기존 화면 호환용)
+    const faq = extractEmbeddedQA(bodyText);
+
+    // ── 본문 + 해시태그 조립 ──
+    const tags = parsed.tags || [];
+    const tagBlock = tags.length > 0
+      ? "\n\n" + tags.map(t => "#" + String(t).replace(/^#/, "")).join(" ")
+      : "";
+    // 방문 리뷰: 광고 표기 문구를 맨 앞에 코드로 보장 + 사진 배치 누락 확인
+    let visitMeta = null;
+    if (visit) {
+      if (visit.photos.length) {
+        progress("__loading__:사진 자리 정하는 중");
+        bodyText = bodyText.replace(/^\s*\[사진\s*\d+\]\s*$/gm, "").replace(/\n{3,}/g, "\n\n");   // AI가 규칙을 어기고 넣은 표시 제거
+        bodyText = await withTimeout(placeVisitPhotos(bodyText, photoDescs, visit.photos.length).catch(() => bodyText), 30000, bodyText);
+      }
+      const disc = (VISIT_DISCLOSURE[visit.disclosure] || VISIT_DISCLOSURE.self).text(visit.placeName);
+      if (disc) bodyText = disc + "\n\n" + bodyText;
+      const placed = new Set([...bodyText.matchAll(/\[사진\s*(\d+)\]/g)].map(m => +m[1]));
+      const missingPhotos = visit.photos.map((_, i) => i + 1).filter(n => !placed.has(n));
+      visitMeta = { placeName: visit.placeName, address: visit.address, disclosure: visit.disclosure,
+        thumbs: visit.photos.map(p => p.dataUrl), photoDescs, placeInfo, placeReviews, missingPhotos };
+    }
+    const fullContent = (bodyText + tagBlock).replace(/\n{3,}/g, "\n\n");
+
+    const meta = {
+      title: finalTitle,
+      main_keyword: mainKw || parsed.main_keyword || kw,
+      content: fullContent,
+      tags,
+      faq,
+      titlePattern: pattern.label,
+      titleNotice,
+      factSummary,
+      factItems,
+      factSheet,
+      visit: visitMeta,
+      kwCount: kwFix ? { before: kwFix.before, after: kwFix.after, variants: kwFix.variants } : null,
+      news: opts?.news ? { title: news?.title || opts.news.title, link: opts.news.link, source: news?.press || opts.news.source || "", bodyOk: !!news?.body, bodiesFrom } : null,
+      // 본문: 동작 표현(옮기기·하기 등)은 활용형이 달라 빼고, 대상 단어(갤럭시·아이폰 등)가 아예 안 나오면 경고
+      topicDrift: (() => { const c = topicCoverage(kw, mainKw, bodyText); const miss = c.missing.filter(w => !/기$/.test(w)); return c.toks.length >= 2 && miss.length ? { topic: kw, missing: miss } : null; })(),
+      _source: "keyword",
+    };
+  if (opts?.auto) applyAutoSafety(meta);
+  return meta;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 블로그 자동화 — 회사 PC 실행기(Playwright)가 이 사이트를 브라우저로 열고 window.__blogAuto 를 호출한다.
+// 글쓰기·주제 추천·이미지 장면 분석은 화면에서 쓰는 것과 같은 함수를 그대로 쓴다 (서버로 옮기면
+// Vercel 함수 시간 제한(글 1편 3~5분)에 걸리고 로직이 두 벌이 되므로 브라우저에서 돌린다).
+// AI 키는 이 탭에서 고른 블로그 ID에 등록된 키(vk_blog_api_keys) → 본사/지점 비용이 자동으로 갈린다.
+// ═══════════════════════════════════════════════════════════════════════════
+function autoRulesBlock(auto){
+  if(!auto) return "";
+  const branch=auto.mode==="branch";
+  return `
+[자동 발행 글 규칙 — 정보형 글. 위 규칙과 충돌하면 이 규칙이 우선]
+A1. 순수 정보 글이다. 특정 매장·업체·판매처를 소개하거나 추천하지 말고, 가입·구매·상담·방문·문의를 권하는 문장을 쓰지 말 것.
+A2. 글쓴이의 직업·소속·매장을 드러내지 말 것. "매장에서 일하다 보면", "고객님들이 자주 묻는", "판매하면서" 같은 표현 금지. 경험은 평범한 사용자 입장에서만 쓴다.
+A3. 링크(URL)·전화번호·메신저 ID·업체 상호를 쓰지 말 것. "통신사 공식 홈페이지에서 확인"처럼 이름만 말하는 것은 괜찮다.
+${branch
+  ?`A4. 검색량이 작은 구체적 질문 하나에 정확히 답하는 글이다. 첫 2~3문장 안에 답을 바로 주고, 이어서 조건·예외·순서를 풀어 쓴다. 네이버 AI 브리핑·구글 AI 개요가 그대로 인용하기 좋게 정의·순서·조건을 한 문단씩 독립적으로 쓸 것. 본문은 1,500~2,500자.`
+  :`A4. 주제의 핵심 질문을 넓고 깊게 다루는 정리형 글이다. 독자가 이 글 하나로 판단을 끝낼 수 있게 조건별·상황별로 나눠 쓸 것.`}
+${auto.region?`A5. 지역 각도: 이 글은 "${auto.region}"에 사는 독자를 염두에 둔다. 지역명은 자연스러운 곳에 1~2번만 쓰고, 그 지역의 매장·업체 이름은 쓰지 말 것.`:""}
+`;
+}
+
+const AUTO_URL_RE=/(https?:\/\/[^\s)]+|www\.[^\s)]+|\b[a-z0-9-]+\.(?:com|co\.kr|or\.kr|go\.kr|kr|net|me|ly|io)(?:\/[^\s)]*)?)/gi;
+const AUTO_PHONE_RE=/(?<!\d)(?:0\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4}|1[5-9]\d{2}[-\s]?\d{4})(?!\d)/g;
+const AUTO_SALES_RE=/(문의\s*(?:주세요|주시면|하세요|남겨)|상담\s*(?:받아\s*보세요|신청|문의|예약)|방문해\s*(?:주세요|보세요)|저희\s*(?:매장|가게|지점|업체)|매장에서\s*(?:일|근무)|고객님들?(?:이|께서|께)|카톡\s*(?:으로\s*문의|주세요)|오픈\s*채팅|최저가\s*보장|특가\s*(?:이벤트|진행)|할인\s*이벤트|지금\s*바로\s*(?:가입|신청|구매))/;
+
+// 자동 발행 전 마지막 안전 점검: 링크·전화번호는 지우고, 판매 유도·주제 이탈·사실 불일치는 "발행 보류"로 표시
+function applyAutoSafety(meta){
+  const notes=[], block=[];
+  const strip=t=>String(t||"").replace(AUTO_URL_RE,"").replace(AUTO_PHONE_RE,"");
+  const before=meta.content;
+  meta.content=strip(meta.content).replace(/[ \t]+\n/g,"\n").replace(/\(\s*\)/g,"").replace(/\n{3,}/g,"\n\n");
+  meta.title=strip(meta.title).replace(/\s{2,}/g," ").trim();
+  if(meta.content!==before) notes.push("본문의 링크·전화번호를 지움");
+  const sales=meta.content.match(AUTO_SALES_RE)||meta.title.match(AUTO_SALES_RE);
+  if(sales) block.push(`판매·상담 유도 표현: "${sales[0]}"`);
+  if(/사실 불일치/.test(meta.titleNotice||"")) block.push("제목이 본문·확인된 사실과 맞지 않음");
+  if(/주제 이탈/.test(meta.titleNotice||"")) block.push("제목이 고른 주제에서 벗어남");
+  if(/잘렸습니다/.test(meta.titleNotice||"")) block.push("본문 출력이 잘림");
+  if(meta.topicDrift) block.push(`본문에 주제 핵심어 없음: ${meta.topicDrift.missing.join(", ")}`);
+  const bodyLen=meta.content.replace(/#\S+/g,"").replace(/\s/g,"").length;
+  if(bodyLen<900) block.push(`본문이 너무 짧음 (${bodyLen}자)`);
+  if(meta.kwCount&&meta.kwCount.after<5) notes.push(`메인 키워드 ${meta.kwCount.after}회 (목표 5회)`);
+  meta.autoNotes=notes; meta.autoBlock=block;
+  return meta;
+}
+
+// 본문의 ▶ 소제목 위치에 [이미지 N] 자리를 넣는다: 1번은 도입부 끝, 나머지는 각 소제목 첫 문단 뒤 (▶ 정리 제외)
+function placeAutoImages(content, n){
+  const lines=String(content||"").split("\n");
+  const tagStart=lines.findIndex(l=>/^#\S/.test(l.trim()));
+  const bodyEnd=tagStart===-1?lines.length:tagStart;
+  const heads=[]; lines.forEach((l,i)=>{ if(i<bodyEnd&&/^▶/.test(l.trim())&&!/^▶\s*정리/.test(l.trim())) heads.push(i); });
+  const slots=[];
+  // 도입부: 첫 소제목 바로 앞
+  if(heads.length) slots.push(heads[0]); else slots.push(Math.min(bodyEnd, 6));
+  // 소제목마다: 그 소제목 아래 첫 빈 줄(첫 문단 끝)
+  heads.forEach(h=>{ let j=h+1; while(j<bodyEnd&&lines[j].trim()==="") j++; while(j<bodyEnd&&lines[j].trim()!==""&&!/^▶/.test(lines[j].trim())) j++; slots.push(j); });
+  const use=[...new Set(slots)].slice(0,n).sort((a,b)=>a-b);
+  const out=[]; let k=0;
+  lines.forEach((l,i)=>{ while(k<use.length&&use[k]===i){ out.push("",`[이미지 ${k+1}]`,""); k++; } out.push(l); });
+  while(k<use.length){ out.push("",`[이미지 ${k+1}]`,""); k++; }
+  return { text: out.join("\n").replace(/\n{3,}/g,"\n\n"), count: use.length };
+}
+
+// 지점 블로그처럼 아직 분석 데이터가 없는 블로그용 기본 프로필 (분석을 돌리면 그 결과로 바뀐다)
+function defaultAutoProfile(blogId, mode){
+  const branch=mode==="branch";
+  return {
+    blogId, isDefault:true, createdAt:Date.now(), basis:"기본 기준 (분석 전)",
+    summary: branch
+      ?"개설 초기 블로그 — 실제 노출 데이터가 쌓이기 전까지 쓰는 기본 기준. 검색량이 작은 구체적 질문형 키워드로 노출 이력을 쌓는 단계다."
+      :"분석 전 기본 기준 — 정보형 글로 검색 노출을 쌓는 단계.",
+    keywordRules: branch?[
+      "메인 키워드는 월 검색량이 작은(대략 수십~수백) 2~3단어 롱테일로 고를 것",
+      "넓은 대표 키워드(예: 아이폰, 갤럭시, 요금제) 단독은 쓰지 말 것",
+      "검색 의도가 질문형으로 분명한 것 (방법, 안 될 때, 차이, 조건, 기간, 비용 기준)",
+      "구매·가격 비교·매장 추천·이벤트 주제는 제외 — 정보형만",
+    ]:["정보형 주제만 (구매·매장 추천·이벤트 제외)"],
+    titleRules:[
+      "메인 키워드를 제목 앞쪽에 그대로",
+      "독자의 질문에 답하는 형태 (~하는 법, ~안 될 때 확인할 것, ~차이)",
+      "공백 포함 15~30자, 과장·낚시 표현 금지",
+    ],
+    writingRules:[
+      "첫 문단에서 질문의 답을 바로 줄 것",
+      "단계·조건은 순서대로 한 문단씩",
+      "판매·가입 유도, 매장·업체 언급 금지",
+    ],
+    avoid:["판매·가입 유도","매장·업체 언급"],
+  };
+}
+
+const AUTO_STATE={ busy:false, step:"", log:[] };
+function autoLog(msg){ const line=`${new Date().toLocaleTimeString("ko-KR",{hour12:false})} ${msg}`; AUTO_STATE.step=msg; AUTO_STATE.log.push(line); if(AUTO_STATE.log.length>300) AUTO_STATE.log.shift(); try{console.log("[blogAuto]",line);}catch(e){} }
+
+// 이 탭에서 쓸 블로그를 고른다. 프로필이 없으면 기본 프로필을 만들어 둔다. key를 주면 그 블로그 ID에 API 키 등록.
+function autoUseBlog(blogId, { mode="hq", key="" }={}){
+  const id=String(blogId||"").trim();
+  if(!id) throw new Error("blogId가 비어 있어요");
+  let prof=bpLoad(id);
+  if(!prof){ prof=defaultAutoProfile(id, mode); bpSave(prof); }
+  if(key){ const m=blogKeysLoad(); m[id.toLowerCase()]=key; blogKeysSave(m); }
+  // 자동화는 블로그 전용 키가 있어야만 돈다 — 키가 빠진 블로그 비용이 사이트 기본 키로 조용히 넘어가지 않게
+  const k=blogKeysLoad()[id.toLowerCase()]||"";
+  if(!k) throw new Error(`@${id} 에 등록된 전용 API 키가 없어서 멈췄어요 (기본 키로는 자동화를 돌리지 않아요)`);
+  bpSetActiveId(id);
+  return { blogId:id, profile:prof.isDefault?"기본":"분석됨", hasKey:true, keyMask:maskKey(k) };
+}
+
+// 오늘 쓸 주제 후보를 고른다 (필요 수보다 넉넉히 — 글이 보류되면 다음 후보로)
+async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4 }){
+  const profile=bpGetActive();
+  const blogId=bpGetActiveId();
+  if(!category) throw new Error("category가 비어 있어요");
+  const exSet=new Set((exclude||[]).map(kwFlat));
+  const branch=mode==="branch";
+  const extra=`
+
+[자동 발행용 추가 조건]
+- 정보형 주제만. 구매처·가격 비교·요금제 추천·매장 홍보·이벤트·할인 주제는 추천하지 말 것.
+- 특정 업체·판매처가 주인공인 주제 금지.
+${branch?`- 이 블로그는 작은 블로그다. 위 선정 기준 3번의 "1~2형태소" 제한 대신, 메인 키워드를 검색량이 작은 2~3단어 롱테일(질문형 의도가 분명한 것)로 잡을 것. 넓은 대표 키워드 단독 금지.`:`- 이 블로그의 체급 안에서 가장 큰 정보형 키워드를 우선할 것.`}
+${exSet.size?`- 아래는 이미 우리 블로그들이 메인으로 쓴 키워드다. 같거나 띄어쓰기만 다른 키워드는 금지 (같은 큰 키워드 아래의 다른 세부 질문은 괜찮다):\n${[...exclude].slice(-150).join(", ")}`:""}`;
+  autoLog(`주제 추천 중 (${category}, ${branch?"지점·롱테일":"본사"})`);
+  const r=await recommendTopics({ category, profile, blogId, extra });
+  let list=(r.list||[]).map(k=>({ topic:k.title, mainKeyword:(k.mainKeyword||k.keyword||"").trim(), reason:k.reason||"", axis:k.axis||"" }))
+    .filter(k=>k.topic&&k.mainKeyword&&!exSet.has(kwFlat(k.mainKeyword)));
+  // 같은 메인 키워드 중복 제거
+  const seen=new Set(); list=list.filter(k=>{const f=kwFlat(k.mainKeyword); if(seen.has(f)) return false; seen.add(f); return true;});
+  autoLog(`후보 ${list.length}개 검색량·성인 검색어 확인 중`);
+  const [vols, adult]=await Promise.all([
+    fetchMonthlyVolumes(list.map(k=>k.mainKeyword)).catch(()=>({})),
+    checkNaverAdult(list.map(k=>k.mainKeyword)),
+  ]);
+  const bad=new Set((adult.results||[]).filter(x=>x.adult===true).map(x=>x.query));
+  const vr=r.volRange;
+  const cap=branch ? Math.max(300, vr?.med||0) : Math.max(5000, Math.round((vr?.ceil||0)*1.5));
+  const dropped=[];
+  list=list.map(k=>({ ...k, monthly:vols[k.mainKeyword]?.monthly??null, commercial:!!vols[k.mainKeyword]?.commercial }))
+    .filter(k=>{
+      if(bad.has(k.mainKeyword)){ dropped.push({...k,why:"성인 검색어"}); return false; }
+      if(k.commercial){ dropped.push({...k,why:"상업성 키워드"}); return false; }
+      if(k.monthly!=null&&k.monthly>cap){ dropped.push({...k,why:`검색량 ${k.monthly} > 체급 상한 ${cap}`}); return false; }
+      if(!branch&&k.monthly!=null&&k.monthly<30){ dropped.push({...k,why:`검색량 너무 작음 (${k.monthly})`}); return false; }
+      return true;
+    });
+  const axisRank=a=>a==="core"?0:a==="side"?1:2;
+  list.sort((a,b)=> axisRank(a.axis)-axisRank(b.axis) || (branch ? 0 : (b.monthly||0)-(a.monthly||0)));
+  return { blogId, category, candidates:list.slice(0, count+spare), dropped, excludedByMyRank:r.excluded||[], volRange:vr, cap };
+}
+
+// 글 1편 + 이미지 프롬프트
+async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo" }){
+  const meta=await generatePost({ kw:topic, mainKeyword, opts:{ auto:{ mode, region } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
+  if(meta.autoBlock?.length) return { ok:false, topic, mainKeyword, title:meta.title, reasons:meta.autoBlock };
+  autoLog(`[${mainKeyword}] 이미지 장면 나누는 중`);
+  let sections=[];
+  try{ sections=await analyzeImageSections(meta, meta.content); }catch(e){ autoLog(`[${mainKeyword}] 이미지 장면 실패: ${e.message}`); }
+  // 실제 제품 사진을 첨부할 수 없으니 제품 타입은 "사용 장면"으로 바꿔 그린다 (가짜 제품 디자인 방지: 브랜드명 빼고 일반 기기로)
+  const images=sections.map((x,i)=>{
+    const item=x.imageType==="product"?{...x,imageType:"scene",scene:String(x.scene||"").replace(new RegExp((x.productName||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"),"a smartphone")}:x;
+    return { n:i+1, sectionTitle:x.sectionTitle||"", type:item.imageType, prompt:buildFullPrompt(item, imageStyle, imageRatio, "en") };
+  });
+  const bodyOnly=meta.content.replace(/(?:\n+#[^\n]*)+\s*$/,"").trimEnd();
+  const placed=placeAutoImages(bodyOnly, images.length);
+  return {
+    ok:true, topic, mainKeyword,
+    title:meta.title, body:bodyOnly, bodyWithImages:placed.text, tags:(meta.tags||[]).map(t=>String(t).replace(/^#/,"")).slice(0,10),
+    images:images.slice(0,placed.count),
+    notes:[...(meta.autoNotes||[]), ...(meta.titleNotice?[meta.titleNotice]:[])],
+    factSources:(meta.factSheet||[]).map(f=>f.source||f.url).filter(Boolean).slice(0,10),
+  };
+}
+
+// 하루 작업: 주제 고르기 → 필요한 편수만큼 글쓰기 (보류되면 다음 후보로)
+async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2" }){
+  if(AUTO_STATE.busy) throw new Error("이미 실행 중이에요");
+  AUTO_STATE.busy=true; AUTO_STATE.log=[];
+  const started=Date.now();
+  try{
+    const who=autoUseBlog(blogId,{ mode, key });
+    autoLog(`블로그 ${who.blogId} (프로필 ${who.profile}, 전용 키 ${who.keyMask})`);
+    // 모든 블로그가 지금까지 쓴 메인 키워드 (집 PC 기록) — 여러 PC가 동시에 돌아도 같은 키워드를 피한다
+    let history=[];
+    try{ const h=await (await fetch("/api/auto-history?days=180")).json(); history=h.items||[]; if(h.error) autoLog(`키워드 기록 못 읽음: ${h.error}`); }catch(e){ autoLog(`키워드 기록 못 읽음: ${e.message}`); }
+    const plan=await autoPlan({ category, count, mode, exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)] });
+    const posts=[], skipped=[];
+    for(const c of plan.candidates){
+      if(posts.length>=count) break;
+      const useRegion=region&&Math.random()<regionChance?region:"";
+      autoLog(`글쓰기: ${c.topic} [${c.mainKeyword}${c.monthly!=null?` · 월 ${c.monthly}`:""}${useRegion?` · 지역 ${useRegion}`:""}]`);
+      try{
+        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio });
+        if(r.ok){
+          posts.push({ ...r, monthly:c.monthly, category, region:useRegion });
+          // 다른 PC의 블로그가 같은 키워드를 고르지 않게 바로 기록
+          fetch("/api/auto-history",{ method:"POST", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({ items:[{ blogId, mainKeyword:r.mainKeyword, title:r.title, category }] }) }).catch(()=>{});
+        }
+        else { skipped.push(r); autoLog(`보류: ${r.reasons.join(" / ")}`); }
+      }catch(e){ skipped.push({ ok:false, topic:c.topic, mainKeyword:c.mainKeyword, reasons:[e.message] }); autoLog(`실패: ${e.message}`); }
+    }
+    autoLog(`완료: ${posts.length}/${count}편 (${Math.round((Date.now()-started)/1000)}초)`);
+    return { ok:posts.length>=count, blogId, category, posts, skipped, dropped:plan.dropped, log:[...AUTO_STATE.log] };
+  } finally { AUTO_STATE.busy=false; }
+}
+
+if(typeof window!=="undefined"){
+  window.__blogAuto={
+    version:1,
+    status:()=>({ busy:AUTO_STATE.busy, step:AUTO_STATE.step, log:AUTO_STATE.log.slice(-30) }),
+    profiles:()=>bpList().map(p=>({ blogId:p.blogId, isDefault:!!p.isDefault, hasKey:!!blogKeysLoad()[String(p.blogId).toLowerCase()] })),
+    categories:()=>Object.keys(NAVER_DIR_MAP),
+    useBlog:autoUseBlog, plan:autoPlan, writeOne:autoWriteOne, run:autoRun,
+  };
+}
+
 function PasswordGate({children}){
   // 인증 상태는 서버가 굽는 httpOnly 쿠키가 진실이다.
   // 브라우저 저장소 값으로는 통과할 수 없다.
@@ -10621,367 +11273,7 @@ export default function BlogTools(){
     setPendingAnalyzeText("__loading__");
     setActive("analyze");
     try{
-      const now = new Date();
-      const yearMonth = `${now.getFullYear()}년 ${now.getMonth()+1}월`;
-      const todayStr  = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일`;
-      const mainKw = mainKeyword || kw;
-
-      // 상위 노출 글 본문 / 상위 제목 / 상업성 단어 / 최근 반복 단어를 병렬로 확보
-      // (12초 안에 안 오는 항목은 비워둔 채 그냥 진행)
-      const withTimeout = (p, ms, fallback) =>
-        Promise.race([p, new Promise(r => setTimeout(() => r(fallback), ms))]);
-
-      // 이슈 기사에서 시작한 글: 기사 1개 본문(앞부분)을 근거로 가져온다
-      const newsP = opts?.news?.link
-        ? withTimeout(fetch(`/api/news-article?url=${encodeURIComponent(opts.news.link)}`).then(r => r.json()).catch(() => null), 15000, null)
-        : Promise.resolve(null);
-      let [bodies, topTitles, commercialWords, avoidWordsRaw] = await Promise.all([
-        withTimeout(fetchBlogBodies(mainKw), 12000, []),
-        withTimeout(fetchTopTitles(mainKw), 8000, []),
-        withTimeout(fetchCommercialWords(mainKw), 8000, []),
-        withTimeout(fetchAvoidWords(), 8000, []),
-      ]);
-
-      // 막 뜬 이슈 키워드는 블로그 글이 아직 없을 수 있다 → 한 단계 넓은 키워드로 참고 글을 대신 찾는다
-      let bodiesFrom = mainKw;
-      if ((bodies || []).length < 2 && opts?.news) {
-        const words = String(mainKw).trim().split(/\s+/);
-        for (let n = words.length - 1; n >= 1 && (bodies || []).length < 2; n--) {
-          const broader = words.slice(0, n).join(" ");
-          const more = await withTimeout(fetchBlogBodies(broader), 10000, []);
-          if ((more || []).length > (bodies || []).length) { bodies = more; bodiesFrom = broader; }
-        }
-      }
-      const news = await newsP;
-      const newsBlock = opts?.news ? `
-[뉴스 근거 — 이 글의 출발점이 된 기사 1개]
-기사 제목: ${news?.title || opts.news.title}
-언론사: ${news?.press || opts.news.source || "-"}${news?.date ? ` / 기사 시각: ${news.date}` : ""}
-${news?.body ? `기사 본문(앞부분):\n"""\n${news.body}\n"""` : "(본문을 가져오지 못해 제목만 있음 — 제목에 있는 사실만 근거로 쓸 것)"}
-사용 규칙:
-N1. 이 이슈에서 "무슨 일이 있었는지"(언제, 어떤 제품·서비스에서, 무슨 문제·변화가, 회사 입장은)는 이 기사에 있는 사실만 쓴다. 기사에 없는 피해 규모·원인·보상 여부를 지어내지 말 것.
-N2. 기사 문장을 그대로 옮기지 말고 내 말로 풀어 쓴다. 출처는 본문에서 한 번 "${news?.press || opts.news.source || "언론"} 보도에 따르면"처럼 밝힌다.
-N3. 기사 내용은 글의 도입·배경으로 짧게 쓰고, 글의 본론은 주제가 묻는 질문(교환·환불 가능 여부, 대처법, 확인할 것 등)에 답하는 데 쓴다. 그 답의 근거는 [확인된 사실]과 참고자료(블로그 글)에서 가져온다.
-N4. 기사 시점 이후 상황이 바뀌었을 수 있으니, 진행 중인 이슈는 "${news?.date ? news.date.slice(0, 10) : "기사"} 기준"처럼 시점을 밝히고, 최신 안내는 공식 채널에서 확인하라고 한 줄 덧붙인다.
-` : "";
-
-      // 메인 키워드는 제목에 반드시 들어가야 하므로 금지 목록에서 제외
-      const flat = s => String(s||"").replace(/\s+/g,"");
-      const avoidWords = avoidWordsRaw.filter(w => !flat(mainKw).includes(flat(w)));
-      const banWords   = commercialWords.filter(w => !flat(mainKw).includes(flat(w)));
-
-      let pattern = pickTitlePattern(visit?.disclosure === "own" ? ["experience"] : []);
-
-      // ── 제품 출시 상태 확인 (항상, 사실표와 병렬) ──
-      const productStatusP = withTimeout(
-        checkProductStatus({ kw, mainKw, today: todayStr }).catch(() => []), 30000, []
-      );
-
-      // ── 방문 리뷰 모드: 사진 읽기 + 장소 정보 검색 (일반 사실표 대신) ──
-      let visitBlock = "", photoDescs = [], placeInfo = { category: "", facts: [] }, placeReviews = null;
-      if (visit) {
-        setPendingAnalyzeText(`__loading__:사진 ${visit.photos.length}장 읽는 중 · 장소 정보 검색 · 같은 매장 후기 모으는 중`);
-        if (visit.toneUrl && !visit.toneSample) {
-          try {
-            const r = await fetch(`/api/blog-content?url=${encodeURIComponent(visit.toneUrl)}`);
-            const d = await r.json();
-            const b = (d.bodies || [])[0] || "";
-            visit = { ...visit, toneSample: b.replace(/\n{3,}/g, "\n\n").slice(0, 1500) };
-          } catch (e) {}
-        }
-        const [pd, rv] = await Promise.all([
-          visit.photos.length ? withTimeout(analyzeVisitPhotos(visit.photos, visit.placeName).catch(() => []), 90000, []) : Promise.resolve([]),
-          withTimeout(gatherPlaceReviews({ placeName: visit.placeName, address: visit.address, refUrls: visit.refUrls || [] }).catch(() => null), 45000, null),
-        ]);
-        photoDescs = pd; placeReviews = rv;
-        // 후기에서 사실 정보가 2개 이상 나왔으면 웹 검색은 건너뛴다 (편당 약 50~70원 절약)
-        if ((rv?.facts?.length || 0) >= 2) {
-          placeInfo = { category: rv.category || "", facts: [] };
-        } else {
-          setPendingAnalyzeText("__loading__:장소 기본 정보 검색 중");
-          placeInfo = await withTimeout(searchPlaceInfo({ placeName: visit.placeName, address: visit.address, today: todayStr }).catch(() => ({ category: "", facts: [] })), 45000, { category: "", facts: [] });
-          if (!placeInfo.category && rv?.category) placeInfo.category = rv.category;
-        }
-        visitBlock = formatVisitBlock(visit, photoDescs, placeInfo, placeReviews);
-      }
-
-      // ── 사전 사실표: 참고자료의 수치·정책을 공식 출처로 확인해 프롬프트에 넣는다 ──
-      let factSheet = [];
-      if (!visit) try {
-        // 절약 모드: 수치·정책이 핵심이 아닌 주제(사용법·경험담 등)는 웹검색 사실표를 건너뛴다
-        let needFacts = { need: true };
-        if (getCostMode() === "save") {
-          setPendingAnalyzeText("__loading__:사실 확인이 필요한 주제인지 판단 중");
-          needFacts = await withTimeout(needsFactSheet({ kw, mainKw, bodies }), 10000, { need: true });
-        }
-        if (needFacts.need) {
-          setPendingAnalyzeText("__loading__:사실 확인 중 — 참고자료의 수치·정책을 공식 출처로 검색하고 있습니다");
-          factSheet = await withTimeout(
-            buildFactSheet({ kw, mainKw, bodies, today: todayStr }), 90000, []
-          );
-        }
-      } catch(e) { factSheet = []; /* 실패해도 글쓰기는 진행 */ }
-      setPendingAnalyzeText("__loading__:제품 출시 상태 확인 중");
-      const productStatus = await productStatusP;
-      // 한국 미출시·미발표 제품이 있으면 "직접 써봤습니다" 같은 경험담형 제목을 쓰지 않는다
-      const hasUnreleased = (productStatus || []).some(x => x.status && x.status !== "released_kr");
-      if (hasUnreleased && pattern.id === "experience") pattern = pickTitlePattern(["experience"]);
-      setPendingAnalyzeText("__loading__:본문 작성 중");
-
-      const prompt = buildWritePrompt({
-        kw, yearMonth, today: todayStr, smartBlockType, blogStrategy,
-        bodies, mainKeyword: mainKw,
-        topTitles, commercialWords: banWords, avoidWords, pattern,
-        factSheetBlock: formatFactSheetBlock(factSheet),
-        profileBlock: buildProfileBlock(bpGetActive(), "write"),
-        productStatusBlock: formatProductStatusBlock(productStatus),
-        visitBlock: visitBlock + newsBlock,
-      });
-
-      const visitSys = `You are writing a first-person Korean Naver blog visit review ("방문 후기") in a warm, natural conversational tone (~했어요, ~더라고요). The [방문 리뷰 모드] block in the user message overrides any conflicting rule there.
-
-Today is ${todayStr}.
-
-FACTUAL DISCIPLINE:
-- Experience must come only from the photo notes and the author's memo. Never invent dates of visit, prices, waiting times, conversations with staff, taste or service judgments, or the author's habits.
-- The photo notes are private notes about what the author saw on site. Never mention photos in the body ("사진", "찍힌", "사진 속", "보이는데"). Write them as things the author saw in person.
-- Quote only clearly legible sign or menu text from the notes, and only when it makes sense. Always use the exact place name and address given by the author.
-- Prices, hours and parking: only from the memo, legible text, or the verified place info.
-- A shorter, honest review is better than a padded one. Do not add generic advice sections or general-knowledge Q&A to fill length.
-
-STYLE:
-- Open with the visit itself, not a definition sentence.
-- Write the visit as a story in the order it happened. The "현장에서 본 것" notes are background knowledge: mention a seen thing only when the story needs it (finding the sign while looking for the place, sitting at the table while waiting). Never write paragraphs that describe interiors, colors or objects. Do not insert [사진 N] markers; photos are placed afterwards.
-- Light feelings about what was seen ("괜히 기분이 좋아지더라고요", "생각보다 아늑했어요") are encouraged. Judgments of taste, kindness, price or satisfaction only if they are in the memo.
-- Break lines by breath like a mobile Naver blog: about 15~35 characters per line, a blank line every two or three lines.
-- Do not write hashtags in the body; they belong only in the tags array. No engagement bait or sign-off pleasantries.
-
-Output ONLY valid JSON, no markdown.`;
-
-      const sysPrompt = visit ? visitSys : `You are a professional Korean Naver blog writer optimizing for Naver homepage exposure and AI briefing citation (AEO).
-
-Today is ${todayStr}. You cannot search the web, and your knowledge of recent events may be outdated or wrong.
-
-FACTUAL DISCIPLINE — this overrides every stylistic instruction in the user message:
-- Never assert a specific fact you are not confident is true. Do not invent prices, fees, subsidy amounts, statistics, percentages, sales figures, ratings, release dates, effective dates, model names, specs, laws, policies, terms, official statements, quotes, studies, or institutions.
-- When you are unsure of a specific figure, DO NOT vague the whole sentence away. Keep the sentence concrete and specific, and leave only the unknown value as a [확인필요: ...] placeholder for the author to fill in (max 3 per post). Falling back to qualitative phrasing is a last resort, reserved for details too peripheral to be worth a placeholder.
-- Do NOT claim anything is "current as of ${yearMonth}" unless you genuinely know it. Prefer hedged or timeless phrasing over confident but unverified recency.
-- Opinions, judgments, preferences and narrative experience are encouraged — but write them as opinions, not as verified facts. Make experience concrete through process and reasoning, not through fabricated measurements.
-- Calibrate certainty per sentence: state verified facts, definitions and procedures plainly; mark evaluations as the writer's own judgment; and never promise the reader an outcome ("no wrist fatigue", "solves it", "guaranteed") — phrase effects conditionally with degree words. Especially in the closing ▶ 정리 lines, the final takeaway about effects must be conditional or first-person, not an absolute claim. Keep hedges ("~것 같습니다") to four or fewer per post and never stack two in one sentence.
-- If a [제품 출시 상태] block says a product is not officially released in Korea, never write first-person use, purchase or activation of it, even if the topic says "후기".
-- If a [방문 리뷰 모드] block is present, first-person experience must be grounded ONLY in its photo descriptions and the author's memo. Never invent dishes eaten, prices, waiting times, staff behavior or taste judgments that are not there.
-- A shorter, less specific post that is true is better than a specific post that is false. If a [확인된 사실] list is provided, figures, dates and conditions must come from that list; treat anything under [확인 안 된 주장] as unverified. Reference material may inform structure and context but is not a source of figures on its own (never copy its wording).
-
-BRAND ACCURACY:
-- When a specific brand, product line or service is named, everything you write about it must be accurate. Use official naming exactly as it is written; never invent model names, generation numbers, product tiers or spec details.
-- If you are not certain which model, generation or specification applies, stay at category level instead of guessing.
-- Never attribute one brand's feature, price, policy or benefit to another, never confuse the roles of manufacturer, carrier and retailer, and never make an unverified superiority claim or a disparaging comparison about a real brand.
-
-TOPIC DISCIPLINE — second only to factual discipline:
-- The 주제 given in the user message defines the entire scope of the post. Every subheading must be a subdivision of it.
-- Go deeper, never wider. If the topic feels too narrow to fill the length, add steps, edge cases, failure modes and situational detail within the topic — do not import an adjacent axis (product comparison, pricing, device compatibility, vendor recommendations) to pad it out.
-- Reference material is for verifying facts only. Never mirror its outline or section structure.
-
-LIVED EXPERIENCE — do not let the AEO rules flatten this:
-- Weave first-person experience into the explanation rather than appending it as a closing anecdote to each section.
-- Vary the sentence shape every time. Repeating one narrative template across sections reads more machine-made than no anecdote at all.
-- Show a scene: when, where, what was attempted, what happened. Evaluative summaries ("it was inconvenient") are not experience.
-- Twice or more, explain the reasoning behind a choice and what alternative was weighed. Anyone can look up the facts; only someone who did it can explain the judgment.
-- The self-contained-paragraph rule below applies to explanatory paragraphs, not narrative ones. Narrative may flow.
-
-CITATION READINESS (AEO) — apply this within the limits of factual discipline above:
-- Lead with the answer. The opening lines and the first sentence under every subheading must state the conclusion before any background.
-- Write self-contained paragraphs. Each paragraph must make sense when lifted out of the post on its own; avoid pronouns and back-references that depend on earlier paragraphs.
-- Preserve quotable sentence structure. A sentence with a [확인필요:] placeholder is still quotable; a sentence that hedges away its own subject is not.
-- Embed at least three question-and-answer pairs inside the sections, never as a closing FAQ block. Each question must be a complete, search-query-shaped sentence standing alone on its own line, followed immediately by a 2-3 sentence answer that leads with the conclusion. Do not soften the question into narrative prose, and do not prefix it with "Q." or any label. After the answer, return to the explanation.
-- Do not write hashtags in the body; they belong only in the tags array.
-- Never write engagement bait: no requests for comments, likes, subscriptions, and no sign-off pleasantries. End on the summary.
-
-Output ONLY valid JSON, no markdown.`;
-
-      const raw = await callClaudeStream(
-        [{ role: "user", content: prompt }],
-        sysPrompt,
-        7000, "claude-sonnet-4-5-20250929"
-      );
-      const parsed = safeParseJson(raw);
-      const cleanContent = (str="") =>
-        str.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/\n{3,}/g, "\n\n");
-
-      // 모델이 규칙을 어기고 해시태그나 하단 FAQ 블록을 붙이는 경우가 있어 잘라낸다
-      // (해시태그는 코드에서 따로 붙이고, Q&A는 본문 안에 녹여 쓰는 게 원칙이다)
-      const stripAppendix = (t="") => t
-        .replace(/\n+▶\s*자주\s*묻는\s*질문[\s\S]*$/g, "")
-        .replace(/(?:\n+#[^\n]*)+\s*$/g, "")
-        .trimEnd();
-
-      let bodyText = stripAppendix(cleanContent(parsed.content||""));
-      if (parsed._truncated) {
-        // 마지막 줄은 잘렸을 가능성이 크므로 마지막 문장 경계까지만 남긴다
-        const cut = Math.max(bodyText.lastIndexOf(".\n"), bodyText.lastIndexOf("다.\n"));
-        if (cut > bodyText.length * 0.6) bodyText = bodyText.slice(0, cut + 2).trimEnd();
-      }
-
-      // ── [확인필요:] 항목을 웹 검색으로 자동 해결 ──
-      let factItems = [];
-      let factSummary = null;
-      // 메인 키워드가 본문에 글자 그대로 5회 이상 들어갔는지 확인하고, 모자라면 다른 표기를 바꿔 채운다
-      let kwFix = null;
-      try {
-        kwFix = await withTimeout(enforceMainKeyword(bodyText, mainKw), 20000, null);
-        if (kwFix) bodyText = kwFix.body;
-      } catch (e) {}
-
-      const placeholders = extractPlaceholders(bodyText);
-      // 사실표를 이미 만든 글은 남은 [확인필요]가 대개 사실표에서도 못 찾은 항목이라 재검색하지 않는다.
-      // → 아래 정리 단계(검색 없음)에서 "확인처 안내" 문장으로 바꾸거나 삭제. 사실표를 건너뛴 글만 검색으로 채운다.
-      const hadFactSheet = (factSheet || []).length > 0;
-      if (placeholders.length > 0 && !hadFactSheet && !visit) {   // 방문 리뷰는 검색 없이 아래 정리 단계로
-        try {
-          factItems = await resolveUncertainValues({
-            placeholders, title: parsed.title, mainKw, text: bodyText,
-          });
-          const applied = applyResolvedValues(bodyText, factItems);
-          bodyText = applied.text;
-          factSummary = {
-            resolved: factItems.filter(x => x.found && x.value).length,
-            approx: applied.approxUsed.length,
-            unresolved: applied.unresolved,
-            sources: applied.sources,
-          };
-        } catch(e) { /* 조사 실패해도 본문은 살린다 — 아래에서 남은 자리는 정리한다 */ }
-      }
-
-      // ── 끝내 못 채운 [확인필요:]는 문장을 고쳐서 없앤다 ──
-      // 값 대신 "어디서 확인하면 되는지"로 바꾸거나, 그 값이 없으면 의미가 없는 문장은 지운다.
-      if (extractPlaceholders(bodyText).length > 0) {
-        try {
-          setPendingAnalyzeText("__loading__:확인 안 된 수치 정리 중");
-          bodyText = await settleUnresolvedPlaceholders(bodyText, factItems);
-        } catch(e) {}
-        // 그래도 남으면 그 줄을 통째로 뺀다 (문장 단위 줄바꿈 규칙이라 줄 = 문장)
-        bodyText = bodyText.split("\n")
-          .filter(l => !/\[확인필요:[^\]]*\]/.test(l))
-          .join("\n").replace(/\n{3,}/g, "\n\n");
-        if (factSummary) factSummary.unresolved = [];
-      }
-
-      let finalTitle = parsed.title || "";
-      const check = validateTitle(finalTitle, { mainKw, topTitles, commercialWords: banWords, avoidWords });
-      // 형식 검사에 더해 "제목이 본문·확인된 사실과 맞는가"도 본다 (Haiku 1회)
-      setPendingAnalyzeText("__loading__:제목이 본문과 맞는지 확인 중");
-      const titleFact = await withTimeout(checkTitleFacts(finalTitle, bodyText, productStatus), 15000, { ok: true, reasons: [] });
-      if (!titleFact.ok) { check.ok = false; check.reasons = [...(check.reasons || []), ...titleFact.reasons.map(r => "사실 불일치: " + r)]; }
-      // 고른 주제의 핵심 단어가 제목에서 빠졌는지 (예: "갤럭시 아이폰 기종변경"이 사라짐)
-      const topicCov = topicCoverage(kw, mainKw, finalTitle);
-      if (topicCov.toks.length >= 2 && topicCov.ratio < 0.6) {
-        check.ok = false;
-        check.reasons = [...(check.reasons || []), `주제 이탈: 고른 주제의 핵심 요소(${topicCov.missing.join(", ")})가 제목에 없음`];
-      }
-
-      // ── 제목이 기준에 안 맞으면 제목만 1회 재생성 ──
-      let titleNotice = "";
-      if (!check.ok) {
-        try {
-          const retitlePrompt = `아래 블로그 글에 붙일 제목을 다시 지어줘. 이전 제목이 기준에 맞지 않았다.
-
-이전 제목: ${finalTitle}
-탈락 사유: ${check.reasons.join(" / ")}
-
-메인 키워드: "${mainKw}"
-제목 패턴: ${pattern.label} — ${pattern.guide}
-
-지켜야 할 조건:
-- 공백 포함 15~32자
-- "${mainKw}"를 그대로 포함
-- 아래 제목들과 2글자 이상 단어가 3개 넘게 겹치면 안 됨
-${(topTitles||[]).slice(0,10).map((t,i)=>`  ${i+1}. ${t}`).join("\n") || "  (없음)"}
-- 아래 단어는 제목에 쓰지 말 것: ${[...banWords, ...avoidWords].join(", ") || "(없음)"}
-- 가격·기간·퍼센트 같은 수치는 제목에 쓰지 말 것
-- 고른 주제 "${kw}"의 핵심 요소(대상·상황)는 제목에 그대로 남길 것. 다른 상황으로 바꾸지 말 것.
-- 제목은 아래 글 내용과 맞아야 한다. 글에 없는 경험(직접 써봤다·샀다·개통했다·방문했다)이나 글에 없는 사실을 주장하지 말 것.
-  제목 패턴과 글 내용이 충돌하면 글 내용을 따를 것.${hasUnreleased ? `
-- ${productStatus.filter(x => x.status !== "released_kr").map(x => x.name).join(", ")}은(는) 한국 미출시 제품이다. "써봤다·후기·사용기·개통" 같은 표현 금지.` : ""}
-${(()=>{const bp=bpGetActive();if(!bp)return "";const rules=(bp.titleRules||[]).map(r=>`  - ${r}`).join("\n");const bad=(bp.titleBad||[]).slice(0,6).map(t=>`  · ${t}`).join("\n");return `- 이 블로그의 제목 규칙:\n${rules||"  (없음)"}${bad?`\n- 이 블로그에서 제목검색 30위 밖이었던 제목 형태 (피할 것):\n${bad}`:""}`;})()}
-
-글 앞부분:
-${cleanContent(parsed.content||"").slice(0, 700)}
-
-순수 JSON만: {"title":"새 제목"}`;
-
-          const retitleRaw = await callClaude(
-            [{ role: "user", content: retitlePrompt }],
-            "You write Korean blog titles. Output ONLY valid JSON.",
-            300, "claude-haiku-4-5-20251001"
-          );
-          const retitled = safeParseJson(retitleRaw)?.title || "";
-          const recheck = validateTitle(retitled, { mainKw, topTitles, commercialWords: banWords, avoidWords });
-          if (retitled) {
-            const rf = await withTimeout(checkTitleFacts(retitled, bodyText, productStatus), 15000, { ok: true, reasons: [] });
-            if (!rf.ok) { recheck.ok = false; recheck.reasons = [...(recheck.reasons || []), ...rf.reasons.map(r => "사실 불일치: " + r)]; }
-            const rc = topicCoverage(kw, mainKw, retitled);
-            if (rc.toks.length >= 2 && rc.ratio < 0.6) { recheck.ok = false; recheck.reasons = [...(recheck.reasons || []), `주제 이탈: ${rc.missing.join(", ")} 없음`]; }
-          }
-          if (retitled && (recheck.ok || recheck.reasons.length < check.reasons.length)) {
-            finalTitle = retitled;
-            if (!recheck.ok) titleNotice = recheck.reasons.join(" · ");
-          } else {
-            titleNotice = check.reasons.join(" · ");
-          }
-        } catch(e) {
-          titleNotice = check.reasons.join(" · ");
-        }
-      }
-
-      if (parsed._truncated) {
-        titleNotice = (titleNotice ? titleNotice + " · " : "") + "본문이 길어 출력이 잘렸습니다 — 끝부분을 확인하세요";
-      }
-
-      recordTitleUse(pattern.id, finalTitle);
-
-      // 본문에 녹아 있는 질문 줄을 뽑아 meta.faq로 남긴다 (기존 화면 호환용)
-      const faq = extractEmbeddedQA(bodyText);
-
-      // ── 본문 + 해시태그 조립 ──
-      const tags = parsed.tags || [];
-      const tagBlock = tags.length > 0
-        ? "\n\n" + tags.map(t => "#" + String(t).replace(/^#/, "")).join(" ")
-        : "";
-      // 방문 리뷰: 광고 표기 문구를 맨 앞에 코드로 보장 + 사진 배치 누락 확인
-      let visitMeta = null;
-      if (visit) {
-        if (visit.photos.length) {
-          setPendingAnalyzeText("__loading__:사진 자리 정하는 중");
-          bodyText = bodyText.replace(/^\s*\[사진\s*\d+\]\s*$/gm, "").replace(/\n{3,}/g, "\n\n");   // AI가 규칙을 어기고 넣은 표시 제거
-          bodyText = await withTimeout(placeVisitPhotos(bodyText, photoDescs, visit.photos.length).catch(() => bodyText), 30000, bodyText);
-        }
-        const disc = (VISIT_DISCLOSURE[visit.disclosure] || VISIT_DISCLOSURE.self).text(visit.placeName);
-        if (disc) bodyText = disc + "\n\n" + bodyText;
-        const placed = new Set([...bodyText.matchAll(/\[사진\s*(\d+)\]/g)].map(m => +m[1]));
-        const missingPhotos = visit.photos.map((_, i) => i + 1).filter(n => !placed.has(n));
-        visitMeta = { placeName: visit.placeName, address: visit.address, disclosure: visit.disclosure,
-          thumbs: visit.photos.map(p => p.dataUrl), photoDescs, placeInfo, placeReviews, missingPhotos };
-      }
-      const fullContent = (bodyText + tagBlock).replace(/\n{3,}/g, "\n\n");
-
-      const meta = {
-        title: finalTitle,
-        main_keyword: mainKw || parsed.main_keyword || kw,
-        content: fullContent,
-        tags,
-        faq,
-        titlePattern: pattern.label,
-        titleNotice,
-        factSummary,
-        factItems,
-        factSheet,
-        visit: visitMeta,
-        kwCount: kwFix ? { before: kwFix.before, after: kwFix.after, variants: kwFix.variants } : null,
-        news: opts?.news ? { title: news?.title || opts.news.title, link: opts.news.link, source: news?.press || opts.news.source || "", bodyOk: !!news?.body, bodiesFrom } : null,
-        // 본문: 동작 표현(옮기기·하기 등)은 활용형이 달라 빼고, 대상 단어(갤럭시·아이폰 등)가 아예 안 나오면 경고
-        topicDrift: (() => { const c = topicCoverage(kw, mainKw, bodyText); const miss = c.missing.filter(w => !/기$/.test(w)); return c.toks.length >= 2 && miss.length ? { topic: kw, missing: miss } : null; })(),
-        _source: "keyword",
-      };
+      const meta = await generatePost({ kw, smartBlockType, smartBlockReason, blogStrategy, mainKeyword, visit, opts }, setPendingAnalyzeText);
       setAnalyzePostMeta(meta);
       setAnalyzeText(meta.content);
       setPendingAnalyzeText("");
