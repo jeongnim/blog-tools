@@ -7029,6 +7029,8 @@ function IssueKeywordPanel({category,onPick,onWrite}){
 // ── 카테고리 + 맞춤 프로필로 글 주제 20개 추천 (화면 상태와 무관 — 자동화에서도 호출) ──
 // extra: 프롬프트에 덧붙일 추가 규칙(자동화의 블로그 성격·이미 쓴 키워드 등)
 async function recommendTopics({ category, profile, blogId, extra }) {
+  const nowD = new Date();
+  const yearMonth = `${nowD.getFullYear()}년 ${nowD.getMonth()+1}월`;
     const dirNo = NAVER_DIR_MAP[category] || 0;
 
     // ── 트렌드 소스: 구글 트렌드(일간) + 네이버 주제별 인기글 ──
