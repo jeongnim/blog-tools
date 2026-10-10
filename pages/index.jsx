@@ -10984,7 +10984,7 @@ function autoUseBlog(blogId, { mode="hq", key="" }={}){
 }
 
 // 오늘 쓸 주제 후보를 고른다 (필요 수보다 넉넉히 — 글이 보류되면 다음 후보로)
-async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4 }){
+async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4, scope="" }){
   const profile=bpGetActive();
   const blogId=bpGetActiveId();
   if(!category) throw new Error("category가 비어 있어요");
@@ -10993,7 +10993,9 @@ async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4 }){
   const extra=`
 
 [자동 발행용 추가 조건]
-- 정보형 주제만. 구매처·가격 비교·요금제 추천·매장 홍보·이벤트·할인 주제는 추천하지 말 것.
+${scope?`- 주제 범위 (가장 중요): ${scope}
+- 범위 밖 주제는 카테고리 인기글·트렌드에 있어도 추천하지 말 것. 20개 모두 이 범위 안에서, 매번 다른 세부 소재(기기 설정·기능, 배터리·충전, 카메라, 저장공간, 보안·분실, 요금제·데이터, 통신사·개통·번호이동, 중고·보상판매, 유심·eSIM, 앱 사용법 등)로 고르게 나눌 것.
+`:""}- 정보형 주제만. 구매처·가격 비교·요금제 추천·매장 홍보·이벤트·할인 주제는 추천하지 말 것.
 - 특정 업체·판매처가 주인공인 주제 금지.
 ${branch?`- 이 블로그는 작은 블로그다. 위 선정 기준 3번의 "1~2형태소" 제한 대신, 메인 키워드를 검색량이 작은 2~3단어 롱테일(질문형 의도가 분명한 것)로 잡을 것. 넓은 대표 키워드 단독 금지.`:`- 이 블로그의 체급 안에서 가장 큰 정보형 키워드를 우선할 것.`}
 ${exSet.size?`- 아래는 이미 우리 블로그들이 메인으로 쓴 키워드다. 같거나 띄어쓰기만 다른 키워드는 금지 (같은 큰 키워드 아래의 다른 세부 질문은 괜찮다):\n${[...exclude].slice(-150).join(", ")}`:""}`;
@@ -11049,7 +11051,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
 }
 
 // 하루 작업: 주제 고르기 → 필요한 편수만큼 글쓰기 (보류되면 다음 후보로)
-async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2" }){
+async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0 }){
   if(AUTO_STATE.busy) throw new Error("이미 실행 중이에요");
   AUTO_STATE.busy=true; AUTO_STATE.log=[];
   const started=Date.now();
@@ -11059,10 +11061,12 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
     // 모든 블로그가 지금까지 쓴 메인 키워드 (집 PC 기록) — 여러 PC가 동시에 돌아도 같은 키워드를 피한다
     let history=[];
     try{ const h=await (await fetch("/api/auto-history?days=180")).json(); history=h.items||[]; if(h.error) autoLog(`키워드 기록 못 읽음: ${h.error}`); }catch(e){ autoLog(`키워드 기록 못 읽음: ${e.message}`); }
-    const plan=await autoPlan({ category, count, mode, exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)] });
+    const plan=await autoPlan({ category, count, mode, scope, exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)] });
     const posts=[], skipped=[];
+    const tries=maxTries||count+2;   // 보류가 계속 나와도 비용이 끝없이 나가지 않게
     for(const c of plan.candidates){
       if(posts.length>=count) break;
+      if(posts.length+skipped.length>=tries){ autoLog(`시도 ${tries}번 도달 — 중단`); break; }
       const useRegion=region&&Math.random()<regionChance?region:"";
       autoLog(`글쓰기: ${c.topic} [${c.mainKeyword}${c.monthly!=null?` · 월 ${c.monthly}`:""}${useRegion?` · 지역 ${useRegion}`:""}]`);
       try{
