@@ -10315,6 +10315,46 @@ ${refs.length ? `\n[작성자가 참고하라고 준 리뷰 ${refs.length}개]\n
   } catch (e) { return { count: same.length, refCount: refs.length, points: [], facts: [], coverage: [], category: "", sponsored }; }
 }
 
+// 다 쓴 글에 사진 자리를 나중에 정한다: 문단별로 나눠 사진마다 이야기상 가장 맞는 문단 뒤에 [사진 N]
+async function placeVisitPhotos(body, photoDescs, photoCount) {
+  if (!photoCount) return body;
+  const paras = body.split(/\n\s*\n/).map(x => x.trim()).filter(Boolean);
+  const canPlace = i => !/^(▶|📍)/.test(paras[i]) && !/^▶/.test(paras[i + 1] || "") ? true : !/^(▶|📍)/.test(paras[i]);
+  let place = null;
+  try {
+    const plist = Array.from({ length: photoCount }, (_, i) => {
+      const d = photoDescs.find(p => p.n === i + 1);
+      return `사진 ${i + 1}: ${d ? `${d.kind || "기타"} — ${(d.items || []).join(", ")}` : "(설명 없음)"}`;
+    }).join("\n");
+    const prompt = `아래는 방문 후기 글의 문단 목록과, 작성자가 찍은 사진 목록이다.
+사진마다 이야기 흐름상 가장 잘 어울리는 문단을 골라, 그 문단 "뒤"에 사진을 넣을 것.
+- 사진 내용과 문단 내용이 맞아야 한다 (간판·외관 → 찾아가는 문단, 내부 → 들어가서 문단, 상품·음식 → 핵심 경험 문단).
+- 딱 맞는 문단이 없으면 흐름상 그 장면이 나올 법한 위치에.
+- "📍 기본 정보"나 "▶ 정리" 문단 뒤에는 넣지 말 것. 첫 문단(도입) 바로 뒤는 외관·간판 사진일 때만.
+- 한 문단 뒤에 사진은 최대 2장.
+- 모든 사진을 한 번씩.
+
+[문단]
+${paras.map((t, i) => `${i}: ${t.replace(/\n/g, " ").slice(0, 90)}`).join("\n")}
+
+[사진]
+${plist}
+
+순수 JSON만: {"place":[{"n":1,"after":0}]}`;
+    const raw = await callClaude([{ role: "user", content: prompt }], "You place photos into a blog post. Output ONLY valid JSON.", 600, "claude-haiku-4-5-20251001");
+    place = (safeParseJson(raw)?.place || []).filter(x => x && Number.isInteger(x.n) && Number.isInteger(x.after) && x.n >= 1 && x.n <= photoCount && x.after >= 0 && x.after < paras.length);
+  } catch (e) { place = null; }
+  // 빠진 사진은 본문 중간 문단들에 고르게
+  const used = new Set((place || []).map(x => x.n));
+  const bodyIdx = paras.map((t, i) => i).filter(i => !/^(▶|📍)/.test(paras[i]) && !/^(▶ 정리|📍)/.test(paras[i + 1] || "x") || i === 0);
+  const missing = Array.from({ length: photoCount }, (_, i) => i + 1).filter(n => !used.has(n));
+  const pool = bodyIdx.length ? bodyIdx : paras.map((_, i) => i);
+  missing.forEach((n, k) => { (place = place || []).push({ n, after: pool[Math.min(pool.length - 1, Math.floor((k + 1) * pool.length / (missing.length + 1)))] }); });
+  const after = {};
+  (place || []).forEach(x => { (after[x.after] = after[x.after] || []).push(x.n); });
+  return paras.map((t, i) => [t, ...(after[i] || []).map(n => `[사진 ${n}]`)].join("\n\n")).join("\n\n");
+}
+
 function formatVisitBlock(visit, photoDescs, placeInfo, reviews) {
   const toneRef = visit.toneSample ? `
 말투 참고 (작성자가 예전에 직접 쓴 글의 일부 — 말투·문장 길이·줄바꿈 습관·이모지 쓰는 정도만 따라 하고, 내용·정보·경험은 절대 가져오지 말 것):
