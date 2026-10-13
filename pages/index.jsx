@@ -10954,10 +10954,16 @@ function applyAutoSafety(meta){
   const sales=meta.content.match(AUTO_SALES_RE)||meta.title.match(AUTO_SALES_RE);
   if(sales) block.push(`판매·상담 유도 표현: "${sales[0]}"`);
   if(/사실 불일치/.test(meta.titleNotice||"")) block.push("제목이 본문·확인된 사실과 맞지 않음");
-  if(/주제 이탈/.test(meta.titleNotice||"")) block.push("제목이 고른 주제에서 벗어남");
-  if(/잘렸습니다/.test(meta.titleNotice||"")) block.push("본문 출력이 잘림");
-  if(meta.topicDrift) block.push(`본문에 주제 핵심어 없음: ${meta.topicDrift.missing.join(", ")}`);
+  // 주제 이탈·핵심어 검사는 주제 문장의 활용형(부족할·켜져있네 등)까지 단어로 봐서 오탐이 많다 → 자동 발행에서는 참고만
+  if(/주제 이탈/.test(meta.titleNotice||"")) notes.push("제목이 추천 주제 문장과 표현이 다름");
+  if(meta.topicDrift) notes.push(`주제 문장 단어 일부 없음: ${meta.topicDrift.missing.join(", ")}`);
+  // 메인 키워드가 제목에 없으면 그건 진짜 문제
+  if(meta.main_keyword && !kwFlat(meta.title).includes(kwFlat(meta.main_keyword))) block.push(`제목에 메인 키워드(${meta.main_keyword}) 없음`);
   const bodyLen=meta.content.replace(/#\S+/g,"").replace(/\s/g,"").length;
+  if(/잘렸습니다/.test(meta.titleNotice||"")){
+    if(bodyLen<1500) block.push(`본문이 중간에 잘림 (${bodyLen}자)`);
+    else notes.push("본문 끝부분이 잘려 마지막 문장까지만 남김 — 끝맺음 확인");
+  }
   if(bodyLen<900) block.push(`본문이 너무 짧음 (${bodyLen}자)`);
   if(meta.kwCount&&meta.kwCount.after<5) notes.push(`메인 키워드 ${meta.kwCount.after}회 (목표 5회)`);
   meta.autoNotes=notes; meta.autoBlock=block;
@@ -11074,6 +11080,8 @@ ${exSet.size?`- 아래는 이미 우리 블로그들이 메인으로 쓴 키워�
   const axisRank=a=>a==="core"?0:a==="side"?1:2;
   // 실제로 찾는 사람이 많은 순 (체급 상한 안에서). 검색량을 모르는 건 뒤로
   list.sort((a,b)=> axisRank(a.axis)-axisRank(b.axis) || ((b.monthly??-1)-(a.monthly??-1)));
+  // 지점 블로그들이 같은 날 같은 후보(검색량 1위)로 몰리지 않게 상위 후보 안에서 섞는다
+  if(branch){ const top=list.slice(0,8); for(let i=top.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [top[i],top[j]]=[top[j],top[i]]; } list=[...top,...list.slice(8)]; }
   return { blogId, category, candidates:list.slice(0, count+spare), dropped, excludedByMyRank:r.excluded||[], volRange:vr, cap };
 }
 
@@ -11131,7 +11139,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
       }catch(e){ skipped.push({ ok:false, topic:c.topic, mainKeyword:c.mainKeyword, reasons:[e.message] }); autoLog(`실패: ${e.message}`); }
     }
     autoLog(`완료: ${posts.length}/${count}편 (${Math.round((Date.now()-started)/1000)}초)`);
-    return { ok:posts.length>=count, blogId, category, posts, skipped, dropped:plan.dropped, log:[...AUTO_STATE.log] };
+    return { ok:posts.length>=count, blogId, category, posts, skipped, dropped:plan.dropped, tried:[...posts,...skipped].map(x=>x.mainKeyword).filter(Boolean), log:[...AUTO_STATE.log] };
   } finally { AUTO_STATE.busy=false; }
 }
 
