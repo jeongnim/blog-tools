@@ -11034,11 +11034,21 @@ function autoUseBlog(blogId, { mode="hq", key="" }={}){
 }
 
 // 오늘 쓸 주제 후보를 고른다 (필요 수보다 넉넉히 — 글이 보류되면 다음 후보로)
-async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4, scope="", banTopics=[] }){
+async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4, scope="", banTopics=[], family=[], recentTitles=[] }){
   const profile=bpGetActive();
   const blogId=bpGetActiveId();
   if(!category) throw new Error("category가 비어 있어요");
   const exSet=new Set((exclude||[]).map(kwFlat));
+  // 키워드 계열 겹침: 짧은 쪽이 4글자 이상이면 포함 관계도 같은 키워드로 본다 ("아이폰에어드롭" ↔ "에어드롭")
+  // + 흔한 단어(아이폰·갤럭시 등)를 뺀 핵심 단어가 겹쳐도 같은 계열 ("아이폰 에어드롭" ↔ "에어드롭 안될때")
+  const GENERIC=new Set(["아이폰","갤럭시","휴대폰","핸드폰","스마트폰","삼성","애플","안드로이드","방법","설정","하는법","해결","해결법","안될때","안됨","오류","확인","정리","비교","추천","기능","사용법","꿀팁"]);
+  const coreToks=k=>String(k||"").toLowerCase().split(/\s+/).filter(t=>t.length>=3&&!GENERIC.has(t));
+  const famRaw=[...new Set([...(family||[]),...(exclude||[])].filter(Boolean))];
+  const famList=famRaw.map(kwFlat);
+  const sameFamily=k=>{ const f=kwFlat(k);
+    const hit=famList.find(u=>{ const a=f.length<=u.length?f:u, b=f.length<=u.length?u:f; return a.length>=4&&b.includes(a); });
+    if(hit) return hit;
+    const mine=coreToks(k); return famRaw.find(u=>{ const uf=kwFlat(u); return mine.some(t=>uf.includes(t)) || coreToks(u).some(t=>f.includes(t)); }); };
   const branch=mode==="branch";
   const extra=`
 
@@ -11050,16 +11060,17 @@ ${banTopics.length?`- 휴대폰 판매점이 운영하는 블로그다. 휴대�
 `:""}- 정보형 주제만. 구매처·가격 비교·요금제 추천·매장 홍보·이벤트·할인 주제는 추천하지 말 것.
 - 특정 업체·판매처가 주인공인 주제 금지.
 ${branch?`- 이 블로그는 작은 블로그다. 위 선정 기준 3번의 "1~2형태소" 제한 대신, 메인 키워드를 검색량이 작은 2~3단어 롱테일(질문형 의도가 분명한 것)로 잡을 것. 넓은 대표 키워드 단독 금지.`:`- 이 블로그의 체급 안에서 가장 큰 정보형 키워드를 우선할 것.`}
-${exSet.size?`- 아래는 이미 우리 블로그들이 메인으로 쓴 키워드다. 같거나 띄어쓰기만 다른 키워드는 금지 (같은 큰 키워드 아래의 다른 세부 질문은 괜찮다):\n${[...exclude].slice(-150).join(", ")}`:""}`;
+${recentTitles.length?`- 이 블로그가 최근에 쓴 글 제목들이다. 같은 소재(같은 기능·같은 문제)를 각도만 바꿔 다시 쓰는 주제는 금지 — 완전히 다른 소재로:\n${recentTitles.slice(-30).map(t=>"  · "+t).join("\n")}\n`:""}${exSet.size?`- 아래는 이미 우리 블로그들이 메인으로 쓴 키워드다. 이 키워드를 포함하거나 이 키워드에 포함되는 키워드(예: "아이폰 에어드롭"을 썼다면 "에어드롭", "에어드롭 안될때"도)는 같은 키워드로 본다. 같거나 띄어쓰기만 다른 키워드는 금지 (같은 큰 키워드 아래의 다른 세부 질문은 괜찮다):\n${[...exclude].slice(-150).join(", ")}`:""}`;
   autoLog(`주제 추천 중 (${category}, ${branch?"지점·롱테일":"본사"})`);
   const r=await recommendTopics({ category, profile, blogId, extra });
   const banFlat=(banTopics||[]).map(kwFlat).filter(Boolean);
   const droppedBan=[];
   let list=(r.list||[]).map(k=>({ topic:k.title, mainKeyword:(k.mainKeyword||k.keyword||"").trim(), reason:k.reason||"", axis:k.axis||"" }))
     .filter(k=>k.topic&&k.mainKeyword&&!exSet.has(kwFlat(k.mainKeyword)))
+    .filter(k=>{ const fam=sameFamily(k.mainKeyword); if(fam){ droppedBan.push({...k,why:`이미 쓴 키워드와 겹침 (${fam})`}); return false; } return true; })
     .filter(k=>{ const t=kwFlat(k.topic+" "+k.mainKeyword); const hit=banFlat.find(b=>t.includes(b)); if(hit){ droppedBan.push({...k,why:`판매에 불리한 주제 (${hit})`}); return false; } return true; });
   // 같은 메인 키워드 중복 제거
-  const seen=new Set(); list=list.filter(k=>{const f=kwFlat(k.mainKeyword); if(seen.has(f)) return false; seen.add(f); return true;});
+  const seen=[]; list=list.filter(k=>{const f=kwFlat(k.mainKeyword); if(seen.some(u=>{const a=f.length<=u.length?f:u,b=f.length<=u.length?u:f; return a===b||(a.length>=4&&b.includes(a));})) return false; seen.push(f); return true;});
   autoLog(`후보 ${list.length}개 검색량·성인 검색어 확인 중`);
   const [vols, adult]=await Promise.all([
     fetchMonthlyVolumes(list.map(k=>k.mainKeyword)).catch(()=>({})),
@@ -11119,7 +11130,13 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
     // 모든 블로그가 지금까지 쓴 메인 키워드 (집 PC 기록) — 여러 PC가 동시에 돌아도 같은 키워드를 피한다
     let history=[];
     try{ const h=await (await fetch("/api/auto-history?days=180")).json(); history=h.items||[]; if(h.error) autoLog(`키워드 기록 못 읽음: ${h.error}`); }catch(e){ autoLog(`키워드 기록 못 읽음: ${e.message}`); }
-    const plan=await autoPlan({ category, count, mode, scope, banTopics, exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)] });
+    const bidL=String(blogId).toLowerCase(), now=Date.now();
+    const mine=history.filter(h=>String(h.blogId||"").toLowerCase()===bidL);
+    // 계열 겹침은 같은 블로그(기록 전체) + 오늘 다른 블로그가 시도한 것까지만 본다. 다른 블로그의 예전 글은 키워드가 완전히 같을 때만 제외
+    const family=[...mine.map(h=>h.mainKeyword), ...(exclude||[])];
+    const plan=await autoPlan({ category, count, mode, scope, banTopics, family, recentTitles:mine.map(h=>h.title).filter(Boolean),
+      exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)] });
+    void now;
     const posts=[], skipped=[];
     const tries=maxTries||count+2;   // 보류가 계속 나와도 비용이 끝없이 나가지 않게
     for(const c of plan.candidates){
