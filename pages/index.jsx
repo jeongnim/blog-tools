@@ -10927,6 +10927,7 @@ function autoRulesBlock(auto){
 [자동 발행 글 규칙 — 정보형 글. 위 규칙과 충돌하면 이 규칙이 우선]
 A1. 순수 정보 글이다. 특정 매장·업체·판매처를 소개하거나 추천하지 말고, 가입·구매·상담·방문·문의를 권하는 문장을 쓰지 말 것.
 A2. 글쓴이의 직업·소속·매장을 드러내지 말 것. "매장에서 일하다 보면", "고객님들이 자주 묻는", "판매하면서" 같은 표현 금지. 경험은 평범한 사용자 입장에서만 쓴다.
+A2-1. 휴대폰 판매점이 운영하는 블로그다. 휴대폰 구매·개통을 꺼리게 만드는 내용을 쓰지 말 것 — 예: 자급제·알뜰폰으로 옮기라는 권유, 판매점·대리점에 대한 불신 조장, 위약금·해지·개통 철회 방법 안내, "새 폰 사지 말고 버티라"는 결론.${(auto.banTopics||[]).length?` 특히 이런 방향 금지: ${auto.banTopics.join(", ")}.`:""}
 A3. 링크(URL)·전화번호·메신저 ID·업체 상호를 쓰지 말 것. "통신사 공식 홈페이지에서 확인"처럼 이름만 말하는 것은 괜찮다.
 ${branch
   ?`A4. 검색량이 작은 구체적 질문 하나에 정확히 답하는 글이다. 첫 2~3문장 안에 답을 바로 주고, 이어서 조건·예외·순서를 풀어 쓴다. 네이버 AI 브리핑·구글 AI 개요가 그대로 인용하기 좋게 정의·순서·조건을 한 문단씩 독립적으로 쓸 것. 본문은 1,500~2,500자.`
@@ -11024,7 +11025,7 @@ function autoUseBlog(blogId, { mode="hq", key="" }={}){
 }
 
 // 오늘 쓸 주제 후보를 고른다 (필요 수보다 넉넉히 — 글이 보류되면 다음 후보로)
-async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4, scope="" }){
+async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4, scope="", banTopics=[] }){
   const profile=bpGetActive();
   const blogId=bpGetActiveId();
   if(!category) throw new Error("category가 비어 있어요");
@@ -11035,14 +11036,19 @@ async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4, sco
 [자동 발행용 추가 조건]
 ${scope?`- 주제 범위 (가장 중요): ${scope}
 - 범위 밖 주제는 카테고리 인기글·트렌드에 있어도 추천하지 말 것. 20개 모두 이 범위 안에서, 매번 다른 세부 소재(기기 설정·기능, 배터리·충전, 카메라, 저장공간, 보안·분실, 요금제·데이터, 통신사·개통·번호이동, 중고·보상판매, 유심·eSIM, 앱 사용법 등)로 고르게 나눌 것.
+`:""}- 일반 사용자가 실제로 궁금해서 검색하는 생활형 질문만 (사용법·설정 방법, 안 될 때 해결법, 고르는 법·비교, 새 기능 활용, 아끼는 법). 제도·조건·규정·업계 용어를 설명하는 딱딱한 주제(예: "번호이동 조건", "약관", "정책 변경 내용")는 피할 것.
+${banTopics.length?`- 휴대폰 판매점이 운영하는 블로그다. 휴대폰 구매·개통에 불리한 주제는 추천하지 말 것. 특히 이 단어가 들어가거나 이런 방향인 주제 금지: ${banTopics.join(", ")}
 `:""}- 정보형 주제만. 구매처·가격 비교·요금제 추천·매장 홍보·이벤트·할인 주제는 추천하지 말 것.
 - 특정 업체·판매처가 주인공인 주제 금지.
 ${branch?`- 이 블로그는 작은 블로그다. 위 선정 기준 3번의 "1~2형태소" 제한 대신, 메인 키워드를 검색량이 작은 2~3단어 롱테일(질문형 의도가 분명한 것)로 잡을 것. 넓은 대표 키워드 단독 금지.`:`- 이 블로그의 체급 안에서 가장 큰 정보형 키워드를 우선할 것.`}
 ${exSet.size?`- 아래는 이미 우리 블로그들이 메인으로 쓴 키워드다. 같거나 띄어쓰기만 다른 키워드는 금지 (같은 큰 키워드 아래의 다른 세부 질문은 괜찮다):\n${[...exclude].slice(-150).join(", ")}`:""}`;
   autoLog(`주제 추천 중 (${category}, ${branch?"지점·롱테일":"본사"})`);
   const r=await recommendTopics({ category, profile, blogId, extra });
+  const banFlat=(banTopics||[]).map(kwFlat).filter(Boolean);
+  const droppedBan=[];
   let list=(r.list||[]).map(k=>({ topic:k.title, mainKeyword:(k.mainKeyword||k.keyword||"").trim(), reason:k.reason||"", axis:k.axis||"" }))
-    .filter(k=>k.topic&&k.mainKeyword&&!exSet.has(kwFlat(k.mainKeyword)));
+    .filter(k=>k.topic&&k.mainKeyword&&!exSet.has(kwFlat(k.mainKeyword)))
+    .filter(k=>{ const t=kwFlat(k.topic+" "+k.mainKeyword); const hit=banFlat.find(b=>t.includes(b)); if(hit){ droppedBan.push({...k,why:`판매에 불리한 주제 (${hit})`}); return false; } return true; });
   // 같은 메인 키워드 중복 제거
   const seen=new Set(); list=list.filter(k=>{const f=kwFlat(k.mainKeyword); if(seen.has(f)) return false; seen.add(f); return true;});
   autoLog(`후보 ${list.length}개 검색량·성인 검색어 확인 중`);
@@ -11053,23 +11059,24 @@ ${exSet.size?`- 아래는 이미 우리 블로그들이 메인으로 쓴 키워�
   const bad=new Set((adult.results||[]).filter(x=>x.adult===true).map(x=>x.query));
   const vr=r.volRange;
   const cap=branch ? Math.max(300, vr?.med||0) : Math.max(5000, Math.round((vr?.ceil||0)*1.5));
-  const dropped=[];
+  const dropped=[...droppedBan];
   list=list.map(k=>({ ...k, monthly:vols[k.mainKeyword]?.monthly??null, commercial:!!vols[k.mainKeyword]?.commercial }))
     .filter(k=>{
       if(bad.has(k.mainKeyword)){ dropped.push({...k,why:"성인 검색어"}); return false; }
       if(k.commercial){ dropped.push({...k,why:"상업성 키워드"}); return false; }
       if(k.monthly!=null&&k.monthly>cap){ dropped.push({...k,why:`검색량 ${k.monthly} > 체급 상한 ${cap}`}); return false; }
-      if(!branch&&k.monthly!=null&&k.monthly<30){ dropped.push({...k,why:`검색량 너무 작음 (${k.monthly})`}); return false; }
+      if(k.monthly!=null&&k.monthly<(branch?20:30)){ dropped.push({...k,why:`검색량 너무 작음 (${k.monthly}) — 찾는 사람이 거의 없음`}); return false; }
       return true;
     });
   const axisRank=a=>a==="core"?0:a==="side"?1:2;
-  list.sort((a,b)=> axisRank(a.axis)-axisRank(b.axis) || (branch ? 0 : (b.monthly||0)-(a.monthly||0)));
+  // 실제로 찾는 사람이 많은 순 (체급 상한 안에서). 검색량을 모르는 건 뒤로
+  list.sort((a,b)=> axisRank(a.axis)-axisRank(b.axis) || ((b.monthly??-1)-(a.monthly??-1)));
   return { blogId, category, candidates:list.slice(0, count+spare), dropped, excludedByMyRank:r.excluded||[], volRange:vr, cap };
 }
 
 // 글 1편 + 이미지 프롬프트
-async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo" }){
-  const meta=await generatePost({ kw:topic, mainKeyword, opts:{ auto:{ mode, region } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
+async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[] }){
+  const meta=await generatePost({ kw:topic, mainKeyword, opts:{ auto:{ mode, region, banTopics } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
   if(meta.autoBlock?.length) return { ok:false, topic, mainKeyword, title:meta.title, reasons:meta.autoBlock };
   autoLog(`[${mainKeyword}] 이미지 장면 나누는 중`);
   let sections=[];
@@ -11091,7 +11098,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
 }
 
 // 하루 작업: 주제 고르기 → 필요한 편수만큼 글쓰기 (보류되면 다음 후보로)
-async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0 }){
+async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[] }){
   if(AUTO_STATE.busy) throw new Error("이미 실행 중이에요");
   AUTO_STATE.busy=true; AUTO_STATE.log=[];
   const started=Date.now();
@@ -11101,7 +11108,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
     // 모든 블로그가 지금까지 쓴 메인 키워드 (집 PC 기록) — 여러 PC가 동시에 돌아도 같은 키워드를 피한다
     let history=[];
     try{ const h=await (await fetch("/api/auto-history?days=180")).json(); history=h.items||[]; if(h.error) autoLog(`키워드 기록 못 읽음: ${h.error}`); }catch(e){ autoLog(`키워드 기록 못 읽음: ${e.message}`); }
-    const plan=await autoPlan({ category, count, mode, scope, exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)] });
+    const plan=await autoPlan({ category, count, mode, scope, banTopics, exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)] });
     const posts=[], skipped=[];
     const tries=maxTries||count+2;   // 보류가 계속 나와도 비용이 끝없이 나가지 않게
     for(const c of plan.candidates){
@@ -11110,7 +11117,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
       const useRegion=region&&Math.random()<regionChance?region:"";
       autoLog(`글쓰기: ${c.topic} [${c.mainKeyword}${c.monthly!=null?` · 월 ${c.monthly}`:""}${useRegion?` · 지역 ${useRegion}`:""}]`);
       try{
-        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio });
+        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics });
         if(r.ok){
           posts.push({ ...r, monthly:c.monthly, category, region:useRegion });
           // 다른 PC의 블로그가 같은 키워드를 고르지 않게 바로 기록
