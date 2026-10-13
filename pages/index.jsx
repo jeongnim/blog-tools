@@ -10928,7 +10928,8 @@ function autoRulesBlock(auto){
 A1. 순수 정보 글이다. 특정 매장·업체·판매처를 소개하거나 추천하지 말고, 가입·구매·상담·방문·문의를 권하는 문장을 쓰지 말 것.
 A2. 글쓴이의 직업·소속·매장을 드러내지 말 것. "매장에서 일하다 보면", "고객님들이 자주 묻는", "판매하면서" 같은 표현 금지. 경험은 평범한 사용자 입장에서만 쓴다.
 A2-1. 휴대폰 판매점이 운영하는 블로그다. 휴대폰 구매·개통을 꺼리게 만드는 내용을 쓰지 말 것 — 예: 자급제·알뜰폰으로 옮기라는 권유, 판매점·대리점에 대한 불신 조장, 위약금·해지·개통 철회 방법 안내, "새 폰 사지 말고 버티라"는 결론.${(auto.banTopics||[]).length?` 특히 이런 방향 금지: ${auto.banTopics.join(", ")}.`:""}
-A3. 링크(URL)·전화번호·메신저 ID·업체 상호를 쓰지 말 것. "통신사 공식 홈페이지에서 확인"처럼 이름만 말하는 것은 괜찮다.
+A3. 링크(URL)·전화번호·메신저 ID·업체 상호를 쓰지 말 것.
+A3-1. 굵게 강조: 독자가 꼭 기억해야 할 결론·핵심 방법·주의할 점을 담은 짧은 구절 3~6곳을 **이렇게** 별표 두 개로 감싼다. 한 줄 안에서만 감싸고(줄을 넘기지 말 것), 문장 전체보다는 핵심 구절만. 제목·소제목(▶ 줄)·질문 줄에는 쓰지 말 것. "통신사 공식 홈페이지에서 확인"처럼 이름만 말하는 것은 괜찮다.
 ${branch
   ?`A4. 검색량이 작은 구체적 질문 하나에 정확히 답하는 글이다. 첫 2~3문장 안에 답을 바로 주고, 이어서 조건·예외·순서를 풀어 쓴다. 네이버 AI 브리핑·구글 AI 개요가 그대로 인용하기 좋게 정의·순서·조건을 한 문단씩 독립적으로 쓸 것. 본문은 1,500~2,500자.`
   :`A4. 주제의 핵심 질문을 넓고 깊게 다루는 정리형 글이다. 독자가 이 글 하나로 판단을 끝낼 수 있게 조건별·상황별로 나눠 쓸 것.`}
@@ -10946,7 +10947,9 @@ function applyAutoSafety(meta){
   const strip=t=>String(t||"").replace(AUTO_URL_RE,"").replace(AUTO_PHONE_RE,"");
   const before=meta.content;
   meta.content=strip(meta.content).replace(/[ \t]+\n/g,"\n").replace(/\(\s*\)/g,"").replace(/\n{3,}/g,"\n\n");
-  meta.title=strip(meta.title).replace(/\s{2,}/g," ").trim();
+  meta.title=strip(meta.title).replace(/\*\*/g,"").replace(/\s{2,}/g," ").trim();
+  // 굵게 표시(**)는 한 줄 안에서 짝이 맞는 것만 남긴다
+  meta.content=meta.content.split("\n").map(l=>{ const n=(l.match(/\*\*/g)||[]).length; return (n%2||/^\s*(▶|#)/.test(l))?l.replace(/\*\*/g,""):l; }).join("\n");
   if(meta.content!==before) notes.push("본문의 링크·전화번호를 지움");
   const sales=meta.content.match(AUTO_SALES_RE)||meta.title.match(AUTO_SALES_RE);
   if(sales) block.push(`판매·상담 유도 표현: "${sales[0]}"`);
