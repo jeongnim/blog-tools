@@ -9803,7 +9803,7 @@ T7. 제목은 주제 "${kw}"의 핵심 행위나 관점을 담을 것. 주제가
    - 모든 소제목은 "${kw}"의 하위 항목이어야 한다. 하나라도 옆길로 새면 실패다
    - 이 중 최소 1개는 독자가 검색창에 칠 법한 질문형 소제목으로 쓸 것
      (예: "▶ 개통 전에 유심을 먼저 사도 될까?")
-3. 각 문장 끝 줄바꿈(\\n)만 사용, HTML 태그(<br> 등) 절대 금지
+3. 한 문장이 끝날 때마다 줄을 바꾼다(\\n). 한 줄에 문장 두 개를 붙여 쓰지 말 것. 문단과 문단 사이는 빈 줄 하나. HTML 태그(<br> 등) 절대 금지
 4. 해시태그는 본문에 쓰지 말 것 — JSON의 tags 배열에만 담을 것 (본문 끝에는 붙이지 않는다)
 5. 도입부 구조 (홈판 미리보기 + AI 인용 최적화):
    - 첫 문장: 이 글의 결론 또는 핵심 정의를 한 문장으로 단정해서 제시
@@ -10575,6 +10575,30 @@ function validateTitle(title, { mainKw, topTitles, commercialWords, avoidWords }
 
 // ── 키워드·주제 하나로 글 한 편 생성 (화면 상태와 무관 — 자동화에서도 그대로 호출) ──
 // progress("__loading__:...") 로 진행 상황을 알린다. 맞춤 프로필·API 키는 이 탭에서 고른 블로그 기준.
+// ── 줄바꿈 정리: 한 문장에 한 줄, 문단 사이는 빈 줄 (모델이 문장을 한 줄에 몰아 쓰는 경우가 많아 코드로 맞춘다) ──
+// 아주 짧은 문장("네, 바뀌지 않습니다.")은 다음 문장과 한 줄로 붙인다. **굵게** 구간 안에서는 자르지 않는다.
+function oneSentencePerLine(text, minLen = 15) {
+  return String(text || "").split("\n").map(line => {
+    const t = line.trim();
+    if (!t || /^(▶|▷|📍|#|\[이미지|\[사진|\[확인필요)/.test(t)) return line;
+    const parts = [];
+    let buf = "", bold = 0;
+    for (let i = 0; i < t.length; i++) {
+      if (t[i] === "*" && t[i + 1] === "*") { bold ^= 1; buf += "**"; i++; continue; }
+      buf += t[i];
+      const end = /[.!?]/.test(t[i]) && /[가-힣)\]"'”’]/.test(t[i - 1] || "") && t[i + 1] === " ";
+      if (end && !bold) { parts.push(buf.trim()); buf = ""; }
+    }
+    if (buf.trim()) parts.push(buf.trim());
+    const out = [];
+    parts.forEach((p, i) => {
+      if (out.length && out[out.length - 1].length < minLen && !/\?$/.test(out[out.length - 1])) out[out.length - 1] += " " + p;
+      else out.push(p);
+    });
+    return out.join("\n");
+  }).join("\n");
+}
+
 async function generatePost({ kw, smartBlockType, smartBlockReason, blogStrategy, mainKeyword, visit, opts }, progress = () => {}) {
     const now = new Date();
     const yearMonth = `${now.getFullYear()}년 ${now.getMonth()+1}월`;
@@ -10787,7 +10811,9 @@ Output ONLY valid JSON, no markdown.`;
       if (cut > bodyText.length * 0.6) bodyText = bodyText.slice(0, cut + 2).trimEnd();
     }
 
-    // ── [확인필요:] 항목을 웹 검색으로 자동 해결 ──
+    if (!visit) bodyText = oneSentencePerLine(bodyText);
+
+  // ── [확인필요:] 항목을 웹 검색으로 자동 해결 ──
     let factItems = [];
     let factSummary = null;
     // 메인 키워드가 본문에 글자 그대로 5회 이상 들어갔는지 확인하고, 모자라면 다른 표기를 바꿔 채운다
