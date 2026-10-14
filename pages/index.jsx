@@ -1094,7 +1094,12 @@ General rules:
 - 30-70 words per scene, plain descriptive English (Korean UI labels / brand names may be written in Korean inside the English text)
 - "sceneKo" = natural Korean rendering of the exact same scene
 - "sectionTitle" = short Korean title, "sectionDesc" = one-line Korean summary of that section
-${opts.noUi?`
+${opts.koreaUi?`
+OVERRIDE FOR THIS RUN:
+- Everything is set in South Korea: Korean people, Korean homes, cafes, streets, offices and stores.
+- "ui" images: reproduce the real Korean-language screen of the named app or phone (e.g. Samsung Galaxy One UI 설정, iPhone 설정, 카카오톡, 카카오뱅크) as faithfully as possible. In "scene", list the exact Korean labels that appear on that real screen, top to bottom, and keep the number of on-screen labels small (at most 6 short labels) — fewer labels render more accurately. Do not invent menu names; use only labels you are confident exist on that real screen.
+- "scene" and "product" images: no readable text of any language; screens and signs are blurred.
+`:""}${opts.noUi?`
 OVERRIDE FOR THIS RUN (takes priority over the "ui" rules above):
 - Never use imageType "ui". No screenshots, no app screens, no settings menus, no on-screen labels. For sections about an app or setting, show a person's hands holding a smartphone whose screen is softly blurred and unreadable, or the real-world result of the setting (e.g. a clear photo being taken at an exhibition).
 - Everything is set in South Korea: Korean people, Korean homes, cafes, streets, offices and stores.
@@ -11211,18 +11216,24 @@ ${recentTitles.length?`- 이 블로그가 최근에 쓴 글 제목들이다. 같
 }
 
 // 글 1편 + 이미지 프롬프트
-async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[] }){
+async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false }){
   const meta=await generatePost({ kw:topic, mainKeyword, opts:{ auto:{ mode, region, banTopics } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
   if(meta.autoBlock?.length) return { ok:false, topic, mainKeyword, title:meta.title, reasons:meta.autoBlock };
   autoLog(`[${mainKeyword}] 이미지 장면 나누는 중`);
   let sections=[];
-  try{ sections=await analyzeImageSections(meta, meta.content, { noUi:true }); }catch(e){ autoLog(`[${mainKeyword}] 이미지 장면 실패: ${e.message}`); }
+  try{ sections=await analyzeImageSections(meta, meta.content, allowUi?{ koreaUi:true }:{ noUi:true }); }catch(e){ autoLog(`[${mainKeyword}] 이미지 장면 실패: ${e.message}`); }
   // 실제 제품 사진을 첨부할 수 없으니 제품 타입은 "사용 장면"으로 바꿔 그린다 (가짜 제품 디자인 방지: 브랜드명 빼고 일반 기기로)
   const images=sections.map((x,i)=>{
     let item=x.imageType==="product"?{...x,imageType:"scene",scene:String(x.scene||"").replace(new RegExp((x.productName||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"),"a smartphone")}:x;
+    const NO_TEXT=" Setting: South Korea, Korean people and Korean everyday environment. Do not render any letters, words, numbers or characters in any language anywhere in the image (no Korean, no English, no Chinese); phone screens and signs must be blurred or blank.";
+    const sceneFallback=buildFullPrompt({...item,imageType:"scene",scene:"A Korean person's hands holding a smartphone, the screen softly blurred and unreadable, in a bright Korean home or cafe."}, imageStyle, imageRatio, "en")+NO_TEXT;
+    if(item.imageType==="ui" && allowUi){
+      // 실제 앱·폰 화면 재현: 한국어 프롬프트(화면 글자 정확도↑) + 실패 시 쓸 대체 장면
+      const prompt=buildFullPrompt(item, imageStyle, imageRatio, "ko")+" 실제 한국판 화면 그대로. 화면 안 글자는 위에 적은 한국어 라벨만, 맞춤법 그대로 또렷하게. 확실하지 않은 글자는 넣지 말고 비워둘 것. 중국어·일본어·깨진 글자 금지.";
+      return { n:i+1, sectionTitle:x.sectionTitle||"", type:"ui", prompt, fallbackPrompt:sceneFallback, labels:item.sceneKo||"" };
+    }
     if(item.imageType==="ui") item={...item,imageType:"scene",scene:"A Korean person's hands holding a smartphone, the screen softly blurred and unreadable, in a bright Korean home or cafe."};
-    const prompt=buildFullPrompt(item, imageStyle, imageRatio, "en")
-      +" Setting: South Korea, Korean people and Korean everyday environment. Do not render any letters, words, numbers or characters in any language anywhere in the image (no Korean, no English, no Chinese); phone screens and signs must be blurred or blank.";
+    const prompt=buildFullPrompt(item, imageStyle, imageRatio, "en")+NO_TEXT;
     return { n:i+1, sectionTitle:x.sectionTitle||"", type:item.imageType, prompt };
   });
   const bodyOnly=meta.content.replace(/(?:\n+#[^\n]*)+\s*$/,"").trimEnd();
@@ -11237,7 +11248,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
 }
 
 // 하루 작업: 주제 고르기 → 필요한 편수만큼 글쓰기 (보류되면 다음 후보로)
-async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[] }){
+async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false }){
   if(AUTO_STATE.busy) throw new Error("이미 실행 중이에요");
   AUTO_STATE.busy=true; AUTO_STATE.log=[];
   const started=Date.now();
@@ -11262,7 +11273,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
       const useRegion=region&&Math.random()<regionChance?region:"";
       autoLog(`글쓰기: ${c.topic} [${c.mainKeyword}${c.monthly!=null?` · 월 ${c.monthly}`:""}${useRegion?` · 지역 ${useRegion}`:""}]`);
       try{
-        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics });
+        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi });
         if(r.ok){
           posts.push({ ...r, monthly:c.monthly, category, region:useRegion });
           // 다른 PC의 블로그가 같은 키워드를 고르지 않게 바로 기록
