@@ -2522,6 +2522,10 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
   const [customTopic,setCustomTopic]=useState("");   // 직접 입력한 글 주제
+  // 말투 (브라우저에 기억)
+  const [writeTone,setWriteTone]=useState(()=>{try{return localStorage.getItem("mt_write_tone")||"balanced";}catch(e){return "balanced";}});
+  const [writeToneUrl,setWriteToneUrl]=useState(()=>{try{return localStorage.getItem("mt_write_tone_url")||"";}catch(e){return "";}});
+  const pickTone=t=>{setWriteTone(t);try{localStorage.setItem("mt_write_tone",t);}catch(e){}};
   // 방문 리뷰 모드
   const [visitOpen,setVisitOpen]=useState(false);
   const [placeName,setPlaceName]=useState("");
@@ -2558,7 +2562,9 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
   const writeTopic=(topic)=>{
     const t=(topic||"").trim();
     if(!t||!goAutoWrite) return;
-    goAutoWrite(t,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword);
+    try{localStorage.setItem("mt_write_tone_url",writeToneUrl.trim());}catch(e){}
+    goAutoWrite(t,result?.smartBlockType,result?.smartBlockReason,result?.blogStrategy,result?.keyword,null,
+      {tone:{style:writeTone,url:/^https?:\/\//.test(writeToneUrl.trim())?writeToneUrl.trim():""}});
   };
   const fmtNum = n => { if(n===null||n===undefined) return "-"; const num=Number(n); if(isNaN(num)) return "-"; if(num<=10) return "10 이하"; return num.toLocaleString(); };
 
@@ -3011,6 +3017,22 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
         {/* ── 글 주제 정하기 (직접 입력 + AI 추천) ── */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
           <SectionTitle>✍️ 글 주제 정하기</SectionTitle>
+
+          {/* 말투 선택 + 참고할 내 글 */}
+          <div style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",padding:"10px 12px",marginBottom:"12px",display:"flex",flexDirection:"column",gap:"8px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"6px",flexWrap:"wrap"}}>
+              <span style={{color:"#c9d1d9",fontSize:"14px",fontWeight:700,marginRight:"4px"}}>🗣️ 말투</span>
+              {Object.entries(WRITE_TONES).map(([k,t])=>(
+                <button key={k} onClick={()=>pickTone(k)} title={t.desc}
+                  style={{padding:"5px 11px",borderRadius:"7px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
+                    background:writeTone===k?"#1f6feb":"#161b22",color:writeTone===k?"#fff":"#8b949e",border:`1px solid ${writeTone===k?"#1f6feb":"#30363d"}`}}>
+                  {t.label}</button>))}
+              <span style={{color:"#484f58",fontSize:"12px"}}>{WRITE_TONES[writeTone]?.desc}</span>
+            </div>
+            <input value={writeToneUrl} onChange={e=>setWriteToneUrl(e.target.value)}
+              placeholder="말투 참고할 내 글 주소 (선택 · 예전에 직접 쓴 블로그 글 URL — 말투·줄바꿈만 따라 해요)"
+              style={{padding:"7px 10px",background:"#010409",border:"1px solid #30363d",borderRadius:"7px",color:"#e6edf3",fontSize:"13px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif"}}/>
+          </div>
 
           {/* 직접 주제 입력 */}
           <div style={{background:"#0d1117",border:"1px solid #1f6feb55",borderRadius:"10px",padding:"11px 12px",marginBottom:"14px"}}>
@@ -10605,6 +10627,16 @@ N4. 기사 시점 이후 상황이 바뀌었을 수 있으니, 진행 중인 이
 
     let pattern = pickTitlePattern(visit?.disclosure === "own" ? ["experience"] : []);
 
+  // 말투 선택 (+ 참고할 내 글 주소가 있으면 그 글 앞부분을 말투 견본으로)
+  let toneOpt = opts?.tone ? { ...opts.tone } : null;
+  if (toneOpt?.url && !opts?.auto) {
+    try {
+      const r = await withTimeout(fetch(`/api/blog-content?url=${encodeURIComponent(toneOpt.url)}`).then(r => r.json()), 12000, null);
+      const b = (r?.bodies || [])[0] || "";
+      if (b) toneOpt.sample = b.replace(/\n{3,}/g, "\n\n").slice(0, 1200);
+    } catch (e) {}
+  }
+
     // ── 제품 출시 상태 확인 (항상, 사실표와 병렬) ──
     const productStatusP = withTimeout(
       checkProductStatus({ kw, mainKw, today: todayStr }).catch(() => []), 30000, []
@@ -10668,7 +10700,7 @@ N4. 기사 시점 이후 상황이 바뀌었을 수 있으니, 진행 중인 이
       factSheetBlock: formatFactSheetBlock(factSheet),
       profileBlock: buildProfileBlock(bpGetActive(), "write"),
       productStatusBlock: formatProductStatusBlock(productStatus),
-      visitBlock: visitBlock + newsBlock + autoRulesBlock(opts?.auto),
+      visitBlock: visitBlock + newsBlock + autoRulesBlock(opts?.auto) + (opts?.auto ? "" : toneBlock(toneOpt)),
     });
 
     const visitSys = `You are writing a first-person Korean Naver blog visit review ("방문 후기") in a warm, natural conversational tone (~했어요, ~더라고요). The [방문 리뷰 모드] block in the user message overrides any conflicting rule there.
@@ -10943,6 +10975,29 @@ function fixRareSyllables(text, mainKw){
   for(const ch of out) if(/[가-힣]/.test(ch)&&!KS_HANGUL.has(ch)) found.add(ch);
   return { text:out, rare:[...found] };
 }
+// ── 글쓰기 말투 (키워드 글쓰기 화면에서 고름) ──
+const WRITE_TONES={
+  expert:{label:"🎓 전문가",desc:"단정하고 차분한 설명체",rule:`[말투 — 전문가형. 기본 프롬프트의 문체 규칙(13번)보다 이 규칙이 우선]
+- "~입니다/~합니다/~됩니다" 중심의 차분하고 단정한 설명체. 신뢰감 있는 전문 리뷰어·가이드 톤.
+- "~거든요", "~더라고요", "~했어요" 같은 구어체 어미와 감탄·이모지는 쓰지 말 것. 경험은 "~해본 결과 ~였습니다"처럼 짧고 담담하게.
+- 같은 어미가 세 번 연속되면 "~입니다/~됩니다/~할 수 있습니다/~하는 편입니다"로 바꿔 단조로움만 피한다.`},
+  balanced:{label:"⚖️ 적당히",desc:"설명은 ~니다, 경험·팁은 ~요",rule:`[말투 — 균형형. 기본 프롬프트의 문체 규칙(13번)보다 이 규칙이 우선]
+- 사실·방법 설명은 "~입니다/~합니다", 경험·판단·팁은 "~했어요/~더라고요/~하는 게 좋아요"로 쓴다. 두 어미가 대략 반반이 되게.
+- 같은 어미가 세 번 연속 나오지 않게. 딱딱하지도 가볍지도 않은 블로그 정보글 톤.`},
+  friendly:{label:"😊 친근",desc:"옆자리에서 알려주듯",rule:`[말투 — 친근형. 기본 프롬프트의 문체 규칙(13번)보다 이 규칙이 우선]
+- 옆자리 사람에게 설명해 주듯 친근한 존댓말. "~해요", "~하죠", "~거든요", "~더라고요", "~하면 돼요", "~해 보세요", "~했으면 좋겠어요!", "~하기도 합니다"를 섞는다.
+- "~합니다/~습니다/~됩니다"로 끝나는 문장은 전체의 3분의 1 이하. 같은 어미가 세 번 연속 나오지 않게. 접속어도 "다만"만 반복하지 말고 "하지만·그런데·그래서·참고로·특히"를 바꿔 쓴다.
+- 질문 줄 바로 아래 답의 첫 문장은 결론부터, 말투는 친근하게: (X) "켜두는 것이 좋습니다." (O) "웬만하면 켜두는 게 좋아요."
+- 반말·과한 감탄·이모지 남발은 금지.`},
+};
+function toneBlock(tone){
+  if(!tone) return "";
+  const t=WRITE_TONES[tone.style]; let out="";
+  if(t) out+="\n"+t.rule+"\n";
+  if(tone.sample) out+=`\n[말투 참고 — 작성자가 예전에 직접 쓴 글의 일부. 말투·어미·문장 길이·줄바꿈 습관·이모지 쓰는 정도만 따라 하고, 내용·정보·경험·문장은 절대 가져오지 말 것]\n"""\n${tone.sample}\n"""\n`;
+  return out;
+}
+
 function autoRulesBlock(auto){
   if(!auto) return "";
   const branch=auto.mode==="branch";
@@ -10952,6 +11007,11 @@ A1. 순수 정보 글이다. 특정 매장·업체·판매처를 소개하거나
 A2. 글쓴이의 직업·소속·매장을 드러내지 말 것. "매장에서 일하다 보면", "고객님들이 자주 묻는", "판매하면서" 같은 표현 금지. 경험은 평범한 사용자 입장에서만 쓴다.
 A2-1. 휴대폰 판매점이 운영하는 블로그다. 휴대폰 구매·개통을 꺼리게 만드는 내용을 쓰지 말 것 — 예: 자급제·알뜰폰으로 옮기라는 권유, 판매점·대리점에 대한 불신 조장, 위약금·해지·개통 철회 방법 안내, "새 폰 사지 말고 버티라"는 결론.${(auto.banTopics||[]).length?` 특히 이런 방향 금지: ${auto.banTopics.join(", ")}.`:""}
 A3. 링크(URL)·전화번호·메신저 ID·업체 상호를 쓰지 말 것.
+A-TONE. 말투 (가장 눈에 띄는 부분이니 꼭 지킬 것): 옆자리 사람에게 설명해 주듯 친근한 존댓말. "~해요", "~하죠", "~거든요", "~더라고요", "~하면 돼요", "~해 보세요", "~했으면 좋겠어요!", "~하기도 합니다"를 섞어 쓴다.
+   - "~합니다/~습니다/~됩니다"로 끝나는 문장은 전체의 3분의 1 이하. 같은 어미로 끝나는 문장이 세 번 연속 나오지 않게.
+   - 접속어도 "다만"만 반복하지 말고 "하지만", "그런데", "그래서", "참고로", "특히" 등을 바꿔 쓴다.
+   - 질문 줄 바로 아래 답의 첫 문장은 결론부터(AI 인용용)이되 말투는 친근하게: (X) "켜두는 것이 좋습니다." (O) "웬만하면 켜두는 게 좋아요."
+   - 반말·과한 감탄·이모지 남발은 금지. 정보의 정확성은 그대로 유지.
 A3-1. 굵게 강조: 독자가 꼭 기억해야 할 결론·핵심 방법·주의할 점을 담은 짧은 구절 3~6곳을 **이렇게** 별표 두 개로 감싼다. 한 줄 안에서만 감싸고(줄을 넘기지 말 것), 문장 전체보다는 핵심 구절만. 제목·소제목(▶ 줄)·질문 줄에는 쓰지 말 것. "통신사 공식 홈페이지에서 확인"처럼 이름만 말하는 것은 괜찮다.
 ${branch
   ?`A4. 검색량이 작은 구체적 질문 하나에 정확히 답하는 글이다. 첫 2~3문장 안에 답을 바로 주고, 이어서 조건·예외·순서를 풀어 쓴다. 네이버 AI 브리핑·구글 AI 개요가 그대로 인용하기 좋게 정의·순서·조건을 한 문단씩 독립적으로 쓸 것. 본문은 1,500~2,500자.`
