@@ -11248,7 +11248,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
 }
 
 // 하루 작업: 주제 고르기 → 필요한 편수만큼 글쓰기 (보류되면 다음 후보로)
-async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false }){
+async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null }){
   if(AUTO_STATE.busy) throw new Error("이미 실행 중이에요");
   AUTO_STATE.busy=true; AUTO_STATE.log=[];
   const started=Date.now();
@@ -11256,8 +11256,11 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
     const who=autoUseBlog(blogId,{ mode, key });
     autoLog(`블로그 ${who.blogId} (프로필 ${who.profile}, 전용 키 ${who.keyMask})`);
     // 모든 블로그가 지금까지 쓴 메인 키워드 (집 PC 기록) — 여러 PC가 동시에 돌아도 같은 키워드를 피한다
-    let history=[];
-    try{ const h=await (await fetch("/api/auto-history?days=180")).json(); history=h.items||[]; if(h.error) autoLog(`키워드 기록 못 읽음: ${h.error}`); }catch(e){ autoLog(`키워드 기록 못 읽음: ${e.message}`); }
+    // history 를 넘겨받으면(회사 PC 로컬 기록) 집 PC 서버를 전혀 쓰지 않는다
+    const localHist=Array.isArray(givenHistory);
+    let history=localHist?givenHistory:[];
+    if(localHist) autoLog(`키워드 기록: 실행 PC 로컬 ${history.length}건`);
+    else { try{ const h=await (await fetch("/api/auto-history?days=180")).json(); history=h.items||[]; if(h.error) autoLog(`키워드 기록 못 읽음: ${h.error}`); }catch(e){ autoLog(`키워드 기록 못 읽음: ${e.message}`); } }
     const bidL=String(blogId).toLowerCase(), now=Date.now();
     const mine=history.filter(h=>String(h.blogId||"").toLowerCase()===bidL);
     // 계열 겹침은 같은 블로그(기록 전체) + 오늘 다른 블로그가 시도한 것까지만 본다. 다른 블로그의 예전 글은 키워드가 완전히 같을 때만 제외
@@ -11276,8 +11279,8 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
         const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi });
         if(r.ok){
           posts.push({ ...r, monthly:c.monthly, category, region:useRegion });
-          // 다른 PC의 블로그가 같은 키워드를 고르지 않게 바로 기록
-          fetch("/api/auto-history",{ method:"POST", headers:{"Content-Type":"application/json"},
+          // 다른 PC의 블로그가 같은 키워드를 고르지 않게 바로 기록 (로컬 기록 모드면 실행 PC가 직접 저장)
+          if(!localHist) fetch("/api/auto-history",{ method:"POST", headers:{"Content-Type":"application/json"},
             body:JSON.stringify({ items:[{ blogId, mainKeyword:r.mainKeyword, title:r.title, category }] }) }).catch(()=>{});
         }
         else { skipped.push(r); autoLog(`보류: ${r.reasons.join(" / ")}`); }
