@@ -1103,7 +1103,7 @@ OVERRIDE FOR THIS RUN:
 OVERRIDE FOR THIS RUN (takes priority over the "ui" rules above):
 - Never use imageType "ui". No screenshots, no app screens, no settings menus, no on-screen labels. For sections about an app or setting, show a person's hands holding a smartphone whose screen is softly blurred and unreadable, or the real-world result of the setting (e.g. a clear photo being taken at an exhibition).
 - Everything is set in South Korea: Korean people, Korean homes, cafes, streets, offices and stores.
-- The image must contain no readable text of any language — no Korean, English or Chinese characters, no numbers, no signs, no labels, no UI. If a screen or sign appears, it is blurred or shows abstract shapes only.
+- The image must contain no readable text of any language — no Korean, English or Chinese characters, no numbers, no signs, no labels, no UI. Do not put notebooks, memo pads, papers, books or packaging in the scene (image models scribble fake text on them). If a screen or sign appears, it is blurred or shows abstract shapes only.
 `:""}
 Return ONLY valid JSON, no markdown:
 {"sections":[
@@ -11225,7 +11225,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
   // 실제 제품 사진을 첨부할 수 없으니 제품 타입은 "사용 장면"으로 바꿔 그린다 (가짜 제품 디자인 방지: 브랜드명 빼고 일반 기기로)
   const images=sections.map((x,i)=>{
     let item=x.imageType==="product"?{...x,imageType:"scene",scene:String(x.scene||"").replace(new RegExp((x.productName||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"),"a smartphone")}:x;
-    const NO_TEXT=" Setting: South Korea, Korean people and Korean everyday environment. Do not render any letters, words, numbers or characters in any language anywhere in the image (no Korean, no English, no Chinese); phone screens and signs must be blurred or blank.";
+    const NO_TEXT=" Setting: South Korea, Korean people and Korean everyday environment. Do not render any letters, words, numbers or characters in any language anywhere in the image (no Korean, no English, no Chinese); phone screens and signs must be blurred or blank. Avoid props that usually carry writing (notebooks, sticky notes, papers, receipts, books, packaging); if any appear they are completely blank.";
     const sceneFallback=buildFullPrompt({...item,imageType:"scene",scene:"A Korean person's hands holding a smartphone, the screen softly blurred and unreadable, in a bright Korean home or cafe."}, imageStyle, imageRatio, "en")+NO_TEXT;
     if(item.imageType==="ui" && allowUi){
       // 실제 앱·폰 화면 재현: 한국어 프롬프트(화면 글자 정확도↑) + 실패 시 쓸 대체 장면
