@@ -610,6 +610,7 @@ const WRITE_SUBTABS=[
 
 // 이미지 편집 서브탭
 const IMAGE_SUBTABS=[
+  {id:"localimg",    icon:"🎨", label:"AI 이미지 생성(집 PC)"},
   {id:"ocr",         icon:"🖼️", label:"이미지 텍스트추출"},
   {id:"convert",     icon:"🔄", label:"이미지 형식변환"},
   {id:"crop",        icon:"✂️",  label:"이미지 자르기"},
@@ -1133,6 +1134,30 @@ function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading
   const [ratio,setRatio]=useState("16:9");
   const [lang,setLang]=useState("ko");
   const [copied,setCopied]=useState(null);
+  // 집 PC 이미지 생성 (켜져 있을 때만 버튼 노출)
+  const [localOk,setLocalOk]=useState(false);
+  const [localRes,setLocalRes]=useState({});
+  const localChecked=useRef(false);
+  useEffect(()=>{
+    if(genImages.length>0&&!localChecked.current){ localChecked.current=true; localImgHealth().then(h=>setLocalOk(!!h.comfy)); }
+    if(genImages.length===0) setLocalRes({});
+  },[genImages.length]);
+  const fluxPromptFromItem=(item)=>{
+    const st=IMG_STYLES.find(x=>x.id===styleId)||IMG_STYLES[0];
+    return `${(item.scene||"").trim()} ${st.en}. Candid photograph of a real everyday moment in South Korea. ${FLUX_CLEAN}`;
+  };
+  const drawLocal=async(i)=>{
+    const item=genImages[i]; if(!item) return;
+    setLocalRes(r=>({...r,[i]:{busy:true,state:"시작…",images:r[i]?.images||[]}}));
+    try{
+      const out=await localImgGenerate({ prompt:fluxPromptFromItem(item), ratio, count:1 },
+        msg=>setLocalRes(r=>({...r,[i]:{...r[i],state:msg}})));
+      const imgs=out.images.map(im=>({...im,seed:out.seed}));
+      setLocalRes(r=>({...r,[i]:{busy:false,state:`완료 · ${out.sec}초`,images:[...imgs,...(r[i]?.images||[])].slice(0,4)}}));
+    }catch(e){ setLocalRes(r=>({...r,[i]:{...r[i],busy:false,state:"",err:e.message}})); }
+  };
+  const drawAllLocal=async()=>{ for(let i=0;i<genImages.length;i++){ if((genImages[i].imageType||"scene")==="ui") continue; await drawLocal(i); } };
+  const anyLocalBusy=Object.values(localRes).some(x=>x&&x.busy);
 
   const copyText=async(txt,key)=>{
     try{
@@ -1243,8 +1268,12 @@ function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading
           }}>{l.label}</button>
         ))}
       </div>
+      {genImages.length>0&&localOk&&<button onClick={drawAllLocal} disabled={anyLocalBusy} style={{
+        marginLeft:"auto",padding:"5px 14px",borderRadius:"6px",fontSize:"13px",fontWeight:700,cursor:anyLocalBusy?"not-allowed":"pointer",
+        fontFamily:"'Noto Sans KR',sans-serif",background:"#8957e522",color:"#d2a8ff",border:"1px solid #8957e5",opacity:anyLocalBusy?.6:1,
+      }} title="화면(UI) 이미지는 글씨가 깨져서 건너뜁니다">{anyLocalBusy?"🖥️ 그리는 중…":"🖥️ 집 PC로 전체 그리기"}</button>}
       {genImages.length>0&&<button onClick={()=>copyText(allText,"all")} style={{
-        marginLeft:"auto",padding:"5px 14px",borderRadius:"6px",fontSize:"13px",fontWeight:700,cursor:"pointer",
+        marginLeft:localOk?"0":"auto",padding:"5px 14px",borderRadius:"6px",fontSize:"13px",fontWeight:700,cursor:"pointer",
         fontFamily:"'Noto Sans KR',sans-serif",
         background:copied==="all"?"#2ea043":"#21262d",
         color:copied==="all"?"#fff":"#c9d1d9",
@@ -1298,6 +1327,19 @@ function ImageGenSection({postMeta,postContent,genImages,setGenImages,imgLoading
             padding:"11px 13px",color:"#8b949e",fontSize:"14px",lineHeight:"1.65",cursor:"pointer",
             wordBreak:"break-word",whiteSpace:"pre-wrap",
           }}>{full}</div>
+          {localOk&&<div style={{padding:"8px 12px",borderTop:"1px solid #21262d",display:"flex",flexDirection:"column",gap:"8px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+              <button onClick={()=>drawLocal(i)} disabled={localRes[i]?.busy} style={{padding:"4px 12px",borderRadius:"6px",fontSize:"13px",fontWeight:700,
+                cursor:localRes[i]?.busy?"not-allowed":"pointer",fontFamily:"'Noto Sans KR',sans-serif",background:"#8957e522",color:"#d2a8ff",border:"1px solid #8957e5"}}>
+                {localRes[i]?.busy?"그리는 중…":(localRes[i]?.images?.length?"🖥️ 한 장 더":"🖥️ 집 PC로 그리기")}</button>
+              {(item.imageType||"scene")!=="scene"&&<span style={{color:"#d29922",fontSize:"12px"}}>{item.imageType==="ui"?"화면 이미지는 글씨가 깨질 수 있어요":"실제 제품 모양은 반영 안 돼요"}</span>}
+              {localRes[i]?.state&&<span style={{color:"#8b949e",fontSize:"12px"}}>{localRes[i].state}</span>}
+              {localRes[i]?.err&&<span style={{color:"#ff7b72",fontSize:"12px"}}>⚠️ {localRes[i].err}</span>}
+            </div>
+            {localRes[i]?.images?.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"8px"}}>
+              {localRes[i].images.map((im,k)=><LocalImgCard key={im.filename+k} it={im}/>)}
+            </div>}
+          </div>}
         </div>;
       })}
     </div>}
@@ -7536,6 +7578,160 @@ function readableTag(key, val) {
   return String(val);
 }
 
+// ─── 집 PC 이미지 생성 (ComfyUI · FLUX.1 schnell) ───────────────────────────
+// 사이트 → /api/image-gen → 집 PC 프록시(개인용 키만) → ComfyUI. 비용 0원, 집 PC가 켜져 있어야 한다.
+const LOCAL_IMG_SIZES={"3:2":[1248,832],"16:9":[1344,768],"4:3":[1152,864],"1:1":[1024,1024],"3:4":[864,1152],"2:3":[832,1248],"9:16":[768,1344]};
+// FLUX는 "~하지 마"를 잘 못 알아듣고 오히려 글씨를 그리기도 한다 → 금지문 대신 '꺼진 화면·무늬 없는 물건'처럼 긍정형으로 적는다
+const FLUX_CLEAN="Any phone or laptop screen in the shot is turned off, a plain dark glass surface. All objects are plain and unmarked, blank surfaces only. Natural light, realistic skin and hands, shallow depth of field.";
+const LOCAL_IMG_HIST_KEY="mt_local_img_hist";
+function localImgHistLoad(){ try{ return JSON.parse(localStorage.getItem(LOCAL_IMG_HIST_KEY)||"[]")||[]; }catch(e){ return []; } }
+function localImgHistSave(list){ try{ localStorage.setItem(LOCAL_IMG_HIST_KEY, JSON.stringify(list.slice(0,40))); }catch(e){} }
+function localImgUrl(im){ return `/api/image-gen?a=file&filename=${encodeURIComponent(im.filename)}&subfolder=${encodeURIComponent(im.subfolder||"")}`; }
+async function localImgHealth(){
+  try{ const r=await fetch("/api/image-gen?a=health"); return await r.json(); }
+  catch(e){ return { home:false, error:"사이트 연결 실패" }; }
+}
+function localImgStatusText(h){
+  if(!h) return { color:"#8b949e", text:"확인 중…" };
+  if(h.comfy) return { color:"#3fb950", text:`🟢 준비됨 · ${h.gpu?String(h.gpu).replace(/^cuda:\d+\s*/,"").replace(/\s*:\s*cudaMallocAsync/,""):"GPU"}${h.vramFreeMB!=null?` · 여유 ${(h.vramFreeMB/1024).toFixed(1)}GB`:""}${h.queue&&(h.queue.running+h.queue.pending)?` · 대기 ${h.queue.running+h.queue.pending}`:""}` };
+  if(h.home===false) return { color:"#f85149", text:`🔴 ${h.error||"집 PC 꺼짐"}` };
+  return { color:"#d29922", text:`🟡 ${h.error||"이미지서버(ComfyUI) 꺼짐"}` };
+}
+async function localImgGenerate({ prompt, ratio="3:2", count=1, steps=4, seed }, onState=()=>{}){
+  const [width,height]=LOCAL_IMG_SIZES[ratio]||LOCAL_IMG_SIZES["3:2"];
+  const r=await fetch("/api/image-gen?a=generate",{ method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ prompt, width, height, count, steps, seed: seed===""||seed==null?undefined:Number(seed) }) });
+  const j=await r.json().catch(()=>({ error:"응답 오류 "+r.status }));
+  if(j.error||!j.jobId) throw new Error(j.error||"생성 시작 실패");
+  const t0=Date.now();
+  let misses=0;
+  while(Date.now()-t0<6*60*1000){
+    await new Promise(res=>setTimeout(res,2000));
+    let s;
+    try{ s=await (await fetch(`/api/image-gen?a=job&id=${encodeURIComponent(j.jobId)}`)).json(); misses=0; }
+    catch(e){ if(++misses>5) throw new Error("집 PC 연결 끊김"); continue; }
+    const sec=Math.round((Date.now()-t0)/1000);
+    if(s.state==="done") return { images:s.images||[], seed:j.seed, width:j.width, height:j.height, sec };
+    if(s.state==="error") throw new Error(s.error||"생성 오류");
+    if(s.state==="queued") onState(`대기 중 (앞에 ${s.ahead}개) · ${sec}초`);
+    else if(s.state==="running") onState(`그리는 중 · ${sec}초 (첫 장은 모델을 올리느라 더 걸려요)`);
+    else if(s.state==="offline"||s.state==="unknown"){ if(++misses>5) throw new Error(s.error||"작업을 찾을 수 없음"); }
+  }
+  throw new Error("6분 넘게 안 끝남 — 집 PC 상태 확인");
+}
+// 한글 프롬프트 → 영어 (FLUX는 영어를 훨씬 잘 알아듣는다)
+async function toFluxEnglish(text){
+  if(!/[가-힣]/.test(text)) return text;
+  const out=await callClaude([{role:"user",content:text}],
+    "Translate this Korean image description into one natural English prompt for a photo-realistic image model. Keep every concrete detail (people, place, objects, lighting, mood). Set the scene in South Korea unless told otherwise. Output only the English prompt, no quotes.",400);
+  return (out||"").trim()||text;
+}
+async function saveImgAsJpg(url, name){
+  const blob=await (await fetch(url)).blob();
+  const bmp=await createImageBitmap(blob);
+  const c=document.createElement("canvas"); c.width=bmp.width; c.height=bmp.height;
+  c.getContext("2d").drawImage(bmp,0,0);
+  const jpg=await new Promise(res=>c.toBlob(res,"image/jpeg",0.92));
+  const a=document.createElement("a"); a.href=URL.createObjectURL(jpg); a.download=name.replace(/\.\w+$/,"")+".jpg";
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
+
+function LocalImgCard({ it, onReuse }){
+  const [saving,setSaving]=useState(false);
+  return <div style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
+    <a href={localImgUrl(it)} target="_blank" rel="noreferrer"><img src={localImgUrl(it)} alt="" loading="lazy" style={{width:"100%",display:"block",background:"#161b22"}}/></a>
+    <div style={{padding:"8px 10px",display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
+      <button onClick={async()=>{ setSaving(true); try{ await saveImgAsJpg(localImgUrl(it), it.filename); }catch(e){ alert("저장 실패: "+e.message); } setSaving(false); }}
+        style={{padding:"4px 10px",borderRadius:"6px",border:"1px solid #2ea043",background:"#2ea04322",color:"#3fb950",fontSize:"13px",fontWeight:700,cursor:"pointer"}}>{saving?"저장 중…":"💾 JPG 저장"}</button>
+      {onReuse&&<button onClick={()=>onReuse(it)} style={{padding:"4px 10px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",fontSize:"13px",cursor:"pointer"}}>↩ 이 설정 다시 쓰기</button>}
+      {it.seed!=null&&<span style={{color:"#484f58",fontSize:"12px",marginLeft:"auto"}}>seed {it.seed}</span>}
+    </div>
+  </div>;
+}
+
+function LocalImageTab(){
+  const [health,setHealth]=useState(null);
+  const [prompt,setPrompt]=useState("");
+  const [ratio,setRatio]=useState("3:2");
+  const [count,setCount]=useState(1);
+  const [steps,setSteps]=useState(4);
+  const [seed,setSeed]=useState("");
+  const [clean,setClean]=useState(true);
+  const [busy,setBusy]=useState(false);
+  const [state,setState]=useState("");
+  const [err,setErr]=useState("");
+  const [used,setUsed]=useState("");
+  const [hist,setHist]=useState([]);
+  useEffect(()=>{ setHist(localImgHistLoad()); localImgHealth().then(setHealth); },[]);
+  const refresh=()=>{ setHealth(null); localImgHealth().then(setHealth); };
+  const st=localImgStatusText(health);
+
+  const run=async()=>{
+    if(!prompt.trim()){ setErr("만들고 싶은 장면을 적어주세요"); return; }
+    setBusy(true); setErr(""); setState("준비 중…"); setUsed("");
+    try{
+      let en=prompt.trim();
+      if(/[가-힣]/.test(en)){ setState("한글 → 영어로 바꾸는 중…"); en=await toFluxEnglish(en); }
+      const full=clean?`${en} ${FLUX_CLEAN}`:en;
+      setUsed(en);
+      const r=await localImgGenerate({ prompt:full, ratio, count, steps, seed }, setState);
+      const items=r.images.map(im=>({ ...im, prompt:prompt.trim(), en, ratio, steps, seed:r.seed, at:Date.now() }));
+      const next=[...items, ...hist].slice(0,40);
+      setHist(next); localImgHistSave(next);
+      setState(`완료 · ${r.sec}초`);
+      localImgHealth().then(setHealth);
+    }catch(e){ setErr(e.message); setState(""); localImgHealth().then(setHealth); }
+    setBusy(false);
+  };
+  const chip=(on)=>({padding:"5px 12px",borderRadius:"6px",fontSize:"14px",fontWeight:600,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
+    background:on?"#1f6feb":"#0d1117",color:on?"#fff":"#8b949e",border:`1px solid ${on?"#1f6feb":"#30363d"}`});
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+    <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap",marginBottom:"12px"}}>
+        <span style={{color:"#e6edf3",fontSize:"17px",fontWeight:700}}>🎨 AI 이미지 생성 (집 PC)</span>
+        <span style={{color:st.color,fontSize:"13px"}}>{st.text}</span>
+        <button onClick={refresh} style={{marginLeft:"auto",padding:"3px 10px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#8b949e",fontSize:"12px",cursor:"pointer"}}>상태 새로고침</button>
+      </div>
+      <Textarea value={prompt} onChange={setPrompt} rows={4} placeholder={"만들고 싶은 장면을 적어주세요 (한글 OK — 자동으로 영어로 바꿔서 그립니다)\n예) 카페 창가에서 스마트폰으로 사진을 찍는 20대 여성의 손, 오후 햇살"}/>
+      <div style={{display:"flex",flexWrap:"wrap",gap:"14px",alignItems:"center",marginTop:"12px"}}>
+        <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}><span style={{color:"#8b949e",fontSize:"13px"}}>비율</span>
+          {["3:2","16:9","1:1","3:4","9:16"].map(r=><button key={r} onClick={()=>setRatio(r)} style={chip(ratio===r)}>{r}</button>)}</div>
+        <div style={{display:"flex",gap:"6px",alignItems:"center"}}><span style={{color:"#8b949e",fontSize:"13px"}}>장수</span>
+          {[1,2,3,4].map(n=><button key={n} onClick={()=>setCount(n)} style={chip(count===n)}>{n}</button>)}</div>
+        <div style={{display:"flex",gap:"6px",alignItems:"center"}}><span style={{color:"#8b949e",fontSize:"13px"}}>단계</span>
+          <select value={steps} onChange={e=>setSteps(Number(e.target.value))} style={{background:"#0d1117",color:"#c9d1d9",border:"1px solid #30363d",borderRadius:"6px",padding:"4px 8px"}}>
+            {[2,3,4,6,8].map(n=><option key={n} value={n}>{n}{n===4?" (기본)":""}</option>)}</select></div>
+        <div style={{display:"flex",gap:"6px",alignItems:"center"}}><span style={{color:"#8b949e",fontSize:"13px"}}>seed</span>
+          <input value={seed} onChange={e=>setSeed(e.target.value.replace(/\D/g,""))} placeholder="랜덤" style={{width:"110px",background:"#0d1117",color:"#c9d1d9",border:"1px solid #30363d",borderRadius:"6px",padding:"5px 8px"}}/></div>
+        <label style={{display:"flex",gap:"6px",alignItems:"center",color:"#8b949e",fontSize:"13px",cursor:"pointer"}}>
+          <input type="checkbox" checked={clean} onChange={e=>setClean(e.target.checked)}/> 글씨 방지 (화면 끔·무늬 없는 물건)</label>
+      </div>
+      <div style={{display:"flex",gap:"10px",alignItems:"center",marginTop:"14px",flexWrap:"wrap"}}>
+        <Btn onClick={run} loading={busy} disabled={health&&!health.comfy}>✨ 이미지 생성</Btn>
+        {state&&<span style={{color:"#8b949e",fontSize:"14px"}}>{state}</span>}
+      </div>
+      {used&&used!==prompt.trim()&&<div style={{marginTop:"10px",color:"#484f58",fontSize:"13px",lineHeight:1.6}}>실제 사용한 영어 프롬프트: {used}</div>}
+      {err&&<div style={{marginTop:"10px",background:"#2d1117",border:"1px solid #da363344",borderRadius:"8px",padding:"10px 14px",color:"#ff7b72",fontSize:"14px"}}>⚠️ {err}</div>}
+      <div style={{marginTop:"12px",color:"#484f58",fontSize:"12px",lineHeight:1.7}}>
+        · 집 PC 그래픽카드로 그려서 비용이 들지 않아요. 집 PC와 이미지서버가 켜져 있어야 합니다.<br/>
+        · 글씨가 들어간 이미지(설정 화면·안내판)는 깨지니 사람·사물·풍경 장면에 쓰세요. 단계를 올리면 조금 더 정교해지지만 느려집니다.<br/>
+        · 만든 이미지는 집 PC의 ComfyUI\output\blogtools 폴더에도 저장돼요.
+      </div>
+    </div>
+    {hist.length>0&&<div>
+      <div style={{display:"flex",alignItems:"center",marginBottom:"8px"}}>
+        <SectionTitle>최근 만든 이미지 ({hist.length})</SectionTitle>
+        <button onClick={()=>{ if(confirm("목록만 지웁니다 (집 PC 파일은 그대로). 지울까요?")){ setHist([]); localImgHistSave([]); } }}
+          style={{marginLeft:"auto",padding:"3px 10px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#8b949e",fontSize:"12px",cursor:"pointer"}}>목록 비우기</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:"12px"}}>
+        {hist.map((it,i)=><LocalImgCard key={it.filename+i} it={it} onReuse={x=>{ setPrompt(x.prompt||""); setRatio(x.ratio||"3:2"); setSteps(x.steps||4); setSeed(String(x.seed??"")); window.scrollTo({top:0,behavior:"smooth"}); }}/>)}
+      </div>
+    </div>}
+  </div>;
+}
+
 function ExifTab() {
   const [files, setFiles] = useState([]);       // [{file, url, name, type, size, meta, cleaned, cleanedUrl, status}]
   const [selected, setSelected] = useState(0);
@@ -9525,7 +9721,7 @@ function VideoMakeSubTab() {
   </div>;
 }
 
-const TOOL_MAP={keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab};
+const TOOL_MAP={keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:LocalImageTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab};
 
 
 // ─── 블로그 글쓰기 공통 프롬프트 빌더 ───────────────────────────────────────
