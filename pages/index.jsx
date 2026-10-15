@@ -11423,14 +11423,18 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
     let item=x.imageType==="product"?{...x,imageType:"scene",scene:String(x.scene||"").replace(new RegExp((x.productName||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"),"a smartphone")}:x;
     const NO_TEXT=" Setting: South Korea, Korean people and Korean everyday environment. Do not render any letters, words, numbers or characters in any language anywhere in the image (no Korean, no English, no Chinese); phone screens and signs must be blurred or blank. Avoid props that usually carry writing (notebooks, sticky notes, papers, receipts, books, packaging); if any appear they are completely blank.";
     const sceneFallback=buildFullPrompt({...item,imageType:"scene",scene:"A Korean person's hands holding a smartphone, the screen softly blurred and unreadable, in a bright Korean home or cafe."}, imageStyle, imageRatio, "en")+NO_TEXT;
+    // 집 PC FLUX 용: 금지문 대신 긍정형 묘사 (FLUX는 "글씨 넣지 마"를 오히려 글씨로 그리는 경향)
+    const stEn=(IMG_STYLES.find(s=>s.id===imageStyle)||IMG_STYLES[0]).en;
+    const flux=sc=>`${String(sc||"").trim()} ${stEn}. Candid photograph of a real everyday moment in South Korea, Korean people. ${FLUX_CLEAN}`;
+    const fallbackFlux=flux("A Korean person's hands holding a smartphone with the screen turned off, in a bright Korean home or cafe.");
     if(item.imageType==="ui" && allowUi){
       // 실제 앱·폰 화면 재현: 한국어 프롬프트(화면 글자 정확도↑) + 실패 시 쓸 대체 장면
       const prompt=buildFullPrompt(item, imageStyle, imageRatio, "ko")+" 실제 한국판 화면 그대로. 화면 안 글자는 위에 적은 한국어 라벨만, 맞춤법 그대로 또렷하게. 확실하지 않은 글자는 넣지 말고 비워둘 것. 중국어·일본어·깨진 글자 금지.";
-      return { n:i+1, sectionTitle:x.sectionTitle||"", type:"ui", prompt, fallbackPrompt:sceneFallback, labels:item.sceneKo||"" };
+      return { n:i+1, sectionTitle:x.sectionTitle||"", type:"ui", prompt, fallbackPrompt:sceneFallback, fallbackFlux, labels:item.sceneKo||"" };
     }
     if(item.imageType==="ui") item={...item,imageType:"scene",scene:"A Korean person's hands holding a smartphone, the screen softly blurred and unreadable, in a bright Korean home or cafe."};
     const prompt=buildFullPrompt(item, imageStyle, imageRatio, "en")+NO_TEXT;
-    return { n:i+1, sectionTitle:x.sectionTitle||"", type:item.imageType, prompt };
+    return { n:i+1, sectionTitle:x.sectionTitle||"", type:item.imageType, prompt, fluxPrompt:flux(item.scene), fallbackFlux };
   });
   const bodyOnly=meta.content.replace(/(?:\n+#[^\n]*)+\s*$/,"").trimEnd();
   const placed=placeAutoImages(bodyOnly, images.length);
