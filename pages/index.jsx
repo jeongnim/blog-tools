@@ -3638,28 +3638,56 @@ function parseNaverStatSheet(rows){
   return null;
 }
 // 여러 달 파일 합치기 → 키워드별 추정 유입수
+// 유입 데이터는 "최근 3개월"만 지금 먹히는 근거로 쓴다 (네이버 로직이 몇 달마다 바뀌어서 오래된 유입은 현재와 다를 수 있음).
+// 최근 3개월 유입 키워드가 너무 적으면(작은 블로그) 6개월까지 넓힌다. 그 이전 달은 "식은 주제"로 따로 뽑아 참고로만 쓴다.
+const INFLOW_RECENT_MONTHS=3, INFLOW_MAX_MONTHS=6, INFLOW_MIN_KW=15;
 function aggregateInflow(parsed){
-  const inflows=parsed.filter(x=>x?.type==="inflow").sort((a,b)=>a.periodStart-b.periodStart);
-  const views=parsed.filter(x=>x?.type==="views");
-  const viewsBy={};views.forEach(v=>{viewsBy[v.period]=v;});
-  const map={};
-  const months=inflows.map(f=>{
-    const tv=viewsBy[f.period]?.totalViews||0;
-    const sum=t=>f.channels.filter(c=>t(c.name)).reduce((a,b)=>a+b.ratio,0);
-    f.kws.forEach(k=>{
-      const key=ifNorm(k.keyword);
-      const m=map[key]||(map[key]={keyword:k.keyword,ratio:0,est:0,main:0,blog:0,months:new Set()});
-      m.ratio+=k.ratio; m.est+=tv?k.ratio/100*tv:0; m[k.type==="blog"?"blog":"main"]+=k.ratio; m.months.add(f.period);
+  const inflowsAll=parsed.filter(x=>x?.type==="inflow").sort((a,b)=>a.periodStart-b.periodStart);
+  const viewsAll=parsed.filter(x=>x?.type==="views");
+  const kwCount=fs=>new Set(fs.flatMap(f=>f.kws.map(k=>ifNorm(k.keyword)))).size;
+  let n=Math.min(INFLOW_RECENT_MONTHS, inflowsAll.length);
+  while(n<Math.min(INFLOW_MAX_MONTHS, inflowsAll.length) && kwCount(inflowsAll.slice(-n))<INFLOW_MIN_KW) n++;
+  const inflows=inflowsAll.slice(-n), older=inflowsAll.slice(0, inflowsAll.length-n);
+  const recentPeriods=new Set(inflows.map(f=>f.period));
+  const views=viewsAll.filter(v=>recentPeriods.has(v.period)), oldViews=viewsAll.filter(v=>!recentPeriods.has(v.period));
+  const viewsBy={};viewsAll.forEach(v=>{viewsBy[v.period]=v;});
+  const build=(fs)=>{
+    const map={};
+    const months=fs.map(f=>{
+      const tv=viewsBy[f.period]?.totalViews||0;
+      const sum=t=>f.channels.filter(c=>t(c.name)).reduce((a,b)=>a+b.ratio,0);
+      f.kws.forEach(k=>{
+        const key=ifNorm(k.keyword);
+        const m=map[key]||(map[key]={keyword:k.keyword,ratio:0,est:0,main:0,blog:0,months:new Set()});
+        m.ratio+=k.ratio; m.est+=tv?k.ratio/100*tv:0; m[k.type==="blog"?"blog":"main"]+=k.ratio; m.months.add(f.period);
+      });
+      return {period:f.period,totalViews:tv,mainRatio:+sum(n=>n.includes("통합검색")).toFixed(1),blogRatio:+sum(n=>n.includes("블로그검색")).toFixed(1)};
     });
-    return {period:f.period,totalViews:tv,mainRatio:+sum(n=>n.includes("통합검색")).toFixed(1),blogRatio:+sum(n=>n.includes("블로그검색")).toFixed(1)};
-  });
-  const hasViews=months.some(m=>m.totalViews>0);
-  const keywords=Object.values(map).map(m=>({...m,est:Math.round(m.est*10)/10,ratio:+m.ratio.toFixed(2),main:+m.main.toFixed(2),blog:+m.blog.toFixed(2),months:[...m.months]}))
-    .sort((a,b)=>hasViews?(b.est-a.est):(b.ratio-a.ratio));
-  const topPosts={};views.forEach(v=>v.posts.forEach(p=>{const t=topPosts[p.title]||(topPosts[p.title]={title:p.title,views:0,date:p.date});t.views+=p.views;}));
-  const last=inflows[inflows.length-1];
+    return {months,map};
+  };
+  const cur=build(inflows);
+  const hasViews=cur.months.some(m=>m.totalViews>0);
+  const fin=m=>({...m,est:Math.round(m.est*10)/10,ratio:+m.ratio.toFixed(2),main:+m.main.toFixed(2),blog:+m.blog.toFixed(2),months:[...m.months]});
+  const keywords=Object.values(cur.map).map(fin).sort((a,b)=>hasViews?(b.est-a.est):(b.ratio-a.ratio));
+  const postsOf=vs=>{const t={};vs.forEach(v=>v.posts.forEach(p=>{const x=t[p.title]||(t[p.title]={title:p.title,views:0,date:p.date});x.views+=p.views;}));return t;};
+  const topPostsMap=postsOf(views);
+  // 식은 주제: 예전 달엔 월평균 유입이 컸는데 최근엔 그 20% 미만으로 떨어진 키워드·글
+  let cooled=[], cooledPosts=[];
+  if(older.length){
+    const old=build(older);
+    const per=(m,months)=>(hasViews?m.est:m.ratio)/Math.max(months,1);
+    cooled=Object.values(old.map).map(fin).map(o=>{
+      const r=cur.map[ifNorm(o.keyword)];
+      return {keyword:o.keyword, past:+per(o,older.length).toFixed(1), recent:r?+per(fin(r),inflows.length).toFixed(1):0};
+    }).filter(x=>x.past>0 && x.recent<x.past*0.2).sort((a,b)=>b.past-a.past).slice(0,25);
+    const oldPosts=postsOf(oldViews);
+    cooledPosts=Object.values(oldPosts).map(p=>({title:p.title,past:Math.round(p.views/Math.max(older.length,1)),recent:Math.round((topPostsMap[p.title]?.views||0)/Math.max(inflows.length,1))}))
+      .filter(p=>p.past>0&&p.recent<p.past*0.2).sort((a,b)=>b.past-a.past).slice(0,15);
+  }
+  const last=inflowsAll[inflowsAll.length-1];
   const periodEnd=last?new Date(new Date(last.periodStart).getFullYear(),new Date(last.periodStart).getMonth()+1,0,23,59).getTime():0;
-  return {months,keywords,hasViews,periodEnd,topPosts:Object.values(topPosts).sort((a,b)=>b.views-a.views).slice(0,15)};
+  return {months:cur.months,keywords,hasViews,periodEnd,topPosts:Object.values(topPostsMap).sort((a,b)=>b.views-a.views).slice(0,15),
+    windowMonths:inflows.length, allMonths:inflowsAll.map(f=>f.period), olderMonths:older.map(f=>f.period), cooled, cooledPosts};
 }
 // 인사이트(순위 키워드) vs 실제 유입 비교
 function compareInsightInflow(rows,agg,topN,postDates){
@@ -3695,7 +3723,7 @@ function InflowPanel({inflow,setInflow,rows,insightAi,topN,postDates,blogId,scop
   useEffect(()=>{setProfile(blogId?bpLoad(blogId):null);},[blogId]);
   const [busy,setBusy]=useState("");
   const [err,setErr]=useState("");
-  const agg=inflow?.agg||null;
+  const agg=useMemo(()=>{ try{ return inflow?.raw?.length?aggregateInflow(inflow.raw):(inflow?.agg||null); }catch(e){ return inflow?.agg||null; } },[inflow]);
   const cmpReal=useMemo(()=>agg&&rows?.length?compareInsightInflow(rows,agg,topN,postDates):null,[agg,rows,topN,postDates]);
   const cmp=cmpReal;
   const unit=agg?.hasViews?"회":"%";
@@ -3860,6 +3888,10 @@ ${L(agg.keywords.slice(0,25),k=>`${k.keyword} | ${agg.hasViews?k.est:k.ratio}`)}
 
 [조회수 상위 글] ${L(agg.topPosts.slice(0,10),p=>`${p.title} (${p.views})`)}
 [월별 채널] ${agg.months.map(m=>`${m.period}: 통합 ${m.mainRatio}% · 블로그탭 ${m.blogRatio}%`).join(" / ")}
+※ 위 유입·조회 데이터는 최근 ${agg.windowMonths||agg.months.length}개월(${agg.months.map(m=>m.period).join("·")})만 집계한 것 — 네이버 로직이 몇 달마다 바뀌므로 이 기간이 "지금 먹히는" 근거다.
+${agg.cooled?.length||agg.cooledPosts?.length?`[식은 주제 — ${agg.olderMonths?.join("·")}엔 유입이 많았지만 최근엔 20% 미만으로 떨어짐. 효자로 보지 말 것]
+키워드 (키워드 | 예전 월평균 | 최근 월평균): ${agg.cooled.slice(0,20).map(c=>`${c.keyword}(${c.past}→${c.recent})`).join(", ")||"(없음)"}
+글 (제목 | 예전 월평균 조회 → 최근): ${agg.cooledPosts.slice(0,10).map(p=>`${p.title}(${p.past}→${p.recent})`).join(" / ")||"(없음)"}`:""}
 ${cmp?`[A. 상위노출 + 실제 유입 있음 = 진짜 효자] (키워드 | 최고순위 | 유입 | 실제 검색된 변형어)
 ${L(cmp.winners.slice(0,20),r=>`${r.keyword} | ${r.best}위 | ${r.inflow} | ${r.variants.join(", ")||"-"}`)}
 [B. 상위노출인데 유입 0 = 허수] ${cmp.hollow.slice(0,20).map(r=>`${r.keyword}(${r.best}위·월${r.monthly??"?"})`).join(", ")||"(없음)"}
@@ -3878,6 +3910,7 @@ ${postPerf.length?postPerf.join("\n"):"(없음)"}
 ${extraTop.length?extraTop.join("\n"):""}
 
 작성 지침:
+- 실제 유입은 최근 기간 데이터만 "지금 먹히는" 근거다. [식은 주제]의 키워드·글은 coreTopics·seedKeywords·효자 근거로 쓰지 말고, avoid 또는 "지금 상위 제목 형태로 새로 써야 살아나는 주제"로만 다뤄라.
 - 실제 유입 데이터가 있으면 순위 기반 추정보다 실제 유입을 우선 근거로 삼아라. A(효자)의 공통 형태는 따르고, B(허수)의 공통 형태는 피하고, D(놓친 패턴)에서 사람들이 실제로 붙여 검색하는 수식어·표현을 읽어내 규칙에 반영해라. 별도 서술 분석 없이 이 한 번의 호출로 결론까지 내라.
 - 규칙은 다른 AI가 읽고 바로 따를 수 있게 구체적인 명령문으로 써라. "좋은 키워드를 고를 것" 같은 일반론 금지. 검색량 구간, 단어 수, 붙일 수식어 유형, 주제 영역을 데이터에서 읽히는 대로 명시해라.
 - 데이터에 없는 수치는 지어내지 마라.
@@ -3895,7 +3928,7 @@ ${extraTop.length?extraTop.join("\n"):""}
 항목: summary(이 블로그의 체급과 강점 2문장), categories, coreTopics, sideTopics, weakTopics, keywordRules(4~6개), titleRules(3~5개), writingRules(3~5개), avoid(3~5개), seedKeywords (seedKeywords는 대부분 coreTopics 안에서)`;
       const ai=await callClaudeJson(prompt,{summary:"string",categories:"kw[]",coreTopics:"kw[]",sideTopics:"kw[]",weakTopics:"kw[]",keywordRules:"string[]",titleRules:"string[]",writingRules:"string[]",avoid:"string[]",seedKeywords:"kw[]"},4000);
       if(!ai?.keywordRules?.length) throw new Error("프로필 생성 결과가 비어 있습니다. 다시 시도해주세요.");
-      const p={blogId,createdAt:Date.now(),hasInflow:!!agg,basis:`${scopeLabel}${agg?` + 유입 ${agg.months.map(m=>m.period).join("·")}`:""}`,
+      const p={blogId,createdAt:Date.now(),hasInflow:!!agg,basis:`${scopeLabel}${agg?` + 최근 유입 ${agg.months.map(m=>m.period).join("·")}`:""}`,
         summary:ai.summary||"",categories:(ai.categories||[]).filter(c=>cats.includes(c.keyword)).slice(0,3),
         coreTopics:(ai.coreTopics||[]).slice(0,2),sideTopics:(ai.sideTopics||[]).slice(0,4),weakTopics:(ai.weakTopics||[]).slice(0,3),
         keywordRules:ai.keywordRules||[],titleRules:ai.titleRules||[],writingRules:ai.writingRules||[],avoid:ai.avoid||[],
@@ -3933,7 +3966,7 @@ ${extraTop.length?extraTop.join("\n"):""}
   return <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px 18px",display:"flex",flexDirection:"column",gap:"12px"}}>
     <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
       <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:700}}>📥 실제 유입 비교</div>
-      {agg&&<span style={{color:"#484f58",fontSize:"13px"}}>{agg.months.map(m=>m.period).join(" · ")} · 유입 키워드 {agg.keywords.length}개{!agg.hasViews&&" · 조회수 순위 파일 없음(비율로 표시)"}</span>}
+      {agg&&<span style={{color:"#484f58",fontSize:"13px"}}>최근 {agg.windowMonths||agg.months.length}개월 기준: {agg.months.map(m=>m.period).join(" · ")}{agg.olderMonths?.length?` (이전 ${agg.olderMonths.length}개월은 '식은 주제' 참고용)`:""} · 유입 키워드 {agg.keywords.length}개{!agg.hasViews&&" · 조회수 순위 파일 없음(비율로 표시)"}</span>}
       <div style={{marginLeft:"auto",display:"flex",gap:"6px",flexWrap:"wrap"}}>
         {agg&&<button onClick={()=>{if(confirm("올린 유입 데이터를 지울까요?"))setInflow(null);}} style={btn(false)}>🗑</button>}
         <button onClick={()=>fileRef.current?.click()} disabled={!!busy} style={btn(!!busy)}>{agg?"📂 파일 추가로 올리기":"📂 통계 엑셀 올리기"}</button>
@@ -11345,7 +11378,7 @@ function autoUseBlog(blogId, { mode="hq", key="" }={}){
   const k=blogKeysLoad()[id.toLowerCase()]||"";
   if(!k) throw new Error(`@${id} 에 등록된 전용 API 키가 없어서 멈췄어요 (기본 키로는 자동화를 돌리지 않아요)`);
   bpSetActiveId(id);
-  return { blogId:id, profile:prof.isDefault?"기본":"분석됨", hasKey:true, keyMask:maskKey(k) };
+  return { blogId:id, profile:prof.isDefault?"기본":"분석됨", profileAgeDays:prof.createdAt?Math.floor((Date.now()-prof.createdAt)/864e5):null, hasKey:true, keyMask:maskKey(k) };
 }
 
 // 오늘 쓸 주제 후보를 고른다 (필요 수보다 넉넉히 — 글이 보류되면 다음 후보로)
@@ -11482,7 +11515,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
   const started=Date.now();
   try{
     const who=autoUseBlog(blogId,{ mode, key });
-    const profileKind=who.profile;
+    const profileKind=who.profile, profileAgeDays=who.profileAgeDays;
     autoLog(`블로그 ${who.blogId} (프로필 ${who.profile}, 전용 키 ${who.keyMask})`);
     // 모든 블로그가 지금까지 쓴 메인 키워드 (집 PC 기록) — 여러 PC가 동시에 돌아도 같은 키워드를 피한다
     // history 를 넘겨받으면(회사 PC 로컬 기록) 집 PC 서버를 전혀 쓰지 않는다
@@ -11534,7 +11567,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
       }catch(e){ skipped.push({ ok:false, topic:c.topic, mainKeyword:c.mainKeyword, reasons:[e.message] }); autoLog(`실패: ${e.message}`); }
     }
     autoLog(`완료: ${posts.length}/${count}편 (${Math.round((Date.now()-started)/1000)}초)`);
-    return { ok:posts.length>=count, blogId, category, profile:profileKind, posts, skipped, dropped:plan.dropped, tried:[...posts,...skipped].map(x=>x.mainKeyword).filter(Boolean), log:[...AUTO_STATE.log] };
+    return { ok:posts.length>=count, blogId, category, profile:profileKind, profileAgeDays, posts, skipped, dropped:plan.dropped, tried:[...posts,...skipped].map(x=>x.mainKeyword).filter(Boolean), log:[...AUTO_STATE.log] };
   } finally { AUTO_STATE.busy=false; }
 }
 
