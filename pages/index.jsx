@@ -11412,9 +11412,30 @@ ${relax?`- 앞서 고른 후보들이 검색량이 너무 작거나·크거나·
   return { blogId, category, candidates:list.slice(0, count+spare), dropped, excludedByMyRank:r.excluded||[], volRange:vr, cap };
 }
 
+// 수동 키워드 분석에서 하던 "스마트블록 유형·블로그 노출 전략"을 자동 글에도 똑같이 구해서 넘긴다
+async function autoKeywordInsight(mainKw){
+  try{
+    const titles=await Promise.race([fetchTopTitles(mainKw), new Promise(r=>setTimeout(()=>r([]),10000))]);
+    const ym=(()=>{const d=new Date(); return `${d.getFullYear()}년 ${d.getMonth()+1}월`;})();
+    const raw=await callClaude([{role:"user",content:[
+      `현재 날짜: ${ym}`,
+      `"${mainKw}" 키워드 분석. 순수 JSON만 출력.`,
+      '{"smartBlockType":"블로그|지도/플레이스|리뷰|쇼핑|비교/추천|정보/지식 중 이 키워드 검색 시 네이버에서 가장 먼저 뜨는 스마트블록 유형",',
+      ' "smartBlockReason":"왜 이 유형이 뜨는지 한 줄",',
+      ' "blogStrategy":"이 유형에서 블로그가 노출될 수 있는 전략 한 줄"}',
+      titles.length?"\n실제 네이버 블로그 인기글 제목 (참고용):\n"+titles.slice(0,15).map((t,i)=>`${i+1}. ${t}`).join("\n"):"",
+    ].join("\n")}],"Respond ONLY with valid JSON.",500);
+    const j=safeParseJson(String(raw||"").replace(/```json\n?|```\n?/g,"").trim())||{};
+    return { smartBlockType:j.smartBlockType||null, smartBlockReason:j.smartBlockReason||null, blogStrategy:j.blogStrategy||null };
+  }catch(e){ return {}; }
+}
+
 // 글 1편 + 이미지 프롬프트
 async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false }){
-  const gen=()=>generatePost({ kw:topic, mainKeyword, opts:{ auto:{ mode, region, banTopics } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
+  autoLog(`[${mainKeyword}] 키워드 노출 전략 분석 중`);
+  const ins=await autoKeywordInsight(mainKeyword);
+  if(ins.smartBlockType) autoLog(`[${mainKeyword}] 스마트블록: ${ins.smartBlockType} / 전략: ${ins.blogStrategy||"-"}`);
+  const gen=()=>generatePost({ kw:topic, mainKeyword, ...ins, opts:{ auto:{ mode, region, banTopics } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
   let meta=await gen();
   // 본문이 중간에 끊기거나 너무 짧게 나온 건 일시적인 경우가 많아 한 번 더 써본다
   if(meta.autoBlock?.length && meta.autoBlock.every(r=>/잘림|너무 짧음/.test(r))){
@@ -11461,6 +11482,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
   const started=Date.now();
   try{
     const who=autoUseBlog(blogId,{ mode, key });
+    const profileKind=who.profile;
     autoLog(`블로그 ${who.blogId} (프로필 ${who.profile}, 전용 키 ${who.keyMask})`);
     // 모든 블로그가 지금까지 쓴 메인 키워드 (집 PC 기록) — 여러 PC가 동시에 돌아도 같은 키워드를 피한다
     // history 를 넘겨받으면(회사 PC 로컬 기록) 집 PC 서버를 전혀 쓰지 않는다
@@ -11512,7 +11534,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
       }catch(e){ skipped.push({ ok:false, topic:c.topic, mainKeyword:c.mainKeyword, reasons:[e.message] }); autoLog(`실패: ${e.message}`); }
     }
     autoLog(`완료: ${posts.length}/${count}편 (${Math.round((Date.now()-started)/1000)}초)`);
-    return { ok:posts.length>=count, blogId, category, posts, skipped, dropped:plan.dropped, tried:[...posts,...skipped].map(x=>x.mainKeyword).filter(Boolean), log:[...AUTO_STATE.log] };
+    return { ok:posts.length>=count, blogId, category, profile:profileKind, posts, skipped, dropped:plan.dropped, tried:[...posts,...skipped].map(x=>x.mainKeyword).filter(Boolean), log:[...AUTO_STATE.log] };
   } finally { AUTO_STATE.busy=false; }
 }
 
