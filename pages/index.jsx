@@ -11349,7 +11349,7 @@ function autoUseBlog(blogId, { mode="hq", key="" }={}){
 }
 
 // 오늘 쓸 주제 후보를 고른다 (필요 수보다 넉넉히 — 글이 보류되면 다음 후보로)
-async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4, scope="", banTopics=[], family=[], recentTitles=[] }){
+async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4, scope="", banTopics=[], family=[], recentTitles=[], relax=false, avoid=[] }){
   const profile=bpGetActive();
   const blogId=bpGetActiveId();
   if(!category) throw new Error("category가 비어 있어요");
@@ -11375,7 +11375,7 @@ ${banTopics.length?`- 휴대폰 판매점이 운영하는 블로그다. 휴대�
 `:""}- 정보형 주제만. 구매처·가격 비교·요금제 추천·매장 홍보·이벤트·할인 주제는 추천하지 말 것.
 - 특정 업체·판매처가 주인공인 주제 금지.
 ${branch?`- 이 블로그는 작은 블로그다. 위 선정 기준 3번의 "1~2형태소" 제한 대신, 메인 키워드를 검색량이 작은 2~3단어 롱테일(질문형 의도가 분명한 것)로 잡을 것. 넓은 대표 키워드 단독 금지.`:`- 이 블로그의 체급 안에서 가장 큰 정보형 키워드를 우선할 것.`}
-${recentTitles.length?`- 이 블로그가 최근에 쓴 글 제목들이다. 같은 소재(같은 기능·같은 문제)를 각도만 바꿔 다시 쓰는 주제는 금지 — 완전히 다른 소재로:\n${recentTitles.slice(-30).map(t=>"  · "+t).join("\n")}\n`:""}${exSet.size?`- 아래는 이미 우리 블로그들이 메인으로 쓴 키워드다. 이 키워드를 포함하거나 이 키워드에 포함되는 키워드(예: "아이폰 에어드롭"을 썼다면 "에어드롭", "에어드롭 안될때"도)는 같은 키워드로 본다. 같거나 띄어쓰기만 다른 키워드는 금지 (같은 큰 키워드 아래의 다른 세부 질문은 괜찮다):\n${[...exclude].slice(-150).join(", ")}`:""}`;
+${relax?`- 앞서 고른 후보들이 검색량이 너무 작거나·크거나·상업성이라 전부 빠졌다. 이번엔 일반인이 실제로 많이 찾는(월 검색량 수십~수백) 생활형 질문으로, 아래와 겹치지 않게 새로 고를 것:\n${avoid.slice(0,40).join(", ")}\n`:""}${recentTitles.length?`- 이 블로그가 최근에 쓴 글 제목들이다. 같은 소재(같은 기능·같은 문제)를 각도만 바꿔 다시 쓰는 주제는 금지 — 완전히 다른 소재로:\n${recentTitles.slice(-30).map(t=>"  · "+t).join("\n")}\n`:""}${exSet.size?`- 아래는 이미 우리 블로그들이 메인으로 쓴 키워드다. 이 키워드를 포함하거나 이 키워드에 포함되는 키워드(예: "아이폰 에어드롭"을 썼다면 "에어드롭", "에어드롭 안될때"도)는 같은 키워드로 본다. 같거나 띄어쓰기만 다른 키워드는 금지 (같은 큰 키워드 아래의 다른 세부 질문은 괜찮다):\n${[...exclude].slice(-150).join(", ")}`:""}`;
   autoLog(`주제 추천 중 (${category}, ${branch?"지점·롱테일":"본사"})`);
   const r=await recommendTopics({ category, profile, blogId, extra });
   const banFlat=(banTopics||[]).map(kwFlat).filter(Boolean);
@@ -11393,14 +11393,15 @@ ${recentTitles.length?`- 이 블로그가 최근에 쓴 글 제목들이다. 같
   ]);
   const bad=new Set((adult.results||[]).filter(x=>x.adult===true).map(x=>x.query));
   const vr=r.volRange;
-  const cap=branch ? Math.max(300, vr?.med||0) : Math.max(5000, Math.round((vr?.ceil||0)*1.5));
+  const cap=(branch ? Math.max(300, vr?.med||0) : Math.max(5000, Math.round((vr?.ceil||0)*1.5)))*(relax?2:1);
+  const floor=relax?(branch?10:15):(branch?20:30);
   const dropped=[...droppedBan];
   list=list.map(k=>({ ...k, monthly:vols[k.mainKeyword]?.monthly??null, commercial:!!vols[k.mainKeyword]?.commercial }))
     .filter(k=>{
       if(bad.has(k.mainKeyword)){ dropped.push({...k,why:"성인 검색어"}); return false; }
       if(k.commercial){ dropped.push({...k,why:"상업성 키워드"}); return false; }
       if(k.monthly!=null&&k.monthly>cap){ dropped.push({...k,why:`검색량 ${k.monthly} > 체급 상한 ${cap}`}); return false; }
-      if(k.monthly!=null&&k.monthly<(branch?20:30)){ dropped.push({...k,why:`검색량 너무 작음 (${k.monthly}) — 찾는 사람이 거의 없음`}); return false; }
+      if(k.monthly!=null&&k.monthly<floor){ dropped.push({...k,why:`검색량 너무 작음 (${k.monthly}) — 찾는 사람이 거의 없음`}); return false; }
       return true;
     });
   const axisRank=a=>a==="core"?0:a==="side"?1:2;
@@ -11413,7 +11414,13 @@ ${recentTitles.length?`- 이 블로그가 최근에 쓴 글 제목들이다. 같
 
 // 글 1편 + 이미지 프롬프트
 async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false }){
-  const meta=await generatePost({ kw:topic, mainKeyword, opts:{ auto:{ mode, region, banTopics } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
+  const gen=()=>generatePost({ kw:topic, mainKeyword, opts:{ auto:{ mode, region, banTopics } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
+  let meta=await gen();
+  // 본문이 중간에 끊기거나 너무 짧게 나온 건 일시적인 경우가 많아 한 번 더 써본다
+  if(meta.autoBlock?.length && meta.autoBlock.every(r=>/잘림|너무 짧음/.test(r))){
+    autoLog(`[${mainKeyword}] 본문이 끊겨서 한 번 더 작성`);
+    meta=await gen();
+  }
   if(meta.autoBlock?.length) return { ok:false, topic, mainKeyword, title:meta.title, reasons:meta.autoBlock };
   autoLog(`[${mainKeyword}] 이미지 장면 나누는 중`);
   let sections=[];
@@ -11468,9 +11475,23 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
     const plan=await autoPlan({ category, count, mode, scope, banTopics, family, recentTitles:mine.map(h=>h.title).filter(Boolean),
       exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)] });
     void now;
+    // 후보가 하나도 안 남으면: 왜 빠졌는지 남기고, 기준을 조금 넓혀 한 번 더 추천받는다
+    const dropSummary=p=>{ const m={}; (p.dropped||[]).forEach(d=>{ const w=String(d.why||"").replace(/\(.*?\)|\d+/g,"").trim(); m[w]=(m[w]||0)+1; });
+      return Object.entries(m).map(([w,n])=>`${w} ${n}`).join(", ")||"추천 0개"; };
+    if(plan.candidates.length<count){
+      autoLog(`후보 부족 (${plan.candidates.length}개) — 빠진 이유: ${dropSummary(plan)} → 기준 넓혀 다시 추천`);
+      const plan2=await autoPlan({ category, count, mode, scope, banTopics, family, recentTitles:mine.map(h=>h.title).filter(Boolean),
+        exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)], relax:true, avoid:(plan.dropped||[]).map(d=>d.mainKeyword) });
+      const have=new Set(plan.candidates.map(c=>kwFlat(c.mainKeyword)));
+      plan.candidates=[...plan.candidates, ...plan2.candidates.filter(c=>!have.has(kwFlat(c.mainKeyword)))];
+      plan.dropped=[...(plan.dropped||[]), ...(plan2.dropped||[])];
+      if(!plan.candidates.length) autoLog(`다시 추천해도 후보 없음 — 빠진 이유: ${dropSummary(plan2)}`);
+    }
     const posts=[], skipped=[];
     const tries=maxTries||count+2;   // 보류가 계속 나와도 비용이 끝없이 나가지 않게
-    for(const c of plan.candidates){
+    const queue=[...plan.candidates];
+    while(queue.length){
+      const c=queue.shift();
       if(posts.length>=count) break;
       if(posts.length+skipped.length>=tries){ autoLog(`시도 ${tries}번 도달 — 중단`); break; }
       const useRegion=region&&Math.random()<regionChance?region:"";
@@ -11483,7 +11504,11 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
           if(!localHist) fetch("/api/auto-history",{ method:"POST", headers:{"Content-Type":"application/json"},
             body:JSON.stringify({ items:[{ blogId, mainKeyword:r.mainKeyword, title:r.title, category }] }) }).catch(()=>{});
         }
-        else { skipped.push(r); autoLog(`보류: ${r.reasons.join(" / ")}`); }
+        else {
+          skipped.push(r); autoLog(`보류: ${r.reasons.join(" / ")}`);
+          // 본문이 중간에 끊긴 건 주제 문제가 아니라 응답이 잘린 것 → 같은 주제로 한 번 더 쓴다
+          if(!c._again && (r.reasons||[]).some(x=>/잘림|너무 짧음/.test(x))){ queue.unshift({...c,_again:true}); autoLog(`같은 주제로 다시 쓰기: ${c.mainKeyword}`); }
+        }
       }catch(e){ skipped.push({ ok:false, topic:c.topic, mainKeyword:c.mainKeyword, reasons:[e.message] }); autoLog(`실패: ${e.message}`); }
     }
     autoLog(`완료: ${posts.length}/${count}편 (${Math.round((Date.now()-started)/1000)}초)`);
