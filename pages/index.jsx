@@ -4581,7 +4581,7 @@ function MissingTab(){
   };
 
   // ── 네이버 순위 조회 (통합검색/블로그탭 2영역) ──
-  const getNaverRank=async(kw,blogId,postNo,deep,pubDate)=>{
+  const getNaverRank=async(kw,blogId,postNo,deep,pubDate,mode)=>{
     // 카페 글: blogId 자리에 "cafe:글주소" — 통합검색·카페탭·카페글 API 순위를 블로그와 같은 모양으로 돌려준다
     if(String(blogId||"").startsWith("cafe:")){
       try{
@@ -4601,6 +4601,7 @@ function MissingTab(){
       if(pubDate) params.append("date",pubDate);
       if(blogId) params.append("blogId",blogId);
       if(postNo) params.append("postNo",postNo);
+      if(mode) params.append("mode",mode);
       const res=await fetch(`/api/naver-rank?${params.toString()}`);
       if(!res.ok) return null;
       const data=await res.json();
@@ -4621,36 +4622,15 @@ function MissingTab(){
   // 네이버 검색 API는 따옴표를 무시하므로, 실제 블로그탭 따옴표 검색에 발행일 전후 하루 기간 필터를 건다(집 PC 프록시).
   // 그날 그 문구로 쓴 글만 남아 첫 페이지에서 찾을 수 있다. 여기서 보이면 = 검색에 반영된 글 → 누락 아님.
   const quoteRecheck=async(title,blogId,postNo,postDate)=>{
-    const clean=cleanTitleForSearch(title); if(!clean) return null;
-    const ymd=postYmd(postDate);
-    // 따옴표 검색어 후보: ① 특수문자 뺀 제목 ② 원래 제목 그대로(물음표 등 유지) ③ 문장부호로 나눈 가장 긴 조각
-    // 네이버 '정확히 일치' 검색은 특수문자를 빼면 오히려 못 찾는 경우가 있어 순서대로 시도하고, 찾으면 멈춘다
-    const raw=String(title||"").replace(/["“”]/g," ").replace(/\s+/g," ").trim();
-    const longest=raw.split(/[?!.,~…·|:;]/).map(x=>x.trim()).sort((a,b)=>b.length-a.length)[0]||"";
-    const variants=[...new Set([clean, raw, longest].filter(v=>v&&v.length>=8))].slice(0,3);
-    let best=null;
-    for(let vi=0; vi<variants.length; vi++){
-      const v=variants[vi];
-      // 두 번째 검색어부터는 네이버 부담을 줄이려고 잠깐 쉬고, 기간 검색은 첫 검색어에서만 한다
-      if(vi>0) await new Promise(r=>setTimeout(r,1500+Math.random()*1500));
-      const q=await getNaverRank(`"${v}"`,blogId,postNo,1,vi===0?ymd:"");
-      const diag={quoteQuery:v,quoteYmd:ymd,quoteAt:Date.now(),
-        quoteBlogTotal:q?.areas?.blog?.total??null,quoteDatedTotal:q?.dated?.total??null,
-        quoteError:!q?"조회 실패":(q.proxyError||(ymd&&q.dated?.error)||(ymd||String(blogId).startsWith("cafe:")?"":"발행일을 읽지 못해 기간 검색 생략"))||null};
-      if(!q){ best=best||{quoteChecked:false,...diag}; continue; }
-      // 네이버가 조회를 막으면(403) 더 시도하지 않는다 — 계속 두드리면 차단이 길어짐
-      if(/403/.test(String(q.proxyError||"")+String(q.areas?.blog?.error||"")+String(q.dated?.error||""))){
-        return {quoteChecked:false,quoteRank:null,...diag,quoteError:"네이버가 잠시 조회를 막음(403) — 30분~몇 시간 뒤 다시"};
-      }
-      // 기간 검색 실패(프록시 꺼짐·미업데이트)면 판정 보류 — 이유만 남기고 다음에 다시 시도
-      if(vi===0&&ymd&&q.dated?.error){ best=best||{quoteChecked:false,quoteDated:false,quoteRank:null,...diag}; continue; }
-      const r=[q.areas?.blog?.rank,q.dated?.rank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
-      const res={quoteChecked:true,quoteDated:!!ymd,quoteRank:r,...diag};
-      if(r!=null) return res;
-      // 못 찾았으면 결과가 더 많이 잡힌 검색어 기록을 남겨 둔다 (화면의 "블로그탭 N개" 표시용)
-      if(!best||!best.quoteChecked||(res.quoteBlogTotal||0)>(best.quoteBlogTotal||0)) best=res;
-    }
-    return best;
+    // "제목" 그대로(물음표 등 문장부호 유지) 블로그탭에서 한 번만 찾아본다. 보이면 = 검색에 반영된 글 → 누락 아님
+    const q0=String(title||"").replace(/["“”]/g," ").replace(/\s+/g," ").trim(); if(!q0) return null;
+    const cafe=String(blogId).startsWith("cafe:");
+    const q=await getNaverRank(`"${q0}"`,blogId,postNo,1,"",cafe?"":"quote");
+    const err=q?.areas?.blog?.error||q?.proxyError||null;
+    const diag={quoteQuery:q0,quoteYmd:"",quoteAt:Date.now(),quoteBlogTotal:q?.areas?.blog?.total??null,quoteDatedTotal:null,
+      quoteError:!q?"조회 실패":(/403/.test(String(err))?"네이버가 잠시 조회를 막음(403) — 30분~몇 시간 뒤 다시":err)};
+    if(!q||(err&&q.areas?.blog?.rank==null)) return {quoteChecked:false,quoteRank:null,...diag};
+    return {quoteChecked:true,quoteDated:false,quoteRank:q.areas?.blog?.rank??null,...diag};
   };
 
   // ── 순위 재확인: 제목 노출 + 이미 뽑아둔 키워드 순위 + 추가검색 키워드 순위 (AI 없음) ──
@@ -4990,13 +4970,15 @@ JSON 배열만 출력:`;
     setInsights(s=>({...s,[pg]:{loading:true,step:"키워드 집계 중..."}}));
     try{
       // 0) 누락으로 판정된 글 중 따옴표 재확인을 안 한 글만 재확인 (네이버 검색만, AI 없음)
-      const needQ=done.filter(p=>{const tr=A[p.postNo].titleRank;return tr&&!tr.quoteDated&&titleExposureCat(tr,p.date).cat==="missing";});
+      const needQ=done.filter(p=>{const tr=A[p.postNo].titleRank;return tr&&!tr.quoteChecked&&titleExposureCat(tr,p.date).cat==="missing";});
       for(let i=0;i<needQ.length;i++){
         const p=needQ[i];
         setInsights(s=>({...s,[pg]:{loading:true,step:`누락 글 따옴표 검색으로 재확인 중... (${i+1}/${needQ.length})`}}));
         const m=p.link?.match(/blog\.naver\.com\/([^/?#]+)\/(\d+)/);
+        if(i>0) await new Promise(r=>setTimeout(r,2000+Math.random()*2000));   // 글 사이 2~4초 (네이버 부담 줄이기)
         const qr=await quoteRecheck(p.title,m?.[1]||p._blogId||"",m?.[2]||p.postNo,p.date);
         if(!qr) continue;
+        if(/403/.test(qr.quoteError||"")){ A[p.postNo]={...A[p.postNo],titleRank:{...A[p.postNo].titleRank,...qr}}; break; }   // 막히면 나머지는 다음에
         const tr={...A[p.postNo].titleRank,...qr};
         const c=titleExposureCat(tr,p.date).cat;
         A[p.postNo]={...A[p.postNo],titleRank:tr,missingStatus:c==="missing"?"누락":c==="wait"?"반영 대기":"노출"};
