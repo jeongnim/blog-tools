@@ -67,6 +67,31 @@ async function fetchDatedViaHomeProxy(keyword, blogId, postNo, date) {
   }
 }
 
+// ── 홈 PC 프록시: 블로그탭 한 번만 조회 (따옴표 제목 노출 확인용 — 네이버 부담 최소) ──
+async function fetchBlogTabViaHomeProxy(keyword, blogId, postNo) {
+  const proxyUrl = process.env.HOME_PROXY_URL;
+  const proxyKey = process.env.HOME_PROXY_KEY;
+  if (!proxyUrl || !proxyKey) return { rank: null, total: 0, error: "프록시 미설정" };
+  try {
+    const url = `${proxyUrl}/naver-search?type=blog&keyword=${encodeURIComponent(keyword)}&key=${encodeURIComponent(proxyKey)}`;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 15000);
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return { rank: null, total: 0, error: "프록시 응답 오류 " + r.status };
+    const d = await r.json();
+    const items = d.items || [];
+    let rank = null;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (postNo ? String(it.postNo) === String(postNo) : (blogId && it.blogId === blogId)) { rank = i + 1; break; }
+    }
+    return { rank, total: items.length, error: d.error || null };
+  } catch (e) {
+    return { rank: null, total: 0, error: "프록시 연결 실패: " + (e?.message || "") };
+  }
+}
+
 export default async function handler(req, res) {
 
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -85,6 +110,17 @@ export default async function handler(req, res) {
 
   const normalizedBlogId = (blogId || "").toLowerCase().trim();
   const normalizedPostNo = (postNo || "").trim();
+
+  // mode=quote: "제목" 블로그탭 1회 조회만 (검색 API·통합검색·기간 검색 없음)
+  if (req.query.mode === "quote") {
+    const b = await fetchBlogTabViaHomeProxy(keyword, normalizedBlogId, normalizedPostNo);
+    return res.status(200).json({
+      keyword, myRank: b.rank, rankSource: b.rank != null ? "블로그탭" : null,
+      areas: { blog: { exposed_area: "블로그탭", rank: b.rank, total: b.total, error: b.error } },
+      proxyError: /프록시/.test(b.error || "") ? b.error : null,
+      searchedBlogId: normalizedBlogId, searchedPostNo: normalizedPostNo,
+    });
+  }
 
   try {
     // ── 홈 프록시(3영역 실제검색) + Search API(sim/date, fallback용) 병렬 조회 ──
