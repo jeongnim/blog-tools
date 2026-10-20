@@ -4623,15 +4623,27 @@ function MissingTab(){
   const quoteRecheck=async(title,blogId,postNo,postDate)=>{
     const clean=cleanTitleForSearch(title); if(!clean) return null;
     const ymd=postYmd(postDate);
-    const q=await getNaverRank(`"${clean}"`,blogId,postNo,1,ymd);
-    const diag={quoteQuery:clean,quoteYmd:ymd,quoteAt:Date.now(),
-      quoteBlogTotal:q?.areas?.blog?.total??null,quoteDatedTotal:q?.dated?.total??null,
-      quoteError:!q?"조회 실패":(q.proxyError||(ymd&&q.dated?.error)||(ymd||String(blogId).startsWith("cafe:")?"":"발행일을 읽지 못해 기간 검색 생략"))||null};
-    if(!q) return {quoteChecked:false,...diag};
-    // 기간 검색 실패(프록시 꺼짐·미업데이트)면 판정 보류 — 이유만 남기고 다음에 다시 시도
-    if(ymd&&q.dated?.error) return {quoteChecked:false,quoteDated:false,quoteRank:null,...diag};
-    const r=[q.areas?.blog?.rank,q.dated?.rank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
-    return {quoteChecked:true,quoteDated:!!ymd,quoteRank:r,...diag};
+    // 따옴표 검색어 후보: ① 특수문자 뺀 제목 ② 원래 제목 그대로(물음표 등 유지) ③ 문장부호로 나눈 가장 긴 조각
+    // 네이버 '정확히 일치' 검색은 특수문자를 빼면 오히려 못 찾는 경우가 있어 순서대로 시도하고, 찾으면 멈춘다
+    const raw=String(title||"").replace(/["“”]/g," ").replace(/\s+/g," ").trim();
+    const longest=raw.split(/[?!.,~…·|:;]/).map(x=>x.trim()).sort((a,b)=>b.length-a.length)[0]||"";
+    const variants=[...new Set([clean, raw, longest].filter(v=>v&&v.length>=8))].slice(0,3);
+    let best=null;
+    for(const v of variants){
+      const q=await getNaverRank(`"${v}"`,blogId,postNo,1,ymd);
+      const diag={quoteQuery:v,quoteYmd:ymd,quoteAt:Date.now(),
+        quoteBlogTotal:q?.areas?.blog?.total??null,quoteDatedTotal:q?.dated?.total??null,
+        quoteError:!q?"조회 실패":(q.proxyError||(ymd&&q.dated?.error)||(ymd||String(blogId).startsWith("cafe:")?"":"발행일을 읽지 못해 기간 검색 생략"))||null};
+      if(!q){ best=best||{quoteChecked:false,...diag}; continue; }
+      // 기간 검색 실패(프록시 꺼짐·미업데이트)면 판정 보류 — 이유만 남기고 다음에 다시 시도
+      if(ymd&&q.dated?.error){ best=best||{quoteChecked:false,quoteDated:false,quoteRank:null,...diag}; continue; }
+      const r=[q.areas?.blog?.rank,q.dated?.rank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
+      const res={quoteChecked:true,quoteDated:!!ymd,quoteRank:r,...diag};
+      if(r!=null) return res;
+      // 못 찾았으면 결과가 더 많이 잡힌 검색어 기록을 남겨 둔다 (화면의 "블로그탭 N개" 표시용)
+      if(!best||!best.quoteChecked||(res.quoteBlogTotal||0)>(best.quoteBlogTotal||0)) best=res;
+    }
+    return best;
   };
 
   // ── 순위 재확인: 제목 노출 + 이미 뽑아둔 키워드 순위 + 추가검색 키워드 순위 (AI 없음) ──
