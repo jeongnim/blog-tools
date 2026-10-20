@@ -4629,14 +4629,21 @@ function MissingTab(){
     const longest=raw.split(/[?!.,~…·|:;]/).map(x=>x.trim()).sort((a,b)=>b.length-a.length)[0]||"";
     const variants=[...new Set([clean, raw, longest].filter(v=>v&&v.length>=8))].slice(0,3);
     let best=null;
-    for(const v of variants){
-      const q=await getNaverRank(`"${v}"`,blogId,postNo,1,ymd);
+    for(let vi=0; vi<variants.length; vi++){
+      const v=variants[vi];
+      // 두 번째 검색어부터는 네이버 부담을 줄이려고 잠깐 쉬고, 기간 검색은 첫 검색어에서만 한다
+      if(vi>0) await new Promise(r=>setTimeout(r,1500+Math.random()*1500));
+      const q=await getNaverRank(`"${v}"`,blogId,postNo,1,vi===0?ymd:"");
       const diag={quoteQuery:v,quoteYmd:ymd,quoteAt:Date.now(),
         quoteBlogTotal:q?.areas?.blog?.total??null,quoteDatedTotal:q?.dated?.total??null,
         quoteError:!q?"조회 실패":(q.proxyError||(ymd&&q.dated?.error)||(ymd||String(blogId).startsWith("cafe:")?"":"발행일을 읽지 못해 기간 검색 생략"))||null};
       if(!q){ best=best||{quoteChecked:false,...diag}; continue; }
+      // 네이버가 조회를 막으면(403) 더 시도하지 않는다 — 계속 두드리면 차단이 길어짐
+      if(/403/.test(String(q.proxyError||"")+String(q.areas?.blog?.error||"")+String(q.dated?.error||""))){
+        return {quoteChecked:false,quoteRank:null,...diag,quoteError:"네이버가 잠시 조회를 막음(403) — 30분~몇 시간 뒤 다시"};
+      }
       // 기간 검색 실패(프록시 꺼짐·미업데이트)면 판정 보류 — 이유만 남기고 다음에 다시 시도
-      if(ymd&&q.dated?.error){ best=best||{quoteChecked:false,quoteDated:false,quoteRank:null,...diag}; continue; }
+      if(vi===0&&ymd&&q.dated?.error){ best=best||{quoteChecked:false,quoteDated:false,quoteRank:null,...diag}; continue; }
       const r=[q.areas?.blog?.rank,q.dated?.rank].filter(x=>x!=null).sort((a,b)=>a-b)[0]??null;
       const res={quoteChecked:true,quoteDated:!!ymd,quoteRank:r,...diag};
       if(r!=null) return res;
