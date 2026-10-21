@@ -413,16 +413,48 @@ function salvageTruncatedJson(raw) {
 const LS_BLOG_KEYS="vk_blog_api_keys";
 function blogKeysLoad(){ try{ return JSON.parse(localStorage.getItem(LS_BLOG_KEYS)||"{}")||{}; }catch(e){ return {}; } }
 function blogKeysSave(m){ try{ localStorage.setItem(LS_BLOG_KEYS,JSON.stringify(m)); }catch(e){} }
+// ── 이름 붙인 키 (예: 본사용·지점용) — 키는 몇 개만 두고, 블로그 ID는 직접 추가해서 그 키에 연결한다 ──
+// 프로필을 새로 만들어도 키 목록은 그대로. { slots:[{id,name,key}], map:{블로그ID: slotId} }
+const LS_KEY_SLOTS="vk_key_slots";
+function keySlotsLoad(){
+  let d=null;
+  try{ d=JSON.parse(localStorage.getItem(LS_KEY_SLOTS)||"null"); }catch(e){}
+  if(d&&Array.isArray(d.slots)) return { slots:d.slots, map:d.map||{} };
+  // 처음 열 때: 예전 방식(블로그 ID마다 키)으로 저장된 키가 있으면 같은 키끼리 묶어서 옮겨온다
+  const legacy=(()=>{ try{ return blogKeysLoad(); }catch(e){ return {}; } })();
+  const slots=[], map={};
+  Object.entries(legacy).forEach(([id,k])=>{
+    if(!k) return;
+    let sl=slots.find(x=>x.key===k);
+    if(!sl){ sl={ id:"s"+(slots.length+1), name:`키 ${slots.length+1}`, key:k }; slots.push(sl); }
+    map[id]=sl.id;
+  });
+  if(!slots.length){ slots.push({id:"s1",name:"본사용",key:""},{id:"s2",name:"지점용",key:""}); }
+  const out={slots,map}; keySlotsSave(out); return out;
+}
+function keySlotsSave(d){ try{ localStorage.setItem(LS_KEY_SLOTS,JSON.stringify(d)); }catch(e){} }
+// 블로그 ID에 쓸 키: ① 자동화가 그 ID에 직접 넣어둔 키 ② 연결해 둔 이름 키 ③ 없으면 ""(기본 키)
+function keyForBlog(id){
+  id=String(id||"").toLowerCase(); if(!id) return {key:"",name:""};
+  const direct=blogKeysLoad()[id];
+  const d=keySlotsLoad();
+  const sl=d.slots.find(x=>x.id===d.map[id]);
+  if(sl&&sl.key) return {key:sl.key,name:sl.name};
+  if(direct) return {key:direct,name:"전용 키"};
+  return {key:"",name:""};
+}
+function slotKey(slotId){ const sl=keySlotsLoad().slots.find(x=>x.id===slotId); return sl?.key||""; }
 function activeKeyInfo(){
   const id=(bpGetActiveId()||"").toLowerCase();
-  const k=id?blogKeysLoad()[id]:"";
-  return k?{id,key:k}:{id,key:""};
+  const r=keyForBlog(id);
+  return {id,key:r.key,name:r.name};
 }
 function maskKey(k){ return k?`${k.slice(0,10)}…${k.slice(-4)}`:""; }
-// forceId: undefined → 선택한 프로필 기준 / "" → 기본 키 / "블로그ID" → 그 ID에 등록한 키
+// forceId: undefined → 선택한 프로필 기준 / "" → 기본 키 / "slot:ID" → 그 이름 키 / "블로그ID" → 그 ID에 연결된 키
 function claudeHeaders(forceId){
   const h={"Content-Type":"application/json"};
-  const key=forceId===undefined?activeKeyInfo().key:(forceId?blogKeysLoad()[String(forceId).toLowerCase()]||"":"");
+  const f=forceId==null?forceId:String(forceId);
+  const key=f===undefined?activeKeyInfo().key:!f?"":f.startsWith("slot:")?slotKey(f.slice(5)):keyForBlog(f).key;
   if(key) h["x-user-api-key"]=key;
   return h;
 }
@@ -4394,10 +4426,10 @@ function MissingTab(){
   const [missingKeyId,setMissingKeyId]=useState(()=>{try{
     const saved=localStorage.getItem("mt_missing_key_id");
     if(saved!==null) return saved;
-    const ids=Object.keys(blogKeysLoad()); return ids[0]||"";
+    const sl=keySlotsLoad().slots.find(x=>x.key); return sl?"slot:"+sl.id:"";
   }catch(e){return "";}});
   const keyForAnalyze=()=>{
-    if(mode==="blogId"){ const id=(posts?.blogId||"").toLowerCase(); return id&&blogKeysLoad()[id]?id:undefined; }
+    if(mode==="blogId"){ const id=(posts?.blogId||"").toLowerCase(); return id&&keyForBlog(id).key?id:(missingKeyId||undefined); }
     return missingKeyId;
   };   // 방법2: 확인할 키워드 직접 입력 (비우면 AI가 뽑음)
   // 공통
@@ -5222,18 +5254,18 @@ recommend는 8개.`;
     </div>
 
     {/* AI 키 선택 (키워드 추출용) */}
-    {(()=>{const keys=blogKeysLoad();const ids=Object.keys(keys);
-      const bid=(posts?.blogId||"").toLowerCase();
+    {(()=>{const slots=keySlotsLoad().slots.filter(x=>x.key);
+      const bid=(posts?.blogId||"").toLowerCase(); const bk=bid?keyForBlog(bid):{key:""};
       return <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",fontSize:"13px",color:"#8b949e"}}>
         <span>🔑 키워드 추출 AI 키</span>
-        {mode==="blogId"
-          ?<span style={{color:keys[bid]?"#e3b341":"#8b949e"}}>{bid&&keys[bid]?`@${bid} 전용 키 (분석하는 블로그 ID 기준)`:"선택한 프로필 기준 (분석하는 블로그 ID에 등록된 키가 있으면 그 키)"}</span>
+        {mode==="blogId"&&bk.key
+          ?<span style={{color:"#e3b341"}}>@{bid} 에 연결된 {bk.name} (분석하는 블로그 ID 기준)</span>
           :<select value={missingKeyId} onChange={e=>{setMissingKeyId(e.target.value);try{localStorage.setItem("mt_missing_key_id",e.target.value);}catch(_){}}}
             style={{padding:"4px 8px",background:"#0d1117",border:`1px solid ${missingKeyId?"#d2992266":"#30363d"}`,borderRadius:"6px",color:missingKeyId?"#e3b341":"#c9d1d9",fontSize:"13px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-            <option value="">기본 키 (개인)</option>
-            {ids.map(id=><option key={id} value={id}>@{id} 전용 키</option>)}
+            <option value="">기본 키</option>
+            {slots.map(x=><option key={x.id} value={"slot:"+x.id}>{x.name} 키</option>)}
           </select>}
-        {mode!=="blogId"&&!ids.length&&<span style={{color:"#484f58"}}>· 상단 🔑 버튼에서 블로그 ID별 키를 먼저 등록해주세요</span>}
+        {!slots.length&&<span style={{color:"#484f58"}}>· 상단 🔑 버튼에서 키를 먼저 등록해주세요</span>}
       </div>;})()}
 
     {/* ── 방법1: 블로그 ID ── */}
@@ -11448,7 +11480,7 @@ function autoUseBlog(blogId, { mode="hq", key="" }={}){
   if(!prof){ prof=defaultAutoProfile(id, mode); bpSave(prof); }
   if(key){ const m=blogKeysLoad(); m[id.toLowerCase()]=key; blogKeysSave(m); }
   // 자동화는 블로그 전용 키가 있어야만 돈다 — 키가 빠진 블로그 비용이 사이트 기본 키로 조용히 넘어가지 않게
-  const k=blogKeysLoad()[id.toLowerCase()]||"";
+  const k=keyForBlog(id).key;
   if(!k) throw new Error(`@${id} 에 등록된 전용 API 키가 없어서 멈췄어요 (기본 키로는 자동화를 돌리지 않아요)`);
   bpSetActiveId(id);
   return { blogId:id, profile:prof.isDefault?"기본":"분석됨", profileAgeDays:prof.createdAt?Math.floor((Date.now()-prof.createdAt)/864e5):null, hasKey:true, keyMask:maskKey(k) };
@@ -11651,7 +11683,7 @@ if(typeof window!=="undefined"){
   window.__blogAuto={
     version:1,
     status:()=>({ busy:AUTO_STATE.busy, step:AUTO_STATE.step, log:AUTO_STATE.log.slice(-30) }),
-    profiles:()=>bpList().map(p=>({ blogId:p.blogId, isDefault:!!p.isDefault, hasKey:!!blogKeysLoad()[String(p.blogId).toLowerCase()] })),
+    profiles:()=>bpList().map(p=>({ blogId:p.blogId, isDefault:!!p.isDefault, hasKey:!!keyForBlog(p.blogId).key })),
     categories:()=>Object.keys(NAVER_DIR_MAP),
     useBlog:autoUseBlog, plan:autoPlan, writeOne:autoWriteOne, run:autoRun,
   };
@@ -11738,50 +11770,75 @@ function PasswordGate({children}){
   );
 }
 
-// 헤더: 블로그 ID별 API 키 등록·확인
+// 헤더: API 키 (이름 붙인 키 몇 개) + 블로그 ID → 키 연결
 function ApiKeySwitch(){
   const [open,setOpen]=useState(false);
-  const [keys,setKeys]=useState({});
+  const [data,setData]=useState({slots:[],map:{}});
   const [draft,setDraft]=useState({});
   const [newId,setNewId]=useState("");
+  const [newSlot,setNewSlot]=useState("");
   const [,tick]=useState(0);
-  useEffect(()=>{ setKeys(blogKeysLoad()); },[]);
+  useEffect(()=>{ setData(keySlotsLoad()); },[]);
   useEffect(()=>{ const t=setInterval(()=>tick(x=>x+1),3000); return ()=>clearInterval(t); },[]);   // 프로필 전환 반영
-  const info=typeof window!=="undefined"?activeKeyInfo():{id:"",key:""};
-  const ids=[...new Set([...(typeof window!=="undefined"?bpList():[]).map(p=>String(p.blogId||"").toLowerCase()),...Object.keys(keys)])].filter(Boolean);
-  const setKey=(id,v)=>{ const m={...blogKeysLoad()}; if(v) m[id]=v.trim(); else delete m[id]; blogKeysSave(m); setKeys(m); setDraft(d=>({...d,[id]:""})); };
+  const save=d=>{ keySlotsSave(d); setData({...d}); };
+  const info=typeof window!=="undefined"?activeKeyInfo():{id:"",key:"",name:""};
   const own=!!info.key;
   const inp={flex:1,minWidth:0,padding:"5px 7px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"monospace"};
+  const btn={padding:"4px 8px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px",whiteSpace:"nowrap"};
+  const del={...btn,border:"1px solid #f8514944",background:"transparent",color:"#ff7b72"};
+  const head={fontWeight:700,margin:"10px 0 4px",color:"#e6edf3"};
+  const setSlotKey=(sid,v)=>{ save({...data,slots:data.slots.map(x=>x.id===sid?{...x,key:v}:x)}); setDraft(d=>({...d,[sid]:""})); };
+  const ids=Object.keys(data.map).sort();
   return <div style={{marginLeft:"auto",position:"relative"}}>
-    <button onClick={()=>setOpen(o=>!o)} title="AI 비용을 어느 API 키로 낼지"
+    <button onClick={()=>{ setData(keySlotsLoad()); setOpen(o=>!o); }} title="AI 비용을 어느 API 키로 낼지"
       style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${own?"#d2992266":"#30363d"}`,background:own?"#d2992215":"#161b22",color:own?"#e3b341":"#8b949e",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
-      🔑 {own?`@${info.id} 전용 키`:"기본 키"}
+      🔑 {own?`${info.name} (@${info.id})`:"기본 키"}
     </button>
     {open&&<div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:999}}/>}
-    {open&&<div style={{position:"absolute",right:0,top:"38px",zIndex:1000,width:"340px",maxWidth:"calc(100vw - 24px)",maxHeight:"70vh",overflowY:"auto",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",boxShadow:"0 8px 24px #0008",fontSize:"13px",color:"#c9d1d9"}}>
-      <div style={{fontWeight:700,marginBottom:"4px"}}>블로그 ID별 API 키</div>
-      <div style={{color:"#8b949e",fontSize:"12px",lineHeight:1.5,marginBottom:"8px"}}>맞춤 프로필에서 고른 블로그 ID에 키가 있으면 그 키로, 없으면 기본 키(개인)로 과금돼요. 지금 선택: {info.id?`@${info.id}`:"프로필 없음"}</div>
-      {ids.length===0&&<div style={{color:"#484f58",fontSize:"12px"}}>아직 프로필이 없어요. 아래에 블로그 ID를 직접 추가할 수 있어요.</div>}
-      {ids.map(id=>(
-        <div key={id} style={{padding:"6px 0",borderTop:"1px solid #21262d"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <b style={{color:info.id===id?"#58a6ff":"#c9d1d9"}}>@{id}{info.id===id?" · 선택됨":""}</b>
-            {keys[id]&&<span style={{color:"#3fb950",fontSize:"12px",fontFamily:"monospace"}}>{maskKey(keys[id])}</span>}
+    {open&&<div style={{position:"absolute",right:0,top:"38px",zIndex:1000,width:"360px",maxWidth:"calc(100vw - 24px)",maxHeight:"75vh",overflowY:"auto",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",boxShadow:"0 8px 24px #0008",fontSize:"13px",color:"#c9d1d9"}}>
+      <div style={{color:"#8b949e",fontSize:"12px",lineHeight:1.5}}>
+        지금 선택한 프로필: {info.id?`@${info.id}`:"없음"} → <b style={{color:own?"#e3b341":"#8b949e"}}>{own?info.name:"기본 키"}</b>로 과금
+      </div>
+
+      <div style={head}>① API 키</div>
+      {data.slots.map(sl=>(
+        <div key={sl.id} style={{padding:"6px 0",borderTop:"1px solid #21262d"}}>
+          <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+            <input value={sl.name} onChange={e=>save({...data,slots:data.slots.map(x=>x.id===sl.id?{...x,name:e.target.value}:x)})}
+              style={{...inp,fontFamily:"'Noto Sans KR',sans-serif",fontWeight:700,flex:"0 0 110px"}}/>
+            <span style={{flex:1,color:sl.key?"#3fb950":"#484f58",fontSize:"12px",fontFamily:"monospace",textAlign:"right"}}>{sl.key?maskKey(sl.key):"키 없음"}</span>
           </div>
           <div style={{display:"flex",gap:"5px",marginTop:"4px"}}>
-            <input type="password" value={draft[id]||""} onChange={e=>setDraft(d=>({...d,[id]:e.target.value}))} placeholder={keys[id]?"새 키로 바꾸려면 입력":"sk-ant-... (없으면 기본 키 사용)"} style={inp}/>
-            <button onClick={()=>{const v=(draft[id]||"").trim(); if(!/^sk-ant-/.test(v)){alert("Anthropic API 키는 sk-ant- 로 시작해요.");return;} setKey(id,v);}} disabled={!(draft[id]||"").trim()}
-              style={{padding:"4px 8px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px"}}>저장</button>
-            {keys[id]&&<button onClick={()=>{if(confirm(`@${id} 키를 지울까요?`)) setKey(id,"");}}
-              style={{padding:"4px 8px",borderRadius:"6px",border:"1px solid #f8514944",background:"transparent",color:"#ff7b72",cursor:"pointer",fontSize:"12px"}}>삭제</button>}
+            <input type="password" value={draft[sl.id]||""} onChange={e=>setDraft(d=>({...d,[sl.id]:e.target.value}))} placeholder={sl.key?"새 키로 바꾸려면 입력":"sk-ant-..."} style={inp}/>
+            <button style={btn} disabled={!(draft[sl.id]||"").trim()} onClick={()=>{const v=(draft[sl.id]||"").trim(); if(!/^sk-ant-/.test(v)){alert("Anthropic API 키는 sk-ant- 로 시작해요.");return;} setSlotKey(sl.id,v);}}>저장</button>
+            <button style={del} onClick={()=>{ if(!confirm(`"${sl.name}" 키를 목록에서 지울까요? (연결된 블로그 ID는 기본 키로 바뀌어요)`)) return;
+              const map={...data.map}; Object.keys(map).forEach(k=>{ if(map[k]===sl.id) delete map[k]; });
+              save({slots:data.slots.filter(x=>x.id!==sl.id),map}); }}>삭제</button>
           </div>
         </div>))}
-      <div style={{display:"flex",gap:"5px",marginTop:"8px",paddingTop:"8px",borderTop:"1px solid #21262d"}}>
-        <input value={newId} onChange={e=>setNewId(e.target.value)} placeholder="블로그 ID 추가" style={{...inp,fontFamily:"'Noto Sans KR',sans-serif"}}/>
-        <button onClick={()=>{const id=newId.trim().toLowerCase(); if(!id) return; setDraft(d=>({...d,[id]:""})); setKeys(k=>({...k,[id]:k[id]||""})); setNewId("");}}
-          style={{padding:"4px 8px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px"}}>추가</button>
+      <div style={{display:"flex",gap:"5px",marginTop:"6px"}}>
+        <input value={newSlot} onChange={e=>setNewSlot(e.target.value)} placeholder="키 이름 추가 (예: 개인용)" style={{...inp,fontFamily:"'Noto Sans KR',sans-serif"}}/>
+        <button style={btn} onClick={()=>{ const n=newSlot.trim(); if(!n) return; const sid="s"+Date.now().toString(36); save({...data,slots:[...data.slots,{id:sid,name:n,key:""}]}); setNewSlot(""); }}>추가</button>
       </div>
-      <div style={{marginTop:"8px",color:"#484f58",fontSize:"11px",lineHeight:1.5}}>키는 이 브라우저에만 저장되고 백업 파일에는 들어가지 않아요. 다른 PC에서는 다시 입력해주세요.</div>
+
+      <div style={head}>② 블로그 ID → 어느 키로</div>
+      {!ids.length&&<div style={{color:"#484f58",fontSize:"12px",lineHeight:1.5}}>아래에서 블로그 ID를 추가하고 키를 골라주세요. 추가하지 않은 ID는 기본 키로 과금돼요.</div>}
+      {ids.map(id=>(
+        <div key={id} style={{display:"flex",gap:"6px",alignItems:"center",padding:"5px 0",borderTop:"1px solid #21262d"}}>
+          <b style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",color:info.id===id?"#58a6ff":"#c9d1d9"}}>@{id}{info.id===id?" · 선택됨":""}</b>
+          <select value={data.map[id]||""} onChange={e=>save({...data,map:{...data.map,[id]:e.target.value}})}
+            style={{padding:"4px 6px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+            <option value="">기본 키</option>
+            {data.slots.map(sl=><option key={sl.id} value={sl.id}>{sl.name}</option>)}
+          </select>
+          <button style={del} onClick={()=>{ const map={...data.map}; delete map[id]; save({...data,map}); }}>✕</button>
+        </div>))}
+      <div style={{display:"flex",gap:"5px",marginTop:"6px"}}>
+        <input value={newId} onChange={e=>setNewId(e.target.value)} placeholder="블로그 ID 추가" style={{...inp,fontFamily:"'Noto Sans KR',sans-serif"}}/>
+        <button style={btn} onClick={()=>{ const id=newId.trim().replace(/^@/,"").toLowerCase(); if(!id) return;
+          const firstKey=data.slots.find(x=>x.key)?.id||""; save({...data,map:{...data.map,[id]:data.map[id]??firstKey}}); setNewId(""); }}>추가</button>
+      </div>
+      <div style={{marginTop:"10px",color:"#484f58",fontSize:"11px",lineHeight:1.5}}>프로필을 새로 만들거나 불러와도 이 목록은 바뀌지 않아요. 키는 이 브라우저에만 저장되고 백업 파일에는 들어가지 않아요.</div>
     </div>}
   </div>;
 }
