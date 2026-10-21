@@ -419,7 +419,7 @@ const LS_KEY_SLOTS="vk_key_slots";
 function keySlotsLoad(){
   let d=null;
   try{ d=JSON.parse(localStorage.getItem(LS_KEY_SLOTS)||"null"); }catch(e){}
-  if(d&&Array.isArray(d.slots)) return { slots:d.slots, map:d.map||{} };
+  if(d&&Array.isArray(d.slots)) return { slots:d.slots, map:d.map||{}, def:d.def!==undefined?d.def:siteDefaultSlot(d.slots) };
   // 처음 열 때: 예전 방식(블로그 ID마다 키)으로 저장된 키가 있으면 같은 키끼리 묶어서 옮겨온다
   const legacy=(()=>{ try{ return blogKeysLoad(); }catch(e){ return {}; } })();
   const slots=[], map={};
@@ -430,20 +430,32 @@ function keySlotsLoad(){
     map[id]=sl.id;
   });
   if(!slots.length){ slots.push({id:"s1",name:"본사용",key:""},{id:"s2",name:"지점용",key:""}); }
-  const out={slots,map}; keySlotsSave(out);
+  const out={slots,map,def:siteDefaultSlot(slots)}; keySlotsSave(out);
   try{ blogKeysSave({}); }catch(e){}     // 옮겨왔으니 예전 칸은 비운다 (이후 이 칸은 자동화가 넣는 키 전용)
   return out;
+}
+// 회사용 사이트(bandphone-auto)는 처음부터 "본사용"을 기본 키로 — 개인 키(서버 기본 키)로 과금되지 않게
+function siteDefaultSlot(slots){
+  try{ if(!/bandphone/i.test(location.hostname)) return ""; }catch(e){ return ""; }
+  const hq=(slots||[]).find(x=>/본사/.test(x.name))||(slots||[])[0];
+  return hq?hq.id:"";
 }
 function keySlotsSave(d){ try{ localStorage.setItem(LS_KEY_SLOTS,JSON.stringify(d)); }catch(e){} }
 // 블로그 ID에 쓸 키: ① 자동화 프로그램이 config 키로 넣어준 키(항상 우선) ② 🔑에서 연결한 이름 키 ③ 없으면 ""(기본 키)
 function keyForBlog(id){
-  id=String(id||"").toLowerCase(); if(!id) return {key:"",name:""};
+  id=String(id||"").toLowerCase(); if(!id) return defaultKeyInfo();
   const d=keySlotsLoad();                 // (처음이면 예전 키를 옮겨오므로 먼저 부른다)
   const direct=blogKeysLoad()[id];
   if(direct) return {key:direct,name:"자동화 키"};
   const sl=d.slots.find(x=>x.id===d.map[id]);
   if(sl&&sl.key) return {key:sl.key,name:sl.name};
-  return {key:"",name:""};
+  return defaultKeyInfo(d);
+}
+// 이 사이트의 기본 키: 🔑에서 고른 이름 키(있으면) → 없으면 서버 기본 키("")
+function defaultKeyInfo(d){
+  d=d||keySlotsLoad();
+  const sl=d.slots.find(x=>x.id===d.def);
+  return sl&&sl.key?{key:sl.key,name:sl.name}:{key:"",name:""};
 }
 function slotKey(slotId){ const sl=keySlotsLoad().slots.find(x=>x.id===slotId); return sl?.key||""; }
 function activeKeyInfo(){
@@ -456,7 +468,7 @@ function maskKey(k){ return k?`${k.slice(0,10)}…${k.slice(-4)}`:""; }
 function claudeHeaders(forceId){
   const h={"Content-Type":"application/json"};
   const f=forceId==null?forceId:String(forceId);
-  const key=f===undefined?activeKeyInfo().key:!f?"":f.startsWith("slot:")?slotKey(f.slice(5)):keyForBlog(f).key;
+  const key=f===undefined?activeKeyInfo().key:!f?defaultKeyInfo().key:f.startsWith("slot:")?slotKey(f.slice(5)):keyForBlog(f).key;
   if(key) h["x-user-api-key"]=key;
   return h;
 }
@@ -4431,7 +4443,7 @@ function MissingTab(){
     const sl=keySlotsLoad().slots.find(x=>x.key); return sl?"slot:"+sl.id:"";
   }catch(e){return "";}});
   const keyForAnalyze=()=>{
-    if(mode==="blogId"){ const id=(posts?.blogId||"").toLowerCase(); return id&&keyForBlog(id).key?id:(missingKeyId||undefined); }
+    if(mode==="blogId"){ const id=(posts?.blogId||"").toLowerCase(); return id&&keySlotsLoad().map[id]?id:missingKeyId; }
     return missingKeyId;
   };   // 방법2: 확인할 키워드 직접 입력 (비우면 AI가 뽑음)
   // 공통
@@ -5260,11 +5272,11 @@ recommend는 8개.`;
       const bid=(posts?.blogId||"").toLowerCase(); const bk=bid?keyForBlog(bid):{key:""};
       return <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",fontSize:"13px",color:"#8b949e"}}>
         <span>🔑 키워드 추출 AI 키</span>
-        {mode==="blogId"&&bk.key
-          ?<span style={{color:"#e3b341"}}>@{bid} 에 연결된 {bk.name} (분석하는 블로그 ID 기준)</span>
+        {mode==="blogId"&&bid&&keySlotsLoad().map[bid]&&bk.key
+          ?<span style={{color:"#e3b341"}}>@{bid} 에 연결된 {bk.name} 키 (분석하는 블로그 ID 기준)</span>
           :<select value={missingKeyId} onChange={e=>{setMissingKeyId(e.target.value);try{localStorage.setItem("mt_missing_key_id",e.target.value);}catch(_){}}}
             style={{padding:"4px 8px",background:"#0d1117",border:`1px solid ${missingKeyId?"#d2992266":"#30363d"}`,borderRadius:"6px",color:missingKeyId?"#e3b341":"#c9d1d9",fontSize:"13px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-            <option value="">기본 키</option>
+            <option value="">기본 키{defaultKeyInfo().name?` (${defaultKeyInfo().name})`:""}</option>
             {slots.map(x=><option key={x.id} value={"slot:"+x.id}>{x.name} 키</option>)}
           </select>}
         {!slots.length&&<span style={{color:"#484f58"}}>· 상단 🔑 버튼에서 키를 먼저 등록해주세요</span>}
@@ -11794,13 +11806,23 @@ function ApiKeySwitch(){
   return <div style={{marginLeft:"auto",position:"relative"}}>
     <button onClick={()=>{ setData(keySlotsLoad()); setOpen(o=>!o); }} title="AI 비용을 어느 API 키로 낼지"
       style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${own?"#d2992266":"#30363d"}`,background:own?"#d2992215":"#161b22",color:own?"#e3b341":"#8b949e",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
-      🔑 {own?`${info.name} (@${info.id})`:"기본 키"}
+      🔑 {own?`${info.name} 키`:"기본 키(개인)"}
     </button>
     {open&&<div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:999}}/>}
     {open&&<div style={{position:"absolute",right:0,top:"38px",zIndex:1000,width:"360px",maxWidth:"calc(100vw - 24px)",maxHeight:"75vh",overflowY:"auto",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",boxShadow:"0 8px 24px #0008",fontSize:"13px",color:"#c9d1d9"}}>
       <div style={{color:"#8b949e",fontSize:"12px",lineHeight:1.5}}>
-        지금 선택한 프로필: {info.id?`@${info.id}`:"없음"} → <b style={{color:own?"#e3b341":"#8b949e"}}>{own?info.name:"기본 키"}</b>로 과금
+        지금 선택한 프로필: {info.id?`@${info.id}`:"없음"} → <b style={{color:own?"#e3b341":"#f0883e"}}>{own?info.name:"서버 기본 키(개인)"}</b>로 과금
       </div>
+
+      <div style={{display:"flex",alignItems:"center",gap:"6px",marginTop:"10px",padding:"8px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px"}}>
+        <span style={{flex:1,fontWeight:700,color:"#e6edf3"}}>이 사이트 기본 키</span>
+        <select value={data.def||""} onChange={e=>save({...data,def:e.target.value})}
+          style={{padding:"4px 6px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+          <option value="">서버 기본 키 (개인)</option>
+          {data.slots.map(sl=><option key={sl.id} value={sl.id}>{sl.name}</option>)}
+        </select>
+      </div>
+      {data.def&&!data.slots.find(x=>x.id===data.def)?.key&&<div style={{color:"#f0883e",fontSize:"12px",marginTop:"4px"}}>기본으로 고른 키가 아직 비어 있어요 — 아래에 키를 넣기 전까지는 서버 기본 키(개인)로 과금돼요.</div>}
 
       <div style={head}>① API 키</div>
       {data.slots.map(sl=>(
@@ -11824,13 +11846,13 @@ function ApiKeySwitch(){
       </div>
 
       <div style={head}>② 블로그 ID → 어느 키로</div>
-      {!ids.length&&<div style={{color:"#484f58",fontSize:"12px",lineHeight:1.5}}>아래에서 블로그 ID를 추가하고 키를 골라주세요. 추가하지 않은 ID는 기본 키로 과금돼요.</div>}
+      {!ids.length&&<div style={{color:"#484f58",fontSize:"12px",lineHeight:1.5}}>다른 키를 써야 하는 블로그 ID만 추가하세요. 추가하지 않은 ID는 위의 "이 사이트 기본 키"로 과금돼요.</div>}
       {ids.map(id=>(
         <div key={id} style={{display:"flex",gap:"6px",alignItems:"center",padding:"5px 0",borderTop:"1px solid #21262d"}}>
           <b style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",color:info.id===id?"#58a6ff":"#c9d1d9"}}>@{id}{info.id===id?" · 선택됨":""}</b>
           <select value={data.map[id]||""} onChange={e=>save({...data,map:{...data.map,[id]:e.target.value}})}
             style={{padding:"4px 6px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-            <option value="">기본 키</option>
+            <option value="">이 사이트 기본 키</option>
             {data.slots.map(sl=><option key={sl.id} value={sl.id}>{sl.name}</option>)}
           </select>
           <button style={del} onClick={()=>{ const map={...data.map}; delete map[id]; save({...data,map}); }}>✕</button>
