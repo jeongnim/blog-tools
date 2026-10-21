@@ -4621,14 +4621,23 @@ function MissingTab(){
   // 제목 검색에서 못 찾은 글만: 특수문자 빼고 큰따옴표로 감싸 한 번 더 (판다랭크 방식)
   // 네이버 검색 API는 따옴표를 무시하므로, 실제 블로그탭 따옴표 검색에 발행일 전후 하루 기간 필터를 건다(집 PC 프록시).
   // 그날 그 문구로 쓴 글만 남아 첫 페이지에서 찾을 수 있다. 여기서 보이면 = 검색에 반영된 글 → 누락 아님.
-  const quoteRecheck=async(title,blogId,postNo,postDate)=>{
+  // 403이 어디서 났는지 구분: "프록시 응답 오류 403" = 프록시 키 불일치, "응답 오류 403" = 네이버가 막음
+const quoteErrText=(err)=>{
+  const e=String(err||""); if(!e) return null;
+  if(/프록시 응답 오류 403/.test(e)) return "프록시 인증 실패(403) — Vercel의 HOME_PROXY_KEY와 프록시 PC의 키가 다름";
+  if(/프록시 응답 오류 429/.test(e)) return "프록시 요청 한도 초과(429) — 1~2분 뒤 다시";
+  if(/프록시 응답 오류 50[234]|프록시 연결 실패/.test(e)) return "프록시 PC가 꺼져 있거나 연결 안 됨 — "+e;
+  if(/응답 오류 403/.test(e)) return "네이버가 잠시 조회를 막음(403) — 30분~몇 시간 뒤 다시";
+  return e;
+};
+const quoteRecheck=async(title,blogId,postNo,postDate)=>{
     // "제목" 그대로(물음표 등 문장부호 유지) 블로그탭에서 한 번만 찾아본다. 보이면 = 검색에 반영된 글 → 누락 아님
     const q0=String(title||"").replace(/["“”]/g," ").replace(/\s+/g," ").trim(); if(!q0) return null;
     const cafe=String(blogId).startsWith("cafe:");
     const q=await getNaverRank(`"${q0}"`,blogId,postNo,1,"",cafe?"":"quote");
     const err=q?.areas?.blog?.error||q?.proxyError||null;
     const diag={quoteQuery:q0,quoteYmd:"",quoteAt:Date.now(),quoteBlogTotal:q?.areas?.blog?.total??null,quoteDatedTotal:null,
-      quoteError:!q?"조회 실패":(/403/.test(String(err))?"네이버가 잠시 조회를 막음(403) — 30분~몇 시간 뒤 다시":err)};
+      quoteError:!q?"조회 실패":quoteErrText(err)};
     if(!q||(err&&q.areas?.blog?.rank==null)) return {quoteChecked:false,quoteRank:null,...diag};
     return {quoteChecked:true,quoteDated:false,quoteRank:q.areas?.blog?.rank??null,...diag};
   };
@@ -11274,6 +11283,46 @@ function toneBlock(tone){
   return out;
 }
 
+// ── 블로그별 글 성격 — 블로그 주소로 고정 배정해서, 같은 사람이 여러 블로그를 쓰는 것처럼 보이지 않게 한다 ──
+// 서식(제목 왼쪽·나눔스퀘어, 질문 줄 굵게+배경)은 그대로 두고 말투·도입·구성·마무리만 다르게.
+const AUTO_STYLES=[
+  { id:"calm", label:"차분한 설명형",
+    tone:`차분하고 단정한 설명체. "~입니다/~합니다"를 기본으로 하되 팁이나 주의할 점에서만 "~해요", "~하면 돼요"를 가끔 섞는다. 감탄문·느낌표는 거의 쓰지 않는다.`,
+    intro:`도입: 질문에 대한 결론 한 문장으로 바로 시작하고, 이어서 그 결론이 맞는 조건을 한 문장으로 붙인다.`,
+    body:`구성: 소제목 4~5개. 각 소제목 아래는 짧은 문단 2~3개. 순서가 있는 내용은 "1. 2. 3." 번호 목록으로 정리한다.`,
+    outro:`마무리: 핵심을 두세 줄로 요약하고 끝낸다. 인사말·감성 문장 없이.` },
+  { id:"friendly", label:"옆자리 친구형",
+    tone:`옆자리 사람에게 설명해 주듯 친근한 존댓말. "~해요", "~하죠", "~거든요", "~더라고요", "~하면 돼요"를 섞는다. "~합니다"류는 전체의 4분의 1 이하.`,
+    intro:`도입: 이 문제를 겪는 흔한 순간을 한 문장으로 짚고("~할 때 있죠?" 정도), 바로 다음 문장에서 답을 준다.`,
+    body:`구성: 소제목 3~4개. 문단은 짧게 끊고, 목록보다 문장으로 풀어 쓴다. 실수하기 쉬운 부분을 한 군데 "이건 꼭 확인하세요" 식으로 짚는다.`,
+    outro:`마무리: "정리하면 ~" 한 문단 뒤, 독자가 바로 해볼 수 있는 한 가지를 권하며 끝낸다.` },
+  { id:"checklist", label:"체크리스트형",
+    tone:`간결한 존댓말. 문장을 짧게 쓰고 "~하세요", "~확인해 보세요", "~이면 됩니다"처럼 행동 중심 어미를 쓴다. 군더더기 수식어는 뺀다.`,
+    intro:`도입: 결론을 한 문장으로 주고, "아래 순서대로 확인하면 대부분 해결돼요" 같은 한 문장으로 본문을 연다.`,
+    body:`구성: 소제목 4~6개를 확인 순서대로 배치. 각 소제목 아래 짧은 설명 1문단 + 필요하면 "· " 점 목록 2~4줄. 예외 상황은 별도 소제목 하나로 모은다.`,
+    outro:`마무리: 확인 순서를 한 줄씩 다시 짚는 짧은 체크리스트로 끝낸다.` },
+  { id:"story", label:"경험 공유형",
+    tone:`평범한 사용자가 직접 겪은 걸 나누는 말투. "~했어요", "~더라고요", "~였어요"와 설명용 "~해요"를 섞는다. 직업·매장 이야기는 절대 하지 않는다.`,
+    intro:`도입: 본인이 이 상황을 겪었던 짧은 장면 한두 문장(구체적 숫자·날짜는 지어내지 말 것)으로 시작하고, 세 번째 문장 안에 답을 준다.`,
+    body:`구성: 소제목 3~5개. "처음엔 ~라고 생각했는데" 같은 흐름을 한 번 정도 넣고, 나머지는 정보 위주로. 목록은 꼭 필요할 때만.`,
+    outro:`마무리: 써보니 이 방법이 제일 나았다는 한 문단으로 끝낸다.` },
+  { id:"compare", label:"상황별 비교형",
+    tone:`균형 잡힌 존댓말. 설명은 "~입니다", 판단·권유는 "~하는 게 좋아요"로 나눠 쓴다.`,
+    intro:`도입: "결론부터 말하면 상황에 따라 다릅니다" 식으로 열고, 가장 흔한 경우의 답을 바로 이어서 준다.`,
+    body:`구성: 소제목 4~5개를 "~인 경우", "~일 때"처럼 상황별로 나눈다. 각 상황마다 답 → 이유 → 주의점 순서. 차이가 여러 항목이면 짧은 비교 문단으로 정리.`,
+    outro:`마무리: "내 상황이 ~면 ~" 형태로 상황별 한 줄 정리를 2~3개 두고 끝낸다.` },
+  { id:"qa", label:"문답형",
+    tone:`질문에 또박또박 답하는 존댓말. "~입니다"와 "~해요"를 반반 정도. 한 문장이 길어지지 않게.`,
+    intro:`도입: 독자가 가장 궁금해할 질문 하나를 그대로 던지고 바로 한 문장으로 답한다.`,
+    body:`구성: 소제목 대부분을 독자가 실제로 물을 법한 질문 형태로 잡는다(4~6개). 각 답은 결론 한 문장 → 이유·방법 순.`,
+    outro:`마무리: 본문에서 안 다룬 짧은 추가 질문 하나에 한두 문장으로 답하고 끝낸다.` },
+];
+function pickAutoStyle(blogId){
+  const id=String(blogId||"").toLowerCase(); if(!id) return AUTO_STYLES[1];
+  let h=0; for(const ch of id) h=(h*31+ch.charCodeAt(0))>>>0;
+  return AUTO_STYLES[h%AUTO_STYLES.length];
+}
+
 function autoRulesBlock(auto){
   if(!auto) return "";
   const branch=auto.mode==="branch";
@@ -11283,11 +11332,19 @@ A1. 순수 정보 글이다. 특정 매장·업체·판매처를 소개하거나
 A2. 글쓴이의 직업·소속·매장을 드러내지 말 것. "매장에서 일하다 보면", "고객님들이 자주 묻는", "판매하면서" 같은 표현 금지. 경험은 평범한 사용자 입장에서만 쓴다.
 A2-1. 휴대폰 판매점이 운영하는 블로그다. 휴대폰 구매·개통을 꺼리게 만드는 내용을 쓰지 말 것 — 예: 자급제·알뜰폰으로 옮기라는 권유, 판매점·대리점에 대한 불신 조장, 위약금·해지·개통 철회 방법 안내, "새 폰 사지 말고 버티라"는 결론.${(auto.banTopics||[]).length?` 특히 이런 방향 금지: ${auto.banTopics.join(", ")}.`:""}
 A3. 링크(URL)·전화번호·메신저 ID·업체 상호를 쓰지 말 것.
-A-TONE. 말투 (가장 눈에 띄는 부분이니 꼭 지킬 것): 옆자리 사람에게 설명해 주듯 친근한 존댓말. "~해요", "~하죠", "~거든요", "~더라고요", "~하면 돼요", "~해 보세요", "~했으면 좋겠어요!", "~하기도 합니다"를 섞어 쓴다.
+${auto.style?`A-TONE. 이 블로그의 글 성격 — "${auto.style.label}" (가장 눈에 띄는 부분이니 꼭 지킬 것. 다른 블로그와 글이 비슷해 보이지 않게 하는 핵심)
+   - 말투: ${auto.style.tone}
+   - ${auto.style.intro}
+   - ${auto.style.body}
+   - ${auto.style.outro}
+   - 같은 어미로 끝나는 문장이 세 번 연속 나오지 않게. 접속어도 한 가지만 반복하지 말 것.
+   - 질문 줄 바로 아래 답의 첫 문장은 결론부터(AI 인용용). 반말·과한 감탄·이모지 남발 금지. 정보의 정확성은 그대로 유지.
+`:`A-TONE. 말투 (가장 눈에 띄는 부분이니 꼭 지킬 것): 옆자리 사람에게 설명해 주듯 친근한 존댓말. "~해요", "~하죠", "~거든요", "~더라고요", "~하면 돼요", "~해 보세요", "~했으면 좋겠어요!", "~하기도 합니다"를 섞어 쓴다.
    - "~합니다/~습니다/~됩니다"로 끝나는 문장은 전체의 3분의 1 이하. 같은 어미로 끝나는 문장이 세 번 연속 나오지 않게.
    - 접속어도 "다만"만 반복하지 말고 "하지만", "그런데", "그래서", "참고로", "특히" 등을 바꿔 쓴다.
    - 질문 줄 바로 아래 답의 첫 문장은 결론부터(AI 인용용)이되 말투는 친근하게: (X) "켜두는 것이 좋습니다." (O) "웬만하면 켜두는 게 좋아요."
    - 반말·과한 감탄·이모지 남발은 금지. 정보의 정확성은 그대로 유지.
+`}
 A3-1. 본문에 **굵게** 표시(별표)는 쓰지 말 것. 강조는 질문 줄에만 따로 적용된다.
 ${branch
   ?`A4. 검색량이 작은 구체적 질문 하나에 정확히 답하는 글이다. 첫 2~3문장 안에 답을 바로 주고, 이어서 조건·예외·순서를 풀어 쓴다. 네이버 AI 브리핑·구글 AI 개요가 그대로 인용하기 좋게 정의·순서·조건을 한 문단씩 독립적으로 쓸 것. 본문은 1,500~2,500자.`
@@ -11484,7 +11541,10 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
   autoLog(`[${mainKeyword}] 키워드 노출 전략 분석 중`);
   const ins=await autoKeywordInsight(mainKeyword);
   if(ins.smartBlockType) autoLog(`[${mainKeyword}] 스마트블록: ${ins.smartBlockType} / 전략: ${ins.blogStrategy||"-"}`);
-  const gen=()=>generatePost({ kw:topic, mainKeyword, ...ins, opts:{ auto:{ mode, region, banTopics } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
+  const style=pickAutoStyle(bpGetActiveId());
+  const prof=bpGetActive();
+  autoLog(`[${mainKeyword}] 블로그 @${bpGetActiveId()} · 프로필 ${!prof?"없음":prof.isDefault?"기본(분석 전)":"분석됨"} · 글 성격 ${style.label}`);
+  const gen=()=>generatePost({ kw:topic, mainKeyword, ...ins, opts:{ auto:{ mode, region, banTopics, style } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
   let meta=await gen();
   // 본문이 중간에 끊기거나 너무 짧게 나온 건 일시적인 경우가 많아 한 번 더 써본다
   if(meta.autoBlock?.length && meta.autoBlock.every(r=>/잘림|너무 짧음/.test(r))){
