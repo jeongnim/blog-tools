@@ -11074,7 +11074,7 @@ CITATION READINESS (AEO) — apply this within the limits of factual discipline 
 - Lead with the answer. The opening lines and the first sentence under every subheading must state the conclusion before any background.
 - Write self-contained paragraphs. Each paragraph must make sense when lifted out of the post on its own; avoid pronouns and back-references that depend on earlier paragraphs.
 - Preserve quotable sentence structure. A sentence with a [확인필요:] placeholder is still quotable; a sentence that hedges away its own subject is not.
-- Embed at least three question-and-answer pairs inside the sections, never as a closing FAQ block. Each question must be a complete, search-query-shaped sentence standing alone on its own line, followed immediately by a 2-3 sentence answer that leads with the conclusion. Do not soften the question into narrative prose, and do not prefix it with "Q." or any label. After the answer, return to the explanation.
+- Embed only one or two question-and-answer pairs in the whole post (never three or more, never one per section, never as a closing FAQ block). Each question must be a complete, search-query-shaped sentence standing alone on its own line, followed by a 2-3 sentence answer that starts with the conclusion. Apart from those question lines, do not end any sentence in the body with a question mark.
 - Do not write hashtags in the body; they belong only in the tags array.
 - Never write engagement bait: no requests for comments, likes, subscriptions, and no sign-off pleasantries. End on the summary.
 
@@ -11396,7 +11396,11 @@ A3-1. 본문에 **굵게** 표시(별표)는 쓰지 말 것. 강조는 질문 �
 ${branch
   ?`A4. 검색량이 작은 구체적 질문 하나에 정확히 답하는 글이다. 첫 2~3문장 안에 답을 바로 주고, 이어서 조건·예외·순서를 풀어 쓴다. 네이버 AI 브리핑·구글 AI 개요가 그대로 인용하기 좋게 정의·순서·조건을 한 문단씩 독립적으로 쓸 것. 본문은 1,500~2,500자.`
   :`A4. 주제의 핵심 질문을 넓고 깊게 다루는 정리형 글이다. 독자가 이 글 하나로 판단을 끝낼 수 있게 조건별·상황별로 나눠 쓸 것.`}
-${auto.region?`A5. 지역 각도: 이 글은 "${auto.region}"에 사는 독자를 염두에 둔다. 지역명은 자연스러운 곳에 1~2번만 쓰고, 그 지역의 매장·업체 이름은 쓰지 말 것.`:""}
+${auto.creativity>0?`A6. 필자의 생각 한 스푼 (본문의 약 ${Math.round(auto.creativity*100)}%): 정보만 나열하지 말고, 이 주제에 대한 필자 개인의 생각·취향·판단을 두세 군데 넣을 것.
+   - 예: 내가 이 기능을 켜두는 이유, 솔직히 불편했던 점, 나라면 이렇게 쓰겠다는 선택, 이 설정이 의외였던 부분.
+   - 한 덩어리로 몰지 말고 설명 흐름 중간중간에 한두 문장씩. "개인적으로는", "저는 ~쪽이 더 편했어요"처럼 필자 의견임이 드러나게.
+   - 사실(수치·사양·방법)은 그대로 두고 의견만 더한다. 없는 경험이나 수치를 지어내지 말 것.
+`:""}${auto.region?`A5. 지역 각도: 이 글은 "${auto.region}"에 사는 독자를 염두에 둔다. 지역명은 자연스러운 곳에 1~2번만 쓰고, 그 지역의 매장·업체 이름은 쓰지 말 것.`:""}
 `;
 }
 
@@ -11535,7 +11539,8 @@ function autoUseBlog(blogId, { mode="hq", key="" }={}){
 }
 
 // 오늘 쓸 주제 후보를 고른다 (필요 수보다 넉넉히 — 글이 보류되면 다음 후보로)
-async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4, scope="", banTopics=[], family=[], recentTitles=[], relax=false, avoid=[] }){
+async function autoPlan({ category, count=1, mode="hq", exclude=[], spare=4, scope="", banTopics=[], family=[], recentTitles=[], relax=false, avoid=[], volMin=null, volMax=null, stretch=false }){
+  if(category==="IT·컴퓨터") category="IT·가전";      // 화면 이름 → 내부 카테고리 값
   const profile=bpGetActive();
   const blogId=bpGetActiveId();
   if(!category) throw new Error("category가 비어 있어요");
@@ -11560,9 +11565,11 @@ ${scope?`- 주제 범위 (가장 중요): ${scope}
 ${banTopics.length?`- 휴대폰 판매점이 운영하는 블로그다. 휴대폰 구매·개통에 불리한 주제는 추천하지 말 것. 특히 이 단어가 들어가거나 이런 방향인 주제 금지: ${banTopics.join(", ")}
 `:""}- 정보형 주제만. 구매처·가격 비교·요금제 추천·매장 홍보·이벤트·할인 주제는 추천하지 말 것.
 - 특정 업체·판매처가 주인공인 주제 금지.
-${branch?`- 이 블로그는 작은 블로그다. 위 선정 기준 3번의 "1~2형태소" 제한 대신, 메인 키워드를 검색량이 작은 2~3단어 롱테일(질문형 의도가 분명한 것)로 잡을 것. 넓은 대표 키워드 단독 금지.`:`- 이 블로그의 체급 안에서 가장 큰 정보형 키워드를 우선할 것.`}
+${branch?`- 이 블로그는 작은 블로그다. 위 선정 기준 3번의 "1~2형태소" 제한 대신, 메인 키워드를 검색량이 작은 2~3단어 롱테일(질문형 의도가 분명한 것)로 잡을 것. 넓은 대표 키워드 단독 금지.${volMax?` 메인 키워드 월 검색량은 대략 ${volMin||10}~${volMax} 사이.`:""}`
+  :stretch?`- 이번 글은 "체급 밖 도전" 글이다. 이 블로그 체급보다 큰, 월 검색량 ${volMin||5000}~${volMax||30000} 수준의 정보형 키워드를 메인으로 잡을 것 (많이 찾는 생활형 질문). 상업성 키워드는 제외.`
+  :`- 이 블로그의 체급 안에서 가장 큰 정보형 키워드를 우선할 것.${volMax?` 메인 키워드 월 검색량은 ${volMin||30}~${volMax} 사이에서 큰 쪽.`:""}`}
 ${relax?`- 앞서 고른 후보들이 검색량이 너무 작거나·크거나·상업성이라 전부 빠졌다. 이번엔 일반인이 실제로 많이 찾는(월 검색량 수십~수백) 생활형 질문으로, 아래와 겹치지 않게 새로 고를 것:\n${avoid.slice(0,40).join(", ")}\n`:""}${recentTitles.length?`- 이 블로그가 최근에 쓴 글 제목들이다. 같은 소재(같은 기능·같은 문제)를 각도만 바꿔 다시 쓰는 주제는 금지 — 완전히 다른 소재로:\n${recentTitles.slice(-30).map(t=>"  · "+t).join("\n")}\n`:""}${exSet.size?`- 아래는 이미 우리 블로그들이 메인으로 쓴 키워드다. 이 키워드를 포함하거나 이 키워드에 포함되는 키워드(예: "아이폰 에어드롭"을 썼다면 "에어드롭", "에어드롭 안될때"도)는 같은 키워드로 본다. 같거나 띄어쓰기만 다른 키워드는 금지 (같은 큰 키워드 아래의 다른 세부 질문은 괜찮다):\n${[...exclude].slice(-150).join(", ")}`:""}`;
-  autoLog(`주제 추천 중 (${category}, ${branch?"지점·롱테일":"본사"})`);
+  autoLog(`주제 추천 중 (${category}, ${branch?"지점·롱테일":stretch?"본사·체급 밖 도전":"본사"}${volMax?` · 월 ${volMin??"-"}~${volMax}`:""})`);
   const r=await recommendTopics({ category, profile, blogId, extra });
   const banFlat=(banTopics||[]).map(kwFlat).filter(Boolean);
   const droppedBan=[];
@@ -11579,8 +11586,11 @@ ${relax?`- 앞서 고른 후보들이 검색량이 너무 작거나·크거나·
   ]);
   const bad=new Set((adult.results||[]).filter(x=>x.adult===true).map(x=>x.query));
   const vr=r.volRange;
-  const cap=(branch ? Math.max(300, vr?.med||0) : Math.max(5000, Math.round((vr?.ceil||0)*1.5)))*(relax?2:1);
-  const floor=relax?(branch?10:15):(branch?20:30);
+  // 검색량 범위: 자동화 설정(volMin·volMax)이 있으면 그대로, 없으면 예전 방식(체급 기준)
+  const cap=volMax ? Math.round(volMax*(relax?1.5:1))
+    : (branch ? Math.max(300, vr?.med||0) : Math.max(5000, Math.round((vr?.ceil||0)*1.5)))*(relax?2:1);
+  const floor=volMin!=null ? Math.max(1, Math.round(volMin*(relax?0.5:1)))
+    : relax?(branch?10:15):(branch?20:30);
   const dropped=[...droppedBan];
   list=list.map(k=>({ ...k, monthly:vols[k.mainKeyword]?.monthly??null, commercial:!!vols[k.mainKeyword]?.commercial }))
     .filter(k=>{
@@ -11617,14 +11627,14 @@ async function autoKeywordInsight(mainKw){
 }
 
 // 글 1편 + 이미지 프롬프트
-async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false }){
+async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false, creativity=0 }){
   autoLog(`[${mainKeyword}] 키워드 노출 전략 분석 중`);
   const ins=await autoKeywordInsight(mainKeyword);
   if(ins.smartBlockType) autoLog(`[${mainKeyword}] 스마트블록: ${ins.smartBlockType} / 전략: ${ins.blogStrategy||"-"}`);
   const style=pickAutoStyle(bpGetActiveId());
   const prof=bpGetActive();
   autoLog(`[${mainKeyword}] 블로그 @${bpGetActiveId()} · 프로필 ${!prof?"없음":prof.isDefault?"기본(분석 전)":"분석됨"} · 글 성격 ${style.label}`);
-  const gen=()=>generatePost({ kw:topic, mainKeyword, ...ins, opts:{ auto:{ mode, region, banTopics, style } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
+  const gen=()=>generatePost({ kw:topic, mainKeyword, ...ins, opts:{ auto:{ mode, region, banTopics, style, creativity } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
   let meta=await gen();
   // 본문이 중간에 끊기거나 너무 짧게 나온 건 일시적인 경우가 많아 한 번 더 써본다
   if(meta.autoBlock?.length && meta.autoBlock.every(r=>/잘림|너무 짧음/.test(r))){
@@ -11665,7 +11675,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
 }
 
 // 하루 작업: 주제 고르기 → 필요한 편수만큼 글쓰기 (보류되면 다음 후보로)
-async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null }){
+async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null, creativity=0, volume=null }){
   if(AUTO_STATE.busy) throw new Error("이미 실행 중이에요");
   AUTO_STATE.busy=true; AUTO_STATE.log=[];
   const started=Date.now();
@@ -11683,8 +11693,13 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
     const mine=history.filter(h=>String(h.blogId||"").toLowerCase()===bidL);
     // 계열 겹침은 같은 블로그(기록 전체) + 오늘 다른 블로그가 시도한 것까지만 본다. 다른 블로그의 예전 글은 키워드가 완전히 같을 때만 제외
     const family=[...mine.map(h=>h.mainKeyword), ...(exclude||[])];
+    // 검색량 범위 (자동화 config): { min, max, stretch:true면 이번 글은 체급 밖 도전, stretchMin, stretchMax }
+    const V=volume||{};
+    const stretch=!!V.stretch;
+    const range=stretch?{ volMin:V.stretchMin??5000, volMax:V.stretchMax??30000, stretch:true }
+      :{ volMin:V.min??null, volMax:V.max??null };
     const plan=await autoPlan({ category, count, mode, scope, banTopics, family, recentTitles:mine.map(h=>h.title).filter(Boolean),
-      exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)] });
+      exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)], ...range });
     void now;
     // 후보가 하나도 안 남으면: 왜 빠졌는지 남기고, 기준을 조금 넓혀 한 번 더 추천받는다
     const dropSummary=p=>{ const m={}; (p.dropped||[]).forEach(d=>{ const w=String(d.why||"").replace(/\(.*?\)|\d+/g,"").trim(); m[w]=(m[w]||0)+1; });
@@ -11692,11 +11707,19 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
     if(plan.candidates.length<count){
       autoLog(`후보 부족 (${plan.candidates.length}개) — 빠진 이유: ${dropSummary(plan)} → 기준 넓혀 다시 추천`);
       const plan2=await autoPlan({ category, count, mode, scope, banTopics, family, recentTitles:mine.map(h=>h.title).filter(Boolean),
-        exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)], relax:true, avoid:(plan.dropped||[]).map(d=>d.mainKeyword) });
+        exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)], relax:true, avoid:(plan.dropped||[]).map(d=>d.mainKeyword), ...range });
       const have=new Set(plan.candidates.map(c=>kwFlat(c.mainKeyword)));
       plan.candidates=[...plan.candidates, ...plan2.candidates.filter(c=>!have.has(kwFlat(c.mainKeyword)))];
       plan.dropped=[...(plan.dropped||[]), ...(plan2.dropped||[])];
       if(!plan.candidates.length) autoLog(`다시 추천해도 후보 없음 — 빠진 이유: ${dropSummary(plan2)}`);
+    }
+    // 체급 밖 도전 후보가 없으면 그날은 평소 범위로 쓴다
+    if(stretch&&plan.candidates.length<count){
+      autoLog(`체급 밖 후보 부족 → 평소 범위(월 ${V.min??"-"}~${V.max??"-"})로 다시 추천`);
+      const plan3=await autoPlan({ category, count, mode, scope, banTopics, family, recentTitles:mine.map(h=>h.title).filter(Boolean),
+        exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)], volMin:V.min??null, volMax:V.max??null });
+      const have=new Set(plan.candidates.map(c=>kwFlat(c.mainKeyword)));
+      plan.candidates=[...plan.candidates, ...plan3.candidates.filter(c=>!have.has(kwFlat(c.mainKeyword)))];
     }
     const posts=[], skipped=[];
     const tries=maxTries||count+2;   // 보류가 계속 나와도 비용이 끝없이 나가지 않게
@@ -11708,7 +11731,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
       const useRegion=region&&Math.random()<regionChance?region:"";
       autoLog(`글쓰기: ${c.topic} [${c.mainKeyword}${c.monthly!=null?` · 월 ${c.monthly}`:""}${useRegion?` · 지역 ${useRegion}`:""}]`);
       try{
-        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi });
+        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi, creativity });
         if(r.ok){
           posts.push({ ...r, monthly:c.monthly, category, region:useRegion });
           // 다른 PC의 블로그가 같은 키워드를 고르지 않게 바로 기록 (로컬 기록 모드면 실행 PC가 직접 저장)
