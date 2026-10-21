@@ -10111,7 +10111,8 @@ AEO3. 정보를 설명하는 문단은 자기완결형으로 쓸 것. 앞 문단
       읽었을 때 뜻이 통해야 한다. "이것", "그건", "위에서 말한" 같은 앞뒤 의존 표현 금지.
       ※ 단, 경험을 서술하는 문단에는 이 규칙을 적용하지 않는다. 경험은 흐름이 있어야 읽히므로
         자연스럽게 이어 쓸 것. 다만 그 문단만 읽어도 무슨 상황인지는 알 수 있어야 한다.
-AEO4. 소제목 3~4개 중 최소 3개 안에는 "질문 한 줄 + 답변 2~3문장" 묶음을 하나씩 넣을 것.
+AEO4. 글 전체에서 "질문 한 줄 + 답변 2~3문장" 묶음을 1~2개만 넣을 것 (소제목마다 넣지 말 것 — 3개 이상 금지).
+      질문 줄 말고는 본문에 물음표(?)로 끝나는 문장을 쓰지 말 것 (질문 줄이 자동으로 강조 표시되기 때문).
       글 끝에 "자주 묻는 질문"으로 따로 모으지 말고, 그 소제목의 설명이 진행되다가
       독자가 막힐 만한 지점에 넣는다. AI 브리핑이 가장 잘 물어가는 형태가 이것이다.
       - 질문은 독자가 네이버 검색창에 그대로 칠 법한 완성 문장으로, 한 줄을 통째로 차지하게 쓸 것.
@@ -10703,7 +10704,7 @@ ${reviews.coverage?.length ? `참고 리뷰가 다룬 항목: ${reviews.coverage
 ` : "";
   return `
 [방문 리뷰 모드 — 이 블록은 아래의 주제 원칙·경험 서술 규칙·AEO 규칙보다 우선한다]
-※ 방문 리뷰에는 AEO1(도입부 정의문), AEO4(소제목마다 질문-답변 묶음), E4(판단 이유 두 군데 이상), 질문형 소제목 규칙을 적용하지 않는다. 어조 원칙의 "단정·권유조" 대신 R1의 후기 말투를 따른다.
+※ 방문 리뷰에는 AEO1(도입부 정의문), AEO4(질문-답변 묶음), E4(판단 이유 두 군데 이상), 질문형 소제목 규칙을 적용하지 않는다. 어조 원칙의 "단정·권유조" 대신 R1의 후기 말투를 따른다.
 장소: ${visit.placeName} / 주소: ${visit.address || "(미입력)"}${placeInfo.category ? ` / 업종: ${placeInfo.category}` : ""}
 ${own ? "작성 관점: 이 매장을 운영하는 업체가 직접 쓰는 매장 소개 글이다. 손님인 척 방문 후기처럼 쓰지 말 것. \"저희 매장\"처럼 운영자 관점으로 쓰되 과장 광고 표현은 쓰지 말 것."
   : visit.disclosure === "staff" ? "작성 관점: 작성자는 이 매장과 관계가 있지만, 실제로 직접 비용을 내고 이용한 경험을 쓰는 후기다. 방문 후기 관점으로 쓰되, 관계가 있다는 사실을 숨기거나 부정하는 표현(\"광고 아님\", \"순수 손님으로서\" 등)은 쓰지 말고, 과장된 칭찬이나 다른 매장을 깎아내리는 비교는 하지 말 것."
@@ -11265,7 +11266,7 @@ ${cleanContent(parsed.content||"").slice(0, 700)}
       topicDrift: (() => { const c = topicCoverage(kw, mainKw, bodyText); const miss = c.missing.filter(w => !/기$/.test(w)); return c.toks.length >= 2 && miss.length ? { topic: kw, missing: miss } : null; })(),
       _source: "keyword",
     };
-  if (opts?.auto) applyAutoSafety(meta);
+  if (opts?.auto) { await autoFixForbidden(meta, progress); applyAutoSafety(meta); }
   if (meta.title) meta.title = tidyTitlePunct(meta.title);
   return meta;
 }
@@ -11339,7 +11340,7 @@ const AUTO_STYLES=[
     outro:`마무리: 핵심을 두세 줄로 요약하고 끝낸다. 인사말·감성 문장 없이.` },
   { id:"friendly", label:"옆자리 친구형",
     tone:`옆자리 사람에게 설명해 주듯 친근한 존댓말. "~해요", "~하죠", "~거든요", "~더라고요", "~하면 돼요"를 섞는다. "~합니다"류는 전체의 4분의 1 이하.`,
-    intro:`도입: 이 문제를 겪는 흔한 순간을 한 문장으로 짚고("~할 때 있죠?" 정도), 바로 다음 문장에서 답을 준다.`,
+    intro:`도입: 이 문제를 겪는 흔한 순간을 한 문장으로 짚고("~할 때가 있어요" 정도, 물음표 없이), 바로 다음 문장에서 답을 준다.`,
     body:`구성: 소제목 3~4개. 문단은 짧게 끊고, 목록보다 문장으로 풀어 쓴다. 실수하기 쉬운 부분을 한 군데 "이건 꼭 확인하세요" 식으로 짚는다.`,
     outro:`마무리: "정리하면 ~" 한 문단 뒤, 독자가 바로 해볼 수 있는 한 가지를 권하며 끝낸다.` },
   { id:"checklist", label:"체크리스트형",
@@ -11360,8 +11361,8 @@ const AUTO_STYLES=[
   { id:"qa", label:"문답형",
     tone:`질문에 또박또박 답하는 존댓말. "~입니다"와 "~해요"를 반반 정도. 한 문장이 길어지지 않게.`,
     intro:`도입: 독자가 가장 궁금해할 질문 하나를 그대로 던지고 바로 한 문장으로 답한다.`,
-    body:`구성: 소제목 대부분을 독자가 실제로 물을 법한 질문 형태로 잡는다(4~6개). 각 답은 결론 한 문장 → 이유·방법 순.`,
-    outro:`마무리: 본문에서 안 다룬 짧은 추가 질문 하나에 한두 문장으로 답하고 끝낸다.` },
+    body:`구성: ▶ 소제목 대부분을 독자가 실제로 물을 법한 질문 형태로 잡는다(4~6개). 각 소제목 아래는 결론 한 문장 → 이유·방법 순. 본문 속 질문 줄 규칙(1~2개)은 그대로.`,
+    outro:`마무리: 본문에서 안 다룬 짧은 추가 팁 하나를 한두 문장으로 덧붙이고 끝낸다.` },
 ];
 function pickAutoStyle(blogId){
   const id=String(blogId||"").toLowerCase(); if(!id) return AUTO_STYLES[1];
@@ -11404,6 +11405,36 @@ const AUTO_PHONE_RE=/(?<!\d)(?:0\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4}|1[5-9]\d{2}[-\
 const AUTO_SALES_RE=/(문의\s*(?:주세요|주시면|하세요|남겨)|상담\s*(?:받아\s*보세요|신청|문의|예약)|방문해\s*(?:주세요|보세요)|저희\s*(?:매장|가게|지점|업체)|매장에서\s*(?:일|근무)|고객님들?(?:이|께서|께)|카톡\s*(?:으로\s*문의|주세요)|오픈\s*채팅|최저가\s*보장|특가\s*(?:이벤트|진행)|할인\s*이벤트|지금\s*바로\s*(?:가입|신청|구매))/;
 
 // 자동 발행 전 마지막 안전 점검: 링크·전화번호는 지우고, 판매 유도·주제 이탈·사실 불일치는 "발행 보류"로 표시
+// 자동 글: 금칙어(사이트 금칙어 목록 — 19금·도박·불법·욕설·광고 등) 검사 → 걸린 어절만 AI가 자연스럽게 바꿈 → 다시 검사
+// 심각(high)·주의(mid) 단계는 고치고, 고쳐도 남으면 발행 보류. 낮음(low) 단계는 메모만.
+async function autoFixForbidden(meta, progress){
+  const scan=()=>detectForbidden(`${meta.title||""}\n${meta.content||""}`);
+  let hits=scan().filter(h=>h.severity==="high"||h.severity==="mid");
+  const low=scan().filter(h=>h.severity==="low");
+  if(low.length) (meta._forbidLow=low.map(h=>`${h.catIcon}${h.word}(${h.target})`));
+  if(!hits.length) return;
+  try{ progress&&progress("__loading__:금칙어 고치는 중"); }catch(e){}
+  try{
+    const items=hits.slice(0,15).map(h=>({ target:h.target, word:h.word, phrase:h.phrase||h.target }));
+    const raw=await callClaude([{role:"user",content:
+`아래 블로그 글에서 네이버 금칙어가 들어간 어절을 찾았다. 각 어절을 문장 뜻은 그대로 두고 금칙어가 사라지게 바꿀 단어(어절)를 정해라.
+- 바꾼 말에 금칙어 글자가 다시 들어가면 안 된다 (예: "처음부터" 속 "음부" → "애초부터").
+- 문장 전체가 아니라 그 어절만 바꾼다. 조사·어미는 원래대로 이어지게.
+${items.map((x,i)=>`${i+1}. 어절 "${x.target}" (금칙어 "${x.word}") — 문맥: …${x.phrase}…`).join("\n")}
+순수 JSON만: {"fix":[{"target":"원래 어절","to":"바꿀 어절"}]}`}],"Respond ONLY with valid JSON.",800);
+    const j=safeParseJson(String(raw||"").replace(/```json\n?|```\n?/g,"").trim())||{};
+    (j.fix||[]).forEach(f=>{
+      const h=hits.find(x=>x.target===f.target); if(!h||!f.to) return;
+      meta.content=replaceHost(meta.content||"",h.word,h.target,f.to);
+      meta.title=replaceHost(meta.title||"",h.word,h.target,f.to);
+    });
+  }catch(e){}
+  const left=scan().filter(h=>h.severity==="high"||h.severity==="mid");
+  const fixed=hits.length-left.length;
+  meta._forbidFixed=fixed>0?`금칙어 ${fixed}개 고침: ${hits.filter(h=>!left.some(l=>l.target===h.target)).map(h=>h.target).join(", ")}`:"";
+  meta._forbidLeft=left.map(h=>`${h.catIcon}${h.word}(${h.target})`);
+}
+
 function applyAutoSafety(meta){
   const notes=[], block=[];
   // AI가 가끔 만드는 깨진 글자(예: 줌→줤) 바로잡기
@@ -11433,6 +11464,9 @@ function applyAutoSafety(meta){
   }
   if(bodyLen<900) block.push(`본문이 너무 짧음 (${bodyLen}자)`);
   if(meta.kwCount&&meta.kwCount.after<5) notes.push(`메인 키워드 ${meta.kwCount.after}회 (목표 5회)`);
+  if(meta._forbidFixed) notes.push(meta._forbidFixed);
+  if(meta._forbidLow?.length) notes.push(`참고 금칙어(낮음): ${meta._forbidLow.slice(0,6).join(", ")}`);
+  if(meta._forbidLeft?.length) block.push(`금칙어 남음: ${meta._forbidLeft.slice(0,6).join(", ")}`);
   meta.autoNotes=notes; meta.autoBlock=block;
   return meta;
 }
