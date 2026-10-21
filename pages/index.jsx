@@ -430,17 +430,19 @@ function keySlotsLoad(){
     map[id]=sl.id;
   });
   if(!slots.length){ slots.push({id:"s1",name:"본사용",key:""},{id:"s2",name:"지점용",key:""}); }
-  const out={slots,map}; keySlotsSave(out); return out;
+  const out={slots,map}; keySlotsSave(out);
+  try{ blogKeysSave({}); }catch(e){}     // 옮겨왔으니 예전 칸은 비운다 (이후 이 칸은 자동화가 넣는 키 전용)
+  return out;
 }
 function keySlotsSave(d){ try{ localStorage.setItem(LS_KEY_SLOTS,JSON.stringify(d)); }catch(e){} }
-// 블로그 ID에 쓸 키: ① 자동화가 그 ID에 직접 넣어둔 키 ② 연결해 둔 이름 키 ③ 없으면 ""(기본 키)
+// 블로그 ID에 쓸 키: ① 자동화 프로그램이 config 키로 넣어준 키(항상 우선) ② 🔑에서 연결한 이름 키 ③ 없으면 ""(기본 키)
 function keyForBlog(id){
   id=String(id||"").toLowerCase(); if(!id) return {key:"",name:""};
+  const d=keySlotsLoad();                 // (처음이면 예전 키를 옮겨오므로 먼저 부른다)
   const direct=blogKeysLoad()[id];
-  const d=keySlotsLoad();
+  if(direct) return {key:direct,name:"자동화 키"};
   const sl=d.slots.find(x=>x.id===d.map[id]);
   if(sl&&sl.key) return {key:sl.key,name:sl.name};
-  if(direct) return {key:direct,name:"전용 키"};
   return {key:"",name:""};
 }
 function slotKey(slotId){ const sl=keySlotsLoad().slots.find(x=>x.id===slotId); return sl?.key||""; }
