@@ -1096,8 +1096,14 @@ function buildFullPrompt(item,styleId,ratio,lang){
 // ── 본문을 5개 단락으로 나눠 단락별 이미지 장면을 뽑는다 (화면 상태와 무관 — 자동화에서도 호출) ──
 async function analyzeImageSections(postMeta, postContent, opts={}) {
   // ── Claude가 본문을 5개 단락으로 나누고 각 단락의 '장면'을 묘사 ──
-  const analysisReq=`You are a blog image art director. Read the Korean blog post below and split it into exactly 5 key sections, following the flow of the post from beginning to end. For each section, describe ONE concrete visual that would illustrate it well.
-
+  // opts.headings 가 있으면(자동 글쓰기) 5개 대신 소제목 1개당 1장 — 인용구 수 = 이미지 수
+  const heads=(opts.headings||[]).map(h=>String(h||"").trim()).filter(Boolean);
+  const N=heads.length||5;
+  const analysisReq=`You are a blog image art director. Read the Korean blog post below and split it into exactly ${N} key sections, following the flow of the post from beginning to end. For each section, describe ONE concrete visual that would illustrate it well.
+${heads.length?`
+SECTIONS ARE FIXED FOR THIS RUN: the post has exactly ${N} subheadings (lines starting with ▶). Make exactly one section per subheading, in this order, and set "sectionTitle" to the subheading text exactly as written below. Each visual must illustrate what that subheading's own paragraphs say — not the intro and not other subheadings.
+${heads.map((h,i)=>`${i+1}. ${h}`).join("\n")}
+`:""}
 Blog Title: ${postMeta.title||""}
 Main Keyword: ${postMeta.main_keyword||""}
 Tags: ${(postMeta.tags||[]).join(", ")}
@@ -1134,7 +1140,7 @@ For "scene":
 General rules:
 - GROUNDING: every section and every scene must come STRICTLY from what the post actually says. Follow the post's real order. Do not add objects, places, activities, situations or facts that do not appear in the post.
 - "sectionDesc" must summarise an actual passage of the post — never a topic the post does not cover.
-- Exactly 5 sections, each covering a DIFFERENT aspect of the post; each scene visually distinct (different subject, setting, angle, or different screen/step).
+- Exactly ${N} sections, each covering a DIFFERENT aspect of the post; each scene visually distinct (different subject, setting, angle, or different screen/step).
 - If the whole post is about a specific program or product, most sections will naturally be "ui" or "product" — that is expected. Do NOT downgrade a specific program screen into a generic "laptop on a desk" scene.
 - Do NOT include style keywords, camera specs, aspect ratio, or "no text" instructions — those are appended later.
 - Prefer real, everyday, photo-like moments over conceptual or illustrative ideas — the goal is images that look like actual photographs with no text in them.
@@ -1168,7 +1174,7 @@ Return ONLY valid JSON, no markdown:
   const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
   if(s===-1||e===-1) throw new Error("단락 분석 JSON 형식 오류: "+raw.slice(0,100));
   const parsed=safeParseJson(raw);
-  const sections=(parsed.sections||[]).filter(x=>x&&(x.scene||x.sceneKo)).slice(0,5)
+  const sections=(parsed.sections||[]).filter(x=>x&&(x.scene||x.sceneKo)).slice(0,N)
     .map(x=>({...x,imageType:["ui","product","scene"].includes(x.imageType)?x.imageType:"scene",productName:typeof x.productName==="string"?x.productName.trim():""}));
   if(sections.length===0) throw new Error("단락 분석 실패");
 
@@ -11476,14 +11482,15 @@ function applyAutoSafety(meta){
 }
 
 // 본문의 ▶ 소제목 위치에 [이미지 N] 자리를 넣는다: 1번은 도입부 끝, 나머지는 각 소제목 첫 문단 뒤 (▶ 정리 제외)
-function placeAutoImages(content, n){
+// opts.intro=false 면 도입부 자리 없이 소제목마다 1장씩만
+function placeAutoImages(content, n, opts={}){
   const lines=String(content||"").split("\n");
   const tagStart=lines.findIndex(l=>/^#\S/.test(l.trim()));
   const bodyEnd=tagStart===-1?lines.length:tagStart;
-  const heads=[]; lines.forEach((l,i)=>{ if(i<bodyEnd&&/^▶/.test(l.trim())&&!/^▶\s*정리/.test(l.trim())) heads.push(i); });
+  const heads=[]; lines.forEach((l,i)=>{ if(i<bodyEnd&&/^▶/.test(l.trim())&&!/^▶\s*(정리|마무리|요약)/.test(l.trim())) heads.push(i); });
   const slots=[];
-  // 도입부: 첫 소제목 바로 앞
-  if(heads.length) slots.push(heads[0]); else slots.push(Math.min(bodyEnd, 6));
+  // 도입부: 첫 소제목 바로 앞 (소제목이 하나도 없으면 도입부 자리는 항상 둔다)
+  if(opts.intro!==false||!heads.length){ if(heads.length) slots.push(heads[0]); else slots.push(Math.min(bodyEnd, 6)); }
   // 소제목마다: 그 소제목 아래 첫 빈 줄(첫 문단 끝)
   heads.forEach(h=>{ let j=h+1; while(j<bodyEnd&&lines[j].trim()==="") j++; while(j<bodyEnd&&lines[j].trim()!==""&&!/^▶/.test(lines[j].trim())) j++; slots.push(j); });
   const use=[...new Set(slots)].slice(0,n).sort((a,b)=>a-b);
@@ -11626,6 +11633,15 @@ async function autoKeywordInsight(mainKw){
   }catch(e){ return {}; }
 }
 
+// 본문에서 이미지를 붙일 ▶ 소제목 목록 (해시태그 줄 앞까지, 정리/마무리/요약 제외)
+function autoHeadings(content){
+  const lines=String(content||"").split("\n");
+  const tagStart=lines.findIndex(l=>/^#\S/.test(l.trim()));
+  const end=tagStart===-1?lines.length:tagStart;
+  return lines.slice(0,end).map(l=>l.trim()).filter(t=>/^▶/.test(t)&&!/^▶\s*(정리|마무리|요약)/.test(t))
+    .map(t=>t.replace(/^▶\s*/,"").replace(/\*\*/g,"").trim()).filter(Boolean);
+}
+
 // 글 1편 + 이미지 프롬프트
 async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false, creativity=0 }){
   autoLog(`[${mainKeyword}] 키워드 노출 전략 분석 중`);
@@ -11644,7 +11660,9 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
   if(meta.autoBlock?.length) return { ok:false, topic, mainKeyword, title:meta.title, reasons:meta.autoBlock };
   autoLog(`[${mainKeyword}] 이미지 장면 나누는 중`);
   let sections=[];
-  try{ sections=await analyzeImageSections(meta, meta.content, allowUi?{ koreaUi:true }:{ noUi:true }); }catch(e){ autoLog(`[${mainKeyword}] 이미지 장면 실패: ${e.message}`); }
+  // 인용구(▶ 소제목) 수 = 이미지 수. 마지막 정리/마무리/요약은 구분선이라 제외
+  const autoHeads=autoHeadings(meta.content);
+  try{ sections=await analyzeImageSections(meta, meta.content, {...(allowUi?{ koreaUi:true }:{ noUi:true }), headings:autoHeads}); }catch(e){ autoLog(`[${mainKeyword}] 이미지 장면 실패: ${e.message}`); }
   // 실제 제품 사진을 첨부할 수 없으니 제품 타입은 "사용 장면"으로 바꿔 그린다 (가짜 제품 디자인 방지: 브랜드명 빼고 일반 기기로)
   const images=sections.map((x,i)=>{
     let item=x.imageType==="product"?{...x,imageType:"scene",scene:String(x.scene||"").replace(new RegExp((x.productName||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"),"a smartphone")}:x;
@@ -11664,7 +11682,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
     return { n:i+1, sectionTitle:x.sectionTitle||"", type:item.imageType, prompt, fluxPrompt:flux(item.scene), fallbackFlux };
   });
   const bodyOnly=meta.content.replace(/(?:\n+#[^\n]*)+\s*$/,"").trimEnd();
-  const placed=placeAutoImages(bodyOnly, images.length);
+  const placed=placeAutoImages(bodyOnly, images.length, { intro: !autoHeads.length });
   return {
     ok:true, topic, mainKeyword,
     title:meta.title, body:bodyOnly, bodyWithImages:placed.text, tags:(meta.tags||[]).map(t=>String(t).replace(/^#/,"")).slice(0,10),
