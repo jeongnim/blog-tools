@@ -632,7 +632,7 @@ async function callClaudeStream(messages, system, maxTokens=3500, model="claude-
 // 메인 탭 (네비바에 표시)
 const TABS=[
   {id:"write",   icon:"✍️",  label:"글쓰기",     isGroup:true},
-  {id:"missing", icon:"📡",  label:"노출 확인"},
+  {id:"missing", icon:"📡",  label:"네이버 노출 확인"},
   {id:"image",   icon:"🖼️", label:"이미지 편집", isGroup:true},
 ];
 
@@ -4414,7 +4414,7 @@ function cleanPastedBody(t){
 // 노출 확인 결과 → 엑셀 (글·검색어별 한 줄: 통합검색 / 블로그탭·카페탭 / API)
 async function exportExposureXlsx(list,analysis,extra){
   const ExcelJS=await loadCdnScript("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js","ExcelJS");
-  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet("노출 확인");
+  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet("네이버 노출 확인");
   ws.columns=[{header:"링크",key:"link",width:46},{header:"종류",key:"kind",width:7},{header:"제목",key:"title",width:38},{header:"노출",key:"status",width:9},
     {header:"구분",key:"label",width:12},{header:"검색어",key:"q",width:26},{header:"월 검색수",key:"vol",width:10},{header:"통합검색",key:"main",width:10},{header:"블로그탭/카페탭",key:"tab",width:14},{header:"API(정확도순)",key:"api",width:13}];
   ws.getRow(1).font={bold:true};
