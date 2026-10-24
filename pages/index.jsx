@@ -9818,7 +9818,7 @@ function VideoMakeSubTab() {
 }
 
 // ─── 구글 색인 확인 (티스토리 · 구글 서치콘솔 무료 API) ───────────────────────
-const GSC_BLOGS_KEY="mt_gsc_blogs", GSC_CACHE_KEY="mt_gsc_cache";
+const GSC_BLOGS_KEY="mt_gsc_blogs", GSC_CACHE_KEY="mt_gsc_cache", GSC_DATA_KEY="mt_gsc_data", GSC_SEL_KEY="mt_gsc_sel";
 function gscLoad(k,def){ try{ return JSON.parse(localStorage.getItem(k)||"null")??def; }catch(e){ return def; } }
 function gscSave(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
 function gscBadge(r){
@@ -9833,11 +9833,14 @@ function gscBadge(r){
 }
 function GscTab(){
   const [blogs,setBlogs]=useState(()=>gscLoad(GSC_BLOGS_KEY,[]));
-  const [blog,setBlog]=useState(()=>gscLoad(GSC_BLOGS_KEY,[])[0]||"");
+  const [blog,setBlogRaw]=useState(()=>{ const l=gscLoad(GSC_BLOGS_KEY,[]); const sel=gscLoad(GSC_SEL_KEY,""); return l.includes(sel)?sel:(l[0]||""); });
   const [input,setInput]=useState("");
-  const [data,setData]=useState(null);          // {base, posts, site}
+  // 블로그별 저장본: { 블로그: { data:{base,posts,site}, dataAt, perf:{pages,start,end}, perfAt } }
+  const [store,setStore]=useState(()=>gscLoad(GSC_DATA_KEY,{}));
   const [cache,setCache]=useState(()=>gscLoad(GSC_CACHE_KEY,{}));   // {postKey: inspect result + at}
-  const [perf,setPerf]=useState(null);          // {pages, start, end}
+  const data=store[blog]?.data||null, perf=store[blog]?.perf||null;
+  const putStore=(b,patch)=>setStore(prev=>{ const next={...prev,[b]:{...(prev[b]||{}),...patch}}; gscSave(GSC_DATA_KEY,next); return next; });
+  const setBlog=b=>{ setBlogRaw(b); gscSave(GSC_SEL_KEY,b); setMsg(""); };
   const [busy,setBusy]=useState("");
   const [msg,setMsg]=useState("");
   const [setup,setSetup]=useState(null);
@@ -9848,13 +9851,19 @@ function GscTab(){
   const addBlog=()=>{
     const b=input.trim().toLowerCase().replace(/^https?:\/\//,"").replace(/\.tistory\.com.*$/,"").replace(/\/.*$/,"");
     if(!b) return;
-    const list=[b,...blogs.filter(x=>x!==b)]; setBlogs(list); gscSave(GSC_BLOGS_KEY,list); setBlog(b); setInput(""); setData(null); setPerf(null);
+    const list=[b,...blogs.filter(x=>x!==b)]; setBlogs(list); gscSave(GSC_BLOGS_KEY,list); setBlog(b); setInput("");
   };
-  const removeBlog=b=>{ const list=blogs.filter(x=>x!==b); setBlogs(list); gscSave(GSC_BLOGS_KEY,list); if(blog===b){ setBlog(list[0]||""); setData(null); setPerf(null); } };
+  const removeBlog=b=>{
+    const list=blogs.filter(x=>x!==b); setBlogs(list); gscSave(GSC_BLOGS_KEY,list);
+    setStore(prev=>{ const next={...prev}; const keys=(prev[b]?.data?.posts||[]).map(p=>p.key); delete next[b]; gscSave(GSC_DATA_KEY,next);
+      if(keys.length){ const c={...gscLoad(GSC_CACHE_KEY,{})}; keys.forEach(k=>delete c[k]); setCache(c); gscSave(GSC_CACHE_KEY,c); }
+      return next; });
+    if(blog===b) setBlog(list[0]||"");
+  };
   const checkSetup=async()=>{ setBusy("check"); try{ setSetup(await api({action:"check"})); }catch(e){ setSetup({ok:false,error:e.message}); } setBusy(""); };
   const loadPosts=async()=>{
-    if(!blog) return; setBusy("posts"); setMsg(""); setPerf(null);
-    try{ const d=await api({action:"posts",blog}); if(d.error) setMsg(d.error); else { setData(d); if(!d.site) setMsg("글 목록은 불러왔지만, 서치콘솔 연결이 안 돼서 색인 검사는 못 해요 — 아래 '설정 확인'을 눌러보세요"); } }
+    if(!blog) return; const b=blog; setBusy("posts"); setMsg("");
+    try{ const d=await api({action:"posts",blog:b}); if(d.error) setMsg(d.error); else { putStore(b,{ data:d, dataAt:Date.now() }); if(!d.site) setMsg("글 목록은 불러왔지만, 서치콘솔 연결이 안 돼서 색인 검사는 못 해요 — 아래 '설정 확인'을 눌러보세요"); } }
     catch(e){ setMsg(e.message); }
     setBusy("");
   };
@@ -9879,7 +9888,7 @@ function GscTab(){
     if(!stopRef.current) setMsg(todo.length?`검사 끝 — ${todo.length-fail}개 확인${fail?`, 실패 ${fail}개`:""}`:"다시 검사할 글이 없어요 (색인된 글은 7일, 안 된 글은 하루 지나면 다시 검사)");
     setBusy("");
   };
-  const loadPerf=async()=>{ setBusy("perf"); try{ const d=await api({action:"perf",blog,days:28}); if(d.error) setMsg(d.error); else setPerf(d); }catch(e){ setMsg(e.message); } setBusy(""); };
+  const loadPerf=async()=>{ const b=blog; setBusy("perf"); try{ const d=await api({action:"perf",blog:b,days:28}); if(d.error) setMsg(d.error); else putStore(b,{ perf:d, perfAt:Date.now() }); }catch(e){ setMsg(e.message); } setBusy(""); };
 
   const posts=data?.posts||[];
   const stat=posts.reduce((a,p)=>{ const r=cache[p.key]; if(!r) a.none++; else if(r.verdict==="PASS") a.ok++; else if(r.error) a.err++; else a.no++; return a; },{ok:0,no:0,none:0,err:0});
@@ -9888,14 +9897,15 @@ function GscTab(){
   const th={textAlign:"left",padding:"8px 10px",color:"#8b949e",fontSize:"13px",borderBottom:"1px solid #30363d",whiteSpace:"nowrap"};
   const td={padding:"9px 10px",borderBottom:"1px solid #21262d",fontSize:"14px",color:"#c9d1d9",verticalAlign:"top"};
   const fmtD=s=>s?String(s).slice(0,10).replace(/-/g,"."):"-";
+  const fmtT=t=>t?new Date(t).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):"-";
 
   return <div>
     <div style={box}>
       <div style={{color:"#e6edf3",fontSize:"17px",fontWeight:700,marginBottom:"6px"}}>🌐 구글 색인 확인 <span style={{color:"#8b949e",fontSize:"13px",fontWeight:400}}>티스토리 글이 구글에 등록(색인)됐는지 · 어떤 검색어로 몇 위에 나오는지 (무료)</span></div>
       <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",margin:"10px 0"}}>
-        {blogs.map(b=><span key={b} onClick={()=>{ if(b!==blog){ setBlog(b); setData(null); setPerf(null); setMsg(""); } }}
+        {blogs.map(b=><span key={b} onClick={()=>{ if(b!==blog&&!busy) setBlog(b); }}
           style={{cursor:"pointer",padding:"6px 12px",borderRadius:"20px",fontSize:"14px",border:`1px solid ${b===blog?"#1f6feb":"#30363d"}`,background:b===blog?"#1f6feb22":"transparent",color:b===blog?"#58a6ff":"#c9d1d9"}}>
-          {b}.tistory.com <b onClick={e=>{ e.stopPropagation(); if(confirm(`${b} 를 목록에서 뺄까요?`)) removeBlog(b); }} style={{color:"#8b949e",marginLeft:"4px"}}>×</b></span>)}
+          {b}.tistory.com{store[b]?.data?<span style={{color:"#8b949e",fontSize:"12px",marginLeft:"4px"}}>({store[b].data.posts.length})</span>:null} <b onClick={e=>{ e.stopPropagation(); if(confirm(`${b} 를 목록에서 뺄까요?`)) removeBlog(b); }} style={{color:"#8b949e",marginLeft:"4px"}}>×</b></span>)}
         <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addBlog()} placeholder="티스토리 주소 추가 (예: abcd 또는 abcd.tistory.com)" style={{...inp,minWidth:"280px"}}/>
         <Btn variant="secondary" onClick={addBlog}>추가</Btn>
       </div>
@@ -9920,7 +9930,9 @@ function GscTab(){
         <StatCard label="색인 안 됨" value={stat.no} accent="#d29922"/>
         <StatCard label="미검사" value={stat.none+stat.err} accent="#8b949e"/>
       </div>
-      {perf&&<div style={{color:"#8b949e",fontSize:"13px",marginBottom:"8px"}}>검색 실적 기간: {fmtD(perf.start)} ~ {fmtD(perf.end)} (구글 반영까지 2~3일 걸려요)</div>}
+      <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"8px"}}>
+        글 목록 {fmtT(store[blog]?.dataAt)} 불러옴{perf?<> · 검색 실적 {fmtD(perf.start)} ~ {fmtD(perf.end)} ({fmtT(store[blog]?.perfAt)} 불러옴, 구글 반영까지 2~3일 걸려요)</>:" · 검색 실적은 아직 안 불러옴"}
+      </div>
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead><tr><th style={th}>#</th><th style={th}>글</th><th style={th}>발행</th><th style={th}>색인 상태</th><th style={th}>마지막 크롤링</th>
