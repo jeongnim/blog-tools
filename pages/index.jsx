@@ -11654,32 +11654,79 @@ function tistoryParse(raw){
            tags:sec("TAGS").split(/[,\n]/).map(x=>x.replace(/^#/,"").trim()).filter(Boolean).slice(0,10),
            html };
 }
-async function tistoryConvert({ meta, mainKeyword, images=[], mode="hq", banTopics=[] }){
-  const src=String(meta.content||"").replace(/(?:\n+#[^\n]*)+\s*$/,"").trim();
-  const imgList=images.map(im=>`[이미지 ${im.n}] ${im.sectionTitle||""}`).join("\n");
-  const prompt=`아래 [원고]는 네이버 블로그용으로 쓴 정보성 글이다. 이걸 구글 검색에 노출되는 티스토리 블로그 글(구글 애드센스 승인용)로 다시 써라.
+// 티스토리 전용 ① 조사: 공식 도움말 위주로 웹 검색해서 정확한 메뉴 경로·버전 차이·원인·수치를 메모로 모은다
+async function tistoryResearch({ topic, mainKeyword, today }){
+  const prompt=`블로그 글 주제: "${topic}" / 메인 키워드: "${mainKeyword}" / 오늘: ${today}
 
+이 주제로 정보성 글을 쓰기 전에, 웹 검색으로 정확한 정보를 모아라. 최대 5번 검색.
+- 우선 출처: 제조사·서비스 공식 도움말(삼성전자 고객지원, Apple 지원, Google 도움말, Microsoft 지원, 통신3사, OpenAI·Google AI 공식 문서 등). 개인 블로그·커뮤니티는 공식 자료가 없을 때만 참고로.
+- 모을 것: 실제 메뉴 경로(화면에 보이는 이름 그대로), 기종·OS·앱 버전별 차이, 안 될 때 원인과 해결 순서, 주의할 점, 확인된 수치·조건.
+- 확인 못 한 건 모으지 말 것. 추측 금지.
+
+순수 JSON만 출력:
+{"notes":[{"point":"한 줄 사실","detail":"메뉴 경로·조건 등 구체 내용","source":1}],
+ "versionNote":"버전·기종에 따라 다를 수 있는 점 한 줄 (없으면 빈 문자열)",
+ "sources":[{"id":1,"title":"페이지 제목","url":"https://..."}]}`;
+  try{
+    const raw=await callClaudeSearch([{role:"user",content:prompt}],
+      "You research Korean how-to topics using official help pages first. Only record facts you actually found in search results, with their real URLs. Output ONLY valid JSON.",
+      2500,"claude-sonnet-4-5-20250929",5);
+    const j=safeParseJson(raw)||{};
+    const sources=(j.sources||[]).filter(x=>x&&/^https?:\/\/[^\s"<>]+\.[^\s"<>]+/.test(String(x.url||""))).slice(0,6);
+    return { notes:(j.notes||[]).slice(0,25), versionNote:String(j.versionNote||""), sources };
+  }catch(e){ autoLog(`[${mainKeyword}] 공식 자료 조사 실패(${e.message}) — 조사 없이 작성`); return { notes:[], versionNote:"", sources:[] }; }
+}
+
+// 티스토리 전용 ② 글쓰기 (네이버 규칙 없이 처음부터 구글·애드센스용)
+async function tistoryWriteOne({ topic, mainKeyword, mode="hq", banTopics=[], imageRatio="3:2", imageStyle="photo", allowUi=false, tistoryImages=2, tistoryStore=false }){
+  const now=new Date();
+  const today=`${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일`, ym=`${now.getFullYear()}년 ${now.getMonth()+1}월`;
+  autoLog(`[${mainKeyword}] 티스토리 글: 공식 자료 조사 중`);
+  const [research, productStatus]=await Promise.all([
+    tistoryResearch({ topic, mainKeyword, today }),
+    Promise.race([checkProductStatus({ kw:topic, mainKw:mainKeyword, today }).catch(()=>[]), new Promise(r=>setTimeout(()=>r([]),30000))]),
+  ]);
+  autoLog(`[${mainKeyword}] 조사 메모 ${research.notes.length}개 · 출처 ${research.sources.length}개 → 본문 작성`);
+  const notesBlock=research.notes.length?`[조사 메모 — 공식 자료에서 확인한 내용. 메뉴 경로·수치·조건은 여기 있는 것만 단정해서 쓴다]
+${research.notes.map(n=>`- ${n.point}${n.detail?` — ${n.detail}`:""}${n.source?` (출처 ${n.source})`:""}`).join("\n")}
+${research.versionNote?`- 버전 차이: ${research.versionNote}`:""}
+`:"[조사 메모 없음 — 메뉴 경로·수치는 확실한 것만 쓰고, 애매하면 [확인필요: …]로 비워 둔다]\n";
+  const prompt=`티스토리 블로그에 올릴 정보성 글을 써라. 구글 검색 노출과 구글 애드센스 승인이 목적이다.
+
+주제: ${topic}
 메인 키워드: ${mainKeyword}
-
-[형식]
-F1. 출력은 HTML 조각. 쓸 수 있는 태그: <h2> <h3> <p> <ul> <ol> <li> <strong> <table> <thead> <tbody> <tr> <th> <td>. <h1>, style 속성, class, 이모지, 인용구 장식, 가운데 정렬 금지.
-F2. 구성: 도입 <p> 2~3개(첫 문장 안에 메인 키워드를 자연스럽게 넣고, 이 글에서 무엇을 알 수 있는지 말한다) → 본문 <h2> 소제목 4~6개(원고의 ▶ 소제목 흐름을 따르되, 검색하는 사람이 쓸 법한 말로 다듬어도 된다. 소제목 2개 이상에 메인 키워드나 그 변형을 넣는다) → <h2>자주 묻는 질문</h2> 아래 <h3>질문</h3><p>답</p> 2~3쌍 → <h2>마무리</h2> 짧은 정리 <p> 1~2개.
-F3. 문단은 네이버식 짧은 줄바꿈이 아니라, 한 <p>에 2~4문장짜리 보통 웹 문단으로. 순서가 있는 방법은 <ol>, 나열은 <ul>, 비교는 <table>.
-F4. 말투는 "~합니다/~해요"를 섞지 말고 "~해요"체로 통일. 친근하지만 정보 위주.
-F5. 길이: 태그·공백 빼고 1,800~2,600자. 길이는 같은 말 반복이 아니라 원고에 있는 방법을 단계별로 더 자세히 풀고, 왜 그런지 이유와 주의할 점을 붙여서 채운다.
-${imgList?`F6. 아래 이미지 자리 표시를 각각 가장 어울리는 <h2> 바로 아래(첫 문단 뒤)에 <p>[이미지 N]</p> 형태로 한 번씩 넣는다. 번호를 바꾸거나 빼지 말 것.
-${imgList}
-`:""}
-[사실]
-S1. 원고에 없는 가격·요금·수치·날짜·모델명·사양·정책·통계를 새로 지어내지 말 것. 원고에 있는 사실만 다시 배열하고 풀어 쓴다.
-S2. 원고의 [확인필요: ...] 표시는 그대로 남긴다.
-S3. 원고에 없는 권유(자급제·알뜰폰으로 바꾸라, 해지·위약금 안내 등)를 추가하지 말 것.${(banTopics||[]).length?` 특히 이런 방향 금지: ${banTopics.join(", ")}.`:""}
-S4. 특정 매장·지점 이름, 연락처, 홍보 문구는 넣지 않는다.
-
+오늘: ${today}
+${formatProductStatusBlock(productStatus)}
+${notesBlock}
 [제목]
-T1. 32자 안팎, 메인 키워드를 앞쪽에. 낚시성 표현·특수문자 남발 금지(물음표나 쉼표 1개까지).
+T1. 32자 안팎. 메인 키워드를 맨 앞에. 숫자(○가지·○단계)나 "총정리·방법·해결" 중 하나를 넣는다. 연도가 의미 있는 주제면 "(${now.getFullYear()})"를 붙여도 된다.
+T2. 과장·낚시 금지("놀라운", "10배", "이것 모르면 손해"). 특수문자는 | 또는 : 1개까지.
 
-[태그] 검색에 쓰일 만한 한국어 태그 5~10개, 쉼표로.
+[구조 — HTML 조각]
+H1. 맨 위에 <blockquote>로 핵심 요약 3줄(<p> 3개). 바쁜 사람은 이것만 읽어도 답을 얻게.
+H2. 도입 <p> 2개: 첫 문장에 메인 키워드를 자연스럽게 넣고, 누구에게 무엇을 알려주는 글인지. 인사말·계절 이야기 금지.
+H3. 본문 <h2> 4~6개, 소제목 앞에 "1. 2. 3." 번호. 소제목 2개 이상에 메인 키워드나 그 변형을 넣는다.
+    각 <h2>는 아래 셋 중 하나의 형태로 쓰고, 같은 형태를 연속 두 번 쓰지 않는다(글이 기계적으로 보이지 않게 하는 핵심):
+    - 방법형: 답 한 줄 → <ol> 단계별 순서(메뉴 경로는 "설정 > 연결 > …"처럼) → 주의점 <p>
+    - 예시형: 설명 <p> → <pre> 박스에 그대로 복사해서 쓰는 예시(문구·명령어·입력값·체크리스트 등) → 이렇게 하면 좋은 점 <p>
+    - 비교형: 한 줄 결론 → <table>(<thead> 포함) → 상황별 추천 <p>
+H4. 주제가 "안 될 때·오류·설정"과 관련 있으면 <h2>안 될 때 확인 순서</h2> 아래 <table>(증상 | 원인 | 해결) 3~5줄.
+H5. <h2>자주 묻는 질문</h2> 아래 <h3>질문</h3><p>답</p> 2~3쌍. 질문은 검색창에 그대로 칠 법한 문장, 답은 첫 문장에 결론.
+H6. <h2>마무리</h2> 아래 <p> 1~2개: 핵심 정리 + "${ym} 기준으로 정리했고, 기기·버전에 따라 메뉴 이름이 다를 수 있어요" 같은 단서 한 줄.
+H7. 쓸 수 있는 태그: h2 h3 p ul ol li strong blockquote pre table thead tbody tr th td. h1·style·class·이모지·느낌표 남발 금지.
+
+[분량·말투]
+L1. 태그·공백 빼고 2,000~3,000자. 같은 말 반복으로 늘리지 말고 단계·이유·주의점·예시로 채운다.
+L2. "~해요"체로 통일. 친근하지만 정보 위주. 근거 없는 과장 금지.
+L3. 지어낸 1인칭 경험("직접 해봤더니", "제가 써보니") 금지. ${tistoryStore?`휴대폰 매장 입장에서 "매장에서 자주 받는 질문" 정도의 일반적인 표현은 써도 된다.`:""}
+
+[사실]
+F1. 메뉴 경로·수치·가격·날짜·모델명·정책은 [조사 메모]에 있거나 아주 널리 알려진 것만 단정한다. 애매하면 문장은 구체적으로 두고 그 값만 [확인필요: …]로 비운다(최대 3곳).
+F2. 출시 안 된 제품을 써본 것처럼 쓰지 말 것.
+${tistoryStore?`F3. 휴대폰 판매에 불리한 방향(자급제·알뜰폰으로 바꾸라는 권유, 해지·위약금 안내, 판매점 불신 조장) 금지.`:"F3. 특정 업체·상품을 홍보하거나 깎아내리지 말 것."}${(banTopics||[]).length?` 특히 이런 방향 금지: ${banTopics.join(", ")}.`:""}
+F4. 특정 매장·지점 이름, 연락처, 홍보 문구 금지.
+
+[태그] 검색에 쓰일 한국어 태그 6~10개.
 
 [출력 — 이 형식 그대로, 다른 말 없이]
 ===TITLE===
@@ -11687,34 +11734,81 @@ T1. 32자 안팎, 메인 키워드를 앞쪽에. 낚시성 표현·특수문자 
 ===TAGS===
 태그1, 태그2
 ===HTML===
-<p>...</p>
-
-[원고]
-제목: ${meta.title||""}
-${src}`;
-  const sys="You rewrite Korean blog posts into clean, well-structured HTML articles for Google search (Tistory blog). Never add facts that are not in the source. Follow the output format exactly.";
+<blockquote>...</blockquote>
+...`;
+  const sys="You are an expert Korean tech/how-to writer for a Tistory blog targeting Google search and AdSense approval. Write accurate, specific, well-structured HTML. Never invent facts; use only the research notes or very well-known facts. Follow the output format exactly.";
   const model="claude-sonnet-4-5-20250929";
-  let out=tistoryParse(await callClaude([{role:"user",content:prompt}],sys,7000,model));
+  let out=tistoryParse(await callClaudeStream([{role:"user",content:prompt}],sys,8000,model));
   let len=tistoryPlainLen(out.html);
-  if(len<1500||!/<h2/i.test(out.html)){
-    autoLog(`[${mainKeyword}] 티스토리 글이 짧아서(${len}자) 한 번 더 늘리기`);
-    const more=tistoryParse(await callClaude([{role:"user",content:prompt},{role:"assistant",content:`===TITLE===\n${out.title}\n===TAGS===\n${out.tags.join(", ")}\n===HTML===\n${out.html}`},
-      {role:"user",content:`본문이 ${len}자로 짧다. 같은 형식으로 전체를 다시 출력하되, 각 <h2> 아래 방법·이유·주의점을 더 자세히 풀어서 태그·공백 빼고 1,800자 이상으로. 새 사실은 추가하지 말 것.`}],sys,7000,model));
+  if(len<1800||!/<h2/i.test(out.html)){
+    autoLog(`[${mainKeyword}] 본문이 짧아서(${len}자) 한 번 더 늘리기`);
+    const more=tistoryParse(await callClaudeStream([{role:"user",content:prompt},
+      {role:"assistant",content:`===TITLE===\n${out.title}\n===TAGS===\n${out.tags.join(", ")}\n===HTML===\n${out.html}`},
+      {role:"user",content:`본문이 ${len}자로 짧다. 같은 형식으로 전체를 다시 출력하되, 각 <h2>의 단계·이유·주의점·예시를 더 구체적으로 풀어 태그·공백 빼고 2,000자 이상으로. 새 사실은 [조사 메모] 밖에서 지어내지 말 것.`}],sys,8000,model));
     if(tistoryPlainLen(more.html)>len){ out={...more, title:more.title||out.title, tags:more.tags.length?more.tags:out.tags}; len=tistoryPlainLen(out.html); }
   }
-  // 이미지 자리가 빠졌으면 해당 소제목 아래(없으면 맨 끝)에 붙인다
-  for(const im of images){
-    if(new RegExp(`\\[이미지 ${im.n}\\]`).test(out.html)) continue;
-    const h2=[...out.html.matchAll(/<\/h2>/gi)];
-    const at=h2.length?h2[Math.min(im.n-1,h2.length-1)].index+5:out.html.length;
-    out.html=out.html.slice(0,at)+`\n<p>[이미지 ${im.n}]</p>\n`+out.html.slice(at);
+  if(!out.html||!out.title) return { ok:false, topic, mainKeyword, reasons:["티스토리 글 형식이 깨짐"] };
+  // 참고 자료 (실제 조사에 쓴 공식 페이지)
+  if(research.sources.length){
+    const esc=t=>String(t||"").replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
+    out.html+=`\n<h2>참고 자료</h2>\n<ul>\n${research.sources.map(x=>`<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title||x.url)}</a></li>`).join("\n")}\n</ul>`;
+  }
+
+  // 이미지: 1번 = 대표 이미지(글자 없는 장면), 2번~ = 화면 이미지 우선
+  let images=[];
+  const n=Math.max(0, Number(tistoryImages)||0);
+  if(n>0){
+    const heads=[...out.html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)].map(m=>m[1].replace(/<[^>]+>/g,"").replace(/^\d+\.\s*/,"").trim())
+      .filter(h=>!/자주 묻는 질문|마무리|참고 자료|안 될 때 확인 순서/.test(h));
+    const plain=out.html.replace(/<\/(p|li|h2|h3|tr)>/gi,"\n").replace(/<[^>]+>/g,"").replace(/\n{3,}/g,"\n\n");
+    autoLog(`[${mainKeyword}] 이미지 장면 고르는 중`);
+    let sections=[];
+    try{ sections=await analyzeImageSections({ title:out.title, main_keyword:mainKeyword, tags:out.tags }, plain, {...(allowUi?{ koreaUi:true }:{ noUi:true }), headings:heads}); }
+    catch(e){ autoLog(`[${mainKeyword}] 이미지 장면 실패: ${e.message}`); }
+    const all=buildAutoImages(sections, { imageRatio, imageStyle, allowUi });
+    const cover=all.find(x=>x.type!=="ui")||null;
+    const rest=[...all.filter(x=>x.type==="ui"), ...all.filter(x=>x.type!=="ui"&&x!==cover)];
+    images=[...(cover?[{...cover, cover:true, sectionTitle:"대표 이미지"}]:[]), ...rest].slice(0,n).map((x,i)=>({...x, n:i+1}));
+    // 자리 표시: 대표 이미지는 요약 바로 아래, 나머지는 해당 소제목 아래 첫 문단 뒤
+    for(const im of images){
+      const mark=`\n<p>[이미지 ${im.n}]</p>\n`;
+      if(im.cover){ const q=out.html.search(/<\/blockquote>/i); const at=q>=0?q+13:0; out.html=out.html.slice(0,at)+mark+out.html.slice(at); continue; }
+      const h2s=[...out.html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)];
+      const key=String(im.sectionTitle||"").replace(/\s+/g,"");
+      let h=h2s.find(m=>key&&m[1].replace(/<[^>]+>|\s+/g,"").includes(key.slice(0,8)))||h2s[Math.min(im.n-1,Math.max(h2s.length-1,0))];
+      let at=h?h.index+h[0].length:out.html.length;
+      const p=out.html.slice(at).search(/<\/p>/i); if(p>=0) at+=p+4;
+      out.html=out.html.slice(0,at)+mark+out.html.slice(at);
+    }
   }
   const checks=(out.html.match(/\[확인필요:[^\]]*\]/g)||[]);
-  return { ...out, title:out.title||meta.title, length:len, checks };
+  autoLog(`[${mainKeyword}] 티스토리 글 ${len}자 · 이미지 ${images.length}장 · 확인필요 ${checks.length}곳`);
+  return { ok:true, platform:"tistory", topic, mainKeyword, title:out.title, html:out.html, length:len, checks,
+    tags:out.tags.slice(0,10), images, sources:research.sources, notes:[] };
+}
+
+// 이미지 장면 → 이미지 생성용 항목 (네이버·티스토리 공용)
+function buildAutoImages(sections, { imageRatio="3:2", imageStyle="photo", allowUi=false }={}){
+  return sections.map((x,i)=>{
+    let item=x.imageType==="product"?{...x,imageType:"scene",scene:String(x.scene||"").replace(new RegExp((x.productName||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"),"a smartphone")}:x;
+    const NO_TEXT=" Setting: South Korea, Korean people and Korean everyday environment. Do not render any letters, words, numbers or characters in any language anywhere in the image (no Korean, no English, no Chinese); phone screens and signs must be blurred or blank. Avoid props that usually carry writing (notebooks, sticky notes, papers, receipts, books, packaging); if any appear they are completely blank.";
+    const sceneFallback=buildFullPrompt({...item,imageType:"scene",scene:"A Korean person's hands holding a smartphone, the screen softly blurred and unreadable, in a bright Korean home or cafe."}, imageStyle, imageRatio, "en")+NO_TEXT;
+    const stEn=(IMG_STYLES.find(s=>s.id===imageStyle)||IMG_STYLES[0]).en;
+    const flux=sc=>`${String(sc||"").trim()} ${stEn}. Candid photograph of a real everyday moment in South Korea, Korean people. ${FLUX_CLEAN}`;
+    const fallbackFlux=flux("A Korean person's hands holding a smartphone with the screen turned off, in a bright Korean home or cafe.");
+    if(item.imageType==="ui" && allowUi){
+      const prompt=buildFullPrompt(item, imageStyle, imageRatio, "ko")+" 실제 한국판 화면 그대로. 화면 안 글자는 위에 적은 한국어 라벨만, 맞춤법 그대로 또렷하게. 확실하지 않은 글자는 넣지 말고 비워둘 것. 중국어·일본어·깨진 글자 금지.";
+      return { n:i+1, sectionTitle:x.sectionTitle||"", type:"ui", prompt, fallbackPrompt:sceneFallback, fallbackFlux, labels:item.sceneKo||"" };
+    }
+    if(item.imageType==="ui") item={...item,imageType:"scene",scene:"A Korean person's hands holding a smartphone, the screen softly blurred and unreadable, in a bright Korean home or cafe."};
+    const prompt=buildFullPrompt(item, imageStyle, imageRatio, "en")+NO_TEXT;
+    return { n:i+1, sectionTitle:x.sectionTitle||"", type:item.imageType, prompt, fluxPrompt:flux(item.scene), fallbackFlux };
+  });
 }
 
 // 글 1편 + 이미지 프롬프트
-async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false, creativity=0, platform="naver", tistoryImages=2 }){
+async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false, creativity=0, platform="naver", tistoryImages=2, tistoryStore=false }){
+  if(platform==="tistory") return tistoryWriteOne({ topic, mainKeyword, mode, banTopics, imageRatio, imageStyle, allowUi, tistoryImages, tistoryStore });
   autoLog(`[${mainKeyword}] 키워드 노출 전략 분석 중`);
   const ins=await autoKeywordInsight(mainKeyword);
   if(ins.smartBlockType) autoLog(`[${mainKeyword}] 스마트블록: ${ins.smartBlockType} / 전략: ${ins.blogStrategy||"-"}`);
@@ -11753,23 +11847,6 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
     return { n:i+1, sectionTitle:x.sectionTitle||"", type:item.imageType, prompt, fluxPrompt:flux(item.scene), fallbackFlux };
   });
   const bodyOnly=meta.content.replace(/(?:\n+#[^\n]*)+\s*$/,"").trimEnd();
-  if(platform==="tistory"){
-    // 티스토리: 화면 이미지 우선으로 몇 장만 (사진은 승인에 중요하지 않음) → 구글용 HTML로 다시 쓰기
-    const n=Math.max(0, Math.min(Number(tistoryImages)||0, images.length));
-    const pick=[...images.filter(x=>x.type==="ui"), ...images.filter(x=>x.type!=="ui")].slice(0,n)
-      .sort((a,b)=>a.n-b.n).map((x,i)=>({...x, n:i+1}));
-    autoLog(`[${mainKeyword}] 티스토리용 글로 다시 쓰는 중 (이미지 ${pick.length}장)`);
-    const t=await tistoryConvert({ meta, mainKeyword, images:pick, mode, banTopics });
-    autoLog(`[${mainKeyword}] 티스토리 글 ${t.length}자 · 확인필요 ${t.checks.length}곳`);
-    return {
-      ok:true, platform:"tistory", topic, mainKeyword,
-      title:t.title, html:t.html, length:t.length, checks:t.checks,
-      tags:(t.tags.length?t.tags:(meta.tags||[]).map(x=>String(x).replace(/^#/,""))).slice(0,10),
-      naverTitle:meta.title, naverBody:bodyOnly, images:pick,
-      notes:[...(meta.autoNotes||[]), ...(meta.titleNotice?[meta.titleNotice]:[])],
-      factSources:(meta.factSheet||[]).map(f=>f.source||f.url).filter(Boolean).slice(0,10),
-    };
-  }
   const placed=placeAutoImages(bodyOnly, images.length, { intro: !autoHeads.length });
   return {
     ok:true, topic, mainKeyword,
@@ -11781,7 +11858,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
 }
 
 // 하루 작업: 주제 고르기 → 필요한 편수만큼 글쓰기 (보류되면 다음 후보로)
-async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null, creativity=0, volume=null, platform="naver", tistoryImages=2 }){
+async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null, creativity=0, volume=null, platform="naver", tistoryImages=2, tistoryStore=false }){
   if(AUTO_STATE.busy) throw new Error("이미 실행 중이에요");
   AUTO_STATE.busy=true; AUTO_STATE.log=[];
   const started=Date.now();
@@ -11837,7 +11914,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
       const useRegion=region&&Math.random()<regionChance?region:"";
       autoLog(`글쓰기: ${c.topic} [${c.mainKeyword}${c.monthly!=null?` · 월 ${c.monthly}`:""}${useRegion?` · 지역 ${useRegion}`:""}]`);
       try{
-        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi, creativity, platform, tistoryImages });
+        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi, creativity, platform, tistoryImages, tistoryStore });
         if(r.ok){
           posts.push({ ...r, monthly:c.monthly, category, region:useRegion });
           // 다른 PC의 블로그가 같은 키워드를 고르지 않게 바로 기록 (로컬 기록 모드면 실행 PC가 직접 저장)
