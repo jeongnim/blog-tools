@@ -633,6 +633,7 @@ async function callClaudeStream(messages, system, maxTokens=3500, model="claude-
 const TABS=[
   {id:"write",   icon:"✍️",  label:"글쓰기",     isGroup:true},
   {id:"missing", icon:"📡",  label:"네이버 노출 확인"},
+  {id:"gsc",     icon:"🌐",  label:"구글 색인 확인"},
   {id:"image",   icon:"🖼️", label:"이미지 편집", isGroup:true},
 ];
 
@@ -9816,7 +9817,146 @@ function VideoMakeSubTab() {
   </div>;
 }
 
-const TOOL_MAP={keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:LocalImageTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab};
+// ─── 구글 색인 확인 (티스토리 · 구글 서치콘솔 무료 API) ───────────────────────
+const GSC_BLOGS_KEY="mt_gsc_blogs", GSC_CACHE_KEY="mt_gsc_cache";
+function gscLoad(k,def){ try{ return JSON.parse(localStorage.getItem(k)||"null")??def; }catch(e){ return def; } }
+function gscSave(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+function gscBadge(r){
+  if(!r) return { t:"미검사", c:"#484f58" };
+  if(r.error) return { t:"오류", c:"#da3633" };
+  if(r.verdict==="PASS") return { t:"✅ 색인됨", c:"#2ea043" };
+  const cv=String(r.coverage||"");
+  if(/크롤링|Crawled/i.test(cv)) return { t:"⏳ 수집됐지만 색인 안 됨", c:"#d29922" };
+  if(/발견|Discovered/i.test(cv)) return { t:"🔍 발견만 됨", c:"#d29922" };
+  if(/알 수 없|unknown/i.test(cv)) return { t:"❌ 구글이 아직 모름", c:"#da3633" };
+  return { t:cv||r.verdict||"확인 안 됨", c:"#d29922" };
+}
+function GscTab(){
+  const [blogs,setBlogs]=useState(()=>gscLoad(GSC_BLOGS_KEY,[]));
+  const [blog,setBlog]=useState(()=>gscLoad(GSC_BLOGS_KEY,[])[0]||"");
+  const [input,setInput]=useState("");
+  const [data,setData]=useState(null);          // {base, posts, site}
+  const [cache,setCache]=useState(()=>gscLoad(GSC_CACHE_KEY,{}));   // {postKey: inspect result + at}
+  const [perf,setPerf]=useState(null);          // {pages, start, end}
+  const [busy,setBusy]=useState("");
+  const [msg,setMsg]=useState("");
+  const [setup,setSetup]=useState(null);
+  const stopRef=useRef(false);
+  const api=async q=>{ const r=await fetch("/api/gsc?"+new URLSearchParams(q)); return r.json(); };
+  const saveCache=c=>{ setCache(c); gscSave(GSC_CACHE_KEY,c); };
+
+  const addBlog=()=>{
+    const b=input.trim().toLowerCase().replace(/^https?:\/\//,"").replace(/\.tistory\.com.*$/,"").replace(/\/.*$/,"");
+    if(!b) return;
+    const list=[b,...blogs.filter(x=>x!==b)]; setBlogs(list); gscSave(GSC_BLOGS_KEY,list); setBlog(b); setInput(""); setData(null); setPerf(null);
+  };
+  const removeBlog=b=>{ const list=blogs.filter(x=>x!==b); setBlogs(list); gscSave(GSC_BLOGS_KEY,list); if(blog===b){ setBlog(list[0]||""); setData(null); setPerf(null); } };
+  const checkSetup=async()=>{ setBusy("check"); try{ setSetup(await api({action:"check"})); }catch(e){ setSetup({ok:false,error:e.message}); } setBusy(""); };
+  const loadPosts=async()=>{
+    if(!blog) return; setBusy("posts"); setMsg(""); setPerf(null);
+    try{ const d=await api({action:"posts",blog}); if(d.error) setMsg(d.error); else { setData(d); if(!d.site) setMsg("글 목록은 불러왔지만, 서치콘솔 연결이 안 돼서 색인 검사는 못 해요 — 아래 '설정 확인'을 눌러보세요"); } }
+    catch(e){ setMsg(e.message); }
+    setBusy("");
+  };
+  const inspectOne=async(p,c)=>{
+    const d=await api({action:"inspect",blog,url:p.url});
+    const next={...(c||cache),[p.key]:{...d,at:Date.now()}}; saveCache(next); return { next, d };
+  };
+  const inspectAll=async()=>{
+    if(!data) return; stopRef.current=false; setBusy("inspect");
+    let c=cache, n=0, fail=0;
+    const day=86400000;
+    // 다시 검사할 필요가 있는 글만: 미검사 · 오류 · 색인 안 됨(하루 지남) · 색인됨(7일 지남)
+    const todo=data.posts.filter(p=>{ const r=c[p.key]; if(!r||r.error) return true; const age=Date.now()-(r.at||0);
+      return r.verdict==="PASS"?age>7*day:age>day; });
+    for(const p of todo){
+      if(stopRef.current) break;
+      setMsg(`검사 중 ${++n}/${todo.length} — ${p.title}`);
+      try{ const { next, d }=await inspectOne(p,c); c=next; if(d.error){ fail++; if(/한도|권한|없어요/.test(d.error)){ setMsg(d.error); break; } } }
+      catch(e){ fail++; }
+      await new Promise(r=>setTimeout(r,400));
+    }
+    if(!stopRef.current) setMsg(todo.length?`검사 끝 — ${todo.length-fail}개 확인${fail?`, 실패 ${fail}개`:""}`:"다시 검사할 글이 없어요 (색인된 글은 7일, 안 된 글은 하루 지나면 다시 검사)");
+    setBusy("");
+  };
+  const loadPerf=async()=>{ setBusy("perf"); try{ const d=await api({action:"perf",blog,days:28}); if(d.error) setMsg(d.error); else setPerf(d); }catch(e){ setMsg(e.message); } setBusy(""); };
+
+  const posts=data?.posts||[];
+  const stat=posts.reduce((a,p)=>{ const r=cache[p.key]; if(!r) a.none++; else if(r.verdict==="PASS") a.ok++; else if(r.error) a.err++; else a.no++; return a; },{ok:0,no:0,none:0,err:0});
+  const box={background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px 18px",marginBottom:"14px"};
+  const inp={background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",padding:"9px 12px",fontSize:"15px",outline:"none"};
+  const th={textAlign:"left",padding:"8px 10px",color:"#8b949e",fontSize:"13px",borderBottom:"1px solid #30363d",whiteSpace:"nowrap"};
+  const td={padding:"9px 10px",borderBottom:"1px solid #21262d",fontSize:"14px",color:"#c9d1d9",verticalAlign:"top"};
+  const fmtD=s=>s?String(s).slice(0,10).replace(/-/g,"."):"-";
+
+  return <div>
+    <div style={box}>
+      <div style={{color:"#e6edf3",fontSize:"17px",fontWeight:700,marginBottom:"6px"}}>🌐 구글 색인 확인 <span style={{color:"#8b949e",fontSize:"13px",fontWeight:400}}>티스토리 글이 구글에 등록(색인)됐는지 · 어떤 검색어로 몇 위에 나오는지 (무료)</span></div>
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",margin:"10px 0"}}>
+        {blogs.map(b=><span key={b} onClick={()=>{ if(b!==blog){ setBlog(b); setData(null); setPerf(null); setMsg(""); } }}
+          style={{cursor:"pointer",padding:"6px 12px",borderRadius:"20px",fontSize:"14px",border:`1px solid ${b===blog?"#1f6feb":"#30363d"}`,background:b===blog?"#1f6feb22":"transparent",color:b===blog?"#58a6ff":"#c9d1d9"}}>
+          {b}.tistory.com <b onClick={e=>{ e.stopPropagation(); if(confirm(`${b} 를 목록에서 뺄까요?`)) removeBlog(b); }} style={{color:"#8b949e",marginLeft:"4px"}}>×</b></span>)}
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addBlog()} placeholder="티스토리 주소 추가 (예: abcd 또는 abcd.tistory.com)" style={{...inp,minWidth:"280px"}}/>
+        <Btn variant="secondary" onClick={addBlog}>추가</Btn>
+      </div>
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+        <Btn onClick={loadPosts} loading={busy==="posts"} disabled={!blog||!!busy}>📄 글 목록 불러오기</Btn>
+        <Btn variant="success" onClick={inspectAll} loading={busy==="inspect"} disabled={!data?.site||!!busy}>🔎 색인 검사</Btn>
+        {busy==="inspect"&&<Btn variant="danger" onClick={()=>{ stopRef.current=true; setMsg("멈추는 중…"); }}>멈추기</Btn>}
+        <Btn variant="secondary" onClick={loadPerf} loading={busy==="perf"} disabled={!data?.site||!!busy}>📈 검색 실적 (최근 28일)</Btn>
+        <Btn variant="secondary" onClick={checkSetup} loading={busy==="check"} disabled={!!busy}>⚙️ 설정 확인</Btn>
+      </div>
+      {msg&&<div style={{marginTop:"10px",color:"#d29922",fontSize:"14px"}}>{msg}</div>}
+      {setup&&<div style={{marginTop:"10px",fontSize:"14px",color:setup.ok?"#3fb950":"#f85149",lineHeight:1.7}}>
+        {setup.ok?<>✅ 서비스 계정 연결됨 — <code>{setup.email}</code><br/>접근 가능한 서치콘솔 속성: {setup.sites.length?setup.sites.map(x=>x.url).join(", "):"없음 — 서치콘솔 → 설정 → 사용자 및 권한에 위 이메일을 추가하세요"}</>
+          :<>⚠️ {setup.error}<br/><span style={{color:"#8b949e"}}>Vercel 환경변수 GSC_SA_JSON 에 서비스 계정 JSON 키를 넣고 재배포했는지 확인하세요.</span></>}
+      </div>}
+    </div>
+
+    {data&&<div style={box}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:"10px",marginBottom:"14px"}}>
+        <StatCard label="전체 글" value={posts.length}/>
+        <StatCard label="색인됨" value={stat.ok} accent="#2ea043"/>
+        <StatCard label="색인 안 됨" value={stat.no} accent="#d29922"/>
+        <StatCard label="미검사" value={stat.none+stat.err} accent="#8b949e"/>
+      </div>
+      {perf&&<div style={{color:"#8b949e",fontSize:"13px",marginBottom:"8px"}}>검색 실적 기간: {fmtD(perf.start)} ~ {fmtD(perf.end)} (구글 반영까지 2~3일 걸려요)</div>}
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr><th style={th}>#</th><th style={th}>글</th><th style={th}>발행</th><th style={th}>색인 상태</th><th style={th}>마지막 크롤링</th>
+            {perf&&<><th style={th}>노출</th><th style={th}>클릭</th><th style={th}>평균 순위</th><th style={th}>상위 검색어</th></>}<th style={th}></th></tr></thead>
+          <tbody>{posts.map((p,i)=>{
+            const r=cache[p.key], b=gscBadge(r), pf=perf?.pages?.[p.key];
+            return <tr key={p.key}>
+              <td style={{...td,color:"#484f58"}}>{i+1}</td>
+              <td style={{...td,maxWidth:"360px"}}><a href={p.url} target="_blank" rel="noreferrer" style={{color:"#c9d1d9",textDecoration:"none"}}>{p.title}</a>
+                {r?.error&&<div style={{color:"#f85149",fontSize:"12px",marginTop:"3px"}}>{r.error}</div>}</td>
+              <td style={{...td,whiteSpace:"nowrap"}}>{fmtD(p.date)}</td>
+              <td style={{...td,whiteSpace:"nowrap"}}><span style={{color:b.c,fontWeight:600}}>{b.t}</span>
+                {r?.at&&<div style={{color:"#484f58",fontSize:"11px"}}>{new Date(r.at).toLocaleDateString("ko-KR")} 검사</div>}</td>
+              <td style={{...td,whiteSpace:"nowrap"}}>{fmtD(r?.lastCrawl)}</td>
+              {perf&&<><td style={td}>{pf?pf.impressions.toLocaleString():"-"}</td><td style={td}>{pf?pf.clicks.toLocaleString():"-"}</td>
+                <td style={td}>{pf?.position?pf.position.toFixed(1):"-"}</td>
+                <td style={{...td,fontSize:"13px",minWidth:"180px"}}>{pf?.queries?.length?pf.queries.slice(0,3).map(q=><div key={q.q}>{q.q} <span style={{color:"#8b949e"}}>({Math.round(q.pos)}위·{q.imp}회)</span></div>):"-"}</td></>}
+              <td style={{...td,whiteSpace:"nowrap"}}>
+                <button disabled={!data.site||!!busy} onClick={async()=>{ setBusy("one"); try{ await inspectOne(p); }catch(e){ setMsg(e.message); } setBusy(""); }}
+                  style={{background:"transparent",border:"1px solid #30363d",color:"#c9d1d9",borderRadius:"6px",padding:"4px 10px",cursor:"pointer",fontSize:"13px",marginRight:"6px"}}>검사</button>
+                {r&&r.verdict!=="PASS"&&!r.error&&<a href={r.link||`https://search.google.com/search-console/inspect?resource_id=${encodeURIComponent(data.site)}&id=${encodeURIComponent(p.url)}`}
+                  target="_blank" rel="noreferrer" style={{color:"#58a6ff",fontSize:"13px"}}>색인 요청 ↗</a>}
+              </td>
+            </tr>; })}</tbody>
+        </table>
+      </div>
+      <div style={{color:"#484f58",fontSize:"12px",marginTop:"10px",lineHeight:1.7}}>
+        · 색인 검사는 하루 블로그당 약 2,000건까지 무료예요. 이미 색인된 글은 7일, 안 된 글은 하루가 지나야 다시 검사해요.<br/>
+        · "색인 요청 ↗"을 누르면 서치콘솔이 열려요 — 거기서 '색인 생성 요청'을 누르세요 (API로는 요청이 안 돼요).<br/>
+        · 새 글은 보통 며칠~몇 주 뒤에 색인돼요. "발견만 됨"은 구글이 주소는 알지만 아직 안 읽은 상태예요.
+      </div>
+    </div>}
+  </div>;
+}
+
+const TOOL_MAP={gsc:GscTab,keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:LocalImageTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab};
 
 
 // ─── 블로그 글쓰기 공통 프롬프트 빌더 ───────────────────────────────────────
