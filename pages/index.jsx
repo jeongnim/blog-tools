@@ -11642,8 +11642,79 @@ function autoHeadings(content){
     .map(t=>t.replace(/^▶\s*/,"").replace(/\*\*/g,"").trim()).filter(Boolean);
 }
 
+// ───────── 티스토리(구글 애드센스)용: 네이버 글을 구글 검색에 맞는 HTML 글로 다시 쓴다 ─────────
+// 사실 확인·금칙어 점검은 네이버 글쓰기 단계에서 이미 끝난 원고를 바탕으로, 형식·길이만 바꾼다 (새 사실 추가 금지)
+function tistoryPlainLen(html){ return String(html||"").replace(/<[^>]+>/g,"").replace(/&[a-z#0-9]+;/gi," ").replace(/\s+/g,"").length; }
+function tistoryParse(raw){
+  const t=String(raw||"");
+  const sec=name=>{ const m=t.match(new RegExp("===\\s*"+name+"\\s*===\\s*([\\s\\S]*?)(?====\\s*[A-Z]+\\s*===|$)")); return m?m[1].trim():""; };
+  let html=sec("HTML").replace(/^```(?:html)?\s*/i,"").replace(/```\s*$/,"").trim();
+  html=html.replace(/<h1\b/gi,"<h2").replace(/<\/h1>/gi,"</h2>").replace(/\sstyle="[^"]*"/gi,"");
+  return { title:sec("TITLE").replace(/^["'「]|["'」]$/g,"").split("\n")[0].trim(),
+           tags:sec("TAGS").split(/[,\n]/).map(x=>x.replace(/^#/,"").trim()).filter(Boolean).slice(0,10),
+           html };
+}
+async function tistoryConvert({ meta, mainKeyword, images=[], mode="hq", banTopics=[] }){
+  const src=String(meta.content||"").replace(/(?:\n+#[^\n]*)+\s*$/,"").trim();
+  const imgList=images.map(im=>`[이미지 ${im.n}] ${im.sectionTitle||""}`).join("\n");
+  const prompt=`아래 [원고]는 네이버 블로그용으로 쓴 정보성 글이다. 이걸 구글 검색에 노출되는 티스토리 블로그 글(구글 애드센스 승인용)로 다시 써라.
+
+메인 키워드: ${mainKeyword}
+
+[형식]
+F1. 출력은 HTML 조각. 쓸 수 있는 태그: <h2> <h3> <p> <ul> <ol> <li> <strong> <table> <thead> <tbody> <tr> <th> <td>. <h1>, style 속성, class, 이모지, 인용구 장식, 가운데 정렬 금지.
+F2. 구성: 도입 <p> 2~3개(첫 문장 안에 메인 키워드를 자연스럽게 넣고, 이 글에서 무엇을 알 수 있는지 말한다) → 본문 <h2> 소제목 4~6개(원고의 ▶ 소제목 흐름을 따르되, 검색하는 사람이 쓸 법한 말로 다듬어도 된다. 소제목 2개 이상에 메인 키워드나 그 변형을 넣는다) → <h2>자주 묻는 질문</h2> 아래 <h3>질문</h3><p>답</p> 2~3쌍 → <h2>마무리</h2> 짧은 정리 <p> 1~2개.
+F3. 문단은 네이버식 짧은 줄바꿈이 아니라, 한 <p>에 2~4문장짜리 보통 웹 문단으로. 순서가 있는 방법은 <ol>, 나열은 <ul>, 비교는 <table>.
+F4. 말투는 "~합니다/~해요"를 섞지 말고 "~해요"체로 통일. 친근하지만 정보 위주.
+F5. 길이: 태그·공백 빼고 1,800~2,600자. 길이는 같은 말 반복이 아니라 원고에 있는 방법을 단계별로 더 자세히 풀고, 왜 그런지 이유와 주의할 점을 붙여서 채운다.
+${imgList?`F6. 아래 이미지 자리 표시를 각각 가장 어울리는 <h2> 바로 아래(첫 문단 뒤)에 <p>[이미지 N]</p> 형태로 한 번씩 넣는다. 번호를 바꾸거나 빼지 말 것.
+${imgList}
+`:""}
+[사실]
+S1. 원고에 없는 가격·요금·수치·날짜·모델명·사양·정책·통계를 새로 지어내지 말 것. 원고에 있는 사실만 다시 배열하고 풀어 쓴다.
+S2. 원고의 [확인필요: ...] 표시는 그대로 남긴다.
+S3. 원고에 없는 권유(자급제·알뜰폰으로 바꾸라, 해지·위약금 안내 등)를 추가하지 말 것.${(banTopics||[]).length?` 특히 이런 방향 금지: ${banTopics.join(", ")}.`:""}
+S4. 특정 매장·지점 이름, 연락처, 홍보 문구는 넣지 않는다.
+
+[제목]
+T1. 32자 안팎, 메인 키워드를 앞쪽에. 낚시성 표현·특수문자 남발 금지(물음표나 쉼표 1개까지).
+
+[태그] 검색에 쓰일 만한 한국어 태그 5~10개, 쉼표로.
+
+[출력 — 이 형식 그대로, 다른 말 없이]
+===TITLE===
+제목
+===TAGS===
+태그1, 태그2
+===HTML===
+<p>...</p>
+
+[원고]
+제목: ${meta.title||""}
+${src}`;
+  const sys="You rewrite Korean blog posts into clean, well-structured HTML articles for Google search (Tistory blog). Never add facts that are not in the source. Follow the output format exactly.";
+  const model="claude-sonnet-4-5-20250929";
+  let out=tistoryParse(await callClaude([{role:"user",content:prompt}],sys,7000,model));
+  let len=tistoryPlainLen(out.html);
+  if(len<1500||!/<h2/i.test(out.html)){
+    autoLog(`[${mainKeyword}] 티스토리 글이 짧아서(${len}자) 한 번 더 늘리기`);
+    const more=tistoryParse(await callClaude([{role:"user",content:prompt},{role:"assistant",content:`===TITLE===\n${out.title}\n===TAGS===\n${out.tags.join(", ")}\n===HTML===\n${out.html}`},
+      {role:"user",content:`본문이 ${len}자로 짧다. 같은 형식으로 전체를 다시 출력하되, 각 <h2> 아래 방법·이유·주의점을 더 자세히 풀어서 태그·공백 빼고 1,800자 이상으로. 새 사실은 추가하지 말 것.`}],sys,7000,model));
+    if(tistoryPlainLen(more.html)>len){ out={...more, title:more.title||out.title, tags:more.tags.length?more.tags:out.tags}; len=tistoryPlainLen(out.html); }
+  }
+  // 이미지 자리가 빠졌으면 해당 소제목 아래(없으면 맨 끝)에 붙인다
+  for(const im of images){
+    if(new RegExp(`\\[이미지 ${im.n}\\]`).test(out.html)) continue;
+    const h2=[...out.html.matchAll(/<\/h2>/gi)];
+    const at=h2.length?h2[Math.min(im.n-1,h2.length-1)].index+5:out.html.length;
+    out.html=out.html.slice(0,at)+`\n<p>[이미지 ${im.n}]</p>\n`+out.html.slice(at);
+  }
+  const checks=(out.html.match(/\[확인필요:[^\]]*\]/g)||[]);
+  return { ...out, title:out.title||meta.title, length:len, checks };
+}
+
 // 글 1편 + 이미지 프롬프트
-async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false, creativity=0 }){
+async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false, creativity=0, platform="naver", tistoryImages=2 }){
   autoLog(`[${mainKeyword}] 키워드 노출 전략 분석 중`);
   const ins=await autoKeywordInsight(mainKeyword);
   if(ins.smartBlockType) autoLog(`[${mainKeyword}] 스마트블록: ${ins.smartBlockType} / 전략: ${ins.blogStrategy||"-"}`);
@@ -11682,6 +11753,23 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
     return { n:i+1, sectionTitle:x.sectionTitle||"", type:item.imageType, prompt, fluxPrompt:flux(item.scene), fallbackFlux };
   });
   const bodyOnly=meta.content.replace(/(?:\n+#[^\n]*)+\s*$/,"").trimEnd();
+  if(platform==="tistory"){
+    // 티스토리: 화면 이미지 우선으로 몇 장만 (사진은 승인에 중요하지 않음) → 구글용 HTML로 다시 쓰기
+    const n=Math.max(0, Math.min(Number(tistoryImages)||0, images.length));
+    const pick=[...images.filter(x=>x.type==="ui"), ...images.filter(x=>x.type!=="ui")].slice(0,n)
+      .sort((a,b)=>a.n-b.n).map((x,i)=>({...x, n:i+1}));
+    autoLog(`[${mainKeyword}] 티스토리용 글로 다시 쓰는 중 (이미지 ${pick.length}장)`);
+    const t=await tistoryConvert({ meta, mainKeyword, images:pick, mode, banTopics });
+    autoLog(`[${mainKeyword}] 티스토리 글 ${t.length}자 · 확인필요 ${t.checks.length}곳`);
+    return {
+      ok:true, platform:"tistory", topic, mainKeyword,
+      title:t.title, html:t.html, length:t.length, checks:t.checks,
+      tags:(t.tags.length?t.tags:(meta.tags||[]).map(x=>String(x).replace(/^#/,""))).slice(0,10),
+      naverTitle:meta.title, naverBody:bodyOnly, images:pick,
+      notes:[...(meta.autoNotes||[]), ...(meta.titleNotice?[meta.titleNotice]:[])],
+      factSources:(meta.factSheet||[]).map(f=>f.source||f.url).filter(Boolean).slice(0,10),
+    };
+  }
   const placed=placeAutoImages(bodyOnly, images.length, { intro: !autoHeads.length });
   return {
     ok:true, topic, mainKeyword,
@@ -11693,7 +11781,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
 }
 
 // 하루 작업: 주제 고르기 → 필요한 편수만큼 글쓰기 (보류되면 다음 후보로)
-async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null, creativity=0, volume=null }){
+async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null, creativity=0, volume=null, platform="naver", tistoryImages=2 }){
   if(AUTO_STATE.busy) throw new Error("이미 실행 중이에요");
   AUTO_STATE.busy=true; AUTO_STATE.log=[];
   const started=Date.now();
@@ -11749,7 +11837,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
       const useRegion=region&&Math.random()<regionChance?region:"";
       autoLog(`글쓰기: ${c.topic} [${c.mainKeyword}${c.monthly!=null?` · 월 ${c.monthly}`:""}${useRegion?` · 지역 ${useRegion}`:""}]`);
       try{
-        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi, creativity });
+        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi, creativity, platform, tistoryImages });
         if(r.ok){
           posts.push({ ...r, monthly:c.monthly, category, region:useRegion });
           // 다른 PC의 블로그가 같은 키워드를 고르지 않게 바로 기록 (로컬 기록 모드면 실행 PC가 직접 저장)
@@ -11770,7 +11858,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
 
 if(typeof window!=="undefined"){
   window.__blogAuto={
-    version:1,
+    version:1, tistory:true,
     status:()=>({ busy:AUTO_STATE.busy, step:AUTO_STATE.step, log:AUTO_STATE.log.slice(-30) }),
     profiles:()=>bpList().map(p=>({ blogId:p.blogId, isDefault:!!p.isDefault, hasKey:!!keyForBlog(p.blogId).key })),
     categories:()=>Object.keys(NAVER_DIR_MAP),
