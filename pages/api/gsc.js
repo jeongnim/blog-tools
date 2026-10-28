@@ -71,6 +71,18 @@ async function getText(url) {
 }
 const unxml = (s) => String(s || "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
   .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&").trim();
+// 제목 속 HTML 표시(&middot; &nbsp; &#183; 등)를 글자로
+const ENT = { middot: "·", nbsp: " ", hellip: "…", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”", ndash: "–", mdash: "—", bull: "•", times: "×", rarr: "→", larr: "←", lt: "<", gt: ">", quot: '"', apos: "'", amp: "&" };
+const deEnt = (s) => String(s || "").replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+  if (e[0] === "#") { const n = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return n ? String.fromCodePoint(n) : m; }
+  return ENT[e.toLowerCase()] ?? m;
+});
+// 같은 글 판별: 모바일 주소(/m/) 떼고, 주소 끝부분에서 글자·숫자만 남겨 비교 (?, |, 띄어쓰기 차이 무시)
+const canon = (u) => {
+  const n = norm(u).replace(/^https?:\/\/[^/]+/i, "").replace(/^\/m(?=\/)/, "");
+  const last = n.split("/").pop() || n;
+  return last.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+};
 const isPost = (u) => /\/entry\/|\/\d+\/?$/.test(u) && !/\/(category|tag|notice|guestbook|archive)\b/.test(u);
 const norm = (u) => { try { return decodeURIComponent(u).replace(/\/$/, ""); } catch (e) { return u.replace(/\/$/, ""); } };
 
@@ -95,15 +107,19 @@ async function listPosts(blog) {
     const link = unxml((m[1].match(/<link>([\s\S]*?)<\/link>/) || [])[1]);
     const title = unxml((m[1].match(/<title>([\s\S]*?)<\/title>/) || [])[1]);
     const pub = unxml((m[1].match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1]);
-    if (link) byUrl[norm(link)] = { title, date: pub ? new Date(pub).toISOString().slice(0, 10) : "" };
+    if (link) byUrl[norm(link)] = { url: link, title: deEnt(title), date: pub ? new Date(pub).toISOString().slice(0, 10) : "" };
   });
-  if (!urls.length) urls = Object.keys(byUrl).map((u) => ({ url: u, date: byUrl[u].date }));
+  const byCanon = {};
+  Object.values(byUrl).forEach((r) => { byCanon[canon(r.url)] = r; });
+  if (!urls.length) urls = Object.values(byUrl).map((r) => ({ url: r.url, date: r.date }));
+  // 같은 글이 주소 두 가지(PC/모바일, 특수문자 차이 등)로 들어 있으면 하나로 — RSS 에 있는 주소를 남김
   const seen = new Set();
-  const posts = urls.filter((p) => { const k = norm(p.url); if (seen.has(k)) return false; seen.add(k); return true; })
+  const posts = urls.filter((p) => { const k = canon(p.url); if (seen.has(k)) return false; seen.add(k); return true; })
     .map((p) => {
-      const r = byUrl[norm(p.url)] || {};
-      const slug = norm(p.url).split("/").pop();
-      return { url: p.url, key: norm(p.url), title: r.title || (/^\d+$/.test(slug) ? `글 ${slug}` : slug.replace(/-/g, " ")), date: r.date || p.date };
+      const r = byUrl[norm(p.url)] || byCanon[canon(p.url)] || {};
+      const url = r.url || p.url.replace(/(\/\/[^/]+)\/m\//, "$1/");
+      const slug = norm(url).split("/").pop();
+      return { url, key: norm(url), title: r.title || deEnt(/^\d+$/.test(slug) ? `글 ${slug}` : slug.replace(/-/g, " ")), date: r.date || p.date };
     })
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   return { base, posts };
