@@ -10121,6 +10121,7 @@ function isCommercialStat(item) {
 function buildWritePrompt({
   kw, yearMonth, today, category, smartBlockType, blogStrategy, bodies, mainKeyword,
   topTitles, commercialWords, avoidWords, pattern, factSheetBlock = "", profileBlock = "", productStatusBlock = "", visitBlock = "",
+  writer = false,
 }) {
   const mainKw = mainKeyword || kw;
   const ctx = category
@@ -10246,7 +10247,38 @@ T8. 제목에는 특수문자를 되도록 쓰지 말 것. 쓸 수 있는 건 ! 
 T7. 제목은 주제 "${kw}"의 핵심 행위나 관점을 담을 것. 주제가 "설정 방법"인데
     제목이 제품 비교나 추천처럼 읽히면 안 된다.
 
-[구조 원칙]
+${writer ? `[구조 원칙 — 사람이 쓴 정보 블로그처럼]
+W1. 본문 2,000~2,800자 (한글+공백).
+W2. 문단: 한 문단에 2~5문장을 이어서 서술한다. 문장마다 줄을 바꾸지 말 것. 문단 사이에는 빈 줄 하나. 짧은 문단과 긴 문단을 섞는다. HTML 태그 금지.
+W3. 도입(첫 소제목 전) 2~3문단: 독자가 겪는 상황·불편함 → 이 글에서 다룰 기능·방법 소개 → 무엇을 알아볼지 한 문장.
+    인사말·날씨·자기소개 금지. 첫 문장을 "X는 ~입니다" 같은 정의로 단정하며 시작하지 말 것. ([블로그 개성 카드]의 도입 방식이 있으면 그걸 따른다)
+W4. 소제목: "▶ "로 시작하는 줄 4~6개 (인용구로 들어간다). 모든 소제목은 "${kw}"의 하위 항목이어야 한다.
+    그중 1개만 독자가 검색창에 칠 법한 질문형으로 ("▶ 앱도 따로 설치할 수 있을까?"). 번호 표기는 개성 카드를 따르고, 없으면 "▶ 1. ~" 형식.
+    각 소제목 아래 첫 문장은 그 소제목의 답을 바로 준다. "▶ 정리" 같은 요약 전용 소제목은 만들지 말 것.
+W5. 필요할 때만 쓰는 구성 (억지로 넣지 말 것):
+    - 소항목: "■ 항목명" 한 줄 + 바로 아래 1~2문장 설명. 한 소제목에 2~4개, 글 전체에서 1~2곳까지.
+    - 경로·단계: "설정 → 연결 → 모바일 핫스팟" 같은 경로 한 줄, 그 아래 "① ~" "② ~" 단계를 한 줄에 하나씩.
+    - 표: 비교·정리가 꼭 필요할 때만 "| 항목 | 내용 |" 형식 2~3칸, 3~5줄. 글 전체 최대 1개, 표 위아래 빈 줄.
+W6. 본문에 질문 줄을 따로 두지 말 것. 질문형은 소제목 1개뿐이고, 본문 문장은 물음표로 끝나지 않게.
+W7. 굵게(**) 금지. 해시태그는 본문에 쓰지 말고 tags 배열에만 5개 (개성 카드에 개수가 있으면 그 개수).
+W8. 마지막 소제목은 "알아두면 좋은 점", "사용 전 확인할 점"처럼 마무리 성격 — 핵심 2~3가지를 서술형으로 다시 짚고,
+    마지막 문단은 "한번 확인해보세요" 같은 가벼운 권유 한두 문장으로 끝낸다. 댓글·공감·구독 유도 금지.
+
+[경험·출처 원칙]
+X1. 지어낸 1인칭 경험 금지 — "직접 써보니", "제가 해보니", "~한 적이 있습니다", "비교해봤습니다" 같은 문장을 쓰지 말 것. 정보 글은 정보와 판단으로 쓴다.
+X2. 의견은 "개인적으로는 ~ 쪽이 편합니다", "처음이라면 ~부터 해보는 것도 좋습니다"처럼 판단으로만, 글 전체 2번 이하.
+X3. [확인된 사실]을 쓸 때 출처를 문장 안에 말로 1~2번 밝힌다: "삼성전자 고객지원에 따르면 ~", "Apple 공식 사용 설명서에서도 ~ 안내하고 있습니다". 링크·URL 금지.
+X4. 기종·버전 차이 단서를 자연스럽게 1~2번: "One UI 버전에 따라 메뉴 위치나 명칭은 달라질 수 있습니다".
+X5. 화자의 직업·소속은 드러내지 말 것. 무엇이 헷갈리고 어디서 막히는지를 아는 데서 전문성이 보이게 쓴다.
+
+[내용 원칙]
+C1. 메인 키워드 "${mainKw}"는 본문에 글자 그대로 5~8회 (도입 첫 문단에 1회 포함), 어떤 경우에도 19회를 넘지 말 것.
+    다른 단어(형태소)가 메인 키워드보다 더 자주 나오지 않게 — 같은 명사를 반복하지 말고 바꿔 쓸 것.
+C2. 말투: 합니다체를 기본으로 하고 "~는데요", "~죠", "~하면 됩니다"를 가끔 섞는다 (개성 카드에 말투가 있으면 그게 우선). 같은 어미 3연속 금지.
+C3. 단순 나열이 아니라 왜 그런지, 어디서 막히는지, 주의할 점까지 쓸 것.
+C4. 수치·통계는 확실할 때만. 시의성은 변할 수 있다는 전제로.
+
+` : `[구조 원칙]
 1. 본문 1,500~2,000자 (한글+공백)
 2. 소제목 ▶ 형식 3~4개 (마크다운/HTML 금지)
    - 모든 소제목은 "${kw}"의 하위 항목이어야 한다. 하나라도 옆길로 새면 실패다
@@ -10335,7 +10367,7 @@ E7. 화자는 이 분야를 실무로 오래 접한 사람이다. 단, 직업이
       "다음 글에서 만나요" 같은 맺음말 전부 금지.
       저품질 신호로 잡히고, AI 브리핑이 인용할 문단 사이에 끼면 문맥이 끊긴다.
 
-[금지사항]
+`}[금지사항]
 - 확인되지 않은 가격·수치·날짜·스펙을 사실처럼 쓰는 것 (가장 중요)
 - 존재하지 않는 기관·조사·논문·뉴스를 출처로 인용하는 것
 - 실제로 없는 후기·사례·인물을 만들어내 인용하는 것
@@ -10343,9 +10375,9 @@ E7. 화자는 이 분야를 실무로 오래 접한 사람이다. 단, 직업이
 - 맥락 없이 키워드만 끼워 넣는 표현
 - AI가 기계적으로 생성한 느낌의 틀에 박힌 문장 패턴
 - 도입부를 인사말, 날씨·계절 묘사, 자기소개로 시작하는 것
-- 소제목 없이 긴 문단이 연속되는 구조 (각 소제목 간격 400자 이내 유지)
+- 소제목 없이 긴 문단이 연속되는 구조 (각 소제목 간격 ${writer ? "300~600자" : "400자 이내 유지"})
 - 앞 문단에 의존하는 지시대명사로 문단을 시작하는 것
-- 댓글·공감·구독 유도 문장, 인사성 맺음말 (한 문장도 쓰지 말 것)
+- 댓글·공감·구독 유도 문장, 인사성 맺음말 (한 문장도 쓰지 말 것)${writer ? "\n- 지어낸 1인칭 경험, 본문 속 질문 줄, 한 문장마다 줄바꿈" : ""}
 
 순수 JSON만 (마크다운 없이):
 {"title":"제목(${pat.label}, 15~32자, "${mainKw}" 포함)","main_keyword":"${mainKw}","content":"본문(해시태그·자주묻는질문 제외)","tags":["태그1","태그2","태그3","태그4","태그5"],"uncertain":["글에서 확인이 필요한 항목이 있으면 나열, 없으면 빈 배열"]}`;
@@ -11175,6 +11207,7 @@ N4. 기사 시점 이후 상황이 바뀌었을 수 있으니, 진행 중인 이
       profileBlock: buildProfileBlock(bpGetActive(), "write"),
       productStatusBlock: formatProductStatusBlock(productStatus),
       visitBlock: visitBlock + newsBlock + autoRulesBlock(opts?.auto) + (opts?.auto ? "" : toneBlock(toneOpt)),
+      writer: !!opts?.auto?.writer,
     });
 
     const visitSys = `You are writing a first-person Korean Naver blog visit review ("방문 후기") in a warm, natural conversational tone (~했어요, ~더라고요). The [방문 리뷰 모드] block in the user message overrides any conflicting rule there.
@@ -11206,7 +11239,7 @@ FACTUAL DISCIPLINE — this overrides every stylistic instruction in the user me
 - When you are unsure of a specific figure, DO NOT vague the whole sentence away. Keep the sentence concrete and specific, and leave only the unknown value as a [확인필요: ...] placeholder for the author to fill in (max 3 per post). Falling back to qualitative phrasing is a last resort, reserved for details too peripheral to be worth a placeholder.
 - Do NOT claim anything is "current as of ${yearMonth}" unless you genuinely know it. Prefer hedged or timeless phrasing over confident but unverified recency.
 - Opinions, judgments, preferences and narrative experience are encouraged — but write them as opinions, not as verified facts. Make experience concrete through process and reasoning, not through fabricated measurements.
-- Calibrate certainty per sentence: state verified facts, definitions and procedures plainly; mark evaluations as the writer's own judgment; and never promise the reader an outcome ("no wrist fatigue", "solves it", "guaranteed") — phrase effects conditionally with degree words. Especially in the closing ▶ 정리 lines, the final takeaway about effects must be conditional or first-person, not an absolute claim. Keep hedges ("~것 같습니다") to four or fewer per post and never stack two in one sentence.
+- Calibrate certainty per sentence: state verified facts, definitions and procedures plainly; mark evaluations as the writer's own judgment; and never promise the reader an outcome ("no wrist fatigue", "solves it", "guaranteed") — phrase effects conditionally with degree words. Especially in the closing lines, the final takeaway about effects must be conditional or first-person, not an absolute claim. Keep hedges ("~것 같습니다") to four or fewer per post and never stack two in one sentence.
 - If a [제품 출시 상태] block says a product is not officially released in Korea, never write first-person use, purchase or activation of it, even if the topic says "후기".
 - If a [방문 리뷰 모드] block is present, first-person experience must be grounded ONLY in its photo descriptions and the author's memo. Never invent dishes eaten, prices, waiting times, staff behavior or taste judgments that are not there.
 - A shorter, less specific post that is true is better than a specific post that is false. If a [확인된 사실] list is provided, figures, dates and conditions must come from that list; treat anything under [확인 안 된 주장] as unverified. Reference material may inform structure and context but is not a source of figures on its own (never copy its wording).
@@ -11221,7 +11254,13 @@ TOPIC DISCIPLINE — second only to factual discipline:
 - Go deeper, never wider. If the topic feels too narrow to fill the length, add steps, edge cases, failure modes and situational detail within the topic — do not import an adjacent axis (product comparison, pricing, device compatibility, vendor recommendations) to pad it out.
 - Reference material is for verifying facts only. Never mirror its outline or section structure.
 
-LIVED EXPERIENCE — do not let the AEO rules flatten this:
+${opts?.auto?.writer ? `WRITING STYLE — a human informational blogger (this replaces any AEO line-break habits):
+- Write flowing paragraphs of 2-5 sentences. Never put each sentence on its own line.
+- No fabricated first-person experience at all. Opinions only as clearly marked judgments, at most twice per post.
+- When you use a verified fact, name its official source in the sentence (no URLs).
+- Do not place standalone question lines in the body; at most one subheading is a question.
+- Do not write hashtags in the body; they belong only in the tags array.
+` : `LIVED EXPERIENCE — do not let the AEO rules flatten this:
 - Weave first-person experience into the explanation rather than appending it as a closing anecdote to each section.
 - Vary the sentence shape every time. Repeating one narrative template across sections reads more machine-made than no anecdote at all.
 - Show a scene: when, where, what was attempted, what happened. Evaluative summaries ("it was inconvenient") are not experience.
@@ -11234,7 +11273,7 @@ CITATION READINESS (AEO) — apply this within the limits of factual discipline 
 - Preserve quotable sentence structure. A sentence with a [확인필요:] placeholder is still quotable; a sentence that hedges away its own subject is not.
 - Embed only one or two question-and-answer pairs in the whole post (never three or more, never one per section, never as a closing FAQ block). Each question must be a complete, search-query-shaped sentence standing alone on its own line, followed by a 2-3 sentence answer that starts with the conclusion. Apart from those question lines, do not end any sentence in the body with a question mark.
 - Do not write hashtags in the body; they belong only in the tags array.
-- Never write engagement bait: no requests for comments, likes, subscriptions, and no sign-off pleasantries. End on the summary.
+`}- Never write engagement bait: no requests for comments, likes, subscriptions, and no sign-off pleasantries. End on the summary.
 
 Output ONLY valid JSON, no markdown.`;
 
@@ -11301,7 +11340,9 @@ Output ONLY valid JSON, no markdown.`;
         bodyText = await settleUnresolvedPlaceholders(bodyText, factItems);
       } catch(e) {}
       // 그래도 남으면 그 줄을 통째로 뺀다 (문장 단위 줄바꿈 규칙이라 줄 = 문장)
-      bodyText = bodyText.split("\n")
+      bodyText = opts?.auto?.writer
+        ? bodyText.replace(/[^.!?\n]*\[확인필요:[^\]]*\][^.!?\n]*[.!?]?[ \t]*/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n")
+        : bodyText.split("\n")
         .filter(l => !/\[확인필요:[^\]]*\]/.test(l))
         .join("\n").replace(/\n{3,}/g, "\n\n");
       if (factSummary) factSummary.unresolved = [];
@@ -11534,7 +11575,7 @@ function autoRulesBlock(auto){
   return `
 [자동 발행 글 규칙 — 정보형 글. 위 규칙과 충돌하면 이 규칙이 우선]
 A1. 순수 정보 글이다. 특정 매장·업체·판매처를 소개하거나 추천하지 말고, 가입·구매·상담·방문·문의를 권하는 문장을 쓰지 말 것.
-A2. 글쓴이의 직업·소속·매장을 드러내지 말 것. "매장에서 일하다 보면", "고객님들이 자주 묻는", "판매하면서" 같은 표현 금지. 경험은 평범한 사용자 입장에서만 쓴다.
+A2. 글쓴이의 직업·소속·매장을 드러내지 말 것. "매장에서 일하다 보면", "고객님들이 자주 묻는", "판매하면서" 같은 표현 금지. ${auto.writer?"1인칭 경험은 쓰지 않는다.":"경험은 평범한 사용자 입장에서만 쓴다."}
 A2-1. 휴대폰 판매점이 운영하는 블로그다. 휴대폰 구매·개통을 꺼리게 만드는 내용을 쓰지 말 것 — 예: 자급제·알뜰폰으로 옮기라는 권유, 판매점·대리점에 대한 불신 조장, 위약금·해지·개통 철회 방법 안내, "새 폰 사지 말고 버티라"는 결론.${(auto.banTopics||[]).length?` 특히 이런 방향 금지: ${auto.banTopics.join(", ")}.`:""}
 A3. 링크(URL)·전화번호·메신저 ID·업체 상호를 쓰지 말 것.
 ${auto.style?`A-TONE. 이 블로그의 글 성격 — "${auto.style.label}" (가장 눈에 띄는 부분이니 꼭 지킬 것. 다른 블로그와 글이 비슷해 보이지 않게 하는 핵심)
@@ -11543,16 +11584,22 @@ ${auto.style?`A-TONE. 이 블로그의 글 성격 — "${auto.style.label}" (가
    - ${auto.style.body}
    - ${auto.style.outro}
    - 같은 어미로 끝나는 문장이 세 번 연속 나오지 않게. 접속어도 한 가지만 반복하지 말 것.
-   - 질문 줄 바로 아래 답의 첫 문장은 결론부터(AI 인용용). 반말·과한 감탄·이모지 남발 금지. 정보의 정확성은 그대로 유지.
+   - ${auto.writer?"":"질문 줄 바로 아래 답의 첫 문장은 결론부터(AI 인용용). "}반말·과한 감탄·이모지 남발 금지. 정보의 정확성은 그대로 유지.
 `:`A-TONE. 말투 (가장 눈에 띄는 부분이니 꼭 지킬 것): 옆자리 사람에게 설명해 주듯 친근한 존댓말. "~해요", "~하죠", "~거든요", "~더라고요", "~하면 돼요", "~해 보세요", "~했으면 좋겠어요!", "~하기도 합니다"를 섞어 쓴다.
    - "~합니다/~습니다/~됩니다"로 끝나는 문장은 전체의 3분의 1 이하. 같은 어미로 끝나는 문장이 세 번 연속 나오지 않게.
    - 접속어도 "다만"만 반복하지 말고 "하지만", "그런데", "그래서", "참고로", "특히" 등을 바꿔 쓴다.
    - 질문 줄 바로 아래 답의 첫 문장은 결론부터(AI 인용용)이되 말투는 친근하게: (X) "켜두는 것이 좋습니다." (O) "웬만하면 켜두는 게 좋아요."
    - 반말·과한 감탄·이모지 남발은 금지. 정보의 정확성은 그대로 유지.
 `}
-A3-1. 본문에 **굵게** 표시(별표)는 쓰지 말 것. 강조는 질문 줄에만 따로 적용된다.
+A3-1. 본문에 **굵게** 표시(별표)는 쓰지 말 것.${auto.writer?" 소항목은 \"■ 항목명\" 줄로 쓴다.":" 강조는 질문 줄에만 따로 적용된다."}
+${(auto.card&&auto.card.lines&&auto.card.lines.length)?`A-CARD. [블로그 개성 카드] 이 블로그만의 고정된 글 버릇이다. 다른 지점 블로그와 같은 운영자가 찍어낸 글처럼 보이지 않게 하는 핵심이니, A-TONE보다 우선해서 지킬 것.
+${auto.card.lines.map(l=>"   - "+l).join("\n")}
+`:""}${(auto.today&&auto.today.length)?`A-TODAY. 오늘 다른 블로그에 이미 올라간 글이다. 제목의 단어 조합, 도입 첫 문장, 소제목 표현이 이 글들과 겹치지 않게 쓸 것 (같은 정형 문장 금지).
+${auto.today.slice(0,12).map(t=>`   - 제목: ${t.title||""}${t.intro?` / 첫 문장: ${t.intro}`:""}${(t.heads||[]).length?` / 소제목: ${t.heads.slice(0,6).join(" | ")}`:""}`).join("\n")}
+`:""}
 ${branch
-  ?`A4. 검색량이 작은 구체적 질문 하나에 정확히 답하는 글이다. 첫 2~3문장 안에 답을 바로 주고, 이어서 조건·예외·순서를 풀어 쓴다. 네이버 AI 브리핑·구글 AI 개요가 그대로 인용하기 좋게 정의·순서·조건을 한 문단씩 독립적으로 쓸 것. 본문은 1,500~2,500자.`
+  ?(auto.writer?`A4. 검색량이 작은 구체적 질문 하나를 깊게 다루는 글이다. 도입에서 상황을 짚고, 첫 소제목에서 바로 답을 준 뒤 조건·예외·순서를 풀어 쓴다. 본문은 2,000~2,800자.`
+    :`A4. 검색량이 작은 구체적 질문 하나에 정확히 답하는 글이다. 첫 2~3문장 안에 답을 바로 주고, 이어서 조건·예외·순서를 풀어 쓴다. 네이버 AI 브리핑·구글 AI 개요가 그대로 인용하기 좋게 정의·순서·조건을 한 문단씩 독립적으로 쓸 것. 본문은 1,500~2,500자.`)
   :`A4. 주제의 핵심 질문을 넓고 깊게 다루는 정리형 글이다. 독자가 이 글 하나로 판단을 끝낼 수 있게 조건별·상황별로 나눠 쓸 것.`}
 ${auto.creativity>0?`A6. 필자의 생각 한 스푼 (본문의 약 ${Math.round(auto.creativity*100)}%): 정보만 나열하지 말고, 이 주제에 대한 필자 개인의 생각·취향·판단을 두세 군데 넣을 것.
    - 예: 내가 이 기능을 켜두는 이유, 솔직히 불편했던 점, 나라면 이렇게 쓰겠다는 선택, 이 설정이 의외였던 부분.
@@ -11961,7 +12008,7 @@ function buildAutoImages(sections, { imageRatio="3:2", imageStyle="photo", allow
 }
 
 // 글 1편 + 이미지 프롬프트
-async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false, creativity=0, platform="naver", tistoryImages=2, tistoryStore=false }){
+async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false, creativity=0, platform="naver", tistoryImages=2, tistoryStore=false, writer=false, card=null, today=[] }){
   if(platform==="tistory") return tistoryWriteOne({ topic, mainKeyword, mode, banTopics, imageRatio, imageStyle, allowUi, tistoryImages, tistoryStore });
   autoLog(`[${mainKeyword}] 키워드 노출 전략 분석 중`);
   const ins=await autoKeywordInsight(mainKeyword);
@@ -11969,7 +12016,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
   const style=pickAutoStyle(bpGetActiveId());
   const prof=bpGetActive();
   autoLog(`[${mainKeyword}] 블로그 @${bpGetActiveId()} · 프로필 ${!prof?"없음":prof.isDefault?"기본(분석 전)":"분석됨"} · 글 성격 ${style.label}`);
-  const gen=()=>generatePost({ kw:topic, mainKeyword, ...ins, opts:{ auto:{ mode, region, banTopics, style, creativity } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
+  const gen=()=>generatePost({ kw:topic, mainKeyword, ...ins, opts:{ auto:{ mode, region, banTopics, style, creativity, writer, card, today } } }, m=>{ const t=String(m||"").replace(/^__loading__:?/,""); if(t) autoLog(`[${mainKeyword}] ${t}`); });
   let meta=await gen();
   // 본문이 중간에 끊기거나 너무 짧게 나온 건 일시적인 경우가 많아 한 번 더 써본다
   if(meta.autoBlock?.length && meta.autoBlock.every(r=>/잘림|너무 짧음/.test(r))){
@@ -12012,7 +12059,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
 }
 
 // 하루 작업: 주제 고르기 → 필요한 편수만큼 글쓰기 (보류되면 다음 후보로)
-async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null, creativity=0, volume=null, platform="naver", tistoryImages=2, tistoryStore=false }){
+async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null, creativity=0, volume=null, platform="naver", tistoryImages=2, tistoryStore=false, writer=false, card=null, todayPosts=[] }){
   if(AUTO_STATE.busy) throw new Error("이미 실행 중이에요");
   AUTO_STATE.busy=true; AUTO_STATE.log=[];
   const started=Date.now();
@@ -12068,7 +12115,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
       const useRegion=region&&Math.random()<regionChance?region:"";
       autoLog(`글쓰기: ${c.topic} [${c.mainKeyword}${c.monthly!=null?` · 월 ${c.monthly}`:""}${useRegion?` · 지역 ${useRegion}`:""}]`);
       try{
-        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi, creativity, platform, tistoryImages, tistoryStore });
+        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi, creativity, platform, tistoryImages, tistoryStore, writer, card, today:todayPosts });
         if(r.ok){
           posts.push({ ...r, monthly:c.monthly, category, region:useRegion });
           // 다른 PC의 블로그가 같은 키워드를 고르지 않게 바로 기록 (로컬 기록 모드면 실행 PC가 직접 저장)
@@ -12089,7 +12136,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
 
 if(typeof window!=="undefined"){
   window.__blogAuto={
-    version:1, tistory:true,
+    version:1, tistory:true, writer:true,
     status:()=>({ busy:AUTO_STATE.busy, step:AUTO_STATE.step, log:AUTO_STATE.log.slice(-30) }),
     profiles:()=>bpList().map(p=>({ blogId:p.blogId, isDefault:!!p.isDefault, hasKey:!!keyForBlog(p.blogId).key })),
     categories:()=>Object.keys(NAVER_DIR_MAP),
