@@ -9172,8 +9172,395 @@ ${text.slice(0, 4000)}
   </div>;
 }
 
-// ─── TAB: AI 영상 생성 ────────────────────────────────────────────────────
-function VideoMakeAiTab() {
+// ─── 블로그 글 → 세로 쇼츠(9:16) 만들기 ─────────────────────────────────────
+// 사진 + 블로그 본문 → Claude가 장면 구성(순서·길이·자막·효과·내레이션 대본) → 브라우저에서 한 편으로 렌더링
+// 효과는 기본 무료(줌·패닝), 고른 장면만 AI 움직임(Replicate/PixVerse). 자막 기본 켬. 최대 60초.
+const SHORTS_EFFECTS=[["zoom-in","줌인"],["zoom-out","줌아웃"],["pan-left","← 패닝"],["pan-right","패닝 →"],["pan-up","↑ 패닝"],["pan-down","↓ 패닝"]];
+const SHORTS_ACCENTS=[["#8fd694","초록"],["#ffd84d","노랑"],["#6cc6ff","하늘"],["#ff8a80","분홍"]];
+
+function shortsThumb(dataUrl, max=640){
+  return new Promise((ok,bad)=>{ const im=new Image(); im.onload=()=>{
+    const s=Math.min(1,max/Math.max(im.width,im.height)); const c=document.createElement("canvas");
+    c.width=Math.round(im.width*s); c.height=Math.round(im.height*s); c.getContext("2d").drawImage(im,0,0,c.width,c.height);
+    ok(c.toDataURL("image/jpeg",0.72)); }; im.onerror=bad; im.src=dataUrl; });
+}
+function shortsJson(t){ const a=t.indexOf("{"), b=t.lastIndexOf("}"); if(a<0||b<0) throw new Error("구성 결과를 못 읽었어요"); return JSON.parse(t.slice(a,b+1)); }
+function shortsPickMime(){
+  const list=["video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/mp4;codecs=avc1,mp4a","video/mp4","video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"];
+  return list.find(m=>{ try{ return window.MediaRecorder&&MediaRecorder.isTypeSupported(m); }catch(e){ return false; } })||"";
+}
+
+function BlogShortsMaker(){
+  const [photos,setPhotos]=React.useState([]);           // {id,name,dataUrl}
+  const [text,setText]=React.useState("");
+  const [lengthMode,setLengthMode]=React.useState("auto");
+  const [res,setRes]=React.useState("1080");
+  const [subs,setSubs]=React.useState(true);
+  const [accent,setAccent]=React.useState(SHORTS_ACCENTS[0][0]);
+  const [plan,setPlan]=React.useState(null);              // {title, scenes:[{pid,sec,effect,ai,motion,caps:[{text,hl}],narration,clipUrl}]}
+  const [bgm,setBgm]=React.useState(null);                // {name,buf,dur,url?,credit?}
+  const [bgmVol,setBgmVol]=React.useState(0.25);
+  const [bgmCat,setBgmCat]=React.useState(()=>{ try{ return localStorage.getItem("vm_bgm_cat")||"none"; }catch(e){ return "none"; } });
+  const [bgmList,setBgmList]=React.useState(null);        // public/bgm/list.json (배포 때 자동 생성)
+  const [narr,setNarr]=React.useState(null);              // {name,buf,dur}
+  const [busy,setBusy]=React.useState("");
+  const [msg,setMsg]=React.useState("");
+  const [result,setResult]=React.useState(null);
+  const fileRef=React.useRef(); const canvasRef=React.useRef(); const stopRef=React.useRef(false);
+
+  React.useEffect(()=>{ // 분위기별 배경음악 목록
+    fetch("/bgm/list.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(j=>setBgmList(j||{cats:{}})).catch(()=>setBgmList({cats:{}}));
+  },[]);
+  const pickBgm=async(cat,avoid)=>{
+    setBgmCat(cat); try{ localStorage.setItem("vm_bgm_cat",cat); }catch(e){}
+    if(cat==="none"||cat==="upload"){ setBgm(null); return; }
+    const tracks=bgmList?.cats?.[cat]?.tracks||[];
+    if(!tracks.length){ setBgm(null); setMsg(`'${bgmList?.cats?.[cat]?.label||cat}' 폴더에 곡이 없어요 — public/bgm/${cat}/ 에 mp3를 넣고 배포해 주세요`); return; }
+    const pool=tracks.length>1?tracks.filter(t=>t.url!==avoid):tracks;
+    const t=pool[Math.floor(Math.random()*pool.length)];
+    try{
+      const buf=await (await fetch(t.url)).arrayBuffer();
+      const ac=new (window.AudioContext||window.webkitAudioContext)(); const d=await ac.decodeAudioData(buf.slice(0)); ac.close();
+      setBgm({name:t.name,buf,dur:d.duration,url:t.url,credit:t.credit||""});
+    }catch(e){ setBgm(null); setMsg("배경음악을 불러오지 못했어요: "+t.name); }
+  };
+  React.useEffect(()=>{ if(bgmList&&bgmCat!=="none"&&bgmCat!=="upload"&&!bgm) pickBgm(bgmCat); },[bgmList]);
+
+  React.useEffect(()=>{ // 자막용 굵은 글꼴
+    if(document.getElementById("shorts-font")) return;
+    const l=document.createElement("link"); l.id="shorts-font"; l.rel="stylesheet";
+    l.href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@700;900&display=swap"; document.head.appendChild(l);
+  },[]);
+
+  const addPhotos=files=>{
+    Array.from(files).filter(f=>f.type.startsWith("image/")).forEach(f=>{
+      const r=new FileReader(); r.onload=e=>setPhotos(p=>[...p,{id:Date.now()+Math.random(),name:f.name,dataUrl:e.target.result}]); r.readAsDataURL(f);
+    });
+  };
+  const readAudio=async(f,setter)=>{
+    if(!f) return; const buf=await f.arrayBuffer();
+    let dur=0; try{ const ac=new (window.AudioContext||window.webkitAudioContext)(); const d=await ac.decodeAudioData(buf.slice(0)); dur=d.duration; ac.close(); }catch(e){ setMsg("음악/음성 파일을 읽지 못했어요 (mp3·wav·m4a 권장)"); return; }
+    setter({name:f.name,buf,dur});
+  };
+  const total=plan?plan.scenes.reduce((a,s)=>a+Number(s.sec||0),0):0;
+  const photoOf=pid=>photos.find(p=>p.id===pid);
+
+  // ① 구성 만들기 (Claude)
+  const makePlan=async()=>{
+    if(photos.length<2){ setMsg("사진을 2장 이상 올려주세요"); return; }
+    if(text.trim().length<100){ setMsg("블로그 본문을 붙여넣어 주세요"); return; }
+    setBusy("plan"); setMsg("사진과 글을 보고 장면 구성 중… (20~40초)"); setResult(null);
+    try{
+      const use=photos.slice(0,10);
+      const content=[];
+      for(let i=0;i<use.length;i++){ const t=await shortsThumb(use[i].dataUrl,512);
+        content.push({type:"text",text:`사진 ${i+1}`}); content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:t.split(",")[1]}}); }
+      const lenRule=lengthMode==="auto"
+        ?(narr?`전체 길이는 내레이션 음성 길이 ${narr.dur.toFixed(1)}초에 맞춘다.`:"전체 길이는 사진 수와 글 내용량에 맞춰 15~60초 사이에서 자연스럽게 정한다 (장면당 3~5초 기준).")
+        :`전체 길이는 ${lengthMode}초 (±1초).`;
+      content.push({type:"text",text:`[블로그 본문]\n${text.trim().slice(0,7000)}\n\n`+
+`위 사진 ${use.length}장과 블로그 본문으로 9:16 세로 쇼츠(릴스) 구성을 만들어라.
+규칙:
+- 장면 = 사진 1장. 글 흐름에 맞게 순서를 바꿔도 되고, 내용과 안 맞는 사진은 빼도 된다(최소 3장, 사진 수가 적으면 전부).
+- 장면 길이 2.5~6초. ${lenRule} 어떤 경우에도 60초를 넘지 말 것.
+- captions: 장면마다 화면 자막 1~2개(장면 안에서 순서대로 바뀜). 한 줄 12자 이내, 최대 2줄(줄바꿈은 \\n). 말하듯 짧게.
+  흐름: 첫 장면은 시선을 끄는 질문이나 결론 → 핵심 정보 → 마지막 장면은 정리·가벼운 권유. 과장·단정·구매 유도 금지.
+- hl: 그 자막에서 색으로 강조할 단어 하나(자막에 글자 그대로 있는 단어). 없으면 "".
+- effect: zoom-in, zoom-out, pan-left, pan-right, pan-up, pan-down 중 사진 구도에 맞게. 같은 효과를 연속으로 쓰지 말 것.
+- narration: 그 장면에서 읽을 내레이션 한두 문장 (장면 길이 1초당 4~5글자 분량, 자막보다 조금 더 자연스러운 말투).
+- motion: AI 영상 생성용 영어 프롬프트 — 사진 속 실제 피사체의 자연스럽고 작은 움직임 + 카메라 움직임, 글자 없음.
+- ai_pick: AI 움직임을 넣으면 가장 효과적인 장면의 photo 번호 2개.
+순수 JSON만: {"title":"쇼츠 제목(20자 이내)","scenes":[{"photo":1,"sec":4,"effect":"zoom-in","captions":[{"text":"","hl":""}],"narration":"","motion":""}],"ai_pick":[1,2]}`});
+      const out=await callClaude([{role:"user",content}],"You edit Korean blog posts into short vertical videos. Output only valid JSON.",3500,"claude-sonnet-4-5-20250929");
+      const j=shortsJson(out);
+      const picks=new Set((j.ai_pick||[]).map(Number));
+      let scenes=(j.scenes||[]).filter(s=>use[Number(s.photo)-1]).map(s=>({
+        pid:use[Number(s.photo)-1].id, sec:Math.min(6,Math.max(2.5,Number(s.sec)||4)),
+        effect:SHORTS_EFFECTS.some(e=>e[0]===s.effect)?s.effect:"zoom-in",
+        caps:(s.captions||[]).slice(0,2).map(c=>({text:String(c.text||"").slice(0,40),hl:String(c.hl||"")})),
+        narration:String(s.narration||""), motion:String(s.motion||""), ai:false, suggest:picks.has(Number(s.photo))
+      }));
+      // 사진 10장 넘게 올렸으면 남은 사진도 뒤에 붙임 (자막 없이)
+      photos.slice(10).forEach(p=>scenes.push({pid:p.id,sec:3.5,effect:"zoom-in",caps:[],narration:"",motion:"",ai:false}));
+      if(!scenes.length) throw new Error("장면을 만들지 못했어요");
+      const target=narr&&lengthMode==="auto"?narr.dur:(lengthMode==="auto"?null:Number(lengthMode));
+      scenes=fitSecs(scenes,target);
+      setPlan({title:String(j.title||"쇼츠"),scenes});
+      setMsg(`구성 완료 — 장면 ${scenes.length}개 · ${scenes.reduce((a,s)=>a+s.sec,0).toFixed(1)}초. 아래에서 자막·순서·효과를 고친 뒤 ② 영상 만들기`);
+    }catch(e){ setMsg("구성 실패: "+e.message); }
+    setBusy("");
+  };
+  const fitSecs=(scenes,target)=>{
+    let sum=scenes.reduce((a,s)=>a+s.sec,0);
+    const goal=Math.min(60,target||sum);
+    if(sum>0&&Math.abs(sum-goal)>0.3){ const k=goal/sum; scenes=scenes.map(s=>({...s,sec:Math.round(s.sec*k*10)/10})); }
+    sum=scenes.reduce((a,s)=>a+s.sec,0);
+    if(sum>60){ const k=60/sum; scenes=scenes.map(s=>({...s,sec:Math.floor(s.sec*k*10)/10})); }
+    return scenes;
+  };
+  const upd=(i,patch)=>setPlan(p=>({...p,scenes:p.scenes.map((s,j)=>j===i?{...s,...patch}:s)}));
+  const move=(i,d)=>setPlan(p=>{ const a=[...p.scenes]; const j=i+d; if(j<0||j>=a.length) return p; [a[i],a[j]]=[a[j],a[i]]; return {...p,scenes:a}; });
+
+  // AI 움직임 클립 (기존 프록시 그대로)
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const post=async(action,payload)=>{ const r=await fetch("/api/video-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,payload})}); return r.json(); };
+  const aiClip=async(dataUrl,prompt,label)=>{
+    const img=await shortsThumb(dataUrl,1280);
+    const p=await post("replicate_create",{image:img,prompt:prompt||"subtle natural motion, slow camera push in, realistic",num_frames:80,fps:16,resolution:res==="1080"?"720p":"480p"});
+    if(p.error) throw new Error(p.error);
+    for(let i=0;i<120;i++){ await sleep(3000); setMsg(`${label} AI 움직임 만드는 중… ${(i+1)*3}초`);
+      const st=await post("replicate_status",{id:p.id});
+      if(st.status==="succeeded"){ const o=Array.isArray(st.output)?st.output[0]:st.output;
+        const b=await (await fetch(o)).blob(); return URL.createObjectURL(b); }   // 같은 출처로 만들어야 캔버스에 그릴 수 있음
+      if(st.status==="failed") throw new Error(st.error||"생성 실패");
+    }
+    throw new Error("시간 초과");
+  };
+
+  // ② 영상 만들기 (캔버스 → 녹화)
+  const render=async()=>{
+    if(!plan?.scenes?.length) return;
+    if(total>60.5){ setMsg(`전체 ${total.toFixed(1)}초 — 60초 이내로 줄여주세요`); return; }
+    setBusy("render"); setResult(null); stopRef.current=false;
+    // 소리는 버튼을 누른 바로 그 순간에 켜야 브라우저가 막지 않음 (AI 영상을 기다린 뒤에 켜면 막힐 수 있음)
+    const ac=(bgm||narr)?new (window.AudioContext||window.webkitAudioContext)():null;
+    if(ac) ac.resume().catch(()=>{});
+    try{
+      const scenes=plan.scenes.map(s=>({...s}));
+      // AI 장면 먼저
+      for(let i=0;i<scenes.length;i++){ const s=scenes[i]; if(!s.ai) continue;
+        try{ s.clipUrl=await aiClip(photoOf(s.pid).dataUrl,s.motion,`장면 ${i+1}`); }
+        catch(e){ s.clipUrl=null; setMsg(`장면 ${i+1} AI 실패(${e.message}) → 효과로 대신`); await sleep(1200); }
+      }
+      setMsg("영상 합치는 중… 이 탭을 그대로 띄워두세요 (다른 탭으로 가면 멈춰요)");
+      await document.fonts.load('900 60px "Noto Sans KR"').catch(()=>{});
+      const W=res==="1080"?1080:720, H=res==="1080"?1920:1280, FPS=30, X=0.35;
+      const cv=canvasRef.current; cv.width=W; cv.height=H; const ctx=cv.getContext("2d");
+      // 소스 준비
+      for(const s of scenes){
+        if(s.clipUrl){ const v=document.createElement("video"); v.src=s.clipUrl; v.muted=true; v.playsInline=true; v.loop=true;
+          await new Promise(r=>{ v.onloadeddata=r; v.onerror=r; }); s.video=v; }
+        s.img=await new Promise((ok,bad)=>{ const im=new Image(); im.onload=()=>ok(im); im.onerror=bad; im.src=photoOf(s.pid).dataUrl; });
+      }
+      let t0=0; scenes.forEach(s=>{ s.start=t0; t0+=Number(s.sec); }); const T=t0;
+      // 소리 (배경음악·내레이션을 올린 경우만 — 소리 없는 빈 오디오 트랙은 녹화를 망가뜨릴 수 있어서 안 넣음)
+      const srcs=[]; let dest=null;
+      if(ac){ try{ await ac.resume(); }catch(e){}
+        const t1=ac.currentTime; await sleep(250);
+        if(ac.state!=="running"||ac.currentTime<=t1){ setMsg("소리를 켤 수 없어서 소리 없이 만들어요 (스피커/오디오 장치 확인)"); await sleep(1500); }
+        else dest=ac.createMediaStreamDestination(); }
+      let bgmGain=null; const bgmLevel=narr?Math.min(bgmVol,0.15):bgmVol;
+      if(dest&&bgm){ const b=await ac.decodeAudioData(bgm.buf.slice(0)); const n=ac.createBufferSource(); n.buffer=b; n.loop=true;
+        bgmGain=ac.createGain(); bgmGain.gain.value=0; n.connect(bgmGain).connect(dest); srcs.push(n); }
+      if(dest&&narr){ const b=await ac.decodeAudioData(narr.buf.slice(0)); const n=ac.createBufferSource(); n.buffer=b; n.connect(dest); srcs.push(n); }
+      const stream=cv.captureStream(FPS); if(dest) dest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+      const mime=shortsPickMime(); const rec=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:W>800?8000000:5000000}:undefined);
+      const chunks=[]; rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
+      const done=new Promise(r=>{ rec.onstop=r; });
+
+      const cover=(src,sw,sh,s,tx,ty)=>{ const ir=sw/sh, cr=W/H; let dw,dh; if(ir>cr){ dh=H*s; dw=dh*ir; } else { dw=W*s; dh=dw/ir; }
+        ctx.drawImage(src,(W-dw)/2+tx*(dw-W)/2,(H-dh)/2+ty*(dh-H)/2,dw,dh); };
+      const drawScene=(s,lt)=>{
+        const p=Math.min(1,Math.max(0,lt/s.sec)), Z=1.14;
+        if(s.video&&s.video.readyState>=2){ cover(s.video,s.video.videoWidth,s.video.videoHeight,1.02,0,0); return; }
+        let sc=1.06,tx=0,ty=0;
+        switch(s.effect){ case"zoom-in":sc=1+(Z-1)*p;break; case"zoom-out":sc=Z-(Z-1)*p;break;
+          case"pan-left":sc=1.12;tx=0.9-1.8*p;break; case"pan-right":sc=1.12;tx=-0.9+1.8*p;break;
+          case"pan-up":sc=1.12;ty=0.9-1.8*p;break; case"pan-down":sc=1.12;ty=-0.9+1.8*p;break; }
+        cover(s.img,s.img.width,s.img.height,sc,tx,ty);
+      };
+      const drawCaption=(cap,a)=>{
+        if(!cap||!cap.text) return;
+        const lines=String(cap.text).split("\n").slice(0,2); const fs=Math.round(W*0.078);
+        ctx.save(); ctx.globalAlpha=a; ctx.textBaseline="middle"; ctx.font=`900 ${fs}px "Noto Sans KR","Malgun Gothic",sans-serif`;
+        const y0=H*0.30-(lines.length-1)*fs*0.62;
+        lines.forEach((ln,li)=>{
+          const y=y0+li*fs*1.25; const hl=cap.hl&&ln.includes(cap.hl)?cap.hl:"";
+          const parts=hl?[ln.slice(0,ln.indexOf(hl)),hl,ln.slice(ln.indexOf(hl)+hl.length)]:[ln,"",""];
+          const wsum=parts.reduce((a,t)=>a+ctx.measureText(t).width,0); let x=(W-wsum)/2;
+          parts.forEach((t,k)=>{ if(!t) return; ctx.lineJoin="round"; ctx.lineWidth=fs*0.16; ctx.strokeStyle="rgba(0,0,0,.55)";
+            ctx.shadowColor="rgba(0,0,0,.45)"; ctx.shadowBlur=fs*0.25; ctx.strokeText(t,x,y); ctx.shadowBlur=0;
+            ctx.fillStyle=k===1?accent:"#ffffff"; ctx.fillText(t,x,y); x+=ctx.measureText(t).width; });
+        });
+        ctx.restore();
+      };
+      const capAt=(s,lt)=>{ const n=s.caps.filter(c=>c.text).length; if(!n) return [null,0];
+        const k=Math.min(n-1,Math.floor(lt/(s.sec/n))); const ct=lt-k*(s.sec/n); return [s.caps.filter(c=>c.text)[k],Math.min(1,ct/0.15)]; };
+
+      rec.start(1000); srcs.forEach(n=>n.start());
+      if(bgmGain){ const a0=ac.currentTime, fo=Math.min(1.5,T/4);   // 살짝 페이드인 → 끝 1.5초 페이드아웃
+        bgmGain.gain.setValueAtTime(0,a0); bgmGain.gain.linearRampToValueAtTime(bgmLevel,a0+0.6);
+        bgmGain.gain.setValueAtTime(bgmLevel,a0+Math.max(0.7,T-fo)); bgmGain.gain.linearRampToValueAtTime(0,a0+T); } const begin=performance.now(); let cur=-1;
+      await new Promise(resolve=>{
+        const tick=()=>{
+          if(stopRef.current){ resolve(); return; }
+          const t=(performance.now()-begin)/1000; if(t>=T){ resolve(); return; }
+          let i=scenes.findIndex(s=>t<s.start+Number(s.sec)); if(i<0) i=scenes.length-1;
+          const s=scenes[i], lt=t-s.start;
+          if(i!==cur){ cur=i; if(s.video){ s.video.currentTime=0; s.video.play().catch(()=>{}); } setMsg(`영상 합치는 중… ${Math.round(t/T*100)}% (장면 ${i+1}/${scenes.length})`); }
+          ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; drawScene(s,lt);
+          const nx=scenes[i+1]; const left=Number(s.sec)-lt;
+          if(nx&&left<X){ if(nx.video&&nx.video.paused){ nx.video.currentTime=0; nx.video.play().catch(()=>{}); }
+            ctx.globalAlpha=1-left/X; drawScene(nx,0); ctx.globalAlpha=1; }
+          if(subs){ const [c,a]=capAt(s,lt); drawCaption(c,a*(nx&&left<X?left/X:1)); }
+          requestAnimationFrame(tick);
+        };
+        tick();
+      });
+      srcs.forEach(n=>{ try{ n.stop(); }catch(e){} }); rec.stop(); await done; if(ac) ac.close().catch(()=>{});
+      scenes.forEach(s=>s.video&&s.video.pause());
+      if(stopRef.current){ setMsg("멈췄어요"); setBusy(""); return; }
+      const type=(mime||"video/webm").split(";")[0]; const ext=type.includes("mp4")?"mp4":"webm";
+      const blob=new Blob(chunks,{type});
+      setResult({url:URL.createObjectURL(blob),name:`${plan.title.replace(/[\\/:*?"<>|]/g,"")}_쇼츠.${ext}`,ext,size:blob.size});
+      setMsg(`완료 — ${T.toFixed(1)}초 · ${W}x${H} · ${ext.toUpperCase()}`+(ext==="webm"?" (이 크롬은 mp4 녹화를 지원하지 않아 webm으로 저장)":""));
+    }catch(e){ setMsg("영상 만들기 실패: "+e.message); if(ac) ac.close().catch(()=>{}); }
+    setBusy("");
+  };
+
+  const saveThumb=async()=>{
+    if(!plan?.scenes?.length) return;
+    const s=plan.scenes[0]; const W=1080,H=1920; const c=document.createElement("canvas"); c.width=W; c.height=H; const x=c.getContext("2d");
+    await document.fonts.load('900 60px "Noto Sans KR"').catch(()=>{});
+    const im=await new Promise(ok=>{ const i=new Image(); i.onload=()=>ok(i); i.src=photoOf(s.pid).dataUrl; });
+    const ir=im.width/im.height, cr=W/H; let dw,dh; if(ir>cr){ dh=H; dw=dh*ir; } else { dw=W; dh=dw/ir; }
+    x.drawImage(im,(W-dw)/2,(H-dh)/2,dw,dh);
+    const cap=s.caps.find(c=>c.text)||{text:plan.title,hl:""}; const fs=86; x.font=`900 ${fs}px "Noto Sans KR",sans-serif`; x.textAlign="center"; x.textBaseline="middle";
+    String(cap.text).split("\n").slice(0,2).forEach((ln,li)=>{ const y=H*0.30+li*fs*1.25; x.lineWidth=14; x.strokeStyle="rgba(0,0,0,.6)"; x.lineJoin="round"; x.strokeText(ln,W/2,y); x.fillStyle="#fff"; x.fillText(ln,W/2,y); });
+    const a=document.createElement("a"); a.href=c.toDataURL("image/png"); a.download=`${plan.title}_썸네일.png`; a.click();
+  };
+  const script=plan?plan.scenes.map((s,i)=>`${i+1}. ${s.narration||s.caps.map(c=>c.text.replace(/\n/g," ")).join(" ")}`).join("\n"):"";
+
+  const S={card:{background:"#0d1117",border:"1px solid #21262d",borderRadius:"12px",padding:"16px",marginBottom:"14px"},
+    h:{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"},
+    label:{fontSize:"13px",color:"#8b949e",fontWeight:600,marginBottom:"5px",display:"block"},
+    input:{width:"100%",background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"8px 10px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none",boxSizing:"border-box"},
+    btn:(c="#1f6feb",dis)=>({padding:"10px 18px",border:"none",borderRadius:"8px",background:c,color:"#fff",fontSize:"15px",fontWeight:700,cursor:dis?"not-allowed":"pointer",opacity:dis?.5:1}),
+    small:{padding:"3px 8px",border:"1px solid #30363d",borderRadius:"6px",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px"}};
+
+  return <div>
+    <div style={S.card}>
+      <div style={S.h}>📸 사진 + 📝 블로그 글 <span style={{color:"#484f58",fontWeight:400,fontSize:"13px"}}>(사진 3~12장 권장 · 세로 9:16 쇼츠/릴스로 만들어요)</span></div>
+      <div onClick={()=>fileRef.current.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();addPhotos(e.dataTransfer.files);}}
+        style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"18px",textAlign:"center",cursor:"pointer",background:"#161b22",color:"#8b949e",fontSize:"14px"}}>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{addPhotos(e.target.files); e.target.value="";}}/>
+        클릭하거나 드래그해서 블로그 사진 올리기 {photos.length?`(${photos.length}장)`:""}
+      </div>
+      {photos.length>0&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"10px"}}>
+        {photos.map((p,i)=><div key={p.id} style={{position:"relative"}}>
+          <img src={p.dataUrl} alt="" style={{width:"64px",height:"90px",objectFit:"cover",borderRadius:"6px",display:"block"}}/>
+          <span style={{position:"absolute",left:"3px",top:"2px",fontSize:"11px",color:"#fff",textShadow:"0 0 3px #000"}}>{i+1}</span>
+          <button onClick={()=>setPhotos(a=>a.filter(x=>x.id!==p.id))} style={{position:"absolute",right:"2px",top:"2px",background:"rgba(0,0,0,.7)",border:"none",color:"#fff",borderRadius:"50%",width:"18px",height:"18px",cursor:"pointer",fontSize:"11px"}}>✕</button>
+        </div>)}
+      </div>}
+      <label style={{...S.label,marginTop:"12px"}}>블로그 본문 (그대로 붙여넣기)</label>
+      <textarea value={text} onChange={e=>setText(e.target.value)} rows={6} placeholder="블로그에 올린 글 내용을 붙여넣으세요" style={{...S.input,resize:"vertical",lineHeight:1.6}}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:"10px",marginTop:"10px"}}>
+        <div><label style={S.label}>영상 길이</label>
+          <select style={S.input} value={lengthMode} onChange={e=>setLengthMode(e.target.value)}>
+            <option value="auto">자동 (사진·내용에 맞춰, 최대 60초)</option>
+            {[15,20,30,45,60].map(n=><option key={n} value={n}>{n}초</option>)}
+          </select></div>
+        <div><label style={S.label}>해상도 (9:16)</label>
+          <select style={S.input} value={res} onChange={e=>setRes(e.target.value)}>
+            <option value="1080">1080×1920 (권장)</option><option value="720">720×1280 (가벼움)</option>
+          </select></div>
+        <div><label style={S.label}>자막</label>
+          <label style={{...S.input,display:"flex",alignItems:"center",gap:"6px",cursor:"pointer"}}><input type="checkbox" checked={subs} onChange={e=>setSubs(e.target.checked)}/> 자막 넣기</label></div>
+        <div><label style={S.label}>강조 색</label>
+          <select style={S.input} value={accent} onChange={e=>setAccent(e.target.value)}>{SHORTS_ACCENTS.map(([c,l])=><option key={c} value={c}>{l}</option>)}</select></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"10px",marginTop:"10px"}}>
+        <div><label style={S.label}>배경음악</label>
+          <select style={S.input} value={bgmCat} onChange={e=>pickBgm(e.target.value)}>
+            <option value="none">없음</option>
+            {Object.entries(bgmList?.cats||{}).map(([k,c])=><option key={k} value={k}>{c.label} ({c.tracks.length}곡 중 랜덤)</option>)}
+            <option value="upload">직접 올리기</option>
+          </select>
+          {bgmCat==="upload"&&<input type="file" accept="audio/*" onChange={e=>readAudio(e.target.files[0],setBgm)} style={{...S.input,padding:"6px",marginTop:"6px"}}/>}
+          {bgm&&<div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px",lineHeight:1.8}}>
+            🎵 {bgm.name}{bgm.dur?` · ${Math.round(bgm.dur)}초`:""}
+            {bgm.url&&<> <button style={S.small} onClick={()=>pickBgm(bgmCat,bgm.url)}>🔀 다른 곡</button></>}
+            {" "}<button style={S.small} onClick={()=>{ setBgm(null); if(bgmCat!=="upload") pickBgm("none"); }}>빼기</button>
+            <div>음량 <input type="range" min="0.05" max="0.6" step="0.05" value={bgmVol} onChange={e=>setBgmVol(Number(e.target.value))} style={{verticalAlign:"middle"}}/></div>
+            {bgm.url&&<audio src={bgm.url} controls style={{width:"100%",height:"32px"}}/>}
+            {bgm.credit&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"6px",padding:"6px 8px",color:"#d29922"}}>
+              출처 표기 필요: {bgm.credit} <button style={S.small} onClick={()=>{ try{ navigator.clipboard.writeText(bgm.credit); setMsg("출처 문구를 복사했어요 — 쇼츠 설명란에 붙여넣으세요"); }catch(e){} }}>📋 복사</button></div>}
+          </div>}</div>
+        <div><label style={S.label}>내레이션 음성 (선택 · 보이스박스 등으로 만든 파일)</label>
+          <input type="file" accept="audio/*" onChange={e=>readAudio(e.target.files[0],setNarr)} style={{...S.input,padding:"6px"}}/>
+          {narr&&<div style={{fontSize:"12px",color:"#8b949e",marginTop:"4px"}}>{narr.name} · {narr.dur.toFixed(1)}초 {plan&&<button style={S.small} onClick={()=>setPlan(p=>({...p,scenes:fitSecs(p.scenes,narr.dur)}))}>장면 길이를 음성에 맞추기</button>} <button style={S.small} onClick={()=>setNarr(null)}>빼기</button></div>}</div>
+      </div>
+      <div style={{display:"flex",gap:"8px",marginTop:"12px",flexWrap:"wrap"}}>
+        <button style={S.btn("#1f6feb",!!busy)} disabled={!!busy} onClick={makePlan}>{busy==="plan"?"구성 중…":"① 장면 구성 만들기"}</button>
+        <button style={S.btn("#238636",!!busy||!plan)} disabled={!!busy||!plan} onClick={render}>{busy==="render"?"만드는 중…":"② 영상 만들기"}</button>
+        {busy==="render"&&<button style={S.btn("#da3633")} onClick={()=>{stopRef.current=true;}}>멈추기</button>}
+      </div>
+      {msg&&<div style={{marginTop:"10px",fontSize:"14px",color:/실패|줄여/.test(msg)?"#f85149":"#d29922"}}>{msg}</div>}
+    </div>
+
+    {plan&&<div style={S.card}>
+      <div style={{...S.h,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px"}}>
+        <span>🎬 장면 구성 — 장면 {plan.scenes.length}개 · <span style={{color:total>60.5?"#f85149":"#3fb950"}}>{total.toFixed(1)}초</span></span>
+        <span style={{display:"flex",gap:"6px"}}>
+          <button style={S.small} onClick={()=>{ try{ navigator.clipboard.writeText(script); setMsg("내레이션 대본을 복사했어요 — 보이스박스에 붙여넣어 음성을 만들고, 위 '내레이션 음성'에 올리면 돼요"); }catch(e){} }}>📋 내레이션 대본 복사</button>
+          <button style={S.small} onClick={saveThumb}>🖼 썸네일 저장</button>
+        </span>
+      </div>
+      <input value={plan.title} onChange={e=>setPlan(p=>({...p,title:e.target.value}))} style={{...S.input,marginBottom:"10px"}}/>
+      {plan.scenes.map((s,i)=><div key={i} style={{display:"flex",gap:"10px",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"10px",marginBottom:"8px"}}>
+        <img src={photoOf(s.pid)?.dataUrl} alt="" style={{width:"60px",height:"106px",objectFit:"cover",borderRadius:"6px",flexShrink:0}}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap",marginBottom:"6px"}}>
+            <b style={{color:"#e6edf3",fontSize:"14px"}}>장면 {i+1}</b>
+            <input type="number" step="0.5" min="1.5" max="10" value={s.sec} onChange={e=>upd(i,{sec:Number(e.target.value)})} style={{...S.input,width:"70px",padding:"4px 6px"}}/><span style={{fontSize:"12px",color:"#8b949e"}}>초</span>
+            <select value={s.effect} onChange={e=>upd(i,{effect:e.target.value})} style={{...S.input,width:"auto",padding:"4px 6px"}}>{SHORTS_EFFECTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+            <label style={{fontSize:"12px",color:s.ai?"#d2a8ff":"#8b949e",cursor:"pointer"}}><input type="checkbox" checked={s.ai} onChange={e=>upd(i,{ai:e.target.checked})}/> AI 움직임{s.suggest?" (추천)":""}</label>
+            <span style={{marginLeft:"auto",display:"flex",gap:"4px"}}>
+              <button style={S.small} onClick={()=>move(i,-1)}>↑</button><button style={S.small} onClick={()=>move(i,1)}>↓</button>
+              <button style={S.small} onClick={()=>setPlan(p=>({...p,scenes:p.scenes.filter((_,j)=>j!==i)}))}>삭제</button></span>
+          </div>
+          {[0,1].map(k=><div key={k} style={{display:"flex",gap:"6px",marginBottom:"4px"}}>
+            <input value={(s.caps[k]?.text||"").replace(/\n/g," / ")} placeholder={`자막 ${k+1} (줄바꿈은 " / ")`}
+              onChange={e=>{ const caps=[...s.caps]; caps[k]={...(caps[k]||{hl:""}),text:e.target.value.replace(/\s*\/\s*/g,"\n")}; upd(i,{caps}); }} style={{...S.input,padding:"5px 8px"}}/>
+            <input value={s.caps[k]?.hl||""} placeholder="강조 단어" onChange={e=>{ const caps=[...s.caps]; caps[k]={...(caps[k]||{text:""}),hl:e.target.value}; upd(i,{caps}); }} style={{...S.input,width:"110px",padding:"5px 8px",color:accent}}/>
+          </div>)}
+          <input value={s.narration} placeholder="내레이션 문장" onChange={e=>upd(i,{narration:e.target.value})} style={{...S.input,padding:"5px 8px",color:"#8b949e",fontSize:"13px"}}/>
+          {s.ai&&<input value={s.motion} placeholder="AI 움직임 프롬프트 (영어)" onChange={e=>upd(i,{motion:e.target.value})} style={{...S.input,padding:"5px 8px",color:"#d2a8ff",fontSize:"13px",marginTop:"4px"}}/>}
+        </div>
+      </div>)}
+      <div style={{fontSize:"12px",color:"#484f58",lineHeight:1.7}}>· AI 움직임은 장면마다 Replicate 비용이 들고 1~3분 걸려요. 체크 안 한 장면은 줌·패닝 효과(무료)로 만들어요.<br/>· 영상 만들기는 실제 길이만큼 걸려요 (30초 영상 ≈ 30초). 그동안 이 탭을 띄워두세요.</div>
+    </div>}
+
+    {result&&<div style={S.card}>
+      <div style={{...S.h,color:"#3fb950"}}>✅ 완성 — {(result.size/1048576).toFixed(1)}MB</div>
+      <video src={result.url} controls style={{width:"240px",maxWidth:"100%",borderRadius:"10px",display:"block",background:"#000"}}/>
+      <a href={result.url} download={result.name} style={{display:"inline-block",marginTop:"10px",padding:"9px 16px",background:"#21262d",color:"#58a6ff",borderRadius:"8px",textDecoration:"none",fontWeight:700}}>⬇️ {result.name} 다운로드</a>
+    </div>}
+    {/* 만드는 동안 미리보기로 보여줌 (화면에 있어야 녹화 프레임이 안정적으로 나옴) */}
+    <div style={busy==="render"?S.card:{position:"fixed",left:"-10000px",top:0}}>
+      {busy==="render"&&<div style={{...S.h,color:"#d29922"}}>⏺ 만드는 중 미리보기</div>}
+      <canvas ref={canvasRef} style={{width:"200px",height:"auto",borderRadius:"10px",display:"block",background:"#000"}}/>
+    </div>
+  </div>;
+}
+
+// ─── TAB: AI 영상 생성 — 기본은 '블로그 글로 쇼츠', 예전 '이미지별 AI 영상'도 그대로 ─────────
+function VideoMakeAiTab(){
+  const [mode,setMode]=React.useState(()=>{ try{ return localStorage.getItem("vm_ai_mode")||"blog"; }catch(e){ return "blog"; } });
+  const pick=m=>{ setMode(m); try{ localStorage.setItem("vm_ai_mode",m); }catch(e){} };
+  const tab=on=>({padding:"8px 14px",borderRadius:"8px",border:"1px solid "+(on?"#1f6feb":"#30363d"),background:on?"#1f6feb22":"#161b22",color:on?"#58a6ff":"#8b949e",cursor:"pointer",fontSize:"14px",fontWeight:700});
+  return <div>
+    <div style={{display:"flex",gap:"8px",marginBottom:"14px",flexWrap:"wrap"}}>
+      <button style={tab(mode==="blog")} onClick={()=>pick("blog")}>📝 블로그 글로 쇼츠 만들기</button>
+      <button style={tab(mode==="single")} onClick={()=>pick("single")}>🤖 이미지별 AI 영상</button>
+    </div>
+    {mode==="blog"?<BlogShortsMaker/>:<VideoMakeAiSingle/>}
+  </div>;
+}
+
+// ─── 이미지별 AI 영상 (예전 방식) ──────────────────────────────────────────
+function VideoMakeAiSingle() {
   const [replicateKey, setReplicateKey] = React.useState("");
   const [pixverseKey, setPixverseKey] = React.useState("");
   const [preferApi, setPreferApi] = React.useState("replicate");
