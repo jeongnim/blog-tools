@@ -9934,17 +9934,17 @@ function GscTab(){
         글 목록 {fmtT(store[blog]?.dataAt)} 불러옴{perf?<> · 검색 실적 {fmtD(perf.start)} ~ {fmtD(perf.end)} ({fmtT(store[blog]?.perfAt)} 불러옴, 구글 반영까지 2~3일 걸려요)</>:" · 검색 실적은 아직 안 불러옴"}
       </div>
       <div style={{overflowX:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse"}}>
+        <table style={{width:"100%",minWidth:perf?"980px":"760px",borderCollapse:"collapse"}}>
           <thead><tr><th style={th}>#</th><th style={th}>글</th><th style={th}>발행</th><th style={th}>색인 상태</th><th style={th}>마지막 크롤링</th>
             {perf&&<><th style={th}>노출</th><th style={th}>클릭</th><th style={th}>평균 순위</th><th style={th}>상위 검색어</th></>}<th style={th}></th></tr></thead>
           <tbody>{posts.map((p,i)=>{
             const r=cache[p.key], b=gscBadge(r), pf=perf?.pages?.[p.key];
             return <tr key={p.key}>
               <td style={{...td,color:"#484f58"}}>{i+1}</td>
-              <td style={{...td,maxWidth:"360px"}}><a href={p.url} target="_blank" rel="noreferrer" style={{color:"#c9d1d9",textDecoration:"none"}}>{p.title}</a>
+              <td style={{...td,minWidth:"240px",maxWidth:"380px",wordBreak:"keep-all",lineHeight:1.5}}><a href={p.url} target="_blank" rel="noreferrer" style={{color:"#c9d1d9",textDecoration:"none"}}>{p.title}</a>
                 {r?.error&&<div style={{color:"#f85149",fontSize:"12px",marginTop:"3px"}}>{r.error}</div>}</td>
               <td style={{...td,whiteSpace:"nowrap"}}>{fmtD(p.date)}</td>
-              <td style={{...td,whiteSpace:"nowrap"}}><span style={{color:b.c,fontWeight:600}}>{b.t}</span>
+              <td style={{...td,minWidth:"130px",maxWidth:"210px",wordBreak:"keep-all",lineHeight:1.5}}><span style={{color:b.c,fontWeight:600}}>{b.t}</span>
                 {r?.at&&<div style={{color:"#484f58",fontSize:"11px"}}>{new Date(r.at).toLocaleDateString("ko-KR")} 검사</div>}</td>
               <td style={{...td,whiteSpace:"nowrap"}}>{fmtD(r?.lastCrawl)}</td>
               {perf&&<><td style={td}>{pf?pf.impressions.toLocaleString():"-"}</td><td style={td}>{pf?pf.clicks.toLocaleString():"-"}</td>
