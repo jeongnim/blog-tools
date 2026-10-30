@@ -10381,7 +10381,6 @@ function GscTab(){
 // ─── TAB: 동영상 다운로드 (유튜브·틱톡) ──────────────────────────────────────
 // 사이트가 1회용 허가를 만들고 → 이 사이트에 연결된 PC(집/회사)의 dl_server.py 가 받아서 → 브라우저로 바로 내려줌
 function VideoDownloadTab(){
-  const [platform,setPlatform]=React.useState("youtube");
   const [url,setUrl]=React.useState("");
   const [quality,setQuality]=React.useState("best");
   const [pc,setPc]=React.useState(null);        // {ok,name,ytdlp,ffmpeg} | {down:true} | {nocfg:true}
@@ -10404,11 +10403,10 @@ function VideoDownloadTab(){
   };
   React.useEffect(()=>{ checkPc(); },[]);
 
-  const onUrl=v=>{ setUrl(v); if(/tiktok\.com/i.test(v)) setPlatform("tiktok"); else if(/youtu\.?be/i.test(v)) setPlatform("youtube"); };
+  const kind=/tiktok\.com/i.test(url)?"tiktok":/(youtube\.com|youtu\.be)/i.test(url)?"youtube":(url.trim()?"other":"");
   const start=async()=>{
     const u=url.trim(); if(!u){ setMsg("주소를 넣어주세요"); return; }
-    if(platform==="youtube"&&!/youtu\.?be/i.test(u)){ setMsg("유튜브 주소가 아니에요"); return; }
-    if(platform==="tiktok"&&!/tiktok\.com/i.test(u)){ setMsg("틱톡 주소가 아니에요"); return; }
+    if(kind==="other"){ setMsg("❌ 유튜브·틱톡 주소만 받을 수 있어요"); return; }
     setBusy(true); setMsg(""); setJob({state:"run",pct:0,msg:"준비 중"});
     try{
       const base=pc?.ok?pc.base:await checkPc();
@@ -10437,20 +10435,19 @@ function VideoDownloadTab(){
   const pcLine=!pc?<span style={{color:"#8b949e"}}>다운로드 PC 확인 중…</span>
     :pc.nocfg?<span style={{color:"#f85149"}}>이 사이트에 다운로드 PC가 연결 안 됨 (Vercel 환경변수 DL_PROXY_URL · DL_SECRET 필요)</span>
     :pc.down?<span style={{color:"#f85149"}}>다운로드 PC가 꺼져 있어요 — 그 PC를 켜고 다운로드 서버가 돌고 있는지 확인하세요</span>
-    :<span style={{color:"#3fb950"}}>● {pc.name} 연결됨 · yt-dlp {pc.ytdlp||"?"}{pc.ffmpeg?"":" · ffmpeg 없음(고화질·mp3 안 될 수 있음)"}</span>;
+    :!pc.ver||pc.ver<2?<span style={{color:"#d29922"}}>● {pc.name} 연결됨 — 그런데 예전 버전 서버예요. 새 dl_server.py 로 바꾼 뒤 서버를 껐다 켜주세요 (안 그러면 '코덱 없음' 파일이 나올 수 있어요)</span>
+    :<span style={{color:"#3fb950"}}>● {pc.name} 연결됨 · 서버 v{pc.ver} · yt-dlp {pc.ytdlp||"?"}{pc.ffmpeg?"":" · ffmpeg 없음(고화질·mp3 안 될 수 있음)"}</span>;
 
   return <div>
     <div style={S.card}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px",marginBottom:"12px",fontSize:"13px"}}>
         {pcLine}<button onClick={checkPc} style={{...S.seg(false),padding:"4px 10px",fontSize:"12px"}}>다시 확인</button>
       </div>
-      <div style={{display:"flex",gap:"8px",marginBottom:"10px"}}>
-        <button style={S.seg(platform==="youtube")} onClick={()=>setPlatform("youtube")}>▶ 유튜브</button>
-        <button style={S.seg(platform==="tiktok")} onClick={()=>setPlatform("tiktok")}>♪ 틱톡</button>
-      </div>
-      <label style={S.label}>영상 주소</label>
-      <input value={url} onChange={e=>onUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!busy&&start()}
-        placeholder={platform==="youtube"?"https://www.youtube.com/watch?v=… 또는 https://youtube.com/shorts/…":"https://www.tiktok.com/@아이디/video/…"} style={S.input}/>
+      <label style={S.label}>영상 주소 (유튜브·틱톡 — 붙여넣으면 자동으로 알아봐요)</label>
+      <input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!busy&&start()}
+        placeholder="유튜브·틱톡 영상 주소 붙여넣기" style={S.input}/>
+      {kind&&<div style={{fontSize:"13px",marginTop:"5px",color:kind==="other"?"#f85149":"#8b949e"}}>
+        {kind==="youtube"?"▶ 유튜브 주소":kind==="tiktok"?"♪ 틱톡 주소":"유튜브·틱톡 주소만 받을 수 있어요"}</div>}
       <div style={{display:"flex",gap:"10px",alignItems:"flex-end",marginTop:"10px",flexWrap:"wrap"}}>
         <div style={{minWidth:"200px"}}><label style={S.label}>화질</label>
           <select value={quality} onChange={e=>setQuality(e.target.value)} style={S.input}>
