@@ -10457,6 +10457,8 @@ function VideoDownloadTab(){
             <option value="best">최고화질 (mp4)</option><option value="720">720p (mp4 · 가벼움)</option><option value="audio">소리만 (mp3)</option>
           </select></div>
         <button disabled={busy} onClick={start} style={{padding:"10px 22px",border:"none",borderRadius:"8px",background:busy?"#21262d":"#1f6feb",color:"#fff",fontWeight:700,fontSize:"15px",cursor:busy?"wait":"pointer"}}>{busy?"받는 중…":"⬇️ 다운로드"}</button>
+        <button disabled={busy} onClick={()=>{ setUrl(""); setJob(null); setMsg(""); setHist([]); try{ localStorage.removeItem("vdl_hist"); }catch(e){} }}
+          style={{padding:"10px 16px",border:"1px solid #30363d",borderRadius:"8px",background:"#21262d",color:"#c9d1d9",fontWeight:700,fontSize:"15px",cursor:busy?"not-allowed":"pointer"}}>🗑 초기화</button>
       </div>
       {job&&job.state==="run"&&<div style={{marginTop:"12px"}}>
         <div style={{fontSize:"13px",color:"#8b949e",marginBottom:"4px"}}>{job.msg} {job.pct?`${Math.round(job.pct)}%`:""}</div>
@@ -10465,6 +10467,8 @@ function VideoDownloadTab(){
       {msg&&<div style={{marginTop:"10px",fontSize:"14px",color:msg.startsWith("❌")?"#f85149":"#3fb950"}}>{msg}</div>}
       <div style={{fontSize:"12px",color:"#484f58",marginTop:"12px",lineHeight:1.7}}>
         · 영상은 이 사이트에 연결된 PC가 받아서 바로 내려줘요 (개인 사이트 = 집 PC, 회사 사이트 = 회사 PC). 그 PC가 켜져 있어야 해요.<br/>
+        · 화질 좋은 H.265 영상은 PC에서 바로 열리도록 H.264로 바꿔서 내려줘요 (변환이 필요하면 몇십 초 더 걸려요).<br/>
+        · [초기화]는 입력칸·진행 상태·최근 받은 영상 목록을 모두 지워요.<br/>
         · 참고·분석용으로만 쓰세요 — 남의 영상을 그대로 다시 올리면 저작권 문제가 돼요.
       </div>
     </div>
