@@ -9559,6 +9559,15 @@ function VideoMakeAiTab(){
   </div>;
 }
 
+// 움직임 옵션 — 고르면 영어 프롬프트가 자동으로 들어감 (칸에서 고쳐 쓸 수 있음)
+const VM_MOTION_PRESETS=[
+  {id:"drone",label:"🚁 드론 항공샷",prompt:"Aerial drone shot: the camera smoothly rises upward and pulls back, revealing a wide bird's-eye view of the whole scene below, steady cinematic drone movement, realistic, natural lighting, no text"},
+  {id:"orbit",label:"🔄 드론 회전",prompt:"Drone orbit shot: the camera slowly circles around the main subject at a constant height, smooth parallax, steady cinematic movement, realistic, no text"},
+  {id:"push",label:"🔍 천천히 다가가기",prompt:"Slow push-in: the camera gently moves forward toward the main subject, smooth and steady, subtle natural motion in the scene, realistic, no text"},
+  {id:"cine",label:"🎬 시네마틱",prompt:"Cinematic slow lateral dolly move with gentle parallax and depth, subtle natural motion, soft film look, realistic, no text"},
+];
+const vmPresetOf=prompt=>(VM_MOTION_PRESETS.find(p=>p.prompt===prompt)||{}).id||"";
+
 // ─── 이미지별 AI 영상 (예전 방식) ──────────────────────────────────────────
 function VideoMakeAiSingle() {
   const [replicateKey, setReplicateKey] = React.useState("");
@@ -9729,6 +9738,11 @@ function VideoMakeAiSingle() {
         {images.map((img,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden",position:"relative"}}>
           <button onClick={()=>setImages(prev=>prev.filter((_,j)=>j!==i))} style={{position:"absolute",top:"5px",right:"5px",background:"rgba(0,0,0,.7)",border:"none",borderRadius:"50%",width:"20px",height:"20px",color:"#fff",cursor:"pointer",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
           <img src={img.dataUrl} alt={img.name} style={{width:"100%",height:"90px",objectFit:"cover",display:"block"}} />
+          <select value={vmPresetOf(img.prompt)} onChange={e=>{ const pr=VM_MOTION_PRESETS.find(p=>p.id===e.target.value); setImages(prev=>prev.map((p,j)=>j===i?{...p,prompt:pr?pr.prompt:""}:p)); }}
+            style={{width:"100%",background:"#0d1117",border:"none",borderTop:"1px solid #30363d",padding:"5px 6px",color:"#c9d1d9",fontSize:"12px",outline:"none"}}>
+            <option value="">움직임: 공통 설정 따름</option>
+            {VM_MOTION_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
           <input value={img.prompt} onChange={e=>setImages(prev=>prev.map((p,j)=>j===i?{...p,prompt:e.target.value}:p))}
             placeholder="개별 프롬프트 (선택)"
             style={{width:"100%",background:"transparent",border:"none",borderTop:"1px solid #30363d",padding:"6px 8px",color:"#8b949e",fontSize:"13px",outline:"none",boxSizing:"border-box"}} />
@@ -9749,6 +9763,13 @@ function VideoMakeAiSingle() {
             <option value="720p">720p (권장)</option><option value="480p">480p (빠름)</option>
           </select></div>
       </div>
+      <label style={S.label}>움직임 옵션 (고르면 아래 프롬프트가 자동으로 채워져요)</label>
+      <select style={{...S.input,marginBottom:"10px"}} value={vmPresetOf(globalPrompt)}
+        onChange={e=>{ const pr=VM_MOTION_PRESETS.find(p=>p.id===e.target.value); setGlobalPrompt(pr?pr.prompt:""); }}>
+        <option value="">직접 입력</option>
+        {VM_MOTION_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
+      </select>
+      {vmPresetOf(globalPrompt)==="drone"&&<div style={{fontSize:"12px",color:"#d29922",marginBottom:"8px"}}>· 드론 항공샷은 풍경·건물처럼 넓게 찍은 사진에서 잘 나와요. 가까이 찍은 사진은 위로 빠질 때 가장자리가 어색할 수 있어요.</div>}
       <label style={S.label}>공통 프롬프트 (선택 · 비우면 AI 자동 분석)</label>
       <textarea value={globalPrompt} onChange={e=>setGlobalPrompt(e.target.value)}
         placeholder="예: cinematic, slow motion, product showcase, smooth camera movement"
