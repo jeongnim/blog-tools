@@ -644,6 +644,7 @@ const VIDEO_SUBTABS=[
   {id:"videomake-ai",  icon:"🤖", label:"AI 영상 생성"},
   {id:"videomake-ken", icon:"✨", label:"켄번스 효과"},
   {id:"videomake-sub", icon:"💬", label:"자막 + 음성"},
+  {id:"videodl", icon:"⬇️", label:"동영상 다운로드"},
 ];
 
 // 글쓰기 서브탭
@@ -10376,7 +10377,108 @@ function GscTab(){
   </div>;
 }
 
-const TOOL_MAP={gsc:GscTab,keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:LocalImageTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab};
+
+// ─── TAB: 동영상 다운로드 (유튜브·틱톡) ──────────────────────────────────────
+// 사이트가 1회용 허가를 만들고 → 이 사이트에 연결된 PC(집/회사)의 dl_server.py 가 받아서 → 브라우저로 바로 내려줌
+function VideoDownloadTab(){
+  const [platform,setPlatform]=React.useState("youtube");
+  const [url,setUrl]=React.useState("");
+  const [quality,setQuality]=React.useState("best");
+  const [pc,setPc]=React.useState(null);        // {ok,name,ytdlp,ffmpeg} | {down:true} | {nocfg:true}
+  const [job,setJob]=React.useState(null);      // {state,pct,msg,name,size}
+  const [msg,setMsg]=React.useState("");
+  const [busy,setBusy]=React.useState(false);
+  const [hist,setHist]=React.useState(()=>{ try{ return JSON.parse(localStorage.getItem("vdl_hist")||"[]"); }catch(e){ return []; } });
+  const api=async body=>{ const r=await fetch("/api/video-dl",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); return r.json(); };
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+  const checkPc=async()=>{
+    setPc(null);
+    try{
+      const info=await api({action:"info"});
+      if(!info.configured){ setPc({nocfg:true}); return null; }
+      const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),6000);
+      const h=await (await fetch(info.base+"/health",{signal:ctl.signal,cache:"no-store"})).json(); clearTimeout(t);
+      setPc({...h,base:info.base}); return info.base;
+    }catch(e){ setPc({down:true}); return null; }
+  };
+  React.useEffect(()=>{ checkPc(); },[]);
+
+  const onUrl=v=>{ setUrl(v); if(/tiktok\.com/i.test(v)) setPlatform("tiktok"); else if(/youtu\.?be/i.test(v)) setPlatform("youtube"); };
+  const start=async()=>{
+    const u=url.trim(); if(!u){ setMsg("주소를 넣어주세요"); return; }
+    if(platform==="youtube"&&!/youtu\.?be/i.test(u)){ setMsg("유튜브 주소가 아니에요"); return; }
+    if(platform==="tiktok"&&!/tiktok\.com/i.test(u)){ setMsg("틱톡 주소가 아니에요"); return; }
+    setBusy(true); setMsg(""); setJob({state:"run",pct:0,msg:"준비 중"});
+    try{
+      const base=pc?.ok?pc.base:await checkPc();
+      if(!base) throw new Error("다운로드 PC가 꺼져 있거나 다운로드 서버가 안 켜져 있어요");
+      const s=await api({action:"sign",url:u,quality});
+      if(s.error) throw new Error(s.error);
+      const q=`u=${encodeURIComponent(s.u)}&q=${s.q}&exp=${s.exp}&sig=${s.sig}`;
+      const p=await (await fetch(`${s.base}/prepare?${q}`,{cache:"no-store"})).json();
+      if(p.error) throw new Error(p.error);
+      let st={};
+      for(let i=0;i<600;i++){ await sleep(1500);
+        st=await (await fetch(`${s.base}/status?id=${p.id}`,{cache:"no-store"})).json();
+        setJob(st); if(st.state!=="run") break; }
+      if(st.state!=="done") throw new Error(st.msg||st.error||"받기 실패");
+      const a=document.createElement("a"); a.href=`${s.base}/file?id=${p.id}`; a.download=st.name||""; document.body.appendChild(a); a.click(); a.remove();
+      const h=[{t:Date.now(),url:u,name:st.name,size:st.size},...hist].slice(0,15); setHist(h); try{ localStorage.setItem("vdl_hist",JSON.stringify(h)); }catch(e){}
+      setMsg(`✅ 다운로드 시작 — ${st.name} (${((st.size||0)/1048576).toFixed(1)}MB). 브라우저 다운로드 목록을 확인하세요.`);
+    }catch(e){ setMsg("❌ "+e.message); setJob(null); }
+    setBusy(false);
+  };
+
+  const S={card:{background:"#0d1117",border:"1px solid #21262d",borderRadius:"12px",padding:"16px",marginBottom:"14px"},
+    label:{fontSize:"13px",color:"#8b949e",fontWeight:600,marginBottom:"5px",display:"block"},
+    input:{width:"100%",background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"9px 12px",color:"#e6edf3",fontSize:"15px",outline:"none",boxSizing:"border-box",fontFamily:"'Noto Sans KR',sans-serif"},
+    seg:on=>({padding:"8px 16px",borderRadius:"8px",border:"1px solid "+(on?"#1f6feb":"#30363d"),background:on?"#1f6feb22":"#161b22",color:on?"#58a6ff":"#8b949e",cursor:"pointer",fontWeight:700,fontSize:"14px"})};
+  const pcLine=!pc?<span style={{color:"#8b949e"}}>다운로드 PC 확인 중…</span>
+    :pc.nocfg?<span style={{color:"#f85149"}}>이 사이트에 다운로드 PC가 연결 안 됨 (Vercel 환경변수 DL_PROXY_URL · DL_SECRET 필요)</span>
+    :pc.down?<span style={{color:"#f85149"}}>다운로드 PC가 꺼져 있어요 — 그 PC를 켜고 다운로드 서버가 돌고 있는지 확인하세요</span>
+    :<span style={{color:"#3fb950"}}>● {pc.name} 연결됨 · yt-dlp {pc.ytdlp||"?"}{pc.ffmpeg?"":" · ffmpeg 없음(고화질·mp3 안 될 수 있음)"}</span>;
+
+  return <div>
+    <div style={S.card}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px",marginBottom:"12px",fontSize:"13px"}}>
+        {pcLine}<button onClick={checkPc} style={{...S.seg(false),padding:"4px 10px",fontSize:"12px"}}>다시 확인</button>
+      </div>
+      <div style={{display:"flex",gap:"8px",marginBottom:"10px"}}>
+        <button style={S.seg(platform==="youtube")} onClick={()=>setPlatform("youtube")}>▶ 유튜브</button>
+        <button style={S.seg(platform==="tiktok")} onClick={()=>setPlatform("tiktok")}>♪ 틱톡</button>
+      </div>
+      <label style={S.label}>영상 주소</label>
+      <input value={url} onChange={e=>onUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!busy&&start()}
+        placeholder={platform==="youtube"?"https://www.youtube.com/watch?v=… 또는 https://youtube.com/shorts/…":"https://www.tiktok.com/@아이디/video/…"} style={S.input}/>
+      <div style={{display:"flex",gap:"10px",alignItems:"flex-end",marginTop:"10px",flexWrap:"wrap"}}>
+        <div style={{minWidth:"200px"}}><label style={S.label}>화질</label>
+          <select value={quality} onChange={e=>setQuality(e.target.value)} style={S.input}>
+            <option value="best">최고화질 (mp4)</option><option value="720">720p (mp4 · 가벼움)</option><option value="audio">소리만 (mp3)</option>
+          </select></div>
+        <button disabled={busy} onClick={start} style={{padding:"10px 22px",border:"none",borderRadius:"8px",background:busy?"#21262d":"#1f6feb",color:"#fff",fontWeight:700,fontSize:"15px",cursor:busy?"wait":"pointer"}}>{busy?"받는 중…":"⬇️ 다운로드"}</button>
+      </div>
+      {job&&job.state==="run"&&<div style={{marginTop:"12px"}}>
+        <div style={{fontSize:"13px",color:"#8b949e",marginBottom:"4px"}}>{job.msg} {job.pct?`${Math.round(job.pct)}%`:""}</div>
+        <div style={{background:"#30363d",borderRadius:"4px",height:"6px"}}><div style={{width:`${job.pct||3}%`,height:"100%",borderRadius:"4px",background:"linear-gradient(90deg,#1f6feb,#58a6ff)",transition:"width .4s"}}/></div>
+      </div>}
+      {msg&&<div style={{marginTop:"10px",fontSize:"14px",color:msg.startsWith("❌")?"#f85149":"#3fb950"}}>{msg}</div>}
+      <div style={{fontSize:"12px",color:"#484f58",marginTop:"12px",lineHeight:1.7}}>
+        · 영상은 이 사이트에 연결된 PC가 받아서 바로 내려줘요 (개인 사이트 = 집 PC, 회사 사이트 = 회사 PC). 그 PC가 켜져 있어야 해요.<br/>
+        · 참고·분석용으로만 쓰세요 — 남의 영상을 그대로 다시 올리면 저작권 문제가 돼요.
+      </div>
+    </div>
+    {hist.length>0&&<div style={S.card}>
+      <div style={{fontSize:"14px",fontWeight:700,color:"#58a6ff",marginBottom:"8px"}}>최근 받은 영상</div>
+      {hist.map(h=><div key={h.t} style={{display:"flex",gap:"8px",fontSize:"13px",color:"#8b949e",padding:"4px 0",borderBottom:"1px solid #21262d"}}>
+        <span style={{whiteSpace:"nowrap"}}>{new Date(h.t).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>
+        <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"#c9d1d9"}}>{h.name}</span>
+        <a href={h.url} target="_blank" rel="noreferrer" style={{color:"#58a6ff"}}>원본</a></div>)}
+    </div>}
+  </div>;
+}
+
+const TOOL_MAP={gsc:GscTab,keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:LocalImageTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab,videodl:VideoDownloadTab};
 
 
 // ─── 블로그 글쓰기 공통 프롬프트 빌더 ───────────────────────────────────────
