@@ -12388,7 +12388,7 @@ async function tistoryResearch({ topic, mainKeyword, today }){
 }
 
 // 티스토리 전용 ② 글쓰기 (네이버 규칙 없이 처음부터 구글·애드센스용)
-async function tistoryWriteOne({ topic, mainKeyword, mode="hq", banTopics=[], imageRatio="3:2", imageStyle="photo", allowUi=false, tistoryImages=2, tistoryStore=false }){
+async function tistoryWriteOne({ topic, mainKeyword, mode="hq", banTopics=[], imageRatio="3:2", imageStyle="photo", allowUi=false, tistoryImages=2, tistoryStore=false, recipe=null }){
   const now=new Date();
   const today=`${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일`, ym=`${now.getFullYear()}년 ${now.getMonth()+1}월`;
   autoLog(`[${mainKeyword}] 티스토리 글: 공식 자료 조사 중`);
@@ -12401,18 +12401,10 @@ async function tistoryWriteOne({ topic, mainKeyword, mode="hq", banTopics=[], im
 ${research.notes.map(n=>`- ${n.point}${n.detail?` — ${n.detail}`:""}${n.source?` (출처 ${n.source})`:""}`).join("\n")}
 ${research.versionNote?`- 버전 차이: ${research.versionNote}`:""}
 `:"[조사 메모 없음 — 메뉴 경로·수치는 확실한 것만 쓰고, 애매하면 [확인필요: …]로 비워 둔다]\n";
-  const prompt=`티스토리 블로그에 올릴 정보성 글을 써라. 구글 검색 노출과 구글 애드센스 승인이 목적이다.
-
-주제: ${topic}
-메인 키워드: ${mainKeyword}
-오늘: ${today}
-${formatProductStatusBlock(productStatus)}
-${notesBlock}
-[제목]
-T1. 32자 안팎. 메인 키워드를 맨 앞에. 숫자(○가지·○단계)나 "총정리·방법·해결" 중 하나를 넣는다. 연도가 의미 있는 주제면 "(${now.getFullYear()})"를 붙여도 된다.
-T2. 과장·낚시 금지("놀라운", "10배", "이것 모르면 손해"). 특수문자는 | 또는 : 1개까지.
-
-[구조 — HTML 조각]
+  const useRecipe=Array.isArray(recipe?.lines)&&recipe.lines.length>0;
+  const structureBlock=useRecipe
+    ?`[구조 — HTML 조각 · 이번 글만의 구성. 아래 순서·형태를 그대로 따른다]\n${recipe.lines.map((x,i)=>`R${i+1}. ${x}`).join("\n")}\nR0. 본문 <h2> 2개 이상에 메인 키워드나 그 변형을 넣는다. 글 제목을 본문 소제목으로 반복하지 말 것.\n`
+    :`[구조 — HTML 조각]
 H1. 맨 위에 <blockquote>로 핵심 요약 3줄(<p> 3개). 바쁜 사람은 이것만 읽어도 답을 얻게.
 H2. 도입 <p> 2개: 첫 문장에 메인 키워드를 자연스럽게 넣고, 누구에게 무엇을 알려주는 글인지. 인사말·계절 이야기 금지.
 H3. 본문 <h2> 4~6개, 소제목 앞에 "1. 2. 3." 번호. 소제목 2개 이상에 메인 키워드나 그 변형을 넣는다.
@@ -12425,11 +12417,27 @@ H3-1. 세부 단계: 본문 <h2> 중 내용이 여러 갈래로 나뉘는 것(�
 H4. 주제가 "안 될 때·오류·설정"과 관련 있으면 <h2>안 될 때 확인 순서</h2> 아래 <table>(증상 | 원인 | 해결) 3~5줄.
 H5. <h2>자주 묻는 질문</h2> 아래 <h3>질문</h3><p>답</p> 2~3쌍. 질문은 검색창에 그대로 칠 법한 문장, 답은 첫 문장에 결론.
 H6. <h2>마무리</h2> 아래 <p> 1~2개: 핵심 정리 + "${ym} 기준으로 정리했고, 기기·버전에 따라 메뉴 이름이 다를 수 있어요" 같은 단서 한 줄.
-H7. 쓸 수 있는 태그: h2 h3 p ul ol li strong blockquote pre table thead tbody tr th td. h1·style·class·이모지·느낌표 남발 금지.
+`;
+  const lengthLine=useRecipe&&recipe.length
+    ?`L1. 태그·공백 빼고 ${recipe.length}자. 같은 말 반복으로 늘리지 말고 단계·이유·주의점·예시로 채운다.\n`
+    :`L1. 태그·공백 빼고 2,000~3,000자. 같은 말 반복으로 늘리지 말고 단계·이유·주의점·예시로 채운다.
+`;
+  if(useRecipe) autoLog(`[${mainKeyword}] 이번 글 구성: ${recipe.name||"랜덤"}`);
+  const prompt=`티스토리 블로그에 올릴 정보성 글을 써라. 구글 검색 노출과 구글 애드센스 승인이 목적이다.
+
+주제: ${topic}
+메인 키워드: ${mainKeyword}
+오늘: ${today}
+${formatProductStatusBlock(productStatus)}
+${notesBlock}
+[제목]
+T1. 32자 안팎. 메인 키워드를 맨 앞에. 숫자(○가지·○단계)나 "총정리·방법·해결" 중 하나를 넣는다. 연도가 의미 있는 주제면 "(${now.getFullYear()})"를 붙여도 된다.
+T2. 과장·낚시 금지("놀라운", "10배", "이것 모르면 손해"). 특수문자는 | 또는 : 1개까지.
+
+${structureBlock}H7. 쓸 수 있는 태그: h2 h3 p ul ol li strong blockquote pre table thead tbody tr th td. h1·style·class·이모지·느낌표 남발 금지.
 
 [분량·말투]
-L1. 태그·공백 빼고 2,000~3,000자. 같은 말 반복으로 늘리지 말고 단계·이유·주의점·예시로 채운다.
-L2. "~해요"체로 통일. 친근하지만 정보 위주. 근거 없는 과장 금지.
+${lengthLine}L2. "~해요"체로 통일. 친근하지만 정보 위주. 근거 없는 과장 금지.
 L3. 지어낸 1인칭 경험("직접 해봤더니", "제가 써보니") 금지. ${tistoryStore?`휴대폰 매장 입장에서 "매장에서 자주 받는 질문" 정도의 일반적인 표현은 써도 된다.`:""}
 
 [사실]
@@ -12446,7 +12454,7 @@ F4. 특정 매장·지점 이름, 연락처, 홍보 문구 금지.
 ===TAGS===
 태그1, 태그2
 ===HTML===
-<blockquote>...</blockquote>
+${useRecipe?"<p>...</p>":"<blockquote>...</blockquote>"}
 ...`;
   const sys="You are an expert Korean tech/how-to writer for a Tistory blog targeting Google search and AdSense approval. Write accurate, specific, well-structured HTML. Never invent facts; use only the research notes or very well-known facts. Follow the output format exactly.";
   const model="claude-sonnet-4-5-20250929";
@@ -12471,7 +12479,7 @@ F4. 특정 매장·지점 이름, 연락처, 홍보 문구 금지.
   const n=Math.max(0, Number(tistoryImages)||0);
   if(n>0){
     const heads=[...out.html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)].map(m=>m[1].replace(/<[^>]+>/g,"").replace(/^\d+\.\s*/,"").trim())
-      .filter(h=>!/자주 묻는 질문|마무리|참고 자료|안 될 때 확인 순서/.test(h));
+      .filter(h=>!/자주 묻는 질문|궁금|FAQ|마무리|정리하면|정리하며|한눈에|참고 자료|안 될 때 확인 순서|다음에 (볼|보면)/.test(h));
     const plain=out.html.replace(/<\/(p|li|h2|h3|tr)>/gi,"\n").replace(/<[^>]+>/g,"").replace(/\n{3,}/g,"\n\n");
     autoLog(`[${mainKeyword}] 이미지 장면 고르는 중`);
     let sections=[];
@@ -12484,7 +12492,8 @@ F4. 특정 매장·지점 이름, 연락처, 홍보 문구 금지.
     // 자리 표시: 대표 이미지는 요약 바로 아래, 나머지는 해당 소제목 아래 첫 문단 뒤
     for(const im of images){
       const mark=`\n<p>[이미지 ${im.n}]</p>\n`;
-      if(im.cover){ const q=out.html.search(/<\/blockquote>/i); const at=q>=0?q+13:0; out.html=out.html.slice(0,at)+mark+out.html.slice(at); continue; }
+      if(im.cover){ const q=out.html.search(/<\/blockquote>/i), h0=out.html.search(/<h2/i), p0=out.html.search(/<\/p>/i);
+        const at=q>=0&&(h0<0||q<h0)?q+13:(p0>=0&&(h0<0||p0<h0)?p0+4:(h0>=0?h0:0)); out.html=out.html.slice(0,at)+mark+out.html.slice(at); continue; }
       const h2s=[...out.html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)];
       const key=String(im.sectionTitle||"").replace(/\s+/g,"");
       let h=h2s.find(m=>key&&m[1].replace(/<[^>]+>|\s+/g,"").includes(key.slice(0,8)))||h2s[Math.min(im.n-1,Math.max(h2s.length-1,0))];
@@ -12519,8 +12528,8 @@ function buildAutoImages(sections, { imageRatio="3:2", imageStyle="photo", allow
 }
 
 // 글 1편 + 이미지 프롬프트
-async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false, creativity=0, platform="naver", tistoryImages=2, tistoryStore=false, writer=false, card=null, today=[] }){
-  if(platform==="tistory") return tistoryWriteOne({ topic, mainKeyword, mode, banTopics, imageRatio, imageStyle, allowUi, tistoryImages, tistoryStore });
+async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false, creativity=0, platform="naver", tistoryImages=2, tistoryStore=false, tistoryRecipe=null, writer=false, card=null, today=[] }){
+  if(platform==="tistory") return tistoryWriteOne({ topic, mainKeyword, mode, banTopics, imageRatio, imageStyle, allowUi, tistoryImages, tistoryStore, recipe:tistoryRecipe });
   autoLog(`[${mainKeyword}] 키워드 노출 전략 분석 중`);
   const ins=await autoKeywordInsight(mainKeyword);
   if(ins.smartBlockType) autoLog(`[${mainKeyword}] 스마트블록: ${ins.smartBlockType} / 전략: ${ins.blogStrategy||"-"}`);
@@ -12570,7 +12579,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
 }
 
 // 하루 작업: 주제 고르기 → 필요한 편수만큼 글쓰기 (보류되면 다음 후보로)
-async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null, creativity=0, volume=null, platform="naver", tistoryImages=2, tistoryStore=false, writer=false, card=null, todayPosts=[] }){
+async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null, creativity=0, volume=null, platform="naver", tistoryImages=2, tistoryStore=false, tistoryRecipe=null, writer=false, card=null, todayPosts=[] }){
   if(AUTO_STATE.busy) throw new Error("이미 실행 중이에요");
   AUTO_STATE.busy=true; AUTO_STATE.log=[];
   const started=Date.now();
@@ -12626,7 +12635,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
       const useRegion=region&&Math.random()<regionChance?region:"";
       autoLog(`글쓰기: ${c.topic} [${c.mainKeyword}${c.monthly!=null?` · 월 ${c.monthly}`:""}${useRegion?` · 지역 ${useRegion}`:""}]`);
       try{
-        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi, creativity, platform, tistoryImages, tistoryStore, writer, card, today:todayPosts });
+        const r=await autoWriteOne({ topic:c.topic, mainKeyword:c.mainKeyword, mode, region:useRegion, imageRatio, banTopics, allowUi, creativity, platform, tistoryImages, tistoryStore, tistoryRecipe, writer, card, today:todayPosts });
         if(r.ok){
           posts.push({ ...r, monthly:c.monthly, category, region:useRegion });
           // 다른 PC의 블로그가 같은 키워드를 고르지 않게 바로 기록 (로컬 기록 모드면 실행 PC가 직접 저장)
@@ -12647,7 +12656,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
 
 if(typeof window!=="undefined"){
   window.__blogAuto={
-    version:1, tistory:true, writer:true,
+    version:1, tistory:true, tistoryRecipe:true, writer:true,
     status:()=>({ busy:AUTO_STATE.busy, step:AUTO_STATE.step, log:AUTO_STATE.log.slice(-30) }),
     profiles:()=>bpList().map(p=>({ blogId:p.blogId, isDefault:!!p.isDefault, hasKey:!!keyForBlog(p.blogId).key })),
     categories:()=>Object.keys(NAVER_DIR_MAP),
