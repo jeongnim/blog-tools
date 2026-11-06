@@ -652,6 +652,7 @@ const WRITE_SUBTABS=[
   {id:"autowrite", icon:"🏷️", label:"카테고리별 키워드추출"},
   {id:"keyword",   icon:"🔍", label:"키워드 글쓰기"},
   {id:"analyze",   icon:"📊", label:"글분석"},
+  {id:"snsconvert", icon:"📱", label:"SNS 변환(인스타·쓰레드)"},
   {id:"rewrite",   icon:"🔗", label:"기사 리라이팅", hidden:true},
   {id:"emoji",     icon:"😃", label:"이모지"},
 ];
@@ -9208,6 +9209,11 @@ function BlogShortsMaker(){
   const [msg,setMsg]=React.useState("");
   const [result,setResult]=React.useState(null);
   const fileRef=React.useRef(); const canvasRef=React.useRef(); const stopRef=React.useRef(false);
+  React.useEffect(()=>{ // SNS 변환 탭에서 「릴스 만들기」로 넘어온 글·사진
+    const take=()=>{ const d=window.__snsToShorts; if(!d) return; window.__snsToShorts=null;
+      setText(d.text||""); setPhotos(d.photos||[]); setPlan(null); setResult(null); setMsg("✓ SNS 변환에서 글·사진을 가져왔어요"); };
+    take(); window.addEventListener("sns-to-shorts",take); return ()=>window.removeEventListener("sns-to-shorts",take);
+  },[]);
 
   React.useEffect(()=>{ // 분위기별 배경음악 목록
     fetch("/bgm/list.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(j=>setBgmList(j||{cats:{}})).catch(()=>setBgmList({cats:{}}));
@@ -9550,6 +9556,7 @@ function BlogShortsMaker(){
 function VideoMakeAiTab(){
   const [mode,setMode]=React.useState(()=>{ try{ return localStorage.getItem("vm_ai_mode")||"blog"; }catch(e){ return "blog"; } });
   const pick=m=>{ setMode(m); try{ localStorage.setItem("vm_ai_mode",m); }catch(e){} };
+  React.useEffect(()=>{ const f=()=>pick("blog"); window.addEventListener("sns-to-shorts",f); return ()=>window.removeEventListener("sns-to-shorts",f); },[]);
   const tab=on=>({padding:"8px 14px",borderRadius:"8px",border:"1px solid "+(on?"#1f6feb":"#30363d"),background:on?"#1f6feb22":"#161b22",color:on?"#58a6ff":"#8b949e",cursor:"pointer",fontSize:"14px",fontWeight:700});
   return <div>
     <div style={{display:"flex",gap:"8px",marginBottom:"14px",flexWrap:"wrap"}}>
@@ -10479,7 +10486,558 @@ function VideoDownloadTab(){
   </div>;
 }
 
-const TOOL_MAP={gsc:GscTab,keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:LocalImageTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab,videodl:VideoDownloadTab};
+// ─── TAB: SNS 변환 — 블로그 글 → 인스타 카드뉴스·캡션 / 쓰레드 연결글 ─────────
+const SNS_W=1080, SNS_H=1350;
+const SNS_FONT="'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif";
+const SNS_TEMPLATES=[
+  {id:"bottom", label:"사진 가득 + 아래 글"},
+  {id:"split",  label:"위 사진 + 아래 글상자"},
+  {id:"frame",  label:"액자형"},
+  {id:"box",    label:"가운데 글상자"},
+];
+const SNS_ACCENTS=["#FFD43B","#4DABF7","#FF8787","#69DB7C","#B197FC","#FFFFFF"];
+const SNS_FILTERS=[["none","원본"],["warm","따뜻하게"],["cool","차갑게"],["mono","흑백"],["vintage","빈티지"]];
+const snsAdj=()=>({ zoom:1, ox:0, oy:0, flip:false, bright:100, contrast:100, sat:100, filter:"none", overlay:35, blur:0, mosaic:[] });
+
+let snsFontP=null;
+function loadSnsFont(){
+  if(snsFontP) return snsFontP;
+  snsFontP=(async()=>{
+    try{
+      const base="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/woff2/";
+      await Promise.all([["Pretendard-ExtraBold.woff2","800"],["Pretendard-SemiBold.woff2","600"],["Pretendard-Regular.woff2","400"]].map(async([f,w])=>{
+        const ff=new FontFace("Pretendard",`url(${base}${f})`,{weight:w}); await ff.load(); document.fonts.add(ff);
+      }));
+    }catch(e){ /* 글꼴을 못 받으면 맑은 고딕으로 */ }
+  })();
+  return snsFontP;
+}
+
+// 카드 배치: 사진 칸·글 칸
+function snsLayout(tpl){
+  if(tpl==="split") return { photo:{x:0,y:0,w:SNS_W,h:800}, radius:0, text:{x:80,y:860,w:SNS_W-160,h:SNS_H-860-90}, dark:true, bg:"#ffffff" };
+  if(tpl==="frame") return { photo:{x:70,y:70,w:SNS_W-140,h:820}, radius:36, text:{x:90,y:940,w:SNS_W-180,h:SNS_H-940-80}, dark:true, bg:"#F5F1EA" };
+  if(tpl==="box")   return { photo:{x:0,y:0,w:SNS_W,h:SNS_H}, radius:0, text:{x:150,y:260,w:SNS_W-300,h:SNS_H-520}, dark:true, boxed:true };
+  return { photo:{x:0,y:0,w:SNS_W,h:SNS_H}, radius:0, text:{x:90,y:520,w:SNS_W-180,h:SNS_H-520-120}, dark:false, bottom:true };
+}
+function snsPhotoRect(img, adj, box){
+  const s=Math.max(box.w/img.width, box.h/img.height)*(adj.zoom||1);
+  const w=img.width*s, h=img.height*s;
+  return { x:box.x+(box.w-w)/2+(adj.ox||0)*box.w, y:box.y+(box.h-h)/2+(adj.oy||0)*box.h, w, h };
+}
+function snsFilterCss(adj){
+  const f={none:"",warm:"sepia(.25) saturate(1.15) hue-rotate(-8deg)",cool:"hue-rotate(12deg) saturate(.9) brightness(1.03)",mono:"grayscale(1)",vintage:"sepia(.45) contrast(.9) brightness(1.05)"}[adj.filter]||"";
+  return `brightness(${adj.bright}%) contrast(${adj.contrast}%) saturate(${adj.sat}%) ${f} ${adj.blur?`blur(${adj.blur}px)`:""}`.replace(/\s+/g," ").trim();
+}
+function snsRoundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  if(!r){ ctx.rect(x,y,w,h); return; }
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function snsDrawPhoto(ctx, img, adj, box, radius){
+  const off=document.createElement("canvas"); off.width=box.w; off.height=box.h;
+  const o=off.getContext("2d");
+  const r=snsPhotoRect(img, adj, box), rx=r.x-box.x, ry=r.y-box.y;
+  o.filter=snsFilterCss(adj);
+  o.save();
+  if(adj.flip){ o.translate(rx+r.w, ry); o.scale(-1,1); o.drawImage(img,0,0,r.w,r.h); }
+  else o.drawImage(img, rx, ry, r.w, r.h);
+  o.restore(); o.filter="none";
+  // 모자이크: 사진 기준 좌표(u,v)로 저장 → 위치·확대를 바꿔도 같은 곳을 가림
+  if(adj.mosaic?.length){
+    const tw=Math.max(4,Math.ceil(box.w/34)), th=Math.max(4,Math.ceil(box.h/34));
+    const tiny=document.createElement("canvas"); tiny.width=tw; tiny.height=th;
+    tiny.getContext("2d").drawImage(off,0,0,tw,th);
+    o.save(); o.beginPath();
+    for(const m of adj.mosaic){
+      const cx=rx+(adj.flip?1-m.u:m.u)*r.w, cy=ry+m.v*r.h, rad=m.r*r.w;
+      o.moveTo(cx+rad,cy); o.arc(cx,cy,rad,0,Math.PI*2);
+    }
+    o.clip(); o.imageSmoothingEnabled=false; o.drawImage(tiny,0,0,tw,th,0,0,box.w,box.h); o.restore();
+  }
+  ctx.save(); snsRoundRect(ctx,box.x,box.y,box.w,box.h,radius); ctx.clip();
+  ctx.fillStyle="#222"; ctx.fillRect(box.x,box.y,box.w,box.h);
+  ctx.drawImage(off, box.x, box.y);
+  ctx.restore();
+}
+function snsWrap(ctx, text, maxW){
+  const out=[];
+  for(const para of String(text||"").split("\n")){
+    if(!para.trim()){ out.push(""); continue; }
+    let line="";
+    for(const word of para.split(/\s+/).filter(Boolean)){
+      const test=line?line+" "+word:word;
+      if(ctx.measureText(test).width<=maxW){ line=test; continue; }
+      if(line) out.push(line);
+      if(ctx.measureText(word).width<=maxW){ line=word; continue; }
+      line="";
+      for(const ch of word){ if(ctx.measureText(line+ch).width>maxW){ out.push(line); line=ch; } else line+=ch; }
+    }
+    if(line) out.push(line);
+  }
+  return out;
+}
+// 카드 한 장 그리기 (1080×1350 기준 좌표, scale 로 썸네일)
+function snsRenderCard(canvas, { card, idx, total, img, tpl, accent, brand }, scale=1){
+  canvas.width=Math.round(SNS_W*scale); canvas.height=Math.round(SNS_H*scale);
+  const ctx=canvas.getContext("2d");
+  ctx.setTransform(scale,0,0,scale,0,0);
+  const L=snsLayout(tpl), adj=card.adj||snsAdj();
+  ctx.fillStyle=L.bg||"#111"; ctx.fillRect(0,0,SNS_W,SNS_H);
+  if(img) snsDrawPhoto(ctx, img, adj, L.photo, L.radius);
+  else { ctx.fillStyle="#2b2f36"; snsRoundRect(ctx,L.photo.x,L.photo.y,L.photo.w,L.photo.h,L.radius); ctx.fill(); }
+  // 글씨가 잘 보이게 어둡게 덮기
+  const ov=(adj.overlay??35)/100;
+  if(ov>0){
+    ctx.save(); snsRoundRect(ctx,L.photo.x,L.photo.y,L.photo.w,L.photo.h,L.radius); ctx.clip();
+    if(L.bottom){
+      ctx.fillStyle=`rgba(0,0,0,${ov*0.35})`; ctx.fillRect(0,0,SNS_W,SNS_H);
+      const g=ctx.createLinearGradient(0,SNS_H*0.35,0,SNS_H); g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,`rgba(0,0,0,${Math.min(0.92,ov*1.6)})`);
+      ctx.fillStyle=g; ctx.fillRect(0,0,SNS_W,SNS_H);
+    } else { ctx.fillStyle=`rgba(0,0,0,${ov*(L.boxed?0.8:0.5)})`; ctx.fillRect(L.photo.x,L.photo.y,L.photo.w,L.photo.h); }
+    ctx.restore();
+  }
+  const cover=idx===0;
+  const T=L.text;
+  let tSize=cover?96:72, bSize=cover?46:42;
+  let tLines=[], bLines=[];
+  const fit=()=>{
+    ctx.font=`800 ${tSize}px ${SNS_FONT}`; tLines=snsWrap(ctx, card.title, T.w-(L.boxed?80:0));
+    ctx.font=`400 ${bSize}px ${SNS_FONT}`; bLines=snsWrap(ctx, card.body, T.w-(L.boxed?80:0));
+    return tLines.length*tSize*1.25+(bLines.length?36:0)+bLines.length*bSize*1.5;
+  };
+  let hgt=fit();
+  while(hgt>T.h-(L.boxed?100:0) && tSize>40){ tSize-=4; bSize=Math.max(28,bSize-2); hgt=fit(); }
+  let y;
+  if(L.boxed){
+    const bh=hgt+100, by=SNS_H/2-bh/2;
+    ctx.fillStyle="rgba(255,255,255,0.94)"; snsRoundRect(ctx,T.x,by,T.w,bh,32); ctx.fill();
+    ctx.fillStyle=accent; ctx.fillRect(T.x+40,by+34,72,8);
+    y=by+60;
+  } else if(L.bottom) y=T.y+T.h-hgt;
+  else { ctx.fillStyle=accent; ctx.fillRect(T.x,T.y-10,72,8); y=T.y+24; }
+  const tx=T.x+(L.boxed?40:0);
+  ctx.textBaseline="top";
+  ctx.save();
+  if(!L.dark){ ctx.shadowColor="rgba(0,0,0,.45)"; ctx.shadowBlur=14; }
+  ctx.font=`800 ${tSize}px ${SNS_FONT}`; ctx.fillStyle=L.dark?"#111418":accent;
+  for(const ln of tLines){ ctx.fillText(ln, tx, y); y+=tSize*1.25; }
+  if(bLines.length) y+=36;
+  ctx.font=`400 ${bSize}px ${SNS_FONT}`; ctx.fillStyle=L.dark?"#3d434b":"#ffffff";
+  for(const ln of bLines){ ctx.fillText(ln, tx, y); y+=bSize*1.5; }
+  ctx.restore();
+  // 위쪽: 상단 문구 · 쪽수
+  const onPhoto=tpl!=="frame";
+  ctx.font=`600 34px ${SNS_FONT}`;
+  if(brand){
+    ctx.save(); ctx.fillStyle=onPhoto?"rgba(255,255,255,.95)":"#111418"; if(onPhoto){ ctx.shadowColor="rgba(0,0,0,.5)"; ctx.shadowBlur=10; }
+    ctx.fillText(brand, tpl==="frame"?110:70, tpl==="frame"?110:70); ctx.restore();
+  }
+  const pg=`${idx+1}/${total}`, pw=ctx.measureText(pg).width+36;
+  const px=(tpl==="frame"?SNS_W-110:SNS_W-70)-pw, py=tpl==="frame"?100:62;
+  ctx.fillStyle="rgba(0,0,0,.45)"; snsRoundRect(ctx,px,py,pw,52,26); ctx.fill();
+  ctx.fillStyle="#fff"; ctx.fillText(pg, px+18, py+9);
+  return canvas;
+}
+
+async function snsLoadImg(src){
+  return await new Promise((ok,no)=>{ const im=new Image(); im.onload=()=>ok(im); im.onerror=()=>no(new Error("사진을 열 수 없어요")); im.src=src; });
+}
+function snsDownload(canvas, name){
+  return new Promise(ok=>canvas.toBlob(b=>{
+    const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000); ok();
+  },"image/png"));
+}
+
+function SnsConvertTab({ setActive }){
+  const [src,setSrc]=React.useState("url");                  // url | paste
+  const [url,setUrl]=React.useState("");
+  const [title,setTitle]=React.useState("");
+  const [text,setText]=React.useState("");
+  const [photos,setPhotos]=React.useState([]);              // {id,name,url,img}
+  const [tone,setTone]=React.useState(()=>{ try{ return localStorage.getItem("sns_tone")||"hq"; }catch(e){ return "hq"; } });
+  const [branch,setBranch]=React.useState(()=>{ try{ return localStorage.getItem("sns_branch")||""; }catch(e){ return ""; } });
+  const [count,setCount]=React.useState(7);
+  const [tpl,setTpl]=React.useState(()=>{ try{ return localStorage.getItem("sns_tpl")||"bottom"; }catch(e){ return "bottom"; } });
+  const [accent,setAccent]=React.useState(SNS_ACCENTS[0]);
+  const [brand,setBrand]=React.useState(()=>{ try{ return localStorage.getItem("sns_brand")??"밴드폰"; }catch(e){ return "밴드폰"; } });
+  const [busy,setBusy]=React.useState("");
+  const [msg,setMsg]=React.useState("");
+  const [cards,setCards]=React.useState([]);                // {title,body,photo(id),adj}
+  const [caption,setCaption]=React.useState("");
+  const [tags,setTags]=React.useState("");
+  const [threads,setThreads]=React.useState([]);
+  const [threadPics,setThreadPics]=React.useState([0]);
+  const [threadTag,setThreadTag]=React.useState("");
+  const [view,setView]=React.useState("insta");
+  const [sel,setSel]=React.useState(0);
+  const [tool,setTool]=React.useState("move");              // move | mosaic
+  const [brush,setBrush]=React.useState(60);
+  const [fontOk,setFontOk]=React.useState(false);
+  const [copied,setCopied]=React.useState("");
+  const fileRef=React.useRef(); const mainRef=React.useRef(); const thumbRefs=React.useRef([]); const dragRef=React.useRef(null);
+
+  React.useEffect(()=>{ loadSnsFont().then(()=>setFontOk(true)); },[]);
+  const keep=(k,v)=>{ try{ localStorage.setItem(k,v); }catch(e){} };
+  const photoById=id=>photos.find(p=>p.id===id);
+
+  // ── 미리보기 다시 그리기
+  React.useEffect(()=>{
+    const id=requestAnimationFrame(()=>{
+      cards.forEach((c,i)=>{
+        const opt={ card:c, idx:i, total:cards.length, img:photoById(c.photo)?.img, tpl, accent, brand };
+        if(thumbRefs.current[i]) snsRenderCard(thumbRefs.current[i], opt, 0.16);
+        if(i===sel && mainRef.current) snsRenderCard(mainRef.current, opt, 0.5);
+      });
+    });
+    return ()=>cancelAnimationFrame(id);
+  },[cards,sel,tpl,accent,brand,photos,fontOk,view]);
+
+  // ── 사진 넣기
+  const addFiles=async files=>{
+    const list=[];
+    for(const f of [...files].filter(f=>/^image\//.test(f.type))){
+      const u=URL.createObjectURL(f);
+      try{ list.push({ id:"p"+Date.now()+Math.random(), name:f.name, url:u, img:await snsLoadImg(u) }); }catch(e){}
+    }
+    setPhotos(p=>{ let n=Math.max(0,...p.map(x=>x.n||0)); return [...p,...list.map(x=>({...x,n:++n}))]; });
+  };
+  const fetchPost=async()=>{
+    if(!url.trim()) return;
+    setBusy("fetch"); setMsg("글과 사진 가져오는 중…");
+    try{
+      const r=await fetch("/api/sns-source",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ url:url.trim() }) });
+      const d=await r.json();
+      if(!d.success) throw new Error(d.error||"가져오기 실패");
+      setTitle(d.title||""); setText(d.text||"");
+      const list=[]; let fail=0;
+      for(const [i,im] of (d.images||[]).entries()){
+        setMsg(`사진 받는 중 ${i+1}/${d.images.length}`);
+        try{
+          const b=await fetch(`/api/sns-source?img=${encodeURIComponent(im)}`);
+          if(!b.ok) throw new Error();
+          const u=URL.createObjectURL(await b.blob());
+          list.push({ id:"p"+Date.now()+Math.random(), name:`사진${i+1}`, url:u, img:await snsLoadImg(u), n:i+1 });
+        }catch(e){ fail++; }
+      }
+      setPhotos(list);
+      setMsg(`✓ 본문 ${(d.text||"").length.toLocaleString()}자 · 사진 ${list.length}장${fail?` (못 받은 사진 ${fail}장 — 필요하면 직접 추가)`:""}`);
+    }catch(e){ setMsg("✗ "+e.message); }
+    setBusy("");
+  };
+
+  // ── 변환 (Claude 1회)
+  const convert=async()=>{
+    const body=text.trim();
+    if(body.length<100){ setMsg("✗ 본문이 너무 짧아요"); return; }
+    setBusy("ai"); setMsg("인스타·쓰레드용으로 바꾸는 중… (30초~1분)");
+    const who=tone==="hq"?"휴대폰 판매점 '밴드폰' 공식 계정":tone==="branch"?`휴대폰 판매점 '밴드폰 ${branch||"○○점"}' 매장 계정`:"휴대폰·생활 정보를 나누는 개인 계정(업체·매장 언급 없음)";
+    const marks=(body.match(/\[사진\d+\]/g)||[]).length;
+    const prompt=`아래 블로그 글을 인스타그램 카드뉴스·캡션과 쓰레드 연결글로 바꿔라.
+
+[계정] ${who}
+[블로그 제목] ${title||"(없음)"}
+[블로그 본문]${marks?" — [사진N]은 그 자리에 있던 사진 번호":""}
+${body.slice(0,7000)}
+
+[사진] 쓸 수 있는 사진 번호: ${photos.map(p=>p.n).join(", ")||"(없음)"}
+
+[카드뉴스 — 정확히 ${count}장]
+C1. 1장(표지): title 16자 이내 후킹 제목(숫자·질문·반전 중 하나), body 26자 이내 부제.
+C2. 2~${count-1}장: 한 장에 핵심 한 가지. title 15자 이내, body 2~4줄·70자 이내. 줄바꿈은 \\n. 순서대로 읽으면 글 전체가 이해되게.
+C3. ${count}장(마지막): 정리 한 줄 + "저장해두고 필요할 때 꺼내보세요" 같은 저장 유도${tone==="personal"?"":" + 매장 상담·문의 한 줄"}.
+C4. photo: 그 카드 내용과 가장 맞는 사진 번호(위 목록 중). ${marks?"본문에서 그 내용 가까이 있던 [사진N]을 고르고, ":""}같은 사진은 되도록 반복하지 않는다.
+C5. 블로그 문장을 그대로 옮기지 말고 짧게 다시 쓴다.
+
+[인스타 캡션]
+I1. 첫 줄은 피드에서 '더 보기'를 누르게 만드는 한 문장. 그다음 본문 5~8줄(짧은 줄, 이모지는 줄 앞에 몇 개만).
+I2. 해시태그는 caption에 넣지 말고 hashtags에 10~15개(# 없이). 검색될 만한 한국어 태그 위주${tone==="personal"?"":", 계정 이름 태그 1개 포함"}.
+
+[쓰레드 연결글]
+S1. 3~6개. 각 글 500자 이내(꼭 지킬 것). 첫 글은 결론이나 반전으로 시작하는 후킹, 이어지는 글은 하나에 한 가지씩.
+S2. 말투는 블로그보다 가볍고 대화하듯("~해요" 유지, 반말 금지). 해시태그 없음. 마지막 글은 질문으로 끝내 댓글을 유도.
+S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
+
+[공통]
+- 본문에 없는 사실·가격·수치를 지어내지 말 것. 과장·낚시 금지.
+- 휴대폰 판매에 불리한 내용(자급제·알뜰폰 권유, 판매점 불신 조장) 금지.
+
+[출력 — 순수 JSON만]
+{"cards":[{"title":"","body":"","photo":1}],"caption":"","hashtags":["태그"],"threads":["첫 글","둘째 글"],"threadTag":"태그"}`;
+    try{
+      const raw=await callClaudeStream([{role:"user",content:prompt}],"You are a Korean social media editor. Output ONLY valid JSON, no markdown.",4000,"claude-sonnet-4-5-20250929");
+      const j=safeParseJson(raw);
+      if(!j||!Array.isArray(j.cards)||!j.cards.length) throw new Error("결과 형식이 깨졌어요 — 다시 눌러주세요");
+      const used=new Set();
+      const cs=j.cards.slice(0,count).map((c,i)=>{
+        let p=photos.find(x=>x.n===Number(c.photo));
+        if(!p&&photos.length) p=photos.find(x=>!used.has(x.id))||photos[i%photos.length];
+        if(p) used.add(p.id);
+        return { title:String(c.title||"").trim(), body:String(c.body||"").replace(/\\n/g,"\n").trim(), photo:p?.id||null, adj:snsAdj() };
+      });
+      setCards(cs); setSel(0);
+      setCaption(String(j.caption||"").trim());
+      setTags((j.hashtags||[]).map(t=>"#"+String(t).replace(/^#/,"").replace(/\s+/g,"")).join(" "));
+      const th=(j.threads||[]).map(t=>String(t).trim()).filter(Boolean);
+      setThreads(th); setThreadTag(String(j.threadTag||"").replace(/^#/,"").replace(/\s+/g,""));
+      setView("insta");
+      setMsg(`✓ 카드 ${cs.length}장 · 쓰레드 ${th.length}개 — 카드를 눌러 문구·사진을 고칠 수 있어요`);
+    }catch(e){ setMsg("✗ "+e.message); }
+    setBusy("");
+  };
+  // ── 카드 편집
+  const card=cards[sel];
+  const upCard=(patch,i=sel)=>setCards(cs=>cs.map((c,k)=>k===i?{...c,...patch}:c));
+  const upAdj=patch=>setCards(cs=>cs.map((c,k)=>k===sel?{...c,adj:{...c.adj,...patch}}:c));
+  const applyAll=()=>{
+    const a=card.adj;
+    setCards(cs=>cs.map(c=>({...c,adj:{...c.adj, bright:a.bright, contrast:a.contrast, sat:a.sat, filter:a.filter, overlay:a.overlay, blur:a.blur}})));
+    setMsg("✓ 밝기·대비·채도·필터·어둡게·흐림을 모든 카드에 적용했어요 (위치·모자이크는 카드마다 따로)");
+  };
+  const moveCard=d=>{ const j=sel+d; if(j<0||j>=cards.length) return; setCards(cs=>{ const a=[...cs]; [a[sel],a[j]]=[a[j],a[sel]]; return a; }); setSel(j); };
+
+  // 미리보기 위에서 끌기(이동) / 문지르기(모자이크)
+  const toCanvas=e=>{ const r=mainRef.current.getBoundingClientRect(); return { x:(e.clientX-r.left)*SNS_W/r.width, y:(e.clientY-r.top)*SNS_H/r.height }; };
+  const addMosaic=pt=>{
+    const im=photoById(card.photo)?.img; if(!im) return;
+    const box=snsLayout(tpl).photo; const r=snsPhotoRect(im,card.adj,box);
+    if(pt.x<box.x||pt.x>box.x+box.w||pt.y<box.y||pt.y>box.y+box.h) return;
+    let u=(pt.x-r.x)/r.w; const v=(pt.y-r.y)/r.h; if(card.adj.flip) u=1-u;
+    const m=card.adj.mosaic||[], last=m[m.length-1];
+    if(last&&Math.hypot((last.u-u)*r.w,(last.v-v)*r.h)<brush*0.3) return;
+    upAdj({ mosaic:[...m,{u,v,r:brush/r.w}] });
+  };
+  const onDown=e=>{
+    if(!card) return; e.currentTarget.setPointerCapture(e.pointerId);
+    const pt=toCanvas(e);
+    dragRef.current={ ...pt, ox:card.adj.ox, oy:card.adj.oy, start:(card.adj.mosaic||[]).length };
+    if(tool==="mosaic") addMosaic(pt);
+  };
+  const onMove=e=>{
+    const d=dragRef.current; if(!d||!card) return;
+    const pt=toCanvas(e);
+    if(tool==="mosaic") return addMosaic(pt);
+    const box=snsLayout(tpl).photo;
+    upAdj({ ox:d.ox+(pt.x-d.x)/box.w, oy:d.oy+(pt.y-d.y)/box.h });
+  };
+  const onUp=()=>{ dragRef.current=null; };
+
+  // ── 저장
+  const slug=(title||cards[0]?.title||"카드뉴스").replace(/[\\/:*?"<>|]/g,"").slice(0,24).trim()||"카드뉴스";
+  const saveCard=async i=>{
+    const c=document.createElement("canvas");
+    snsRenderCard(c,{ card:cards[i], idx:i, total:cards.length, img:photoById(cards[i].photo)?.img, tpl, accent, brand },1);
+    await snsDownload(c, `${slug}_${String(i+1).padStart(2,"0")}.png`);
+  };
+  const saveMany=async list=>{ setBusy("save"); for(const i of list){ await saveCard(i); await new Promise(r=>setTimeout(r,350)); } setBusy(""); };
+  const copy=async(t,k)=>{ try{ await navigator.clipboard.writeText(t); setCopied(k); setTimeout(()=>setCopied(""),1500); }catch(e){} };
+
+  // ── 쇼츠 만들기로 넘기기
+  const toShorts=async()=>{
+    setBusy("shorts");
+    const ph=[];
+    for(const p of photos.slice(0,12)){
+      const s=Math.min(1,1600/Math.max(p.img.width,p.img.height)); const c=document.createElement("canvas");
+      c.width=Math.round(p.img.width*s); c.height=Math.round(p.img.height*s); c.getContext("2d").drawImage(p.img,0,0,c.width,c.height);
+      ph.push({ id:Date.now()+Math.random(), name:p.name, dataUrl:c.toDataURL("image/jpeg",0.88) });
+    }
+    window.__snsToShorts={ text:`${title}\n\n${text.replace(/\[사진\d+\]\n?/g,"")}`.trim(), photos:ph };
+    window.dispatchEvent(new Event("sns-to-shorts"));
+    setBusy("");
+    if(setActive) setActive("videomake-ai");
+  };
+
+  const S={card:{background:"#0d1117",border:"1px solid #21262d",borderRadius:"12px",padding:"16px",marginBottom:"14px"},
+    h:{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"},
+    label:{fontSize:"13px",color:"#8b949e",fontWeight:600,marginBottom:"5px",display:"block"},
+    input:{width:"100%",background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"8px 10px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none",boxSizing:"border-box"},
+    btn:(c="#1f6feb",dis)=>({padding:"10px 18px",border:"none",borderRadius:"8px",background:c,color:"#fff",fontSize:"15px",fontWeight:700,cursor:dis?"not-allowed":"pointer",opacity:dis?.5:1}),
+    small:{padding:"4px 10px",border:"1px solid #30363d",borderRadius:"6px",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px"},
+    chip:on=>({padding:"6px 12px",borderRadius:"8px",border:"1px solid "+(on?"#1f6feb":"#30363d"),background:on?"#1f6feb22":"#161b22",color:on?"#58a6ff":"#8b949e",cursor:"pointer",fontSize:"13px",fontWeight:600})};
+  const slider=(label,key,min,max,step=1,unit="")=><label style={{display:"block",marginBottom:"8px"}}>
+    <span style={{...S.label,display:"flex",justifyContent:"space-between"}}><span>{label}</span><span style={{color:"#c9d1d9"}}>{card.adj[key]}{unit}</span></span>
+    <input type="range" min={min} max={max} step={step} value={card.adj[key]} onChange={e=>upAdj({[key]:Number(e.target.value)})} style={{width:"100%"}}/>
+  </label>;
+
+  return <div style={{maxWidth:"1100px"}}>
+    {/* 1. 글 넣기 */}
+    <div style={S.card}>
+      <div style={S.h}>1. 블로그 글 넣기</div>
+      <div style={{display:"flex",gap:"8px",marginBottom:"12px"}}>
+        <button style={S.chip(src==="url")} onClick={()=>setSrc("url")}>🔗 블로그 주소</button>
+        <button style={S.chip(src==="paste")} onClick={()=>setSrc("paste")}>📋 직접 붙여넣기</button>
+      </div>
+      {src==="url"
+        ?<div style={{display:"flex",gap:"8px"}}>
+          <input style={S.input} value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&fetchPost()} placeholder="네이버 블로그 · 티스토리 글 주소"/>
+          <button style={{...S.btn("#238636",busy),whiteSpace:"nowrap"}} disabled={!!busy} onClick={fetchPost}>가져오기</button>
+        </div>
+        :<div style={{fontSize:"13px",color:"#8b949e"}}>아래 제목·본문 칸에 붙여넣고, 사진은 「+ 사진 추가」로 넣어주세요.</div>}
+      {(src==="paste"||text)&&<div style={{marginTop:"12px"}}>
+        <span style={S.label}>제목</span>
+        <input style={{...S.input,marginBottom:"8px"}} value={title} onChange={e=>setTitle(e.target.value)}/>
+        <span style={S.label}>본문 <span style={{fontWeight:400}}>({text.length.toLocaleString()}자 · 고쳐도 돼요)</span></span>
+        <textarea style={{...S.input,height:"160px",resize:"vertical",lineHeight:1.6}} value={text} onChange={e=>setText(e.target.value)}/>
+      </div>}
+      <div style={{marginTop:"12px"}}>
+        <span style={S.label}>사진 {photos.length}장 <span style={{fontWeight:400}}>— 카드 배경으로 써요</span></span>
+        <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+          {photos.map((p,i)=><div key={p.id} style={{position:"relative"}}>
+            <img src={p.url} style={{width:"72px",height:"72px",objectFit:"cover",borderRadius:"6px",display:"block"}}/>
+            <span style={{position:"absolute",left:"3px",bottom:"3px",background:"rgba(0,0,0,.7)",color:"#fff",fontSize:"11px",borderRadius:"4px",padding:"0 4px"}}>{p.n||i+1}</span>
+            <button onClick={()=>setPhotos(a=>a.filter(x=>x.id!==p.id))} style={{position:"absolute",right:"2px",top:"2px",background:"rgba(0,0,0,.7)",border:"none",color:"#fff",borderRadius:"50%",width:"18px",height:"18px",cursor:"pointer",fontSize:"11px"}}>✕</button>
+          </div>)}
+          <button onClick={()=>fileRef.current.click()} style={{width:"72px",height:"72px",border:"1px dashed #30363d",borderRadius:"6px",background:"#161b22",color:"#8b949e",cursor:"pointer",fontSize:"12px"}}>+ 사진 추가</button>
+          <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{ addFiles(e.target.files); e.target.value=""; }}/>
+        </div>
+      </div>
+    </div>
+
+    {/* 2. 설정 */}
+    <div style={S.card}>
+      <div style={S.h}>2. 설정</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:"12px"}}>
+        <div><span style={S.label}>말투(계정)</span>
+          <select style={S.input} value={tone} onChange={e=>{ setTone(e.target.value); keep("sns_tone",e.target.value); }}>
+            <option value="hq">본사 (밴드폰 공식)</option><option value="branch">지점</option><option value="personal">개인 (업체 언급 없음)</option>
+          </select>
+          {tone==="branch"&&<input style={{...S.input,marginTop:"6px"}} value={branch} placeholder="지점 이름 (예: 중랑점)" onChange={e=>{ setBranch(e.target.value); keep("sns_branch",e.target.value); }}/>}
+        </div>
+        <div><span style={S.label}>카드 장수</span>
+          <select style={S.input} value={count} onChange={e=>setCount(Number(e.target.value))}>{[5,6,7,8,9,10].map(n=><option key={n} value={n}>{n}장</option>)}</select>
+        </div>
+        <div><span style={S.label}>디자인</span>
+          <select style={S.input} value={tpl} onChange={e=>{ setTpl(e.target.value); keep("sns_tpl",e.target.value); }}>{SNS_TEMPLATES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select>
+        </div>
+        <div><span style={S.label}>강조색</span>
+          <div style={{display:"flex",gap:"6px",paddingTop:"4px"}}>{SNS_ACCENTS.map(c=><button key={c} onClick={()=>setAccent(c)} style={{width:"28px",height:"28px",borderRadius:"50%",background:c,border:accent===c?"3px solid #58a6ff":"1px solid #30363d",cursor:"pointer"}}/>)}</div>
+        </div>
+        <div><span style={S.label}>카드 위 작은 문구</span>
+          <input style={S.input} value={brand} placeholder="비우면 표시 안 함" onChange={e=>{ setBrand(e.target.value); keep("sns_brand",e.target.value); }}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:"8px",marginTop:"14px",alignItems:"center",flexWrap:"wrap"}}>
+        <button style={S.btn("#1f6feb",busy||!text.trim())} disabled={!!busy||!text.trim()} onClick={convert}>{cards.length?"🔄 다시 만들기":"✨ 인스타·쓰레드로 바꾸기"}</button>
+        {msg&&<span style={{fontSize:"13px",color:msg.startsWith("✗")?"#f85149":msg.startsWith("✓")?"#3fb950":"#d29922"}}>{busy&&"⏳ "}{msg}</span>}
+      </div>
+    </div>
+
+    {/* 3. 결과 */}
+    {cards.length>0&&<div style={S.card}>
+      <div style={{display:"flex",gap:"8px",marginBottom:"14px",flexWrap:"wrap"}}>
+        <button style={S.chip(view==="insta")} onClick={()=>setView("insta")}>📸 인스타그램</button>
+        <button style={S.chip(view==="threads")} onClick={()=>setView("threads")}>🧵 쓰레드</button>
+      </div>
+
+      {view==="insta"&&<div>
+        <div style={{display:"flex",gap:"8px",overflowX:"auto",paddingBottom:"8px",marginBottom:"12px"}}>
+          {cards.map((c,i)=><canvas key={i} ref={el=>thumbRefs.current[i]=el} onClick={()=>setSel(i)}
+            style={{width:"104px",height:"130px",borderRadius:"6px",cursor:"pointer",flex:"none",outline:sel===i?"3px solid #58a6ff":"1px solid #30363d"}}/>)}
+        </div>
+        {card&&<div style={{display:"flex",gap:"18px",flexWrap:"wrap",alignItems:"flex-start"}}>
+          <div style={{flex:"none"}}>
+            <canvas ref={mainRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+              style={{width:"360px",height:"450px",borderRadius:"10px",display:"block",touchAction:"none",cursor:tool==="mosaic"?"crosshair":"grab",background:"#000"}}/>
+            <div style={{display:"flex",gap:"6px",marginTop:"8px",flexWrap:"wrap"}}>
+              <button style={S.chip(tool==="move")} onClick={()=>setTool("move")}>✋ 사진 옮기기</button>
+              <button style={S.chip(tool==="mosaic")} onClick={()=>setTool("mosaic")}>▦ 모자이크 붓</button>
+            </div>
+            {tool==="mosaic"&&<div style={{marginTop:"8px",width:"360px"}}>
+              <span style={S.label}>붓 크기 {brush}</span>
+              <input type="range" min="20" max="140" value={brush} onChange={e=>setBrush(Number(e.target.value))} style={{width:"100%"}}/>
+              <div style={{display:"flex",gap:"6px"}}>
+                <button style={S.small} onClick={()=>upAdj({mosaic:(card.adj.mosaic||[]).slice(0,-8)})}>↶ 조금 되돌리기</button>
+                <button style={S.small} onClick={()=>upAdj({mosaic:[]})}>모자이크 전부 지우기</button>
+              </div>
+            </div>}
+            <div style={{fontSize:"12px",color:"#8b949e",marginTop:"8px",width:"360px"}}>{tool==="move"?"사진을 끌어서 위치를 맞추세요.":"가릴 곳(얼굴·번호·가격표 등)을 문지르세요."}</div>
+          </div>
+
+          <div style={{flex:"1",minWidth:"280px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+              <b style={{color:"#e6edf3"}}>{sel+1}번 카드{sel===0?" (표지)":sel===cards.length-1?" (마지막)":""}</b>
+              <div style={{display:"flex",gap:"4px"}}>
+                <button style={S.small} onClick={()=>moveCard(-1)} disabled={sel===0}>◀ 앞으로</button>
+                <button style={S.small} onClick={()=>moveCard(1)} disabled={sel===cards.length-1}>뒤로 ▶</button>
+              </div>
+            </div>
+            <span style={S.label}>제목</span>
+            <textarea style={{...S.input,height:"56px",marginBottom:"8px"}} value={card.title} onChange={e=>upCard({title:e.target.value})}/>
+            <span style={S.label}>내용 (줄바꿈 그대로 들어가요)</span>
+            <textarea style={{...S.input,height:"96px",marginBottom:"10px"}} value={card.body} onChange={e=>upCard({body:e.target.value})}/>
+
+            <span style={S.label}>사진 고르기</span>
+            <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"12px"}}>
+              {photos.map((p,i)=><img key={p.id} src={p.url} onClick={()=>upCard({photo:p.id, adj:{...card.adj, zoom:1, ox:0, oy:0, mosaic:[]}})}
+                style={{width:"52px",height:"52px",objectFit:"cover",borderRadius:"5px",cursor:"pointer",outline:card.photo===p.id?"3px solid #58a6ff":"1px solid #30363d"}}/>)}
+              {!photos.length&&<span style={{fontSize:"12px",color:"#8b949e"}}>위 1번에서 사진을 추가하세요</span>}
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+              <div>{slider("확대","zoom",1,3,0.05,"배")}{slider("밝기","bright",50,150,1,"%")}{slider("대비","contrast",50,150,1,"%")}</div>
+              <div>{slider("채도","sat",0,200,1,"%")}{slider("어둡게 덮기 (글씨 잘 보이게)","overlay",0,80,1,"%")}{slider("흐림","blur",0,20,1,"")}</div>
+            </div>
+            <span style={S.label}>필터</span>
+            <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"10px"}}>
+              {SNS_FILTERS.map(([k,l])=><button key={k} style={S.chip(card.adj.filter===k)} onClick={()=>upAdj({filter:k})}>{l}</button>)}
+              <button style={S.chip(card.adj.flip)} onClick={()=>upAdj({flip:!card.adj.flip})}>↔ 좌우 반전</button>
+            </div>
+            <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+              <button style={S.small} onClick={()=>upAdj({...snsAdj(), mosaic:card.adj.mosaic})}>가공 초기화</button>
+              <button style={S.small} onClick={applyAll}>이 가공을 모든 카드에 적용</button>
+            </div>
+          </div>
+        </div>}
+
+        <div style={{display:"flex",gap:"8px",marginTop:"16px",flexWrap:"wrap"}}>
+          <button style={S.btn("#238636",busy)} disabled={!!busy} onClick={()=>saveCard(sel)}>⬇ 이 카드 저장</button>
+          <button style={S.btn("#238636",busy)} disabled={!!busy} onClick={()=>saveMany(cards.map((_,i)=>i))}>⬇ 전체 {cards.length}장 저장</button>
+          <button style={S.btn("#6e40c9",busy||!photos.length)} disabled={!!busy||!photos.length} onClick={toShorts}>🎬 이 글로 릴스(쇼츠) 만들기</button>
+        </div>
+        <div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px"}}>전체 저장 때 브라우저가 "여러 파일 다운로드"를 물으면 허용을 눌러주세요.</div>
+
+        <div style={{marginTop:"18px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={S.label}>캡션</span>
+            <button style={S.small} onClick={()=>copy(`${caption}\n\n${tags}`,"cap")}>{copied==="cap"?"✓ 복사됨":"캡션+해시태그 복사"}</button>
+          </div>
+          <textarea style={{...S.input,height:"170px",lineHeight:1.6}} value={caption} onChange={e=>setCaption(e.target.value)}/>
+          <span style={{...S.label,marginTop:"8px"}}>해시태그</span>
+          <textarea style={{...S.input,height:"60px"}} value={tags} onChange={e=>setTags(e.target.value)}/>
+        </div>
+      </div>}
+
+      {view==="threads"&&<div>
+        <div style={{fontSize:"13px",color:"#8b949e",marginBottom:"10px"}}>첫 글을 올린 뒤 그 아래 「스레드에 추가」로 나머지를 차례로 붙이세요. 글 하나당 500자까지예요.</div>
+        {threads.map((t,i)=><div key={i} style={{marginBottom:"12px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"4px"}}>
+            <span style={{fontSize:"13px",fontWeight:700,color:"#c9d1d9"}}>{i+1}/{threads.length}{i===0?" · 첫 글":""} <span style={{fontWeight:400,color:t.length>500?"#f85149":"#8b949e"}}>({t.length}/500자)</span></span>
+            <div style={{display:"flex",gap:"4px"}}>
+              <button style={S.small} onClick={()=>copy(t,"t"+i)}>{copied==="t"+i?"✓ 복사됨":"복사"}</button>
+              <button style={S.small} onClick={()=>setThreads(a=>a.filter((_,k)=>k!==i))}>삭제</button>
+            </div>
+          </div>
+          <textarea style={{...S.input,height:"110px",lineHeight:1.6,borderColor:t.length>500?"#f85149":"#30363d"}} value={t} onChange={e=>setThreads(a=>a.map((x,k)=>k===i?e.target.value:x))}/>
+        </div>)}
+        <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:"14px"}}>
+          <button style={S.small} onClick={()=>setThreads(a=>[...a,""])}>+ 글 추가</button>
+          <span style={{fontSize:"13px",color:"#8b949e"}}>주제 태그</span>
+          <input style={{...S.input,width:"180px"}} value={threadTag} onChange={e=>setThreadTag(e.target.value.replace(/^#/,"").replace(/\s+/g,""))}/>
+          <button style={S.small} onClick={()=>copy(threadTag,"tag")}>{copied==="tag"?"✓":"태그 복사"}</button>
+        </div>
+        <span style={S.label}>첫 글에 붙일 카드 이미지 (최대 2장)</span>
+        <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"10px"}}>
+          {cards.map((c,i)=><button key={i} style={S.chip(threadPics.includes(i))}
+            onClick={()=>setThreadPics(a=>a.includes(i)?a.filter(x=>x!==i):[...a,i].slice(-2))}>{i+1}번{i===0?" 표지":""}</button>)}
+        </div>
+        <button style={S.btn("#238636",busy||!threadPics.length)} disabled={!!busy||!threadPics.length} onClick={()=>saveMany([...threadPics].sort((a,b)=>a-b))}>⬇ 고른 카드 저장</button>
+      </div>}
+    </div>}
+  </div>;
+}
+
+const TOOL_MAP={gsc:GscTab,keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:LocalImageTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab,videodl:VideoDownloadTab,snsconvert:SnsConvertTab};
 
 
 // ─── 블로그 글쓰기 공통 프롬프트 빌더 ───────────────────────────────────────
