@@ -659,7 +659,7 @@ const WRITE_SUBTABS=[
 
 // 이미지 편집 서브탭
 const IMAGE_SUBTABS=[
-  {id:"localimg",    icon:"🎨", label:"AI 이미지 생성(집 PC)"},
+  {id:"localimg",    icon:"🎨", label:"AI 이미지 생성"},
   {id:"ocr",         icon:"🖼️", label:"이미지 텍스트추출"},
   {id:"convert",     icon:"🔄", label:"이미지 형식변환"},
   {id:"crop",        icon:"✂️",  label:"이미지 자르기"},
@@ -7830,6 +7830,360 @@ function LocalImageTab(){
   </div>;
 }
 
+// ─── GPT 이미지 (회사: OpenAI API 키) — 새로 만들기 · 수정하기 ─────────
+const GPT_IMG_RATIOS=["1:1","3:2","2:3","4:3","3:4","16:9","9:16"];
+const GPT_IMG2_SIZE={"1:1":[1024,1024],"3:2":[1536,1024],"2:3":[1024,1536],"4:3":[1536,1152],"3:4":[1152,1536],"16:9":[1536,864],"9:16":[864,1536]};
+const GPT_MINI_SIZE={"1:1":[1024,1024],"3:2":[1536,1024],"2:3":[1024,1536],"4:3":[1536,1024],"3:4":[1024,1536],"16:9":[1536,1024],"9:16":[1024,1536]};
+// 대략 1장 값 (달러) — 표시용. 실제 금액은 생성 후 사용량으로 다시 계산
+const GPT_IMG_EST={
+  "gpt-image-2":{low:0.006,medium:0.05,high:0.2},
+  "gpt-image-1-mini":{low:0.006,medium:0.015,high:0.05},
+};
+const GPT_NO_TEXT=" No text, letters, numbers or logos anywhere in the image; phone screens are blank.";
+const GPT_USAGE_KEY="gpt_img_usage";
+
+// "Option A — …" 문단은 옵션별로, 나머지 문단은 모든 옵션에 공통으로 붙인다
+function splitPromptOptions(text){
+  const paras=String(text||"").replace(/\r/g,"").split(/\n\s*\n/).map(p=>p.trim()).filter(Boolean);
+  const re=/^\s*(?:option|옵션|시안|안)\s*([A-Za-z0-9가-힣]{1,3})\s*[—–\-:.)]\s*/i;
+  const opts=[], pre=[], post=[];
+  for(const p of paras){
+    const m=p.match(re);
+    if(m) opts.push({ name:m[1].toUpperCase(), body:p.replace(re,"").trim() });
+    else (opts.length?post:pre).push(p);
+  }
+  if(opts.length<2) return [{ name:"", prompt:paras.join("\n\n") }];
+  return opts.map(o=>({ name:o.name, prompt:[...pre,o.body,...post].join("\n\n") }));
+}
+// 프롬프트 안의 비율 표현 읽기
+function detectRatio(text){
+  const t=String(text||"");
+  const m=t.match(/\b(1|2|3|4|9|16)\s*[:：x×]\s*(1|2|3|4|9|16)\b/);
+  if(m){ const r=`${m[1]}:${m[2]}`; if(GPT_IMG_RATIOS.includes(r)) return r; }
+  if(/\bsquare\b|정사각/i.test(t)) return "1:1";
+  if(/\b(vertical|portrait orientation|portrait format)\b|세로/i.test(t)) return "2:3";
+  if(/\blandscape\b|가로/i.test(t)) return "3:2";
+  return "";
+}
+function gptUsageLoad(){ const mo=new Date().toISOString().slice(0,7); try{ const u=JSON.parse(localStorage.getItem(GPT_USAGE_KEY)||"{}"); return u.mo===mo?u:{mo,n:0,usd:0}; }catch(e){ return {mo,n:0,usd:0}; } }
+function gptUsageAdd(usd){ const u=gptUsageLoad(); u.n++; u.usd+=(usd||0); try{ localStorage.setItem(GPT_USAGE_KEY,JSON.stringify(u)); }catch(e){} return u; }
+
+async function gptImgCall(body){
+  const r=await fetch("/api/gpt-image",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+  const j=await r.json().catch(()=>({ error:r.status===413?"보내는 사진이 너무 커요":r.status===504?"시간 초과 — 품질을 낮추거나 다시 시도":"응답 오류 "+r.status }));
+  if(j.error) throw new Error(j.error);
+  return j;
+}
+function loadImgEl(src){ return new Promise((ok,no)=>{ const im=new Image(); im.onload=()=>ok(im); im.onerror=()=>no(new Error("사진을 열 수 없어요")); im.src=src; }); }
+// 사진 → 보낼 크기 JPEG
+async function toJpegDataUrl(src, maxEdge=1536, w0, h0){
+  const im=await loadImgEl(src);
+  let W=w0, H=h0;
+  if(!W){ const s=Math.min(1,maxEdge/Math.max(im.width,im.height)); W=Math.round(im.width*s); H=Math.round(im.height*s); }
+  const c=document.createElement("canvas"); c.width=W; c.height=H;
+  c.getContext("2d").drawImage(im,0,0,W,H);
+  return c.toDataURL("image/jpeg",0.9);
+}
+// 가운데 기준으로 비율 맞춰 자르기 (mini 는 4:3·16:9 크기가 없어서)
+async function cropToRatio(src, ratio){
+  const [a,b]=ratio.split(":").map(Number); const im=await loadImgEl(src);
+  let w=im.width, h=Math.round(im.width*b/a);
+  if(h>im.height){ h=im.height; w=Math.round(im.height*a/b); }
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  c.getContext("2d").drawImage(im,(im.width-w)/2,(im.height-h)/2,w,h,0,0,w,h);
+  return c.toDataURL("image/jpeg",0.92);
+}
+// 수정용 크기: gpt-image-2 조건(16의 배수, 긴 변 ≤1536 정도, 0.65MP 이상)
+function editSize(w,h){
+  let s=1536/Math.max(w,h);
+  let W=Math.round(w*s/16)*16, H=Math.round(h*s/16)*16;
+  while(W*H<655360){ s*=1.05; W=Math.round(w*s/16)*16; H=Math.round(h*s/16)*16; }
+  if(Math.max(W,H)/Math.min(W,H)>3) return null;
+  return [W,H];
+}
+function dlDataUrl(url,name){ const a=document.createElement("a"); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
+
+function GptImagePanel({ configured }){
+  const [tab,setTab]=useState("new");
+  const [prompt,setPrompt]=useState("");
+  const [ratioSel,setRatioSel]=useState("auto");
+  const [model,setModel]=useState(()=>{ try{ return localStorage.getItem("gpt_img_model")||"gpt-image-2"; }catch(e){ return "gpt-image-2"; } });
+  const [quality,setQuality]=useState(()=>{ try{ return localStorage.getItem("gpt_img_quality")||"medium"; }catch(e){ return "medium"; } });
+  const [count,setCount]=useState(1);
+  const [noText,setNoText]=useState(false);
+  const [refs,setRefs]=useState([]);                    // 참고 사진 dataURL
+  const [busy,setBusy]=useState(false);
+  const [state,setState]=useState("");
+  const [err,setErr]=useState("");
+  const [results,setResults]=useState([]);              // {id,url,option,prompt,ratio,model,quality,usd,kind,from}
+  const [usage,setUsage]=useState(gptUsageLoad);
+  // 수정
+  const [src,setSrc]=useState(null);                    // {url,w,h,name}
+  const [inst,setInst]=useState("");
+  const [eQuality,setEQuality]=useState("high");
+  const [eCount,setECount]=useState(1);
+  const [strokes,setStrokes]=useState([]);              // {x,y,r} 0~1 (가로 기준)
+  const [brush,setBrush]=useState(40);
+  const [paint,setPaint]=useState(true);
+  const refFile=useRef(); const srcFile=useRef(); const maskCv=useRef(); const imgRef=useRef(null); const drawRef=useRef(false);
+
+  const keep=(k,v)=>{ try{ localStorage.setItem(k,v); }catch(e){} };
+  const options=splitPromptOptions(prompt);
+  const autoRatio=detectRatio(prompt);
+  const ratioFor=o=>ratioSel!=="auto"?ratioSel:(detectRatio(o.prompt)||autoRatio||"3:2");
+  const per=(GPT_IMG_EST[model]||GPT_IMG_EST["gpt-image-2"])[quality];
+  const total=options.length*count;
+
+  // ── 새로 만들기
+  const runNew=async()=>{
+    if(!prompt.trim()){ setErr("프롬프트를 넣어주세요"); return; }
+    setBusy(true); setErr("");
+    const refData=[];
+    for(const r of refs) refData.push(await toJpegDataUrl(r,1024));
+    const jobs=[];
+    options.forEach(o=>{ for(let i=0;i<count;i++) jobs.push(o); });
+    let done=0, fail=[];
+    const runOne=async o=>{
+      const ratio=ratioFor(o);
+      const [w,h]=(model==="gpt-image-2"?GPT_IMG2_SIZE:GPT_MINI_SIZE)[ratio];
+      const p=o.prompt+(noText?GPT_NO_TEXT:"");
+      try{
+        const j=await gptImgCall(refData.length
+          ?{ action:"edit", prompt:p, model, size:`${w}x${h}`, quality, images:refData }
+          :{ action:"generate", prompt:p, model, size:`${w}x${h}`, quality });
+        let url="data:image/jpeg;base64,"+j.image;
+        const [ra,rb]=ratio.split(":").map(Number); const needCrop=Math.abs(w/h-ra/rb)>0.02;
+        if(needCrop) url=await cropToRatio(url,ratio);
+        setUsage(gptUsageAdd(j.usd));
+        setResults(rs=>[{ id:Date.now()+Math.random(), url, option:o.name, prompt:o.prompt, ratio, model, quality, usd:j.usd, kind:refData.length?"참고사진":"생성", cropped:needCrop }, ...rs]);
+      }catch(e){ fail.push(`${o.name?`옵션 ${o.name}: `:""}${e.message}`); }
+      done++; setState(`만드는 중 ${done}/${jobs.length}`);
+    };
+    setState(`만드는 중 0/${jobs.length} (한 장에 20초~1분)`);
+    // 동시에 3장까지
+    const q=[...jobs]; await Promise.all([0,1,2].map(async()=>{ while(q.length) await runOne(q.shift()); }));
+    setState(fail.length?`${jobs.length-fail.length}/${jobs.length}장 완료`:`✓ ${jobs.length}장 완료`);
+    if(fail.length) setErr(fail.join("\n"));
+    setBusy(false);
+  };
+
+  // ── 수정하기
+  const openEdit=async(url,name="수정원본")=>{
+    const im=await loadImgEl(url);
+    setSrc({ url, w:im.width, h:im.height, name }); setStrokes([]); setInst(""); setErr(""); setTab("edit");
+    window.scrollTo({top:0,behavior:"smooth"});
+  };
+  useEffect(()=>{ // 미리보기 + 칠한 곳 표시
+    const cv=maskCv.current; if(!cv||!src) return;
+    let alive=true;
+    loadImgEl(src.url).then(im=>{
+      if(!alive) return; imgRef.current=im;
+      const W=Math.min(640,im.width), H=Math.round(W*im.height/im.width);
+      cv.width=W; cv.height=H; const g=cv.getContext("2d");
+      g.drawImage(im,0,0,W,H);
+      g.fillStyle="rgba(255,60,60,.45)";
+      for(const s of strokes){ g.beginPath(); g.arc(s.x*W,s.y*W,s.r*W,0,Math.PI*2); g.fill(); }
+    });
+    return ()=>{ alive=false; };
+  },[src,strokes,tab]);
+  const onPaint=e=>{
+    if(!drawRef.current||!src) return;
+    const r=maskCv.current.getBoundingClientRect();
+    const x=(e.clientX-r.left)/r.width, y=(e.clientY-r.top)/r.width;
+    if(paint) setStrokes(s=>[...s,{ x, y, r:brush/r.width }]);
+    else setStrokes(s=>s.filter(p=>Math.hypot(p.x-x,p.y-y)>brush/r.width));
+  };
+  const runEdit=async()=>{
+    if(!src){ setErr("수정할 사진을 넣어주세요"); return; }
+    if(!inst.trim()){ setErr("어떻게 바꿀지 적어주세요"); return; }
+    const sz=editSize(src.w,src.h);
+    setBusy(true); setErr("");
+    try{
+      const [W,H]=sz||[Math.round(src.w/16)*16,Math.round(src.h/16)*16];
+      const image=await toJpegDataUrl(src.url,0,W,H);
+      let mask=null;
+      if(strokes.length){
+        const c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d");
+        g.fillStyle="#000"; g.fillRect(0,0,W,H);
+        g.globalCompositeOperation="destination-out";
+        for(const s of strokes){ g.beginPath(); g.arc(s.x*W,s.y*W,s.r*W,0,Math.PI*2); g.fill(); }
+        mask=c.toDataURL("image/png");
+      }
+      const p=(mask?"Edit only the masked area. Keep everything outside it exactly the same as the original. ":"Keep the composition, people, lighting and every detail the same as the original image except for this change. ")+inst.trim();
+      const outs=[];
+      for(let i=0;i<eCount;i++){
+        setState(`수정 중 ${i+1}/${eCount} (20초~1분)`);
+        const j=await gptImgCall({ action:"edit", prompt:p, model:"gpt-image-2", size:sz?`${W}x${H}`:"auto", quality:eQuality, images:[image], ...(mask?{mask}:{}) });
+        setUsage(gptUsageAdd(j.usd));
+        outs.push({ id:Date.now()+Math.random(), url:"data:image/jpeg;base64,"+j.image, option:"", prompt:inst.trim(), ratio:"", model:"gpt-image-2", quality:eQuality, usd:j.usd, kind:"수정", from:src.url });
+      }
+      setResults(rs=>[...outs,...rs]);
+      setState(`✓ 수정 ${outs.length}장 완료 — 아래 결과에서 원본과 비교하세요`);
+    }catch(e){ setErr(e.message); setState(""); }
+    setBusy(false);
+  };
+
+  const chip=on=>({padding:"5px 12px",borderRadius:"6px",fontSize:"14px",fontWeight:600,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
+    background:on?"#1f6feb":"#0d1117",color:on?"#fff":"#8b949e",border:`1px solid ${on?"#1f6feb":"#30363d"}`});
+  const lab={color:"#8b949e",fontSize:"13px"};
+  const box={background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"16px"};
+  const small={padding:"4px 10px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",fontSize:"13px",cursor:"pointer"};
+  const won=d=>d==null?"":`약 ${Math.round(d*1400).toLocaleString()}원`;
+
+  if(!configured) return <div style={box}>
+    <div style={{color:"#e6edf3",fontWeight:700,marginBottom:"8px"}}>💳 GPT API 이미지</div>
+    <div style={{color:"#8b949e",fontSize:"14px",lineHeight:1.7}}>이 사이트에는 GPT 키가 없어요. 회사 사이트 Vercel → Settings → Environment Variables 에 <code>OPENAI_API_KEY</code> 를 넣고 다시 배포하면 쓸 수 있어요.</div>
+  </div>;
+
+  return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+    <div style={box}>
+      <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:"12px"}}>
+        <button style={chip(tab==="new")} onClick={()=>setTab("new")}>✨ 새로 만들기</button>
+        <button style={chip(tab==="edit")} onClick={()=>setTab("edit")}>✏️ 수정하기</button>
+        <span style={{marginLeft:"auto",color:"#8b949e",fontSize:"12px"}}>이번 달 {usage.n}장 · ${usage.usd.toFixed(2)} ({won(usage.usd)}) · 이 브라우저 기준</span>
+      </div>
+
+      {tab==="new"&&<div>
+        <Textarea value={prompt} onChange={setPrompt} rows={8} placeholder={"프롬프트를 그대로 붙여넣으세요 (한글·영어 모두 OK, 바꾸지 않고 그대로 보냅니다)\n\"Option A — …\", \"Option B — …\" 처럼 쓰면 옵션별로 따로 뽑고, 나머지 문단은 모든 옵션에 공통으로 붙여요."}/>
+        {options.length>1&&<div style={{marginTop:"8px",fontSize:"13px",color:"#58a6ff"}}>
+          옵션 {options.length}개 찾음: {options.map(o=>`${o.name}(${ratioFor(o)})`).join(", ")} — 공통 문단은 각 옵션에 붙여서 보내요
+        </div>}
+        <div style={{display:"flex",flexWrap:"wrap",gap:"14px",alignItems:"center",marginTop:"12px"}}>
+          <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap"}}><span style={lab}>비율</span>
+            <button style={chip(ratioSel==="auto")} onClick={()=>setRatioSel("auto")}>자동{autoRatio?` (${autoRatio})`:""}</button>
+            {GPT_IMG_RATIOS.map(r=><button key={r} onClick={()=>setRatioSel(r)} style={chip(ratioSel===r)}>{r}</button>)}</div>
+        </div>
+        <div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px"}}>
+          {ratioSel==="auto"?(autoRatio?`프롬프트에서 ${autoRatio} 를 읽었어요.`:"프롬프트에 비율이 없어서 3:2 가로로 만들어요."):`직접 고른 ${ratioSel} 로 만들어요 (프롬프트의 비율 표현보다 우선).`}
+          {model==="gpt-image-1-mini"&&options.some(o=>["4:3","3:4","16:9","9:16"].includes(ratioFor(o)))&&" · mini 는 이 비율 크기가 없어서 가까운 크기로 만든 뒤 양옆(위아래)을 잘라 맞춰요."}
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:"14px",alignItems:"center",marginTop:"12px"}}>
+          <div style={{display:"flex",gap:"6px",alignItems:"center"}}><span style={lab}>모델</span>
+            <select value={model} onChange={e=>{ setModel(e.target.value); keep("gpt_img_model",e.target.value); }} style={{background:"#0d1117",color:"#c9d1d9",border:"1px solid #30363d",borderRadius:"6px",padding:"5px 8px"}}>
+              <option value="gpt-image-2">gpt-image-2 (고품질·추천)</option><option value="gpt-image-1-mini">gpt-image-1-mini (저렴)</option></select></div>
+          <div style={{display:"flex",gap:"6px",alignItems:"center"}}><span style={lab}>품질</span>
+            {[["low","낮음"],["medium","보통"],["high","높음"]].map(([q,l])=><button key={q} style={chip(quality===q)} onClick={()=>{ setQuality(q); keep("gpt_img_quality",q); }}>{l}</button>)}</div>
+          <div style={{display:"flex",gap:"6px",alignItems:"center"}}><span style={lab}>{options.length>1?"옵션마다":""} 장수</span>
+            {[1,2,3,4].map(n=><button key={n} onClick={()=>setCount(n)} style={chip(count===n)}>{n}</button>)}</div>
+          <label style={{display:"flex",gap:"6px",alignItems:"center",...lab,cursor:"pointer"}}>
+            <input type="checkbox" checked={noText} onChange={e=>setNoText(e.target.checked)}/> 글씨·로고 없게 문장 덧붙이기</label>
+        </div>
+        <div style={{marginTop:"12px"}}>
+          <span style={lab}>참고 사진 (선택 · 실제 제품 모양 따라 그리기, 최대 4장)</span>
+          <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"6px"}}>
+            {refs.map((r,i)=><div key={i} style={{position:"relative"}}><img src={r} style={{width:"64px",height:"64px",objectFit:"cover",borderRadius:"6px"}}/>
+              <button onClick={()=>setRefs(a=>a.filter((_,k)=>k!==i))} style={{position:"absolute",right:"2px",top:"2px",background:"rgba(0,0,0,.7)",border:"none",color:"#fff",borderRadius:"50%",width:"18px",height:"18px",cursor:"pointer",fontSize:"11px"}}>✕</button></div>)}
+            {refs.length<4&&<button onClick={()=>refFile.current.click()} style={{width:"64px",height:"64px",border:"1px dashed #30363d",borderRadius:"6px",background:"#0d1117",color:"#8b949e",cursor:"pointer",fontSize:"12px"}}>+ 추가</button>}
+            <input ref={refFile} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{ [...e.target.files].slice(0,4-refs.length).forEach(f=>{ const rd=new FileReader(); rd.onload=ev=>setRefs(a=>[...a,ev.target.result].slice(0,4)); rd.readAsDataURL(f); }); e.target.value=""; }}/>
+          </div>
+          {refs.length>0&&<div style={{fontSize:"12px",color:"#8b949e",marginTop:"4px"}}>참고 사진이 있으면 프롬프트에 "첨부한 사진의 폰과 똑같이" 같은 말을 넣어주면 더 정확해요.</div>}
+        </div>
+        <div style={{display:"flex",gap:"10px",alignItems:"center",marginTop:"14px",flexWrap:"wrap"}}>
+          <Btn onClick={runNew} loading={busy}>✨ {total}장 만들기</Btn>
+          <span style={{color:"#8b949e",fontSize:"13px"}}>예상 약 ${(per*total).toFixed(2)} ({won(per*total)})</span>
+          {state&&<span style={{color:"#d29922",fontSize:"14px"}}>{state}</span>}
+        </div>
+      </div>}
+
+      {tab==="edit"&&<div>
+        {!src
+          ?<div onClick={()=>srcFile.current.click()} style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"40px",textAlign:"center",color:"#8b949e",cursor:"pointer"}}>
+              수정할 사진을 눌러서 고르세요<br/><span style={{fontSize:"12px"}}>(아래 결과의 「✏️ 수정」을 눌러도 돼요)</span></div>
+          :<div style={{display:"flex",gap:"16px",flexWrap:"wrap",alignItems:"flex-start"}}>
+            <div>
+              <canvas ref={maskCv} onPointerDown={e=>{ e.currentTarget.setPointerCapture(e.pointerId); drawRef.current=true; onPaint(e); }} onPointerMove={onPaint} onPointerUp={()=>drawRef.current=false}
+                style={{maxWidth:"min(560px,100%)",width:"560px",borderRadius:"8px",display:"block",cursor:"crosshair",touchAction:"none",background:"#000"}}/>
+              <div style={{display:"flex",gap:"6px",marginTop:"8px",flexWrap:"wrap",alignItems:"center"}}>
+                <button style={chip(paint)} onClick={()=>setPaint(true)}>🖌 바꿀 곳 칠하기</button>
+                <button style={chip(!paint)} onClick={()=>setPaint(false)}>지우개</button>
+                <span style={lab}>붓 {brush}</span><input type="range" min="10" max="120" value={brush} onChange={e=>setBrush(Number(e.target.value))}/>
+                <button style={small} onClick={()=>setStrokes([])}>칠한 것 전부 지우기</button>
+                <button style={small} onClick={()=>srcFile.current.click()}>다른 사진</button>
+              </div>
+              <div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px",maxWidth:"560px"}}>
+                {strokes.length?"빨갛게 칠한 곳만 다시 그리고 나머지는 원본 그대로 둬요.":"칠하지 않으면 사진 전체를 보고 지시대로 고쳐요 (다른 부분도 조금씩 바뀔 수 있어요)."}
+              </div>
+            </div>
+            <div style={{flex:1,minWidth:"260px"}}>
+              <span style={lab}>어떻게 바꿀까요?</span>
+              <Textarea value={inst} onChange={setInst} rows={5} placeholder={"예) 아이 손가락이 6개로 나왔어요. 손가락 5개로 자연스럽게 고쳐줘\n예) 폰 뒷면 로고를 SAMSUNG 으로 정확하게"}/>
+              <div style={{display:"flex",gap:"6px",alignItems:"center",marginTop:"10px",flexWrap:"wrap"}}><span style={lab}>품질</span>
+                {[["medium","보통"],["high","높음"]].map(([q,l])=><button key={q} style={chip(eQuality===q)} onClick={()=>setEQuality(q)}>{l}</button>)}
+                <span style={{...lab,marginLeft:"8px"}}>장수</span>{[1,2].map(n=><button key={n} style={chip(eCount===n)} onClick={()=>setECount(n)}>{n}</button>)}
+              </div>
+              <div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px"}}>모델 gpt-image-2 · 원본 비율 그대로 · 예상 약 ${((GPT_IMG_EST["gpt-image-2"][eQuality]+0.02)*eCount).toFixed(2)} ({won((GPT_IMG_EST["gpt-image-2"][eQuality]+0.02)*eCount)})</div>
+              <div style={{display:"flex",gap:"10px",alignItems:"center",marginTop:"12px",flexWrap:"wrap"}}>
+                <Btn onClick={runEdit} loading={busy}>✏️ 수정하기</Btn>
+                {state&&<span style={{color:"#d29922",fontSize:"14px"}}>{state}</span>}
+              </div>
+            </div>
+          </div>}
+        <input ref={srcFile} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{ const f=e.target.files[0]; if(f){ const rd=new FileReader(); rd.onload=ev=>openEdit(ev.target.result,f.name.replace(/\.\w+$/,"")); rd.readAsDataURL(f); } e.target.value=""; }}/>
+      </div>}
+
+      {err&&<div style={{marginTop:"10px",background:"#2d1117",border:"1px solid #da363344",borderRadius:"8px",padding:"10px 14px",color:"#ff7b72",fontSize:"14px",whiteSpace:"pre-wrap"}}>⚠️ {err}</div>}
+      <div style={{marginTop:"12px",color:"#484f58",fontSize:"12px",lineHeight:1.7}}>
+        · 회사 GPT API 키로 만들어서 장마다 요금이 나가요 (금액은 대략치, 정확한 값은 OpenAI 사용량 페이지).<br/>
+        · 만든 이미지는 이 화면에만 있어요 — 새로고침하면 사라지니 필요한 건 바로 저장하세요.
+      </div>
+    </div>
+
+    {results.length>0&&<div>
+      <div style={{display:"flex",alignItems:"center",marginBottom:"8px"}}>
+        <SectionTitle>만든 이미지 ({results.length})</SectionTitle>
+        <button onClick={()=>{ if(confirm("목록을 비울까요? (저장 안 한 이미지는 사라져요)")) setResults([]); }} style={{...small,marginLeft:"auto"}}>목록 비우기</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:"12px"}}>
+        {results.map((it,i)=><div key={it.id} style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
+          {it.from
+            ?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"2px",background:"#30363d"}}>
+              <div style={{position:"relative"}}><img src={it.from} style={{width:"100%",display:"block"}}/><span style={{position:"absolute",left:"4px",top:"4px",background:"rgba(0,0,0,.7)",color:"#fff",fontSize:"11px",padding:"1px 6px",borderRadius:"4px"}}>원본</span></div>
+              <div style={{position:"relative"}}><img src={it.url} style={{width:"100%",display:"block"}}/><span style={{position:"absolute",left:"4px",top:"4px",background:"#1f6febcc",color:"#fff",fontSize:"11px",padding:"1px 6px",borderRadius:"4px"}}>수정</span></div>
+            </div>
+            :<a href={it.url} target="_blank" rel="noreferrer"><img src={it.url} style={{width:"100%",display:"block"}}/></a>}
+          <div style={{padding:"8px 10px",display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
+            <button onClick={()=>dlDataUrl(it.url,`gpt_${it.option?it.option+"_":""}${new Date().toISOString().slice(0,10)}_${i+1}.jpg`)}
+              style={{padding:"4px 10px",borderRadius:"6px",border:"1px solid #2ea043",background:"#2ea04322",color:"#3fb950",fontSize:"13px",fontWeight:700,cursor:"pointer"}}>💾 JPG 저장</button>
+            <button style={small} onClick={()=>openEdit(it.url,`결과${i+1}`)}>✏️ 수정</button>
+            {it.kind!=="수정"&&<button style={small} onClick={()=>{ setTab("new"); setPrompt(it.prompt); setRatioSel(it.ratio||"auto"); window.scrollTo({top:0,behavior:"smooth"}); }}>↩ 다시 쓰기</button>}
+            <span style={{color:"#484f58",fontSize:"12px",marginLeft:"auto"}}>{it.option?`옵션 ${it.option} · `:""}{it.kind} · {it.quality}{it.usd!=null?` · $${it.usd.toFixed(3)}`:""}{it.cropped?" · 잘라 맞춤":""}</span>
+          </div>
+          {it.kind==="수정"&&<div style={{padding:"0 10px 8px",color:"#8b949e",fontSize:"12px"}}>지시: {it.prompt}</div>}
+        </div>)}
+      </div>
+    </div>}
+  </div>;
+}
+
+// 이미지 편집 > AI 이미지 생성 — 집 PC(무료) / GPT API(유료) 나눠 쓰기
+function ImageGenTab(){
+  const [mode,setMode]=useState(()=>{ try{ return localStorage.getItem("img_gen_mode")||""; }catch(e){ return ""; } });
+  const [gpt,setGpt]=useState(null);         // null=확인 중, true/false
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      let ok=false;
+      try{ const j=await (await fetch("/api/gpt-image",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ action:"info" }) })).json(); ok=!!j.configured; }catch(e){}
+      if(!alive) return; setGpt(ok);
+      if(!mode){ // 처음: 집 PC 서버가 켜져 있으면 집 PC, 아니면 GPT
+        const h=await localImgHealth();
+        if(alive) setMode(h&&h.comfy?"home":ok?"gpt":"home");
+      }
+    })();
+    return ()=>{ alive=false; };
+  },[]);
+  const pick=m=>{ setMode(m); try{ localStorage.setItem("img_gen_mode",m); }catch(e){} };
+  const tab=on=>({padding:"8px 14px",borderRadius:"8px",border:"1px solid "+(on?"#1f6feb":"#30363d"),background:on?"#1f6feb22":"#161b22",color:on?"#58a6ff":"#8b949e",cursor:"pointer",fontSize:"14px",fontWeight:600});
+  return <div>
+    <div style={{display:"flex",gap:"8px",marginBottom:"14px",flexWrap:"wrap",alignItems:"center"}}>
+      <button style={tab(mode==="home")} onClick={()=>pick("home")}>🏠 집 PC (무료)</button>
+      <button style={tab(mode==="gpt")} onClick={()=>pick("gpt")}>💳 GPT API (유료){gpt===false?" · 키 없음":""}</button>
+    </div>
+    <div style={{display:mode==="gpt"?"none":"block"}}><LocalImageTab/></div>
+    <div style={{display:mode==="gpt"?"block":"none"}}>{gpt===null?<div style={{color:"#8b949e"}}>확인 중…</div>:<GptImagePanel configured={gpt}/>}</div>
+  </div>;
+}
+
 function ExifTab() {
   const [files, setFiles] = useState([]);       // [{file, url, name, type, size, meta, cleaned, cleanedUrl, status}]
   const [selected, setSelected] = useState(0);
@@ -11037,7 +11391,7 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
   </div>;
 }
 
-const TOOL_MAP={gsc:GscTab,keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:LocalImageTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab,videodl:VideoDownloadTab,snsconvert:SnsConvertTab};
+const TOOL_MAP={gsc:GscTab,keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:ImageGenTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab,videodl:VideoDownloadTab,snsconvert:SnsConvertTab};
 
 
 // ─── 블로그 글쓰기 공통 프롬프트 빌더 ───────────────────────────────────────
