@@ -7903,6 +7903,110 @@ function editSize(w,h){
 }
 function dlDataUrl(url,name){ const a=document.createElement("a"); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
 
+// 결과 크게 보기 — 클릭하면 열림. 수정 결과는 나란히 / 겹쳐 비교 / 번갈아, 휠 확대·끌어서 이동
+function GptLightbox({ items, index, setIndex, onClose, onEdit }){
+  const it=items[index];
+  const [mode,setMode]=useState(()=>{ try{ return localStorage.getItem("gpt_lb_mode")||"slider"; }catch(e){ return "slider"; } });
+  const [s,setS]=useState(1); const [t,setT]=useState({x:0,y:0});
+  const [pos,setPos]=useState(50);              // 겹쳐 비교: 가운데 선 위치(%)
+  const [showOrig,setShowOrig]=useState(false); // 번갈아: 원본 보는 중
+  const vp=useRef(); const boxRef=useRef(); const drag=useRef(null);
+  const cmp=!!it?.from;
+  const pickMode=m=>{ setMode(m); try{ localStorage.setItem("gpt_lb_mode",m); }catch(e){} };
+  const reset=()=>{ setS(1); setT({x:0,y:0}); };
+  useEffect(()=>{ reset(); setShowOrig(false); setPos(50); },[index,mode]);
+  useEffect(()=>{
+    const key=e=>{
+      if(e.key==="Escape") onClose();
+      else if(e.key==="ArrowRight"&&index<items.length-1) setIndex(index+1);
+      else if(e.key==="ArrowLeft"&&index>0) setIndex(index-1);
+      else if(e.key===" "&&cmp){ e.preventDefault(); if(mode!=="flip") pickMode("flip"); setShowOrig(v=>!v); }
+    };
+    window.addEventListener("keydown",key);
+    const ov=document.body.style.overflow; document.body.style.overflow="hidden";
+    return ()=>{ window.removeEventListener("keydown",key); document.body.style.overflow=ov; };
+  },[index,items.length,mode,cmp]);
+  useEffect(()=>{ // 휠 확대 (마우스 위치 기준)
+    const el=vp.current; if(!el) return;
+    const wheel=e=>{
+      e.preventDefault();
+      const r=el.getBoundingClientRect(); const px=e.clientX-r.left-r.width/2, py=e.clientY-r.top-r.height/2;
+      setS(old=>{ const ns=Math.min(8,Math.max(1,old*(e.deltaY<0?1.2:1/1.2)));
+        setT(o=>ns===1?{x:0,y:0}:{ x:px-(px-o.x)*ns/old, y:py-(py-o.y)*ns/old }); return ns; });
+    };
+    el.addEventListener("wheel",wheel,{passive:false});
+    return ()=>el.removeEventListener("wheel",wheel);
+  },[]);
+  if(!it) return null;
+  const setLine=e=>{ const r=boxRef.current?.getBoundingClientRect(); if(r) setPos(Math.min(100,Math.max(0,(e.clientX-r.left)/r.width*100))); };
+  const down=e=>{
+    if(e.target.dataset.line){ drag.current={line:true}; e.currentTarget.setPointerCapture(e.pointerId); return; }
+    drag.current={ x:e.clientX, y:e.clientY, tx:t.x, ty:t.y, moved:false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const move=e=>{
+    const d=drag.current; if(!d) return;
+    if(d.line) return setLine(e);
+    const dx=e.clientX-d.x, dy=e.clientY-d.y;
+    if(Math.abs(dx)+Math.abs(dy)>4) d.moved=true;
+    if(d.moved&&s>1) setT({ x:d.tx+dx, y:d.ty+dy });
+  };
+  const up=e=>{
+    const d=drag.current; drag.current=null;
+    if(!d||d.line||d.moved) return;
+    if(e.target===vp.current) return onClose();            // 바깥(빈 곳) 클릭 → 닫기
+    if(cmp&&mode==="flip") setShowOrig(v=>!v);
+  };
+  const H="calc(100vh - 150px)";
+  const tag=(txt,blue)=><span style={{position:"absolute",left:"8px",top:"8px",background:blue?"#1f6febdd":"rgba(0,0,0,.75)",color:"#fff",fontSize:"13px",fontWeight:700,padding:"2px 8px",borderRadius:"5px",pointerEvents:"none"}}>{txt}</span>;
+  const img=(src,max)=><img src={src} draggable={false} style={{display:"block",maxWidth:max,maxHeight:H,userSelect:"none"}}/>;
+  const btn=on=>({padding:"6px 12px",borderRadius:"6px",border:"1px solid "+(on?"#1f6feb":"#444c56"),background:on?"#1f6feb":"#21262d",color:"#fff",fontSize:"13px",fontWeight:600,cursor:"pointer"});
+
+  let body;
+  if(!cmp) body=<div style={{position:"relative"}}>{img(it.url,"94vw")}</div>;
+  else if(mode==="side") body=<div style={{display:"flex",gap:"10px"}}>
+    <div style={{position:"relative"}}>{img(it.from,"46vw")}{tag("원본")}</div>
+    <div style={{position:"relative"}}>{img(it.url,"46vw")}{tag("수정",true)}</div></div>;
+  else if(mode==="slider") body=<div ref={boxRef} style={{position:"relative"}}>
+    {img(it.from,"94vw")}
+    <img src={it.url} draggable={false} style={{position:"absolute",inset:0,width:"100%",height:"100%",clipPath:`inset(0 0 0 ${pos}%)`,userSelect:"none"}}/>
+    <div data-line="1" style={{position:"absolute",top:0,bottom:0,left:`${pos}%`,width:"24px",marginLeft:"-12px",cursor:"ew-resize",display:"flex",justifyContent:"center"}}>
+      <div data-line="1" style={{width:"3px",height:"100%",background:"#fff",boxShadow:"0 0 6px rgba(0,0,0,.8)"}}/>
+      <div data-line="1" style={{position:"absolute",top:"50%",width:"34px",height:"34px",marginTop:"-17px",borderRadius:"50%",background:"#fff",color:"#111",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:"14px",boxShadow:"0 0 8px rgba(0,0,0,.6)"}}>⇔</div>
+    </div>
+    {tag("원본")}<span style={{position:"absolute",right:"8px",top:"8px",background:"#1f6febdd",color:"#fff",fontSize:"13px",fontWeight:700,padding:"2px 8px",borderRadius:"5px",pointerEvents:"none"}}>수정</span>
+  </div>;
+  else body=<div style={{position:"relative"}}>{img(showOrig?it.from:it.url,"94vw")}{tag(showOrig?"원본":"수정",!showOrig)}</div>;
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(1,4,9,.97)",zIndex:9999,display:"flex",flexDirection:"column"}}>
+    <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",padding:"10px 14px",borderBottom:"1px solid #30363d",position:"relative",zIndex:2,background:"#010409"}}>
+      <b style={{color:"#e6edf3",fontSize:"14px"}}>{index+1} / {items.length}{it.option?` · 옵션 ${it.option}`:""} · {it.kind}</b>
+      {cmp&&<>
+        <span style={{width:"10px"}}/>
+        <button style={btn(mode==="slider")} onClick={()=>pickMode("slider")}>⇔ 겹쳐 비교</button>
+        <button style={btn(mode==="side")} onClick={()=>pickMode("side")}>▥ 나란히</button>
+        <button style={btn(mode==="flip")} onClick={()=>pickMode("flip")}>⇄ 번갈아</button>
+      </>}
+      <span style={{color:"#8b949e",fontSize:"12px",marginLeft:"6px"}}>{Math.round(s*100)}%</span>
+      {s>1&&<button style={btn(false)} onClick={reset}>원래 크기</button>}
+      <div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
+        <button style={btn(false)} disabled={index===0} onClick={()=>setIndex(index-1)}>◀</button>
+        <button style={btn(false)} disabled={index===items.length-1} onClick={()=>setIndex(index+1)}>▶</button>
+        <button style={{...btn(false),borderColor:"#2ea043",color:"#3fb950"}} onClick={()=>dlDataUrl(it.url,`gpt_${it.option?it.option+"_":""}${new Date().toISOString().slice(0,10)}_${index+1}.jpg`)}>💾 JPG 저장</button>
+        <button style={btn(false)} onClick={()=>onEdit(it)}>✏️ 이걸로 수정</button>
+        <button style={btn(false)} onClick={onClose}>✕ 닫기</button>
+      </div>
+    </div>
+    <div ref={vp} onPointerDown={down} onPointerMove={move} onPointerUp={up}
+      style={{flex:1,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:s>1?"grab":(cmp&&mode==="flip"?"pointer":"default"),touchAction:"none"}}>
+      <div style={{transform:`translate(${t.x}px,${t.y}px) scale(${s})`,transformOrigin:"center",transition:drag.current?"none":"transform .05s"}}>{body}</div>
+    </div>
+    <div style={{padding:"6px 14px 10px",color:"#8b949e",fontSize:"12px",textAlign:"center",position:"relative",zIndex:2,background:"#010409"}}>
+      휠: 확대·축소 · 끌기: 이동{cmp?(mode==="slider"?" · 가운데 선을 끌어서 원본/수정 비교":mode==="flip"?" · 클릭·스페이스: 원본↔수정":""):""} · ←→: 다른 이미지 · Esc: 닫기
+    </div>
+  </div>;
+}
+
 function GptImagePanel({ configured }){
   const [tab,setTab]=useState("new");
   const [prompt,setPrompt]=useState("");
@@ -7917,6 +8021,7 @@ function GptImagePanel({ configured }){
   const [err,setErr]=useState("");
   const [results,setResults]=useState([]);              // {id,url,option,prompt,ratio,model,quality,usd,kind,from}
   const [usage,setUsage]=useState(gptUsageLoad);
+  const [zoom,setZoom]=useState(null);                  // 크게 보기 중인 결과 번호
   // 수정
   const [src,setSrc]=useState(null);                    // {url,w,h,name}
   const [inst,setInst]=useState("");
@@ -8128,6 +8233,8 @@ function GptImagePanel({ configured }){
       </div>
     </div>
 
+    {zoom!=null&&results[zoom]&&<GptLightbox items={results} index={zoom} setIndex={setZoom} onClose={()=>setZoom(null)}
+      onEdit={x=>{ setZoom(null); openEdit(x.url,"수정원본"); }}/>}
     {results.length>0&&<div>
       <div style={{display:"flex",alignItems:"center",marginBottom:"8px"}}>
         <SectionTitle>만든 이미지 ({results.length})</SectionTitle>
@@ -8136,11 +8243,11 @@ function GptImagePanel({ configured }){
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:"12px"}}>
         {results.map((it,i)=><div key={it.id} style={{background:"#0d1117",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
           {it.from
-            ?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"2px",background:"#30363d"}}>
+            ?<div onClick={()=>setZoom(i)} title="클릭하면 크게 비교" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"2px",background:"#30363d",cursor:"zoom-in"}}>
               <div style={{position:"relative"}}><img src={it.from} style={{width:"100%",display:"block"}}/><span style={{position:"absolute",left:"4px",top:"4px",background:"rgba(0,0,0,.7)",color:"#fff",fontSize:"11px",padding:"1px 6px",borderRadius:"4px"}}>원본</span></div>
               <div style={{position:"relative"}}><img src={it.url} style={{width:"100%",display:"block"}}/><span style={{position:"absolute",left:"4px",top:"4px",background:"#1f6febcc",color:"#fff",fontSize:"11px",padding:"1px 6px",borderRadius:"4px"}}>수정</span></div>
             </div>
-            :<a href={it.url} target="_blank" rel="noreferrer"><img src={it.url} style={{width:"100%",display:"block"}}/></a>}
+            :<img src={it.url} onClick={()=>setZoom(i)} title="클릭하면 크게 보기" style={{width:"100%",display:"block",cursor:"zoom-in"}}/>}
           <div style={{padding:"8px 10px",display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
             <button onClick={()=>dlDataUrl(it.url,`gpt_${it.option?it.option+"_":""}${new Date().toISOString().slice(0,10)}_${i+1}.jpg`)}
               style={{padding:"4px 10px",borderRadius:"6px",border:"1px solid #2ea043",background:"#2ea04322",color:"#3fb950",fontSize:"13px",fontWeight:700,cursor:"pointer"}}>💾 JPG 저장</button>
