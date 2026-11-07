@@ -11163,7 +11163,16 @@ function snsWrap(ctx, text, maxW){
 // 카드 한 장 그리기 (1080×1350 기준 좌표, scale 로 썸네일)
 //   txt: 글꼴·크기·두께·정렬·띠 (모든 카드 공통) / card.tx·ty: 이 카드 글씨 위치 옮김(px)
 //   그린 뒤 canvas._shrunk(글이 길어서 줄였는지), canvas._textRange(글씨를 옮길 수 있는 범위)를 남긴다
-function snsRenderCard(canvas, { card, idx, total, img, tpl, accent, brand, txt }, scale=1){
+// logo: { img, size(카드 폭 %), pos:"left"|"center"|"right", show:"all"|"cover"|"none" }
+function snsLogoBox(logo, idx, L, fr){
+  if(!logo||!logo.img||logo.show==="none"||(logo.show==="cover"&&idx!==0)) return null;
+  const w=SNS_W*Math.max(4,Math.min(25,Number(logo.size)||9))/100, h=w*logo.img.height/logo.img.width;
+  const m=fr?100:56;
+  const x=logo.pos==="center"?(SNS_W-w)/2:logo.pos==="right"?SNS_W-m-w:m;
+  const y=L.bandTop?SNS_H-m-h:m;
+  return { x, y, w, h };
+}
+function snsRenderCard(canvas, { card, idx, total, img, tpl, accent, logo, txt }, scale=1){
   const X={ ...SNS_TXT_DEFAULT, ...(txt||{}) };
   canvas.width=Math.round(SNS_W*scale); canvas.height=Math.round(SNS_H*scale);
   const ctx=canvas.getContext("2d");
@@ -11207,8 +11216,10 @@ function snsRenderCard(canvas, { card, idx, total, img, tpl, accent, brand, txt 
     const left=center?T.x+T.w/2-blockW/2:T.x;
     rect={ x:left, y:y0-(L.band||L.bottom?0:34), w:blockW, h:hgt+(L.band||L.bottom?0:34) };
   }
-  // 옮길 수 있는 범위: 띠 안 / 카드 안 (맨 위 작은 문구·쪽수 자리는 비워 둠)
-  const lim=L.band?{ x:L.band.x+20, y:L.band.y+20, w:L.band.w-40, h:L.band.h-40 }:{ x:30, y:130, w:SNS_W-60, h:SNS_H-160 };
+  // 옮길 수 있는 범위: 띠 안 / 카드 안 (맨 위 로고·쪽수 자리는 비워 둠)
+  const LB=snsLogoBox(logo, idx, L, tpl==="frame"&&!L.band);
+  const headB=Math.max(130,LB?LB.y+LB.h+20:0);
+  const lim=L.band?{ x:L.band.x+20, y:L.band.y+20, w:L.band.w-40, h:L.band.h-40 }:{ x:30, y:headB, w:SNS_W-60, h:SNS_H-headB-30 };
   const lo={ x:Math.min(0,lim.x-rect.x), y:Math.min(0,lim.y-rect.y) };
   const hi={ x:Math.max(0,lim.x+lim.w-(rect.x+rect.w)), y:Math.max(0,lim.y+lim.h-(rect.y+rect.h)) };
   const dx=Math.max(lo.x,Math.min(hi.x,card.tx||0)), dy=Math.max(lo.y,Math.min(hi.y,card.ty||0));
@@ -11251,17 +11262,16 @@ function snsRenderCard(canvas, { card, idx, total, img, tpl, accent, brand, txt 
   for(const ln of bLines){ ctx.fillText(ln, tx, y); y+=bSize*1.5; }
   ctx.restore();
   ctx.textAlign="left";
-  // 상단 문구 · 쪽수 (띠가 위에 있으면 아래쪽 사진 위로)
-  const onPhoto=tpl!=="frame"||!!L.band;
+  // 로고 · 쪽수 (띠가 위에 있으면 아래쪽 사진 위로)
   const fr=tpl==="frame"&&!L.band;
-  ctx.font=`600 34px ${SNS_FONT}`;
-  const topY=L.bandTop?SNS_H-70-40:(fr?110:70);
-  if(brand){
-    ctx.save(); ctx.fillStyle=onPhoto?"rgba(255,255,255,.95)":"#111418"; if(onPhoto){ ctx.shadowColor="rgba(0,0,0,.5)"; ctx.shadowBlur=10; }
-    ctx.fillText(brand, fr?110:70, topY); ctx.restore();
+  if(LB){
+    ctx.save(); ctx.shadowColor="rgba(0,0,0,.25)"; ctx.shadowBlur=12;
+    ctx.drawImage(logo.img, LB.x, LB.y, LB.w, LB.h); ctx.restore();
   }
+  ctx.font=`600 34px ${SNS_FONT}`;
   const pg=`${idx+1}/${total}`, pw=ctx.measureText(pg).width+36;
-  const px=(fr?SNS_W-110:SNS_W-70)-pw, py=L.bandTop?SNS_H-62-52:(fr?100:62);
+  const pRight=!(LB&&logo.pos==="right");     // 로고가 오른쪽이면 쪽수는 왼쪽으로
+  const px=pRight?(fr?SNS_W-110:SNS_W-70)-pw:(fr?110:70), py=L.bandTop?SNS_H-62-52:(fr?100:62);
   ctx.fillStyle="rgba(0,0,0,.45)"; snsRoundRect(ctx,px,py,pw,52,26); ctx.fill();
   ctx.fillStyle="#fff"; ctx.fillText(pg, px+18, py+9);
   return canvas;
@@ -11281,12 +11291,12 @@ function snsRegionLum(img, adj, box, rect){
     const mean=sum/n; return { mean, std:Math.sqrt(Math.max(0,sq/n-mean*mean)) };
   }catch(e){ return null; }
 }
-function snsAutoPlace(card, img, subject, textPos, opt){
+function snsAutoPlace(card, img, subject, textPos, opt, noText){
   const L=snsLayout(opt.tpl, opt.txt), B=L.photo;
   const textOnPhoto=!L.band && (L.bottom||L.boxed);
   const base={ ...card, tx:0, ty:0 };
   const cv=document.createElement("canvas");
-  snsRenderCard(cv,{ card:base, idx:opt.idx, total:opt.total, img, tpl:opt.tpl, accent:opt.accent, brand:opt.brand, txt:opt.txt },0.25);
+  snsRenderCard(cv,{ card:base, idx:opt.idx, total:opt.total, img, tpl:opt.tpl, accent:opt.accent, logo:opt.logo, txt:opt.txt },0.25);
   const R=cv._textRange, r0=cv._textRect;
   let [x0,y0,x1,y1]=Array.isArray(subject)&&subject.length===4?subject.map(Number):[0.3,0.3,0.7,0.7];
   if(!(x1>x0&&y1>y0)) [x0,y0,x1,y1]=[0.3,0.3,0.7,0.7];
@@ -11317,6 +11327,12 @@ function snsAutoPlace(card, img, subject, textPos, opt){
     if(textOnPhoto && tr){
       const ix=Math.max(0,Math.min(sx1,tr.x+tr.w)-Math.max(sx0,tr.x)), iy=Math.max(0,Math.min(sy1,tr.y+tr.h)-Math.max(sy0,tr.y));
       hidden=ix*iy/sArea;                                                    // 주인공이 글에 가려지는 비율
+      // 사진 안에 원래 있던 글씨·그래픽 위에 카드 글씨가 얹히면 감점 (글끼리 겹쳐 안 읽힘)
+      for(const b of (noText||[])){
+        const bx0=r.x+b[0]*r.w, bx1=r.x+b[2]*r.w, by0=r.y+b[1]*r.h, by1=r.y+b[3]*r.h;
+        const ox2=Math.max(0,Math.min(bx1,tr.x+tr.w)-Math.max(bx0,tr.x)), oy2=Math.max(0,Math.min(by1,tr.y+tr.h)-Math.max(by0,tr.y));
+        hidden+=0.8*ox2*oy2/Math.max(1,tr.w*tr.h);
+      }
     }
     const score=hidden*3+(1-visible)*2+(pos===textPos?0:0.08)+(zoom>1?0:0.02);
     return { card:{ ...card, adj, tx:0, ty }, tr, score };
@@ -11335,6 +11351,41 @@ function snsAutoPlace(card, img, subject, textPos, opt){
     if(lum) out.adj={ ...out.adj, overlay:Math.max(15,Math.min(70,Math.round(15+(lum.mean-60)/140*50+(lum.std>55?10:0)))) };
   }
   return out;
+}
+
+// ── 🎲 디자인 랜덤: 글마다 배치·띠 색·강조색·글꼴 조합을 새로 뽑음 (최근 5개 조합과 안 겹치게)
+const SNS_LAYOUTS=[
+  { id:"dark",   tpl:"bottom", band:"none",   label:"사진 가득 + 어둡게" },
+  { id:"bandB",  tpl:"bottom", band:"bottom", label:"아래 띠" },
+  { id:"bandT",  tpl:"bottom", band:"top",    label:"위 띠" },
+  { id:"box",    tpl:"box",    band:"none",   label:"가운데 글상자" },
+  { id:"split",  tpl:"split",  band:"none",   label:"위 사진 + 아래 글" },
+  { id:"frame",  tpl:"frame",  band:"none",   label:"액자형" },
+];
+const SNS_FONT_PAIRS=[
+  { t:"blackhan", tw:400, b:"pretendard", bw:400 },
+  { t:"suit", tw:900, b:"suit", bw:400 },
+  { t:"dohyeon", tw:400, b:"noto", bw:400 },
+  { t:"pretendard", tw:800, b:"pretendard", bw:400 },
+  { t:"gothica1", tw:800, b:"wanted", bw:500 },
+  { t:"noto", tw:900, b:"plex", bw:400 },
+  { t:"pretendard", tw:900, b:"myeongjo", bw:400 },
+  { t:"suit", tw:800, b:"wanted", bw:400 },
+];
+function snsPickDesign(){
+  const rnd=a=>a[Math.floor(Math.random()*a.length)];
+  let hist=[]; try{ hist=JSON.parse(localStorage.getItem("sns_design_hist")||"[]"); }catch(e){}
+  let d, sig, tries=0;
+  do{
+    const lay=rnd(SNS_LAYOUTS), fi=Math.floor(Math.random()*SNS_FONT_PAIRS.length), fp=SNS_FONT_PAIRS[fi];
+    const bandColor=lay.band==="none"?"black":rnd(["black","white","accent"]);
+    d={ layout:lay.id, tpl:lay.tpl, accent:rnd(SNS_ACCENTS.slice(0,5)),
+        txt:{ band:lay.band, bandColor, bandH:25+Math.floor(Math.random()*15), align:rnd(["left","center"]),
+              tFont:fp.t, tWeight:snsSnapWeight(fp.t,fp.tw), bFont:fp.b, bWeight:snsSnapWeight(fp.b,fp.bw), tSize:rnd([95,100,110]), bSize:100 } };
+    sig=`${lay.id}|${bandColor}|${fi}`; tries++;
+  } while(hist.includes(sig) && tries<30);
+  try{ localStorage.setItem("sns_design_hist",JSON.stringify([sig,...hist].slice(0,5))); }catch(e){}
+  return d;
 }
 
 async function snsLoadImg(src){
@@ -11368,7 +11419,13 @@ function SnsConvertTab({ setActive }){
   const [count,setCount]=React.useState(7);
   const [tpl,setTpl]=React.useState(()=>{ try{ return localStorage.getItem("sns_tpl")||"bottom"; }catch(e){ return "bottom"; } });
   const [accent,setAccent]=React.useState(SNS_ACCENTS[0]);
-  const [brand,setBrand]=React.useState(()=>{ try{ return localStorage.getItem("sns_brand")??"밴드폰"; }catch(e){ return "밴드폰"; } });
+  const [logoUrl,setLogoUrl]=React.useState(()=>{ try{ return localStorage.getItem("sns_logo")||""; }catch(e){ return ""; } });
+  const [logoImg,setLogoImg]=React.useState(null);
+  const [logoOpt,setLogoOpt]=React.useState(()=>{ try{ return { size:9, pos:"left", show:"all", ...JSON.parse(localStorage.getItem("sns_logo_opt")||"{}") }; }catch(e){ return { size:9, pos:"left", show:"all" }; } });
+  const [randomOn,setRandomOn]=React.useState(()=>{ try{ return localStorage.getItem("sns_random")!=="0"; }catch(e){ return true; } });
+  const [designName,setDesignName]=React.useState("");
+  const lastAi=React.useRef(null);                          // 마지막 AI 분석 (디자인만 바꿀 때 다시 안 부르려고)
+  const logoFile=React.useRef();
   const [busy,setBusy]=React.useState("");
   const [msg,setMsg]=React.useState("");
   const [cards,setCards]=React.useState([]);                // {title,body,photo(id),adj}
@@ -11392,6 +11449,26 @@ function SnsConvertTab({ setActive }){
   React.useEffect(()=>{ loadSnsFont().then(()=>setFontOk(true)); },[]);
   const keep=(k,v)=>{ try{ localStorage.setItem(k,v); }catch(e){} };
   const photoById=id=>photos.find(p=>p.id===id);
+  // ── 로고
+  React.useEffect(()=>{ if(!logoUrl){ setLogoImg(null); return; } snsLoadImg(logoUrl).then(setLogoImg).catch(()=>setLogoImg(null)); },[logoUrl]);
+  const logo=React.useMemo(()=>logoImg?{ img:logoImg, ...logoOpt }:null,[logoImg,logoOpt]);
+  const logoUp=patch=>setLogoOpt(o=>{ const n={ ...o, ...patch }; keep("sns_logo_opt",JSON.stringify(n)); return n; });
+  const setLogoFile=async f=>{
+    if(!f||!/^image\//.test(f.type)){ setMsg("✗ 로고는 이미지 파일로 넣어주세요"); return; }
+    const u=URL.createObjectURL(f);
+    try{
+      const im=await snsLoadImg(u), k=Math.min(1,512/Math.max(im.width,im.height)), c=document.createElement("canvas");
+      c.width=Math.round(im.width*k); c.height=Math.round(im.height*k); c.getContext("2d").drawImage(im,0,0,c.width,c.height);
+      const d=c.toDataURL("image/png"); setLogoUrl(d); keep("sns_logo",d); setMsg("✓ 로고를 넣었어요 (이 브라우저에 저장됨)");
+    }catch(e){ setMsg("✗ 로고를 열 수 없어요"); }
+    URL.revokeObjectURL(u);
+  };
+  // ── 🎲 디자인 적용
+  const applyDesign=d=>{
+    setTpl(d.tpl); keep("sns_tpl",d.tpl); setAccent(d.accent);
+    setTxt(t=>{ const n={ ...t, ...d.txt }; keep("sns_txt",JSON.stringify(n)); return n; });
+    setDesignName(`${SNS_LAYOUTS.find(l=>l.id===d.layout)?.label||""}${d.txt.band!=="none"?` · ${({black:"검정",white:"흰색",accent:"강조색"})[d.txt.bandColor]} 띠`:""} · ${SNS_FONTS[d.txt.tFont].label.split(" ")[0]}`);
+  };
   const txtUp=patch=>setTxt(t=>{ const n={ ...t, ...patch }; keep("sns_txt",JSON.stringify(n)); return n; });
 
   // ── 고른 글꼴 불러오기 (카드에 실제 쓰인 글자만)
@@ -11407,7 +11484,7 @@ function SnsConvertTab({ setActive }){
   React.useEffect(()=>{
     const id=requestAnimationFrame(()=>{
       cards.forEach((c,i)=>{
-        const opt={ card:c, idx:i, total:cards.length, img:photoById(c.photo)?.img, tpl, accent, brand, txt };
+        const opt={ card:c, idx:i, total:cards.length, img:photoById(c.photo)?.img, tpl, accent, logo, txt };
         if(thumbRefs.current[i]) snsRenderCard(thumbRefs.current[i], opt, 0.16);
         if(i===sel && mainRef.current){
           const cv=snsRenderCard(mainRef.current, opt, 0.5);
@@ -11417,7 +11494,7 @@ function SnsConvertTab({ setActive }){
       });
     });
     return ()=>cancelAnimationFrame(id);
-  },[cards,sel,tpl,accent,brand,photos,fontOk,view,txt,fontTick]);
+  },[cards,sel,tpl,accent,logo,photos,fontOk,view,txt,fontTick]);
 
   // ── 사진 넣기
   const addFiles=async files=>{
@@ -11484,8 +11561,33 @@ function SnsConvertTab({ setActive }){
   const pickPost=p=>{ setUrl(p.link); fetchPost(p.link); };
   const nextPost=()=>{ const p=posts.find(x=>!isDone(x.link)); if(!p){ setMsg("✓ 목록의 글은 모두 카드를 만들었어요"); return; } pickPost(p); };
 
-  // ── AI 자동 배치: 카드마다 사진 고르기·주인공 자리·글 위치 → 사진 위치·확대·어둡게 덮기 계산
-  const autoLayout=async(list0)=>{
+  // ── AI 자동 배치: ① AI 분석(사진별 주인공·사진 속 글씨 자리, 카드별 사진·글 위치) ② 계산으로 배치
+  //   디자인만 바꿀 때는 ①을 다시 부르지 않고 ②만 함
+  const placeAll=(list, ai, design)=>{
+    const dTpl=design?.tpl??tpl, dAcc=design?.accent??accent;
+    let dTxt={ ...txt, ...(design?.txt||{}) };
+    // 띠 배치: 가로로 긴 사진이 많이 잘리면 띠를 키워 잘림을 줄임 (최대 45%)
+    if(dTxt.band==="top"||dTxt.band==="bottom"){
+      const rs=list.map(c=>photos.find(p=>p.id===(ai.cards[list.indexOf(c)]?.pid??c.photo))?.img).filter(Boolean).map(im=>im.width/im.height).sort((x,y)=>x-y);
+      if(rs.length){
+        const r=rs[Math.floor(rs.length/2)], need=Math.round((SNS_H-SNS_W/r)/SNS_H*100);
+        if(need>(dTxt.bandH||32)){ dTxt={ ...dTxt, bandH:Math.min(45,need) }; setTxt(t=>{ const n={ ...t, bandH:dTxt.bandH }; keep("sns_txt",JSON.stringify(n)); return n; }); }
+      }
+    }
+    let changed=0;
+    const next=list.map((c,i)=>{
+      const a=ai.cards[i]||{};
+      const pid=a.pid||c.photo; if(pid!==c.photo) changed++;
+      const ph=photos.find(p=>p.id===pid);
+      const card={ ...c, photo:pid, adj:{ ...(c.adj||snsAdj()), zoom:1, ox:0, oy:0, ...(pid!==c.photo?{mosaic:[]}:{}) } };
+      if(!ph) return card;
+      const info=ai.photos[ph.n]||{};
+      return snsAutoPlace(card, ph.img, info.subject, a.text||"", { idx:i, total:list.length, tpl:dTpl, accent:dAcc, logo, txt:dTxt }, info.text);
+    });
+    setCards(next);
+    return changed;
+  };
+  const autoLayout=async(list0, design)=>{
     const list=Array.isArray(list0)?list0:cards;
     if(!list.length||!photos.length) return;
     setBusy("layout"); setMsg("🤖 AI가 사진 위치·글씨 자리를 잡는 중… (20~40초)");
@@ -11498,42 +11600,44 @@ function SnsConvertTab({ setActive }){
         content.push({type:"text",text:`사진 ${p.n}`});
         content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:c.toDataURL("image/jpeg",0.8).split(",")[1]}});
       }
-      const L=snsLayout(tpl,txt);
-      const how=L.band?"글은 사진 밖 띠에 들어감 (글 위치는 신경 안 써도 됨)"
-        :L.bottom?"사진이 카드 전체를 채우고 흰 글씨가 사진 위에 얹힘 — 글 위치(top/middle/bottom)를 고를 수 있음"
-        :L.boxed?"사진이 카드 전체를 채우고 흰 글상자가 사진 위에 얹힘 — 글상자 위치(top/middle/bottom)를 고를 수 있음"
-        :"사진 칸과 글 칸이 따로 있음 (글 위치는 신경 안 써도 됨)";
       const pn=id=>photos.find(p=>p.id===id)?.n;
-      content.push({type:"text",text:`위 사진들로 인스타그램 카드뉴스(4:5 세로)를 만든다. 카드 배치: ${how}
+      content.push({type:"text",text:`위 사진들로 인스타그램 카드뉴스(4:5 세로)를 만든다. 카드 글씨는 사진 위에 얹히거나 사진 옆 띠에 들어간다.
 
 [카드 목록 — 지금 배정된 사진]
 ${list.map((c,i)=>`${i+1}번: 제목 "${c.title}" / 내용 "${String(c.body).replace(/\n/g," ")}" / 사진 ${pn(c.photo)??"없음"}`).join("\n")}
 
 할 일:
-1. photos: 사진마다 주인공(가장 보여줘야 할 것 — 폰 화면·제품·매장 간판·사람 얼굴 등)을 감싸는 상자 [x0,y0,x1,y1] (사진 기준 0~1, 왼쪽 위가 0,0).
+1. photos: 사진마다
+   - subject: 주인공(꼭 보여야 할 것 — 폰 화면·제품·매장 간판·사람 얼굴 등)을 감싸는 상자 [x0,y0,x1,y1] (사진 기준 0~1, 왼쪽 위가 0,0)
+   - text: 사진 안에 원래 들어 있는 글씨·말풍선·그래픽·설정화면 글자 영역 상자 목록 (최대 4개, 없으면 [])
 2. cards: 카드마다
    - photo: 카드 내용과 가장 맞는 사진 번호. 지금 배정이 괜찮으면 그대로 두고, 확실히 더 맞는 사진이 있을 때만 바꾼다. 같은 사진이 여러 카드에 반복되지 않게.
-   - text: 글을 사진의 어느 쪽에 둘지 "top" / "middle" / "bottom" — 주인공을 가리지 않고, 사진에서 비어 있거나 단순한(하늘·벽·바닥 등) 쪽.
-순수 JSON만: {"photos":[{"n":1,"subject":[0.2,0.1,0.8,0.6]}],"cards":[{"i":1,"photo":1,"text":"bottom"}]}`});
-      const out=await callClaude([{role:"user",content}],"You are a Korean social media card-news designer. Output only valid JSON.",2500,"claude-sonnet-4-5-20250929");
+   - text: 카드 글을 사진의 어느 쪽에 얹을지 "top" / "middle" / "bottom" — 주인공과 사진 속 글씨를 가리지 않고, 비어 있거나 단순한 쪽.
+순수 JSON만: {"photos":[{"n":1,"subject":[0.2,0.1,0.8,0.6],"text":[[0.05,0.7,0.6,0.9]]}],"cards":[{"i":1,"photo":1,"text":"bottom"}]}`});
+      const out=await callClaude([{role:"user",content}],"You are a Korean social media card-news designer. Output only valid JSON.",3000,"claude-sonnet-4-5-20250929");
       const j=safeParseJson(out);
       if(!j||!Array.isArray(j.cards)) throw new Error("AI 응답 형식이 깨졌어요 — 다시 눌러주세요");
-      const subj={};
-      (j.photos||[]).forEach(p=>{ const b=(p.subject||[]).map(Number); if(b.length===4&&b.every(v=>isFinite(v))) subj[Number(p.n)]=b.map(v=>Math.max(0,Math.min(1,v))); });
-      let changed=0;
-      const next=list.map((c,i)=>{
+      const box=b=>{ const v=(b||[]).map(Number); return v.length===4&&v.every(x=>isFinite(x))?v.map(x=>Math.max(0,Math.min(1,x))):null; };
+      const ai={ photos:{}, cards:[] };
+      (j.photos||[]).forEach(p=>{ ai.photos[Number(p.n)]={ subject:box(p.subject), text:(Array.isArray(p.text)?p.text:[]).map(box).filter(Boolean).slice(0,4) }; });
+      list.forEach((c,i)=>{
         const a=j.cards.find(x=>Number(x.i)===i+1)||{};
         const np=use.find(p=>p.n===Number(a.photo));
-        const pid=np?np.id:c.photo; if(pid!==c.photo) changed++;
-        const ph=photos.find(p=>p.id===pid);
-        const card={ ...c, photo:pid, adj:{ ...(c.adj||snsAdj()), zoom:1, ox:0, oy:0, ...(pid!==c.photo?{mosaic:[]}:{}) } };
-        if(!ph) return card;
-        return snsAutoPlace(card, ph.img, subj[ph.n], ["top","middle","bottom"].includes(a.text)?a.text:"", { idx:i, total:list.length, tpl, accent, brand, txt });
+        ai.cards[i]={ pid:np?np.id:c.photo, text:["top","middle","bottom"].includes(a.text)?a.text:"" };
       });
-      setCards(next);
+      lastAi.current={ ai, base:list.map(c=>({ ...c })) };
+      const changed=placeAll(list, ai, design);
       setMsg(`✓ AI 자동 배치 완료${changed?` (사진 ${changed}장 바꿈)`:""} — 마음에 안 드는 카드만 화살표·슬라이더로 고치세요`);
     }catch(e){ setMsg("✗ 자동 배치 실패: "+e.message); }
     setBusy("");
+  };
+  // 🎲 다른 디자인: 새 조합을 뽑고, AI 분석이 있으면 그걸로 다시 배치 (AI 다시 안 부름)
+  const reDesign=()=>{
+    const d=snsPickDesign(); applyDesign(d);
+    if(cards.length&&lastAi.current&&lastAi.current.base.length===cards.length){
+      const base=cards.map((c,i)=>({ ...c, photo:lastAi.current.base[i]?.photo??c.photo }));
+      placeAll(base, lastAi.current.ai, d); setMsg("✓ 디자인을 바꾸고 다시 배치했어요");
+    } else if(cards.length) setMsg("✓ 디자인을 바꿨어요 — 「🤖 AI 자동 배치」를 누르면 새 디자인에 맞춰 다시 잡아요");
   };
 
   // ── 변환 (Claude 1회)
@@ -11606,7 +11710,10 @@ ${outShape}`;
       setMade({ insta:wantI, threads:wantT });
       setView(wantI?"insta":"threads");
       setMsg(`✓ ${[wantI&&`카드 ${cs.length}장`, wantT&&`쓰레드 ${th.length}개`].filter(Boolean).join(" · ")}${wantI?" — 카드를 눌러 문구·사진을 고칠 수 있어요":""}`);
-      if(wantI&&autoLay&&photos.length){ setBusy(""); await autoLayout(cs); return; }
+      const d=wantI&&randomOn?snsPickDesign():null;
+      if(d) applyDesign(d);
+      lastAi.current=null;
+      if(wantI&&autoLay&&photos.length){ setBusy(""); await autoLayout(cs, d); return; }
     }catch(e){ setMsg("✗ "+e.message); }
     setBusy("");
   };
@@ -11669,7 +11776,7 @@ ${outShape}`;
   const slug=(title||cards[0]?.title||"카드뉴스").replace(/[\\/:*?"<>|]/g,"").slice(0,24).trim()||"카드뉴스";
   const saveCard=async i=>{
     const c=document.createElement("canvas");
-    snsRenderCard(c,{ card:cards[i], idx:i, total:cards.length, img:photoById(cards[i].photo)?.img, tpl, accent, brand, txt },1);
+    snsRenderCard(c,{ card:cards[i], idx:i, total:cards.length, img:photoById(cards[i].photo)?.img, tpl, accent, logo, txt },1);
     await snsDownload(c, `${slug}_${String(i+1).padStart(2,"0")}.png`);
   };
   const saveCaption=()=>{
@@ -11871,15 +11978,35 @@ ${outShape}`;
         <div><span style={S.label}>강조색</span>
           <div style={{display:"flex",gap:"6px",paddingTop:"4px"}}>{SNS_ACCENTS.map(c=><button key={c} onClick={()=>setAccent(c)} style={{width:"28px",height:"28px",borderRadius:"50%",background:c,border:accent===c?"3px solid #58a6ff":"1px solid #30363d",cursor:"pointer"}}/>)}</div>
         </div>
-        <div><span style={S.label}>카드 위 작은 문구</span>
-          <input style={S.input} value={brand} placeholder="비우면 표시 안 함" onChange={e=>{ setBrand(e.target.value); keep("sns_brand",e.target.value); }}/>
+        <div onDragOver={e=>e.preventDefault()} onDrop={e=>{ e.preventDefault(); setLogoFile(e.dataTransfer.files[0]); }}>
+          <span style={S.label}>로고 <span style={{fontWeight:400}}>(끌어다 놓기 가능)</span></span>
+          <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+            {logoUrl
+              ?<img src={logoUrl} onClick={()=>logoFile.current.click()} title="눌러서 바꾸기" style={{width:"40px",height:"40px",objectFit:"contain",borderRadius:"6px",background:"#161b22",border:"1px solid #30363d",cursor:"pointer"}}/>
+              :<button style={S.small} onClick={()=>logoFile.current.click()}>+ 로고 올리기</button>}
+            {logoUrl&&<button style={S.small} onClick={()=>{ setLogoUrl(""); keep("sns_logo",""); }}>빼기</button>}
+            <input ref={logoFile} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{ setLogoFile(e.target.files[0]); e.target.value=""; }}/>
+          </div>
+          {logoUrl&&<div style={{marginTop:"6px"}}>
+            <span style={{...S.label,display:"flex",justifyContent:"space-between"}}><span>크기</span><span style={{color:"#c9d1d9"}}>{logoOpt.size}%</span></span>
+            <input type="range" min="4" max="25" step="1" value={logoOpt.size} onChange={e=>logoUp({size:Number(e.target.value)})} style={{width:"100%"}}/>
+            <div style={{display:"flex",gap:"4px",flexWrap:"wrap",marginTop:"4px"}}>
+              {[["left","왼쪽"],["center","가운데"],["right","오른쪽"]].map(([k,l])=><button key={k} style={{...S.chip(logoOpt.pos===k),padding:"3px 8px",fontSize:"12px"}} onClick={()=>logoUp({pos:k})}>{l}</button>)}
+              <span style={{width:"6px"}}/>
+              {[["all","모든 카드"],["cover","표지만"],["none","안 넣기"]].map(([k,l])=><button key={k} style={{...S.chip(logoOpt.show===k),padding:"3px 8px",fontSize:"12px"}} onClick={()=>logoUp({show:k})}>{l}</button>)}
+            </div>
+          </div>}
         </div>
       </div>
       <div style={{display:"flex",gap:"8px",marginTop:"14px",alignItems:"center",flexWrap:"wrap"}}>
         <button style={S.btn("#1f6feb",busy||!text.trim())} disabled={!!busy||!text.trim()} onClick={convert}>{(cards.length||threads.length)?"🔄 다시 만들기":`✨ ${doInsta&&doThreads?"인스타·쓰레드":doInsta?"인스타":"쓰레드"}로 바꾸기`}</button>
         {doInsta&&<label style={{display:"flex",gap:"5px",alignItems:"center",fontSize:"13px",color:"#c9d1d9",cursor:"pointer"}}>
           <input type="checkbox" checked={autoLay} onChange={e=>{ setAutoLay(e.target.checked); keep("sns_autolayout",e.target.checked?"1":"0"); }}/> 바꾼 뒤 🤖 AI 자동 배치까지</label>}
+        {doInsta&&<label style={{display:"flex",gap:"5px",alignItems:"center",fontSize:"13px",color:"#c9d1d9",cursor:"pointer"}}>
+          <input type="checkbox" checked={randomOn} onChange={e=>{ setRandomOn(e.target.checked); keep("sns_random",e.target.checked?"1":"0"); }}/> 🎲 변환할 때마다 디자인 랜덤</label>}
         {made.insta&&cards.length>0&&<button style={S.btn("#6e40c9",busy||!photos.length)} disabled={!!busy||!photos.length} onClick={()=>autoLayout()}>🤖 AI 자동 배치</button>}
+        {made.insta&&cards.length>0&&<button style={S.btn("#9a6700",busy)} disabled={!!busy} onClick={reDesign}>🎲 다른 디자인</button>}
+        {designName&&made.insta&&<span style={{fontSize:"12px",color:"#8b949e"}}>지금 디자인: {designName}</span>}
         {msg&&<span style={{fontSize:"13px",color:msg.startsWith("✗")?"#f85149":msg.startsWith("✓")?"#3fb950":"#d29922"}}>{busy&&"⏳ "}{msg}</span>}
       </div>
     </div>
