@@ -7833,11 +7833,19 @@ function LocalImageTab(){
 // ─── GPT 이미지 (회사: OpenAI API 키) — 새로 만들기 · 수정하기 ─────────
 const GPT_IMG_RATIOS=["1:1","3:2","2:3","4:3","3:4","16:9","9:16"];
 const GPT_IMG2_SIZE={"1:1":[1024,1024],"3:2":[1536,1024],"2:3":[1024,1536],"4:3":[1536,1152],"3:4":[1152,1536],"16:9":[1536,864],"9:16":[864,1536]};
-const GPT_MINI_SIZE={"1:1":[1024,1024],"3:2":[1536,1024],"2:3":[1024,1536],"4:3":[1536,1024],"3:4":[1024,1536],"16:9":[1536,1024],"9:16":[1024,1536]};
-// 대략 1장 값 (달러) — 표시용. 실제 금액은 생성 후 사용량으로 다시 계산
+// 쓸 수 있는 모델 (gpt-image-1-mini·1.5 는 2026-12-01 차단) — 세 모델 모두 위 크기 그대로 정확한 비율로 만듦
+const GPT_IMG_MODELS=[
+  ["gpt-image-2","gpt-image-2 (안정·기본)"],
+  ["gpt-image-2.6-sunburst","Sunburst (고품질·수정에 강함)"],
+  ["gpt-image-2.6-flare","Flare (빠름)"],
+];
+const GPT_IMG_NAME={"gpt-image-2":"gpt-image-2","gpt-image-2.6-sunburst":"Sunburst","gpt-image-2.6-flare":"Flare"};
+const gptImgModelOk=(m,def)=>GPT_IMG_MODELS.some(([v])=>v===m)?m:def;
+// 대략 1장 값 (달러) — 표시용. 실제 금액은 생성 후 사용량으로 다시 계산 (2.6 두 모델은 토큰 단가가 gpt-image-2 와 같음)
 const GPT_IMG_EST={
   "gpt-image-2":{low:0.006,medium:0.05,high:0.2},
-  "gpt-image-1-mini":{low:0.006,medium:0.015,high:0.05},
+  "gpt-image-2.6-sunburst":{low:0.006,medium:0.05,high:0.2},
+  "gpt-image-2.6-flare":{low:0.006,medium:0.05,high:0.2},
 };
 const GPT_NO_TEXT=" No text, letters, numbers or logos anywhere in the image; phone screens are blank.";
 const GPT_USAGE_KEY="gpt_img_usage";
@@ -7884,7 +7892,7 @@ async function toJpegDataUrl(src, maxEdge=1536, w0, h0){
   c.getContext("2d").drawImage(im,0,0,W,H);
   return c.toDataURL("image/jpeg",0.9);
 }
-// 가운데 기준으로 비율 맞춰 자르기 (mini 는 4:3·16:9 크기가 없어서)
+// 가운데 기준으로 비율 맞춰 자르기 (서버가 크기를 거절당해 기본 크기로 다시 만든 경우)
 async function cropToRatio(src, ratio){
   const [a,b]=ratio.split(":").map(Number); const im=await loadImgEl(src);
   let w=im.width, h=Math.round(im.width*b/a);
@@ -8011,7 +8019,7 @@ function GptImagePanel({ configured }){
   const [tab,setTab]=useState("new");
   const [prompt,setPrompt]=useState("");
   const [ratioSel,setRatioSel]=useState("auto");
-  const [model,setModel]=useState(()=>{ try{ return localStorage.getItem("gpt_img_model")||"gpt-image-2"; }catch(e){ return "gpt-image-2"; } });
+  const [model,setModel]=useState(()=>{ try{ return gptImgModelOk(localStorage.getItem("gpt_img_model"),"gpt-image-2"); }catch(e){ return "gpt-image-2"; } });
   const [quality,setQuality]=useState(()=>{ try{ return localStorage.getItem("gpt_img_quality")||"medium"; }catch(e){ return "medium"; } });
   const [count,setCount]=useState(1);
   const [noText,setNoText]=useState(false);
@@ -8026,6 +8034,7 @@ function GptImagePanel({ configured }){
   const [src,setSrc]=useState(null);                    // {url,w,h,name}
   const [inst,setInst]=useState("");
   const [eQuality,setEQuality]=useState("high");
+  const [eModel,setEModel]=useState(()=>{ try{ return gptImgModelOk(localStorage.getItem("gpt_img_emodel"),"gpt-image-2.6-sunburst"); }catch(e){ return "gpt-image-2.6-sunburst"; } });
   const [eCount,setECount]=useState(1);
   const [strokes,setStrokes]=useState([]);              // {x,y,r} 0~1 (가로 기준)
   const [brush,setBrush]=useState(40);
@@ -8050,17 +8059,19 @@ function GptImagePanel({ configured }){
     let done=0, fail=[];
     const runOne=async o=>{
       const ratio=ratioFor(o);
-      const [w,h]=(model==="gpt-image-2"?GPT_IMG2_SIZE:GPT_MINI_SIZE)[ratio];
+      const [w,h]=GPT_IMG2_SIZE[ratio];
       const p=o.prompt+(noText?GPT_NO_TEXT:"");
       try{
         const j=await gptImgCall(refData.length
           ?{ action:"edit", prompt:p, model, size:`${w}x${h}`, quality, images:refData }
           :{ action:"generate", prompt:p, model, size:`${w}x${h}`, quality });
         let url="data:image/jpeg;base64,"+j.image;
-        const [ra,rb]=ratio.split(":").map(Number); const needCrop=Math.abs(w/h-ra/rb)>0.02;
+        // 실제로 나온 사진 비율이 다르면(크기 거절 → 기본 크기) 가운데를 잘라 맞춤
+        const im=await loadImgEl(url);
+        const [ra,rb]=ratio.split(":").map(Number); const needCrop=Math.abs(im.width/im.height-ra/rb)>0.02;
         if(needCrop) url=await cropToRatio(url,ratio);
         setUsage(gptUsageAdd(j.usd));
-        setResults(rs=>[{ id:Date.now()+Math.random(), url, option:o.name, prompt:o.prompt, ratio, model, quality, usd:j.usd, kind:refData.length?"참고사진":"생성", cropped:needCrop }, ...rs]);
+        setResults(rs=>[{ id:Date.now()+Math.random(), url, option:o.name, prompt:o.prompt, ratio, model:j.model||model, asked:model, quality, usd:j.usd, kind:refData.length?"참고사진":"생성", cropped:needCrop }, ...rs]);
       }catch(e){ fail.push(`${o.name?`옵션 ${o.name}: `:""}${e.message}`); }
       done++; setState(`만드는 중 ${done}/${jobs.length}`);
     };
@@ -8118,9 +8129,9 @@ function GptImagePanel({ configured }){
       const outs=[];
       for(let i=0;i<eCount;i++){
         setState(`수정 중 ${i+1}/${eCount} (20초~1분)`);
-        const j=await gptImgCall({ action:"edit", prompt:p, model:"gpt-image-2", size:sz?`${W}x${H}`:"auto", quality:eQuality, images:[image], ...(mask?{mask}:{}) });
+        const j=await gptImgCall({ action:"edit", prompt:p, model:eModel, size:sz?`${W}x${H}`:"auto", quality:eQuality, images:[image], ...(mask?{mask}:{}) });
         setUsage(gptUsageAdd(j.usd));
-        outs.push({ id:Date.now()+Math.random(), url:"data:image/jpeg;base64,"+j.image, option:"", prompt:inst.trim(), ratio:"", model:"gpt-image-2", quality:eQuality, usd:j.usd, kind:"수정", from:src.url });
+        outs.push({ id:Date.now()+Math.random(), url:"data:image/jpeg;base64,"+j.image, option:"", prompt:inst.trim(), ratio:"", model:j.model||eModel, asked:eModel, quality:eQuality, usd:j.usd, kind:"수정", from:src.url });
       }
       setResults(rs=>[...outs,...rs]);
       setState(`✓ 수정 ${outs.length}장 완료 — 아래 결과에서 원본과 비교하세요`);
@@ -8205,12 +8216,11 @@ function GptImagePanel({ configured }){
         </div>
         <div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px"}}>
           {ratioSel==="auto"?(autoRatio?`프롬프트에서 ${autoRatio} 를 읽었어요.`:"프롬프트에 비율이 없어서 3:2 가로로 만들어요."):`직접 고른 ${ratioSel} 로 만들어요 (프롬프트의 비율 표현보다 우선).`}
-          {model==="gpt-image-1-mini"&&options.some(o=>["4:3","3:4","16:9","9:16"].includes(ratioFor(o)))&&" · mini 는 이 비율 크기가 없어서 가까운 크기로 만든 뒤 양옆(위아래)을 잘라 맞춰요."}
         </div>
         <div style={{display:"flex",flexWrap:"wrap",gap:"14px",alignItems:"center",marginTop:"12px"}}>
           <div style={{display:"flex",gap:"6px",alignItems:"center"}}><span style={lab}>모델</span>
             <select value={model} onChange={e=>{ setModel(e.target.value); keep("gpt_img_model",e.target.value); }} style={{background:"#0d1117",color:"#c9d1d9",border:"1px solid #30363d",borderRadius:"6px",padding:"5px 8px"}}>
-              <option value="gpt-image-2">gpt-image-2 (고품질·추천)</option><option value="gpt-image-1-mini">gpt-image-1-mini (저렴)</option></select></div>
+              {GPT_IMG_MODELS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
           <div style={{display:"flex",gap:"6px",alignItems:"center"}}><span style={lab}>품질</span>
             {[["low","낮음"],["medium","보통"],["high","높음"]].map(([q,l])=><button key={q} style={chip(quality===q)} onClick={()=>{ setQuality(q); keep("gpt_img_quality",q); }}>{l}</button>)}</div>
           <div style={{display:"flex",gap:"6px",alignItems:"center"}}><span style={lab}>{options.length>1?"옵션마다":""} 장수</span>
@@ -8257,11 +8267,14 @@ function GptImagePanel({ configured }){
             <div style={{flex:1,minWidth:"260px"}}>
               <span style={lab}>어떻게 바꿀까요?</span>
               <Textarea value={inst} onChange={setInst} rows={5} placeholder={"예) 아이 손가락이 6개로 나왔어요. 손가락 5개로 자연스럽게 고쳐줘\n예) 폰 뒷면 로고를 SAMSUNG 으로 정확하게"}/>
+              <div style={{display:"flex",gap:"6px",alignItems:"center",marginTop:"10px",flexWrap:"wrap"}}><span style={lab}>모델</span>
+                <select value={eModel} onChange={e=>{ setEModel(e.target.value); keep("gpt_img_emodel",e.target.value); }} style={{background:"#0d1117",color:"#c9d1d9",border:"1px solid #30363d",borderRadius:"6px",padding:"5px 8px"}}>
+                  {GPT_IMG_MODELS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
               <div style={{display:"flex",gap:"6px",alignItems:"center",marginTop:"10px",flexWrap:"wrap"}}><span style={lab}>품질</span>
                 {[["medium","보통"],["high","높음"]].map(([q,l])=><button key={q} style={chip(eQuality===q)} onClick={()=>setEQuality(q)}>{l}</button>)}
                 <span style={{...lab,marginLeft:"8px"}}>장수</span>{[1,2].map(n=><button key={n} style={chip(eCount===n)} onClick={()=>setECount(n)}>{n}</button>)}
               </div>
-              <div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px"}}>모델 gpt-image-2 · 원본 비율 그대로 · 예상 약 ${((GPT_IMG_EST["gpt-image-2"][eQuality]+0.02)*eCount).toFixed(2)} ({won((GPT_IMG_EST["gpt-image-2"][eQuality]+0.02)*eCount)})</div>
+              <div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px"}}>{GPT_IMG_NAME[eModel]||eModel} · 원본 비율 그대로 · 거절되면 gpt-image-2 로 자동 재시도 · 예상 약 ${(((GPT_IMG_EST[eModel]||GPT_IMG_EST["gpt-image-2"])[eQuality]+0.02)*eCount).toFixed(2)} ({won(((GPT_IMG_EST[eModel]||GPT_IMG_EST["gpt-image-2"])[eQuality]+0.02)*eCount)})</div>
               <div style={{display:"flex",gap:"10px",alignItems:"center",marginTop:"12px",flexWrap:"wrap"}}>
                 <Btn onClick={runEdit} loading={busy}>✏️ 수정하기</Btn>
                 {state&&<span style={{color:"#d29922",fontSize:"14px"}}>{state}</span>}
@@ -8298,7 +8311,7 @@ function GptImagePanel({ configured }){
               style={{padding:"4px 10px",borderRadius:"6px",border:"1px solid #2ea043",background:"#2ea04322",color:"#3fb950",fontSize:"13px",fontWeight:700,cursor:"pointer"}}>💾 JPG 저장</button>
             <button style={small} onClick={()=>openEdit(it.url,`결과${i+1}`)}>✏️ 수정</button>
             {it.kind!=="수정"&&<button style={small} onClick={()=>{ setTab("new"); setPrompt(it.prompt); setRatioSel(it.ratio||"auto"); window.scrollTo({top:0,behavior:"smooth"}); }}>↩ 다시 쓰기</button>}
-            <span style={{color:"#484f58",fontSize:"12px",marginLeft:"auto"}}>{it.option?`옵션 ${it.option} · `:""}{it.kind} · {it.quality}{it.usd!=null?` · $${it.usd.toFixed(3)}`:""}{it.cropped?" · 잘라 맞춤":""}</span>
+            <span style={{color:"#484f58",fontSize:"12px",marginLeft:"auto"}}>{it.option?`옵션 ${it.option} · `:""}{it.kind} · {it.model?(it.asked&&it.asked!==it.model?`${GPT_IMG_NAME[it.asked]||it.asked} → ${GPT_IMG_NAME[it.model]||it.model} · `:`${GPT_IMG_NAME[it.model]||it.model} · `):""}{it.quality}{it.usd!=null?` · $${it.usd.toFixed(3)}`:""}{it.cropped?" · 잘라 맞춤":""}</span>
           </div>
           {it.kind==="수정"&&<div style={{padding:"0 10px 8px",color:"#8b949e",fontSize:"12px"}}>지시: {it.prompt}</div>}
         </div>)}
