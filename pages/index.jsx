@@ -11354,6 +11354,10 @@ function SnsConvertTab({ setActive }){
   const [posts,setPosts]=React.useState([]);               // {title,link,date}
   const [done,setDone]=React.useState(()=>{ try{ return JSON.parse(localStorage.getItem("sns_done")||"{}"); }catch(e){ return {}; } });
   const [curLink,setCurLink]=React.useState("");
+  // 만들 것: 인스타·쓰레드 (하나 이상)
+  const [doInsta,setDoInsta]=React.useState(()=>{ try{ return localStorage.getItem("sns_do_insta")!=="0"; }catch(e){ return true; } });
+  const [doThreads,setDoThreads]=React.useState(()=>{ try{ return localStorage.getItem("sns_do_threads")!=="0"; }catch(e){ return true; } });
+  const [made,setMade]=React.useState({ insta:false, threads:false });   // 지금 결과에 들어 있는 것
   const [autoLay,setAutoLay]=React.useState(()=>{ try{ return localStorage.getItem("sns_autolayout")!=="0"; }catch(e){ return true; } });
   const [url,setUrl]=React.useState("");
   const [title,setTitle]=React.useState("");
@@ -11427,7 +11431,7 @@ function SnsConvertTab({ setActive }){
   const fetchPost=async(u0)=>{
     const u=(typeof u0==="string"?u0:url).trim();
     if(!u) return;
-    setCurLink(u); setCards([]);
+    setCurLink(u); setCards([]); setThreads([]); setMade({ insta:false, threads:false });
     setBusy("fetch"); setMsg("글과 사진 가져오는 중…");
     try{
       const r=await fetch("/api/sns-source",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ url:u }) });
@@ -11536,19 +11540,15 @@ ${list.map((c,i)=>`${i+1}번: 제목 "${c.title}" / 내용 "${String(c.body).rep
   const convert=async()=>{
     const body=text.trim();
     if(body.length<100){ setMsg("✗ 본문이 너무 짧아요"); return; }
-    setBusy("ai"); setMsg("인스타·쓰레드용으로 바꾸는 중… (30초~1분)");
+    const wantI=doInsta, wantT=doThreads;
+    if(!wantI&&!wantT){ setMsg("✗ 인스타·쓰레드 중 하나는 골라주세요"); return; }
+    // 쓰레드만: 첫 글에 붙일 표지 카드 1장만 (사진이 있을 때)
+    const nCards=wantI?count:(photos.length?1:0);
+    const what=[wantI&&"인스타그램 카드뉴스·캡션", wantT&&"쓰레드 연결글"].filter(Boolean).join("과 ");
+    setBusy("ai"); setMsg(`${wantI&&wantT?"인스타·쓰레드":wantI?"인스타":"쓰레드"}용으로 바꾸는 중… (${wantI?"30초~1분":"20~40초"})`);
     const who=tone==="hq"?"휴대폰 판매점 '밴드폰' 공식 계정":tone==="branch"?`휴대폰 판매점 '밴드폰 ${branch||"○○점"}' 매장 계정`:"휴대폰·생활 정보를 나누는 개인 계정(업체·매장 언급 없음)";
     const marks=(body.match(/\[사진\d+\]/g)||[]).length;
-    const prompt=`아래 블로그 글을 인스타그램 카드뉴스·캡션과 쓰레드 연결글로 바꿔라.
-
-[계정] ${who}
-[블로그 제목] ${title||"(없음)"}
-[블로그 본문]${marks?" — [사진N]은 그 자리에 있던 사진 번호":""}
-${body.slice(0,7000)}
-
-[사진] 쓸 수 있는 사진 번호: ${photos.map(p=>p.n).join(", ")||"(없음)"}
-
-[카드뉴스 — 정확히 ${count}장]
+    const cardRules=wantI?`[카드뉴스 — 정확히 ${count}장]
 C1. 1장(표지): title 16자 이내 후킹 제목(숫자·질문·반전 중 하나), body 26자 이내 부제.
 C2. 2~${count-1}장: 한 장에 핵심 한 가지. title 15자 이내, body 2~4줄·70자 이내. 줄바꿈은 \\n. 순서대로 읽으면 글 전체가 이해되게.
 C3. ${count}장(마지막): 정리 한 줄 + "저장해두고 필요할 때 꺼내보세요" 같은 저장 유도${tone==="personal"?"":" + 매장 상담·문의 한 줄"}.
@@ -11558,37 +11558,55 @@ C5. 블로그 문장을 그대로 옮기지 말고 짧게 다시 쓴다.
 [인스타 캡션]
 I1. 첫 줄은 피드에서 '더 보기'를 누르게 만드는 한 문장. 그다음 본문 5~8줄(짧은 줄, 이모지는 줄 앞에 몇 개만).
 I2. 해시태그는 caption에 넣지 말고 hashtags에 10~15개(# 없이). 검색될 만한 한국어 태그 위주${tone==="personal"?"":", 계정 이름 태그 1개 포함"}.
-
-[쓰레드 연결글]
+`:nCards?`[표지 카드 — 정확히 1장] 쓰레드 첫 글에 붙일 이미지용.
+C1. title 16자 이내 후킹 제목(숫자·질문·반전 중 하나), body 26자 이내 부제. photo: 글 전체를 가장 잘 보여주는 사진 번호(위 목록 중).
+`:"";
+    const threadRules=wantT?`[쓰레드 연결글]
 S1. 3~6개. 각 글 500자 이내(꼭 지킬 것). 첫 글은 결론이나 반전으로 시작하는 후킹, 이어지는 글은 하나에 한 가지씩.
 S2. 말투는 블로그보다 가볍고 대화하듯("~해요" 유지, 반말 금지). 해시태그 없음. 마지막 글은 질문으로 끝내 댓글을 유도.
 S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
+`:"";
+    const outShape=JSON.stringify({ ...(nCards?{cards:[{title:"",body:"",photo:1}]}:{}), ...(wantI?{caption:"",hashtags:["태그"]}:{}), ...(wantT?{threads:["첫 글","둘째 글"],threadTag:"태그"}:{}) });
+    const prompt=`아래 블로그 글을 ${what}로 바꿔라.
 
+[계정] ${who}
+[블로그 제목] ${title||"(없음)"}
+[블로그 본문]${marks?" — [사진N]은 그 자리에 있던 사진 번호":""}
+${body.slice(0,7000)}
+
+[사진] 쓸 수 있는 사진 번호: ${photos.map(p=>p.n).join(", ")||"(없음)"}
+
+${cardRules}
+${threadRules}
 [공통]
 - 본문에 없는 사실·가격·수치를 지어내지 말 것. 과장·낚시 금지.
 - 휴대폰 판매에 불리한 내용(자급제·알뜰폰 권유, 판매점 불신 조장) 금지.
 
 [출력 — 순수 JSON만]
-{"cards":[{"title":"","body":"","photo":1}],"caption":"","hashtags":["태그"],"threads":["첫 글","둘째 글"],"threadTag":"태그"}`;
+${outShape}`;
     try{
-      const raw=await callClaudeStream([{role:"user",content:prompt}],"You are a Korean social media editor. Output ONLY valid JSON, no markdown.",4000,"claude-sonnet-4-5-20250929");
+      const raw=await callClaudeStream([{role:"user",content:prompt}],"You are a Korean social media editor. Output ONLY valid JSON, no markdown.",wantI?4000:2500,"claude-sonnet-4-5-20250929");
       const j=safeParseJson(raw);
-      if(!j||!Array.isArray(j.cards)||!j.cards.length) throw new Error("결과 형식이 깨졌어요 — 다시 눌러주세요");
+      if(!j) throw new Error("결과 형식이 깨졌어요 — 다시 눌러주세요");
+      if(wantI&&(!Array.isArray(j.cards)||!j.cards.length)) throw new Error("카드가 안 만들어졌어요 — 다시 눌러주세요");
+      const th=wantT?(j.threads||[]).map(t=>String(t).trim()).filter(Boolean):[];
+      if(wantT&&!th.length) throw new Error("쓰레드 글이 안 만들어졌어요 — 다시 눌러주세요");
       const used=new Set();
-      const cs=j.cards.slice(0,count).map((c,i)=>{
+      const cs=(Array.isArray(j.cards)?j.cards:[]).slice(0,nCards).map((c,i)=>{
         let p=photos.find(x=>x.n===Number(c.photo));
         if(!p&&photos.length) p=photos.find(x=>!used.has(x.id))||photos[i%photos.length];
         if(p) used.add(p.id);
         return { title:String(c.title||"").trim(), body:String(c.body||"").replace(/\\n/g,"\n").trim(), photo:p?.id||null, adj:snsAdj() };
       });
       setCards(cs); setSel(0);
-      setCaption(String(j.caption||"").trim());
-      setTags((j.hashtags||[]).map(t=>"#"+String(t).replace(/^#/,"").replace(/\s+/g,"")).join(" "));
-      const th=(j.threads||[]).map(t=>String(t).trim()).filter(Boolean);
-      setThreads(th); setThreadTag(String(j.threadTag||"").replace(/^#/,"").replace(/\s+/g,""));
-      setView("insta");
-      setMsg(`✓ 카드 ${cs.length}장 · 쓰레드 ${th.length}개 — 카드를 눌러 문구·사진을 고칠 수 있어요`);
-      if(autoLay&&photos.length){ setBusy(""); await autoLayout(cs); return; }
+      setCaption(wantI?String(j.caption||"").trim():"");
+      setTags(wantI?(j.hashtags||[]).map(t=>"#"+String(t).replace(/^#/,"").replace(/\s+/g,"")).join(" "):"");
+      setThreads(th); setThreadTag(wantT?String(j.threadTag||"").replace(/^#/,"").replace(/\s+/g,""):"");
+      setThreadPics(cs.length?[0]:[]);
+      setMade({ insta:wantI, threads:wantT });
+      setView(wantI?"insta":"threads");
+      setMsg(`✓ ${[wantI&&`카드 ${cs.length}장`, wantT&&`쓰레드 ${th.length}개`].filter(Boolean).join(" · ")}${wantI?" — 카드를 눌러 문구·사진을 고칠 수 있어요":""}`);
+      if(wantI&&autoLay&&photos.length){ setBusy(""); await autoLayout(cs); return; }
     }catch(e){ setMsg("✗ "+e.message); }
     setBusy("");
   };
@@ -11662,7 +11680,7 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
   const saveMany=async list=>{
     setBusy("save");
     for(const i of list){ await saveCard(i); await new Promise(r=>setTimeout(r,350)); }
-    if(list.length===cards.length){ saveCaption(); if(curLink) setDoneMark(curLink,true); }
+    if(made.insta&&list.length===cards.length){ saveCaption(); if(curLink) setDoneMark(curLink,true); }
     setBusy("");
   };
   const copy=async(t,k)=>{ try{ await navigator.clipboard.writeText(t); setCopied(k); setTimeout(()=>setCopied(""),1500); }catch(e){} };
@@ -11837,9 +11855,16 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
           </select>
           {tone==="branch"&&<input style={{...S.input,marginTop:"6px"}} value={branch} placeholder="지점 이름 (예: 중랑점)" onChange={e=>{ setBranch(e.target.value); keep("sns_branch",e.target.value); }}/>}
         </div>
-        <div><span style={S.label}>카드 장수</span>
-          <select style={S.input} value={count} onChange={e=>setCount(Number(e.target.value))}>{[5,6,7,8,9,10].map(n=><option key={n} value={n}>{n}장</option>)}</select>
+        <div><span style={S.label}>만들 것</span>
+          <div style={{display:"flex",gap:"6px",paddingTop:"2px"}}>
+            <button style={S.chip(doInsta)} onClick={()=>{ if(doInsta&&!doThreads) return; setDoInsta(!doInsta); keep("sns_do_insta",doInsta?"0":"1"); }}>{doInsta?"☑":"☐"} 📸 인스타</button>
+            <button style={S.chip(doThreads)} onClick={()=>{ if(doThreads&&!doInsta) return; setDoThreads(!doThreads); keep("sns_do_threads",doThreads?"0":"1"); }}>{doThreads?"☑":"☐"} 🧵 쓰레드</button>
+          </div>
+          {!doInsta&&<div style={{fontSize:"11px",color:"#8b949e",marginTop:"4px"}}>쓰레드 첫 글용 표지 카드 1장도 같이 만들어요</div>}
         </div>
+        {doInsta&&<div><span style={S.label}>카드 장수</span>
+          <select style={S.input} value={count} onChange={e=>setCount(Number(e.target.value))}>{[5,6,7,8,9,10].map(n=><option key={n} value={n}>{n}장</option>)}</select>
+        </div>}
         <div><span style={S.label}>디자인</span>
           <select style={S.input} value={tpl} onChange={e=>{ setTpl(e.target.value); keep("sns_tpl",e.target.value); }}>{SNS_TEMPLATES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select>
         </div>
@@ -11851,22 +11876,22 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
         </div>
       </div>
       <div style={{display:"flex",gap:"8px",marginTop:"14px",alignItems:"center",flexWrap:"wrap"}}>
-        <button style={S.btn("#1f6feb",busy||!text.trim())} disabled={!!busy||!text.trim()} onClick={convert}>{cards.length?"🔄 다시 만들기":"✨ 인스타·쓰레드로 바꾸기"}</button>
-        <label style={{display:"flex",gap:"5px",alignItems:"center",fontSize:"13px",color:"#c9d1d9",cursor:"pointer"}}>
-          <input type="checkbox" checked={autoLay} onChange={e=>{ setAutoLay(e.target.checked); keep("sns_autolayout",e.target.checked?"1":"0"); }}/> 바꾼 뒤 🤖 AI 자동 배치까지</label>
-        {cards.length>0&&<button style={S.btn("#6e40c9",busy||!photos.length)} disabled={!!busy||!photos.length} onClick={()=>autoLayout()}>🤖 AI 자동 배치</button>}
+        <button style={S.btn("#1f6feb",busy||!text.trim())} disabled={!!busy||!text.trim()} onClick={convert}>{(cards.length||threads.length)?"🔄 다시 만들기":`✨ ${doInsta&&doThreads?"인스타·쓰레드":doInsta?"인스타":"쓰레드"}로 바꾸기`}</button>
+        {doInsta&&<label style={{display:"flex",gap:"5px",alignItems:"center",fontSize:"13px",color:"#c9d1d9",cursor:"pointer"}}>
+          <input type="checkbox" checked={autoLay} onChange={e=>{ setAutoLay(e.target.checked); keep("sns_autolayout",e.target.checked?"1":"0"); }}/> 바꾼 뒤 🤖 AI 자동 배치까지</label>}
+        {made.insta&&cards.length>0&&<button style={S.btn("#6e40c9",busy||!photos.length)} disabled={!!busy||!photos.length} onClick={()=>autoLayout()}>🤖 AI 자동 배치</button>}
         {msg&&<span style={{fontSize:"13px",color:msg.startsWith("✗")?"#f85149":msg.startsWith("✓")?"#3fb950":"#d29922"}}>{busy&&"⏳ "}{msg}</span>}
       </div>
     </div>
 
     {/* 3. 결과 */}
-    {cards.length>0&&<div style={S.card}>
+    {(made.insta||made.threads)&&<div style={S.card}>
       <div style={{display:"flex",gap:"8px",marginBottom:"14px",flexWrap:"wrap"}}>
-        <button style={S.chip(view==="insta")} onClick={()=>setView("insta")}>📸 인스타그램</button>
-        <button style={S.chip(view==="threads")} onClick={()=>setView("threads")}>🧵 쓰레드</button>
+        {made.insta&&<button style={S.chip(view==="insta")} onClick={()=>setView("insta")}>📸 인스타그램</button>}
+        {made.threads&&<button style={S.chip(view==="threads")} onClick={()=>setView("threads")}>🧵 쓰레드</button>}
       </div>
 
-      {view==="insta"&&<div>
+      {view==="insta"&&made.insta&&<div>
         <div style={{display:"flex",gap:"8px",overflowX:"auto",paddingBottom:"8px",marginBottom:"12px"}}>
           {cards.map((c,i)=><canvas key={i} ref={el=>thumbRefs.current[i]=el} onClick={()=>setSel(i)}
             style={{width:"104px",height:"130px",borderRadius:"6px",cursor:"pointer",flex:"none",outline:sel===i?"3px solid #58a6ff":"1px solid #30363d"}}/>)}
@@ -11957,7 +11982,7 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
         </div>
       </div>}
 
-      {view==="threads"&&<div>
+      {view==="threads"&&made.threads&&<div>
         <div style={{fontSize:"13px",color:"#8b949e",marginBottom:"10px"}}>첫 글을 올린 뒤 그 아래 「스레드에 추가」로 나머지를 차례로 붙이세요. 글 하나당 500자까지예요.</div>
         {threads.map((t,i)=><div key={i} style={{marginBottom:"12px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"4px"}}>
@@ -11975,12 +12000,14 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
           <input style={{...S.input,width:"180px"}} value={threadTag} onChange={e=>setThreadTag(e.target.value.replace(/^#/,"").replace(/\s+/g,""))}/>
           <button style={S.small} onClick={()=>copy(threadTag,"tag")}>{copied==="tag"?"✓":"태그 복사"}</button>
         </div>
+        {cards.length===0?<div style={{fontSize:"13px",color:"#8b949e"}}>사진이 없는 글이라 첫 글용 카드 이미지는 만들지 않았어요.</div>:<>
         <span style={S.label}>첫 글에 붙일 카드 이미지 (최대 2장)</span>
         <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"10px"}}>
           {cards.map((c,i)=><button key={i} style={S.chip(threadPics.includes(i))}
             onClick={()=>setThreadPics(a=>a.includes(i)?a.filter(x=>x!==i):[...a,i].slice(-2))}>{i+1}번{i===0?" 표지":""}</button>)}
         </div>
         <button style={S.btn("#238636",busy||!threadPics.length)} disabled={!!busy||!threadPics.length} onClick={()=>saveMany([...threadPics].sort((a,b)=>a-b))}>⬇ 고른 카드 저장</button>
+        </>}
       </div>}
     </div>}
   </div>;
