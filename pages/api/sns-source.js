@@ -1,5 +1,6 @@
 // pages/api/sns-source.js — SNS 변환용: 블로그 글(제목·본문·사진 주소) 가져오기 + 사진 대신 받아주기
 //   POST { url }            → { success, title, text, images:[url...] }   (네이버 블로그·티스토리)
+//   POST { action:"list", blog }  → { success, posts:[{title,link,date}] }  (티스토리·RSS 있는 블로그 최신 글 목록 — 네이버는 /api/blog-posts 사용)
 //   GET  ?img=사진주소       → 사진 바이트 (네이버·카카오 사진 서버만 — 캔버스에서 쓰려고 같은 주소로 내려줌)
 import { requireAuth } from "../../lib/auth";
 
@@ -104,6 +105,27 @@ function parseGeneric(html) {
 
 export const config = { api: { responseLimit: false } };
 
+// 티스토리 등 RSS 로 최신 글 목록 (xxx.tistory.com / 개인 도메인 모두 /rss)
+async function rssList(blog) {
+  let host = String(blog || "").trim().replace(/^https?:\/\//i, "").split(/[/?#]/)[0];
+  if (!host) throw new Error("블로그 주소를 넣어주세요");
+  if (!host.includes(".")) host = `${host}.tistory.com`;          // 아이디만 넣으면 티스토리로
+  const r = await safeFetch(`https://${host}/rss`, isPublicHost, { headers: { "User-Agent": UA, Accept: "application/rss+xml, application/xml, text/xml, */*" } });
+  if (!r.ok) throw new Error(`글 목록을 못 가져왔어요 (${r.status}) — 주소를 확인해 주세요`);
+  const xml = await r.text();
+  const pick = (chunk, tag) => {
+    const m = chunk.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`, "i"));
+    return m ? ent(m[1]).trim() : "";
+  };
+  const posts = (xml.match(/<item[\s>][\s\S]*?<\/item>/gi) || []).map(it => {
+    const d = new Date(pick(it, "pubDate"));
+    const date = isNaN(d) ? "" : `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
+    return { title: pick(it, "title") || "(제목 없음)", link: pick(it, "link"), date };
+  }).filter(p => p.link);
+  if (!posts.length) throw new Error("글이 없거나 RSS 가 꺼져 있어요 (티스토리 관리 → 설정 → RSS 공개 확인)");
+  return { host, posts: posts.slice(0, 50) };
+}
+
 export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
   try {
@@ -122,6 +144,10 @@ export default async function handler(req, res) {
       return res.status(200).send(buf);
     }
     if (req.method !== "POST") return res.status(405).json({ error: "POST만 허용" });
+    if ((req.body || {}).action === "list") {
+      const { host, posts } = await rssList(req.body.blog);
+      return res.status(200).json({ success: true, host, posts });
+    }
     const raw = String((req.body || {}).url || "").trim();
     let u;
     try { u = new URL(raw); } catch (e) { return res.status(200).json({ error: "주소 형식이 아니에요" }); }
