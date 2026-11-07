@@ -1,4 +1,4 @@
-// pages/api/gpt-image.js — GPT 이미지 API (회사 사이트용). 키는 Vercel 환경변수 OPENAI_API_KEY 에만 둔다.
+// pages/api/gpt-image.js — GPT 이미지 API. 키는 화면(GPT 이미지 → OpenAI 키 칸)에서 넣은 키를 x-openai-key 헤더로 받는다 (서버 기본 키 없음).
 //   POST { action:"info" }                                              → { configured }
 //   POST { action:"generate", prompt, model, size, quality }            → { image:"base64 jpeg", usage, usd }
 //   POST { action:"edit", prompt, model, size, quality, images:[dataURL...], mask?:dataURL(png) }
@@ -42,6 +42,7 @@ function openaiError(j, status) {
   const msg = j?.error?.message || `OpenAI 오류 ${status}`;
   if (/safety|moderation|content policy/i.test(msg)) return "안전 정책에 걸려서 거절됐어요 — 표현을 조금 바꿔서 다시 해보세요 (" + msg.slice(0, 120) + ")";
   if (/billing|quota|insufficient/i.test(msg)) return "OpenAI 잔액·한도 문제예요 — 결제 페이지를 확인하세요 (" + msg.slice(0, 120) + ")";
+  if (status === 401 || /incorrect api key|invalid_api_key/i.test(msg)) return "OpenAI 키가 거절됐어요 — GPT 이미지 화면 위쪽 「OpenAI 키」를 확인해주세요";
   if (/organization must be verified|verify/i.test(msg)) return "이 모델은 OpenAI 조직 인증이 필요해요 — platform.openai.com 설정에서 인증하세요";
   return msg.slice(0, 300);
 }
@@ -59,10 +60,11 @@ function rejectedFor(j, status) {
 export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
   if (req.method !== "POST") return res.status(405).json({ error: "POST만 허용" });
-  const key = process.env.OPENAI_API_KEY || "";
+  const key = String(req.headers["x-openai-key"] || "").trim();
   const b = req.body || {};
   if (b.action === "info") return res.status(200).json({ configured: !!key });
-  if (!key) return res.status(200).json({ error: "이 사이트에는 GPT 키가 없어요 (Vercel 환경변수 OPENAI_API_KEY)" });
+  if (!key) return res.status(200).json({ error: "OpenAI 키를 넣어주세요 — GPT 이미지 화면 위쪽 「OpenAI 키」 칸" });
+  if (!/^sk-[A-Za-z0-9_\-]{20,}$/.test(key)) return res.status(200).json({ error: "OpenAI 키 형식이 올바르지 않아요 (sk- 로 시작)" });
 
   // 예전 모델(1-mini 등)로 요청이 와도 gpt-image-2 로 처리
   const model0 = MODELS.has(b.model) ? b.model : FALLBACK;

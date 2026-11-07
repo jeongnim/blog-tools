@@ -77,14 +77,16 @@ export default async function handler(req, res) {
 
   if (req.method !== "POST") return res.status(405).json({ error: "POST만 허용" });
 
-  // API 키: 화면에서 블로그 ID별로 등록한 키가 오면 그 키로, 없으면 서버 기본 키(Vercel 환경변수)로.
+  // API 키: 화면(상단 🔑)에서 고른 키나 자동화가 넘겨준 키로만. 서버 기본 키는 쓰지 않는다.
   const userKey = String(req.headers["x-user-api-key"] || "").trim();
-  if (userKey && !/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(userKey)) {
+  if (!userKey) {
+    return res.status(200).json({ error: { type: "no_key", message: "API 키를 등록해주세요 — 상단 🔑 버튼에서 키를 넣고 「지금 쓸 키」를 골라주세요." } });
+  }
+  if (!/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(userKey)) {
     return res.status(400).json({ error: { type: "bad_user_key", message: "등록한 API 키 형식이 올바르지 않아요. 상단 🔑 버튼에서 확인해주세요." } });
   }
-  const usingUserKey = !!userKey;
-  const apiKey = userKey || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(200).json({ content: [] });
+  const usingUserKey = true;
+  const apiKey = userKey;
 
   const invalid = validateRequest(req.body);
   if (invalid) return res.status(400).json({ error: { type: "invalid_request", message: "허용되지 않은 요청입니다 (" + invalid + ")" } });
@@ -105,7 +107,7 @@ export default async function handler(req, res) {
 
     // 등록한 키가 거절되면(잘못된 키·잔액 부족 등) 어느 키 문제인지 알 수 있게 알려준다
     if (usingUserKey && (response.status === 401 || response.status === 403)) {
-      return res.status(200).json({ error: { type: "user_key_rejected", message: "블로그 ID에 등록한 API 키가 거절됐어요. 상단 🔑 버튼에서 키를 확인해주세요." } });
+      return res.status(200).json({ error: { type: "user_key_rejected", message: "등록한 API 키가 거절됐어요 (잘못된 키이거나 잔액 부족). 상단 🔑 버튼에서 키를 확인해주세요." } });
     }
 
     // ── 스트리밍: 받은 SSE를 그대로 흘려보낸다 ──
