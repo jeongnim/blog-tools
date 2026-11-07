@@ -8128,6 +8128,48 @@ function GptImagePanel({ configured }){
     setBusy(false);
   };
 
+  // ── 끌어다 놓기 · Ctrl+V 붙여넣기: 새로 만들기 → 참고 사진, 수정하기 → 수정할 사진
+  const panelRef=useRef(); const [dragOn,setDragOn]=useState(false);
+  const takeImages=srcs=>{
+    if(!srcs.length) return;
+    if(tab==="edit"){ openEdit(srcs[0].url,srcs[0].name||"수정원본"); return; }
+    const room=4-refs.length;
+    if(room<=0){ setErr("참고 사진은 4장까지예요"); return; }
+    setRefs(a=>[...a,...srcs.slice(0,room).map(x=>x.url)].slice(0,4));
+    if(srcs.length>room) setErr(`참고 사진은 4장까지라 ${srcs.length-room}장은 빼고 넣었어요`);
+  };
+  const filesToImages=async files=>{
+    const list=[...(files||[])].filter(f=>/^image\//.test(f.type));
+    return await Promise.all(list.map(f=>new Promise(ok=>{ const rd=new FileReader(); rd.onload=ev=>ok({ url:ev.target.result, name:(f.name||"붙여넣은사진").replace(/\.\w+$/,"") }); rd.readAsDataURL(f); })));
+  };
+  const dropProps={
+    onDragOver:e=>{ const t=[...(e.dataTransfer?.types||[])]; if(t.includes("Files")||t.includes("text/uri-list")){ e.preventDefault(); if(!dragOn) setDragOn(true); } },
+    onDragLeave:e=>{ if(!e.currentTarget.contains(e.relatedTarget)) setDragOn(false); },
+    onDrop:async e=>{
+      e.preventDefault(); setDragOn(false); setErr("");
+      let imgs=await filesToImages(e.dataTransfer.files);
+      if(!imgs.length){ // 아래 결과 사진을 끌어온 경우 (data: 주소)
+        const u=(e.dataTransfer.getData("text/uri-list")||"").split("\n")[0].trim()
+          ||((e.dataTransfer.getData("text/html")||"").match(/src="([^"]+)"/)||[])[1]||"";
+        if(/^data:image\//.test(u)||/^blob:/.test(u)) imgs=[{ url:u, name:"결과사진" }];
+        else if(u) return setErr("인터넷 사진 주소는 바로 못 넣어요 — 사진을 저장한 뒤 그 파일을 끌어다 놓으세요");
+      }
+      if(!imgs.length) return setErr("사진 파일만 넣을 수 있어요");
+      takeImages(imgs);
+    },
+  };
+  useEffect(()=>{
+    const paste=async e=>{
+      const el=panelRef.current;
+      if(!el||!el.offsetParent) return;                 // 이 화면이 보일 때만
+      const files=[...(e.clipboardData?.items||[])].filter(i=>i.kind==="file"&&/^image\//.test(i.type)).map(i=>i.getAsFile()).filter(Boolean);
+      if(!files.length) return;                          // 글자 붙여넣기는 그대로
+      e.preventDefault(); setErr("");
+      takeImages(await filesToImages(files));
+    };
+    window.addEventListener("paste",paste);
+    return ()=>window.removeEventListener("paste",paste);
+  });
   const chip=on=>({padding:"5px 12px",borderRadius:"6px",fontSize:"14px",fontWeight:600,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",
     background:on?"#1f6feb":"#0d1117",color:on?"#fff":"#8b949e",border:`1px solid ${on?"#1f6feb":"#30363d"}`});
   const lab={color:"#8b949e",fontSize:"13px"};
@@ -8141,7 +8183,10 @@ function GptImagePanel({ configured }){
   </div>;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
-    <div style={box}>
+    <div ref={panelRef} style={{...box,position:"relative"}} {...dropProps}>
+      {dragOn&&<div style={{position:"absolute",inset:0,zIndex:5,borderRadius:"12px",border:"3px dashed #58a6ff",background:"rgba(31,111,235,.18)",display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+        <div style={{background:"#0d1117",border:"1px solid #1f6feb",borderRadius:"10px",padding:"14px 22px",color:"#58a6ff",fontSize:"16px",fontWeight:700}}>
+          {tab==="edit"?"여기에 놓으면 수정할 사진으로 열려요":"여기에 놓으면 참고 사진으로 들어가요 (최대 4장)"}</div></div>}
       <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:"12px"}}>
         <button style={chip(tab==="new")} onClick={()=>setTab("new")}>✨ 새로 만들기</button>
         <button style={chip(tab==="edit")} onClick={()=>setTab("edit")}>✏️ 수정하기</button>
@@ -8174,7 +8219,7 @@ function GptImagePanel({ configured }){
             <input type="checkbox" checked={noText} onChange={e=>setNoText(e.target.checked)}/> 글씨·로고 없게 문장 덧붙이기</label>
         </div>
         <div style={{marginTop:"12px"}}>
-          <span style={lab}>참고 사진 (선택 · 실제 제품 모양 따라 그리기, 최대 4장)</span>
+          <span style={lab}>참고 사진 (선택 · 실제 제품 모양 따라 그리기, 최대 4장 · 끌어다 놓기·Ctrl+V 가능)</span>
           <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"6px"}}>
             {refs.map((r,i)=><div key={i} style={{position:"relative"}}><img src={r} style={{width:"64px",height:"64px",objectFit:"cover",borderRadius:"6px"}}/>
               <button onClick={()=>setRefs(a=>a.filter((_,k)=>k!==i))} style={{position:"absolute",right:"2px",top:"2px",background:"rgba(0,0,0,.7)",border:"none",color:"#fff",borderRadius:"50%",width:"18px",height:"18px",cursor:"pointer",fontSize:"11px"}}>✕</button></div>)}
@@ -8193,7 +8238,7 @@ function GptImagePanel({ configured }){
       {tab==="edit"&&<div>
         {!src
           ?<div onClick={()=>srcFile.current.click()} style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"40px",textAlign:"center",color:"#8b949e",cursor:"pointer"}}>
-              수정할 사진을 눌러서 고르세요<br/><span style={{fontSize:"12px"}}>(아래 결과의 「✏️ 수정」을 눌러도 돼요)</span></div>
+              수정할 사진을 눌러서 고르거나, 여기로 끌어다 놓거나, Ctrl+V 로 붙여넣으세요<br/><span style={{fontSize:"12px"}}>(아래 결과의 「✏️ 수정」을 눌러도 돼요)</span></div>
           :<div style={{display:"flex",gap:"16px",flexWrap:"wrap",alignItems:"flex-start"}}>
             <div>
               <canvas ref={maskCv} onPointerDown={e=>{ e.currentTarget.setPointerCapture(e.pointerId); drawRef.current=true; onPaint(e); }} onPointerMove={onPaint} onPointerUp={()=>drawRef.current=false}
