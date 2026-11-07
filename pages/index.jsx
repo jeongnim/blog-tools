@@ -11032,17 +11032,81 @@ function loadSnsFont(){
   return snsFontP;
 }
 
+// ── 카드 글씨: 글꼴 목록 (제목·본문 따로 고름). 고른 글꼴·두께만 그때 불러온다
+const SNS_FONTS={
+  pretendard:{ label:"프리텐다드", family:"SNS Pretendard", base:"https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/static/woff2/Pretendard-",
+    files:{100:"Thin",200:"ExtraLight",300:"Light",400:"Regular",500:"Medium",600:"SemiBold",700:"Bold",800:"ExtraBold",900:"Black"} },
+  suit:{ label:"SUIT", family:"SNS SUIT", base:"https://cdn.jsdelivr.net/npm/@sun-typeface/suit@2.0.5/fonts/static/woff2/SUIT-",
+    files:{100:"Thin",200:"ExtraLight",300:"Light",400:"Regular",500:"Medium",600:"SemiBold",700:"Bold",800:"ExtraBold",900:"Heavy"} },
+  wanted:{ label:"원티드 산스", family:"SNS Wanted Sans", base:"https://cdn.jsdelivr.net/npm/wanted-sans@1.0.3/fonts/webfonts/static/complete/woff2/WantedSans-",
+    files:{400:"Regular",500:"Medium",600:"SemiBold",700:"Bold",800:"ExtraBold",900:"Black",950:"ExtraBlack"} },
+  noto:{ label:"본고딕 (Noto Sans KR)", family:"Noto Sans KR", google:"Noto+Sans+KR:wght@100;200;300;400;500;600;700;800;900", weights:[100,200,300,400,500,600,700,800,900] },
+  gothica1:{ label:"고딕 A1", family:"Gothic A1", google:"Gothic+A1:wght@100;200;300;400;500;600;700;800;900", weights:[100,200,300,400,500,600,700,800,900] },
+  plex:{ label:"IBM Plex 한글", family:"IBM Plex Sans KR", google:"IBM+Plex+Sans+KR:wght@100;200;300;400;500;600;700", weights:[100,200,300,400,500,600,700] },
+  myeongjo:{ label:"나눔명조 (차분함)", family:"Nanum Myeongjo", google:"Nanum+Myeongjo:wght@400;700;800", weights:[400,700,800] },
+  blackhan:{ label:"검은고딕 (아주 굵음)", family:"Black Han Sans", google:"Black+Han+Sans", weights:[400] },
+  dohyeon:{ label:"도현 (둥글고 굵음)", family:"Do Hyeon", google:"Do+Hyeon", weights:[400] },
+};
+const SNS_TITLE_FONTS=["pretendard","suit","noto","gothica1","blackhan","dohyeon"];
+const SNS_BODY_FONTS=["pretendard","suit","noto","wanted","plex","myeongjo"];
+const snsWeights=k=>{ const f=SNS_FONTS[k]||SNS_FONTS.pretendard; return f.weights||Object.keys(f.files).map(Number); };
+const snsSnapWeight=(k,w)=>snsWeights(k).reduce((a,b)=>Math.abs(b-w)<Math.abs(a-w)?b:a);
+const SNS_WEIGHT_NAME={100:"아주 얇게",200:"매우 얇게",300:"얇게",400:"보통",500:"중간",600:"약간 굵게",700:"굵게",800:"아주 굵게",900:"가장 굵게",950:"최대"};
+const SNS_TXT_DEFAULT={ tFont:"pretendard", tWeight:800, tSize:100, bFont:"pretendard", bWeight:400, bSize:100, align:"left", band:"none", bandH:32, bandColor:"black" };
+function snsTxtLoad(){
+  let t={};
+  try{ t=JSON.parse(localStorage.getItem("sns_txt")||"{}")||{}; }catch(e){}
+  const o={ ...SNS_TXT_DEFAULT, ...t };
+  if(!SNS_TITLE_FONTS.includes(o.tFont)) o.tFont=SNS_TXT_DEFAULT.tFont;
+  if(!SNS_BODY_FONTS.includes(o.bFont)) o.bFont=SNS_TXT_DEFAULT.bFont;
+  o.tWeight=snsSnapWeight(o.tFont,o.tWeight); o.bWeight=snsSnapWeight(o.bFont,o.bWeight);
+  return o;
+}
+const snsFontCss=(k,w,size)=>`${w} ${size}px "${(SNS_FONTS[k]||SNS_FONTS.pretendard).family}", ${SNS_FONT}`;
+const snsFontCache={};
+async function snsEnsureFont(k, w, text){
+  const f=SNS_FONTS[k]; if(!f) return;
+  try{
+    if(f.google){   // 구글 글꼴: 글자 범위별로 나뉘어 있어서 실제 쓰는 글자를 넘겨 받아온다
+      if(!snsFontCache["css:"+k]) snsFontCache["css:"+k]=new Promise(ok=>{
+        const l=document.createElement("link"); l.rel="stylesheet"; l.href=`https://fonts.googleapis.com/css2?family=${f.google}&display=swap`;
+        l.onload=ok; l.onerror=ok; setTimeout(ok,6000); document.head.appendChild(l);
+      });
+      await snsFontCache["css:"+k];
+      await document.fonts.load(`${w} 40px "${f.family}"`, text||"가나다라마바사 ABC 123");
+      return;
+    }
+    const key=k+":"+w;
+    if(!snsFontCache[key]) snsFontCache[key]=(async()=>{
+      const ff=new FontFace(f.family,`url(${f.base}${f.files[w]}.woff2)`,{ weight:String(w) }); await ff.load(); document.fonts.add(ff);
+    })().catch(()=>{});
+    await snsFontCache[key];
+  }catch(e){ /* 못 받으면 기본 글꼴로 */ }
+}
+
 // 카드 배치: 사진 칸·글 칸
-function snsLayout(tpl){
+function snsLayout(tpl, txt){
+  // 글 띠(위·아래): 카드를 사진 구간 / 글 구간으로 나눈다 — 글씨가 사진을 가리지 않음
+  const band=txt&&(txt.band==="top"||txt.band==="bottom")?txt.band:null;
+  if(band){
+    const bh=Math.round(SNS_H*Math.min(50,Math.max(20,Number(txt.bandH)||32))/100);
+    const by=band==="top"?0:SNS_H-bh;
+    const photo=band==="top"?{x:0,y:bh,w:SNS_W,h:SNS_H-bh}:{x:0,y:0,w:SNS_W,h:SNS_H-bh};
+    const col=txt.bandColor||"black";
+    return { photo, radius:0, band:{x:0,y:by,w:SNS_W,h:bh,color:col}, text:{x:70,y:by+45,w:SNS_W-140,h:bh-90}, dark:col!=="black", bandTop:band==="top" };
+  }
   if(tpl==="split") return { photo:{x:0,y:0,w:SNS_W,h:800}, radius:0, text:{x:80,y:860,w:SNS_W-160,h:SNS_H-860-90}, dark:true, bg:"#ffffff" };
   if(tpl==="frame") return { photo:{x:70,y:70,w:SNS_W-140,h:820}, radius:36, text:{x:90,y:940,w:SNS_W-180,h:SNS_H-940-80}, dark:true, bg:"#F5F1EA" };
   if(tpl==="box")   return { photo:{x:0,y:0,w:SNS_W,h:SNS_H}, radius:0, text:{x:150,y:260,w:SNS_W-300,h:SNS_H-520}, dark:true, boxed:true };
   return { photo:{x:0,y:0,w:SNS_W,h:SNS_H}, radius:0, text:{x:90,y:520,w:SNS_W-180,h:SNS_H-520-120}, dark:false, bottom:true };
 }
+// 사진 위치: 사진 끝이 칸 안쪽으로 들어오지 않게(빈 곳이 안 생기게) 옮길 수 있는 범위를 막는다
 function snsPhotoRect(img, adj, box){
-  const s=Math.max(box.w/img.width, box.h/img.height)*(adj.zoom||1);
+  const s=Math.max(box.w/img.width, box.h/img.height)*Math.max(1,adj.zoom||1);
   const w=img.width*s, h=img.height*s;
-  return { x:box.x+(box.w-w)/2+(adj.ox||0)*box.w, y:box.y+(box.h-h)/2+(adj.oy||0)*box.h, w, h };
+  const mx=Math.max(0,(w-box.w)/2/box.w), my=Math.max(0,(h-box.h)/2/box.h);   // 옮길 수 있는 최대값 (칸 크기 비율)
+  const ox=Math.max(-mx,Math.min(mx,adj.ox||0)), oy=Math.max(-my,Math.min(my,adj.oy||0));
+  return { x:box.x+(box.w-w)/2+ox*box.w, y:box.y+(box.h-h)/2+oy*box.h, w, h, ox, oy, mx, my };
 }
 function snsFilterCss(adj){
   const f={none:"",warm:"sepia(.25) saturate(1.15) hue-rotate(-8deg)",cool:"hue-rotate(12deg) saturate(.9) brightness(1.03)",mono:"grayscale(1)",vintage:"sepia(.45) contrast(.9) brightness(1.05)"}[adj.filter]||"";
@@ -11097,17 +11161,20 @@ function snsWrap(ctx, text, maxW){
   return out;
 }
 // 카드 한 장 그리기 (1080×1350 기준 좌표, scale 로 썸네일)
-function snsRenderCard(canvas, { card, idx, total, img, tpl, accent, brand }, scale=1){
+//   txt: 글꼴·크기·두께·정렬·띠 (모든 카드 공통) / card.tx·ty: 이 카드 글씨 위치 옮김(px)
+//   그린 뒤 canvas._shrunk(글이 길어서 줄였는지), canvas._textRange(글씨를 옮길 수 있는 범위)를 남긴다
+function snsRenderCard(canvas, { card, idx, total, img, tpl, accent, brand, txt }, scale=1){
+  const X={ ...SNS_TXT_DEFAULT, ...(txt||{}) };
   canvas.width=Math.round(SNS_W*scale); canvas.height=Math.round(SNS_H*scale);
   const ctx=canvas.getContext("2d");
   ctx.setTransform(scale,0,0,scale,0,0);
-  const L=snsLayout(tpl), adj=card.adj||snsAdj();
+  const L=snsLayout(tpl, X), adj=card.adj||snsAdj();
   ctx.fillStyle=L.bg||"#111"; ctx.fillRect(0,0,SNS_W,SNS_H);
   if(img) snsDrawPhoto(ctx, img, adj, L.photo, L.radius);
   else { ctx.fillStyle="#2b2f36"; snsRoundRect(ctx,L.photo.x,L.photo.y,L.photo.w,L.photo.h,L.radius); ctx.fill(); }
-  // 글씨가 잘 보이게 어둡게 덮기
+  // 글씨가 잘 보이게 어둡게 덮기 (띠 모드는 글씨가 사진 위에 없으니 안 함)
   const ov=(adj.overlay??35)/100;
-  if(ov>0){
+  if(ov>0 && !L.band){
     ctx.save(); snsRoundRect(ctx,L.photo.x,L.photo.y,L.photo.w,L.photo.h,L.radius); ctx.clip();
     if(L.bottom){
       ctx.fillStyle=`rgba(0,0,0,${ov*0.35})`; ctx.fillRect(0,0,SNS_W,SNS_H);
@@ -11116,44 +11183,78 @@ function snsRenderCard(canvas, { card, idx, total, img, tpl, accent, brand }, sc
     } else { ctx.fillStyle=`rgba(0,0,0,${ov*(L.boxed?0.8:0.5)})`; ctx.fillRect(L.photo.x,L.photo.y,L.photo.w,L.photo.h); }
     ctx.restore();
   }
+  if(L.band){
+    const B=L.band;
+    ctx.fillStyle=B.color==="white"?"#ffffff":B.color==="accent"?accent:"#111418";
+    ctx.fillRect(B.x,B.y,B.w,B.h);
+  }
   const cover=idx===0;
-  const T=L.text;
-  let tSize=cover?96:72, bSize=cover?46:42;
-  let tLines=[], bLines=[];
+  const T=L.text, center=X.align==="center";
+  const tBase=(cover?96:72)*(X.tSize||100)/100, bBase=(cover?46:42)*(X.bSize||100)/100;
+  let tSize=tBase, bSize=bBase;
+  const tW=snsSnapWeight(X.tFont,X.tWeight), bW=snsSnapWeight(X.bFont,X.bWeight);
+  const innerW=T.w-(L.boxed?80:0);
+  let tLines=[], bLines=[], blockW=0;
   const fit=()=>{
-    ctx.font=`800 ${tSize}px ${SNS_FONT}`; tLines=snsWrap(ctx, card.title, T.w-(L.boxed?80:0));
-    ctx.font=`400 ${bSize}px ${SNS_FONT}`; bLines=snsWrap(ctx, card.body, T.w-(L.boxed?80:0));
+    ctx.font=snsFontCss(X.tFont,tW,tSize); tLines=snsWrap(ctx, card.title, innerW);
+    let mw=Math.max(0,...tLines.map(l=>ctx.measureText(l).width));
+    ctx.font=snsFontCss(X.bFont,bW,bSize); bLines=snsWrap(ctx, card.body, innerW);
+    mw=Math.max(mw,...bLines.map(l=>ctx.measureText(l).width)); blockW=mw;
     return tLines.length*tSize*1.25+(bLines.length?36:0)+bLines.length*bSize*1.5;
   };
   let hgt=fit();
-  while(hgt>T.h-(L.boxed?100:0) && tSize>40){ tSize-=4; bSize=Math.max(28,bSize-2); hgt=fit(); }
-  let y;
+  const avail=T.h-(L.boxed?100:0);
+  while(hgt>avail && tSize>34){ tSize*=0.95; bSize=Math.max(22,bSize*0.96); hgt=fit(); }
+  canvas._shrunk=tSize<tBase-0.5;
+
+  // 기본 자리 (옮기기 전)
+  let rect, y0;
   if(L.boxed){
-    const bh=hgt+100, by=SNS_H/2-bh/2;
-    ctx.fillStyle="rgba(255,255,255,0.94)"; snsRoundRect(ctx,T.x,by,T.w,bh,32); ctx.fill();
-    ctx.fillStyle=accent; ctx.fillRect(T.x+40,by+34,72,8);
-    y=by+60;
-  } else if(L.bottom) y=T.y+T.h-hgt;
-  else { ctx.fillStyle=accent; ctx.fillRect(T.x,T.y-10,72,8); y=T.y+24; }
-  const tx=T.x+(L.boxed?40:0);
-  ctx.textBaseline="top";
+    const bh=hgt+100; rect={ x:T.x, y:SNS_H/2-bh/2, w:T.w, h:bh }; y0=rect.y+60;
+  } else {
+    if(L.band) y0=T.y+Math.max(0,(T.h-hgt)/2);
+    else if(L.bottom) y0=T.y+T.h-hgt;
+    else y0=T.y+24;
+    const left=center?T.x+T.w/2-blockW/2:T.x;
+    rect={ x:left, y:y0-(L.band||L.bottom?0:34), w:blockW, h:hgt+(L.band||L.bottom?0:34) };
+  }
+  // 옮길 수 있는 범위: 띠 안 / 카드 안 (맨 위 작은 문구·쪽수 자리는 비워 둠)
+  const lim=L.band?{ x:L.band.x+20, y:L.band.y+20, w:L.band.w-40, h:L.band.h-40 }:{ x:30, y:130, w:SNS_W-60, h:SNS_H-160 };
+  const lo={ x:Math.min(0,lim.x-rect.x), y:Math.min(0,lim.y-rect.y) };
+  const hi={ x:Math.max(0,lim.x+lim.w-(rect.x+rect.w)), y:Math.max(0,lim.y+lim.h-(rect.y+rect.h)) };
+  const dx=Math.max(lo.x,Math.min(hi.x,card.tx||0)), dy=Math.max(lo.y,Math.min(hi.y,card.ty||0));
+  canvas._textRange={ lo, hi, dx, dy };
+
+  let y=y0+dy;
+  if(L.boxed){
+    ctx.fillStyle="rgba(255,255,255,0.94)"; snsRoundRect(ctx,rect.x+dx,rect.y+dy,rect.w,rect.h,32); ctx.fill();
+    ctx.fillStyle=accent; ctx.fillRect((center?T.x+T.w/2-36:T.x+40)+dx,rect.y+dy+34,72,8);
+  } else if(!L.bottom && !L.band){
+    ctx.fillStyle=accent; ctx.fillRect((center?T.x+T.w/2-36:T.x)+dx,y0-34+dy,72,8);
+  }
+  const tx=(center?T.x+T.w/2:T.x+(L.boxed?40:0))+dx;
+  ctx.textBaseline="top"; ctx.textAlign=center?"center":"left";
   ctx.save();
-  if(!L.dark){ ctx.shadowColor="rgba(0,0,0,.45)"; ctx.shadowBlur=14; }
-  ctx.font=`800 ${tSize}px ${SNS_FONT}`; ctx.fillStyle=L.dark?"#111418":accent;
+  if(!L.dark && !L.band){ ctx.shadowColor="rgba(0,0,0,.45)"; ctx.shadowBlur=14; }
+  // 글씨 색은 예전 규칙 그대로: 어두운 바탕이면 제목 강조색·본문 흰색, 밝은 바탕이면 검정 계열
+  ctx.font=snsFontCss(X.tFont,tW,tSize); ctx.fillStyle=L.dark?"#111418":accent;
   for(const ln of tLines){ ctx.fillText(ln, tx, y); y+=tSize*1.25; }
   if(bLines.length) y+=36;
-  ctx.font=`400 ${bSize}px ${SNS_FONT}`; ctx.fillStyle=L.dark?"#3d434b":"#ffffff";
+  ctx.font=snsFontCss(X.bFont,bW,bSize); ctx.fillStyle=L.dark?"#3d434b":"#ffffff";
   for(const ln of bLines){ ctx.fillText(ln, tx, y); y+=bSize*1.5; }
   ctx.restore();
-  // 위쪽: 상단 문구 · 쪽수
-  const onPhoto=tpl!=="frame";
+  ctx.textAlign="left";
+  // 상단 문구 · 쪽수 (띠가 위에 있으면 아래쪽 사진 위로)
+  const onPhoto=tpl!=="frame"||!!L.band;
+  const fr=tpl==="frame"&&!L.band;
   ctx.font=`600 34px ${SNS_FONT}`;
+  const topY=L.bandTop?SNS_H-70-40:(fr?110:70);
   if(brand){
     ctx.save(); ctx.fillStyle=onPhoto?"rgba(255,255,255,.95)":"#111418"; if(onPhoto){ ctx.shadowColor="rgba(0,0,0,.5)"; ctx.shadowBlur=10; }
-    ctx.fillText(brand, tpl==="frame"?110:70, tpl==="frame"?110:70); ctx.restore();
+    ctx.fillText(brand, fr?110:70, topY); ctx.restore();
   }
   const pg=`${idx+1}/${total}`, pw=ctx.measureText(pg).width+36;
-  const px=(tpl==="frame"?SNS_W-110:SNS_W-70)-pw, py=tpl==="frame"?100:62;
+  const px=(fr?SNS_W-110:SNS_W-70)-pw, py=L.bandTop?SNS_H-62-52:(fr?100:62);
   ctx.fillStyle="rgba(0,0,0,.45)"; snsRoundRect(ctx,px,py,pw,52,26); ctx.fill();
   ctx.fillStyle="#fff"; ctx.fillText(pg, px+18, py+9);
   return canvas;
@@ -11194,24 +11295,42 @@ function SnsConvertTab({ setActive }){
   const [tool,setTool]=React.useState("move");              // move | mosaic
   const [brush,setBrush]=React.useState(60);
   const [fontOk,setFontOk]=React.useState(false);
+  const [txt,setTxt]=React.useState(snsTxtLoad);            // 글씨·띠 설정 (모든 카드 공통)
+  const [fontTick,setFontTick]=React.useState(0);
+  const [fontLoading,setFontLoading]=React.useState(false);
+  const [mainInfo,setMainInfo]=React.useState({ shrunk:false, range:null });
   const [copied,setCopied]=React.useState("");
   const fileRef=React.useRef(); const mainRef=React.useRef(); const thumbRefs=React.useRef([]); const dragRef=React.useRef(null);
 
   React.useEffect(()=>{ loadSnsFont().then(()=>setFontOk(true)); },[]);
   const keep=(k,v)=>{ try{ localStorage.setItem(k,v); }catch(e){} };
   const photoById=id=>photos.find(p=>p.id===id);
+  const txtUp=patch=>setTxt(t=>{ const n={ ...t, ...patch }; keep("sns_txt",JSON.stringify(n)); return n; });
+
+  // ── 고른 글꼴 불러오기 (카드에 실제 쓰인 글자만)
+  const usedChars=React.useMemo(()=>[...new Set((cards.map(c=>c.title+c.body).join("")+"0123456789/").replace(/\s/g,""))].join(""),[cards]);
+  React.useEffect(()=>{
+    let alive=true; setFontLoading(true);
+    Promise.all([snsEnsureFont(txt.tFont,txt.tWeight,usedChars), snsEnsureFont(txt.bFont,txt.bWeight,usedChars)])
+      .then(()=>{ if(alive){ setFontLoading(false); setFontTick(t=>t+1); } });
+    return ()=>{ alive=false; };
+  },[txt.tFont,txt.tWeight,txt.bFont,txt.bWeight,usedChars]);
 
   // ── 미리보기 다시 그리기
   React.useEffect(()=>{
     const id=requestAnimationFrame(()=>{
       cards.forEach((c,i)=>{
-        const opt={ card:c, idx:i, total:cards.length, img:photoById(c.photo)?.img, tpl, accent, brand };
+        const opt={ card:c, idx:i, total:cards.length, img:photoById(c.photo)?.img, tpl, accent, brand, txt };
         if(thumbRefs.current[i]) snsRenderCard(thumbRefs.current[i], opt, 0.16);
-        if(i===sel && mainRef.current) snsRenderCard(mainRef.current, opt, 0.5);
+        if(i===sel && mainRef.current){
+          const cv=snsRenderCard(mainRef.current, opt, 0.5);
+          const info={ shrunk:!!cv._shrunk, range:cv._textRange||null };
+          setMainInfo(p=>JSON.stringify(p)===JSON.stringify(info)?p:info);
+        }
       });
     });
     return ()=>cancelAnimationFrame(id);
-  },[cards,sel,tpl,accent,brand,photos,fontOk,view]);
+  },[cards,sel,tpl,accent,brand,photos,fontOk,view,txt,fontTick]);
 
   // ── 사진 넣기
   const addFiles=async files=>{
@@ -11308,7 +11427,24 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
   // ── 카드 편집
   const card=cards[sel];
   const upCard=(patch,i=sel)=>setCards(cs=>cs.map((c,k)=>k===i?{...c,...patch}:c));
-  const upAdj=patch=>setCards(cs=>cs.map((c,k)=>k===sel?{...c,adj:{...c.adj,...patch}}:c));
+  // 사진 가공 바꾸기 — 위치는 항상 사진 끝이 칸 안으로 안 들어오는 범위로 다시 맞춘다
+  const upAdj=patch=>setCards(cs=>cs.map((c,k)=>{
+    if(k!==sel) return c;
+    const adj={ ...c.adj, ...patch };
+    const im=photos.find(p=>p.id===c.photo)?.img;
+    if(im){ const r=snsPhotoRect(im, adj, snsLayout(tpl, txt).photo); adj.ox=r.ox; adj.oy=r.oy; }
+    return { ...c, adj };
+  }));
+  const photoBox=()=>snsLayout(tpl, txt).photo;
+  const photoR=()=>{ const im=card&&photoById(card.photo)?.img; return im?snsPhotoRect(im, card.adj, photoBox()):null; };
+  const PSTEP=0.03;    // 사진 한 번에 칸의 3%씩
+  const movePhoto=(dx,dy)=>{ const r=photoR(); if(!r) return; upAdj({ ox:r.ox+dx*PSTEP, oy:r.oy+dy*PSTEP }); };
+  const TSTEP=20;      // 글씨 한 번에 20px (1080 기준)
+  const moveText=(dx,dy)=>{
+    const R=mainInfo.range; if(!R) return;
+    upCard({ tx:Math.max(R.lo.x,Math.min(R.hi.x,R.dx+dx*TSTEP)), ty:Math.max(R.lo.y,Math.min(R.hi.y,R.dy+dy*TSTEP)) });
+  };
+  const textAll=()=>{ const tx=card.tx||0, ty=card.ty||0; setCards(cs=>cs.map(c=>({ ...c, tx, ty }))); setMsg("✓ 이 카드의 글씨 위치를 모든 카드에 적용했어요 (칸 밖으로 나가는 카드는 끝에 맞춰져요)"); };
   const applyAll=()=>{
     const a=card.adj;
     setCards(cs=>cs.map(c=>({...c,adj:{...c.adj, bright:a.bright, contrast:a.contrast, sat:a.sat, filter:a.filter, overlay:a.overlay, blur:a.blur}})));
@@ -11320,7 +11456,7 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
   const toCanvas=e=>{ const r=mainRef.current.getBoundingClientRect(); return { x:(e.clientX-r.left)*SNS_W/r.width, y:(e.clientY-r.top)*SNS_H/r.height }; };
   const addMosaic=pt=>{
     const im=photoById(card.photo)?.img; if(!im) return;
-    const box=snsLayout(tpl).photo; const r=snsPhotoRect(im,card.adj,box);
+    const box=snsLayout(tpl, txt).photo; const r=snsPhotoRect(im,card.adj,box);
     if(pt.x<box.x||pt.x>box.x+box.w||pt.y<box.y||pt.y>box.y+box.h) return;
     let u=(pt.x-r.x)/r.w; const v=(pt.y-r.y)/r.h; if(card.adj.flip) u=1-u;
     const m=card.adj.mosaic||[], last=m[m.length-1];
@@ -11330,14 +11466,15 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
   const onDown=e=>{
     if(!card) return; e.currentTarget.setPointerCapture(e.pointerId);
     const pt=toCanvas(e);
-    dragRef.current={ ...pt, ox:card.adj.ox, oy:card.adj.oy, start:(card.adj.mosaic||[]).length };
+    const r0=photoR();
+    dragRef.current={ ...pt, ox:r0?r0.ox:card.adj.ox, oy:r0?r0.oy:card.adj.oy, start:(card.adj.mosaic||[]).length };
     if(tool==="mosaic") addMosaic(pt);
   };
   const onMove=e=>{
     const d=dragRef.current; if(!d||!card) return;
     const pt=toCanvas(e);
     if(tool==="mosaic") return addMosaic(pt);
-    const box=snsLayout(tpl).photo;
+    const box=snsLayout(tpl, txt).photo;
     upAdj({ ox:d.ox+(pt.x-d.x)/box.w, oy:d.oy+(pt.y-d.y)/box.h });
   };
   const onUp=()=>{ dragRef.current=null; };
@@ -11346,7 +11483,7 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
   const slug=(title||cards[0]?.title||"카드뉴스").replace(/[\\/:*?"<>|]/g,"").slice(0,24).trim()||"카드뉴스";
   const saveCard=async i=>{
     const c=document.createElement("canvas");
-    snsRenderCard(c,{ card:cards[i], idx:i, total:cards.length, img:photoById(cards[i].photo)?.img, tpl, accent, brand },1);
+    snsRenderCard(c,{ card:cards[i], idx:i, total:cards.length, img:photoById(cards[i].photo)?.img, tpl, accent, brand, txt },1);
     await snsDownload(c, `${slug}_${String(i+1).padStart(2,"0")}.png`);
   };
   const saveMany=async list=>{ setBusy("save"); for(const i of list){ await saveCard(i); await new Promise(r=>setTimeout(r,350)); } setBusy(""); };
@@ -11378,6 +11515,75 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
     <span style={{...S.label,display:"flex",justifyContent:"space-between"}}><span>{label}</span><span style={{color:"#c9d1d9"}}>{card.adj[key]}{unit}</span></span>
     <input type="range" min={min} max={max} step={step} value={card.adj[key]} onChange={e=>upAdj({[key]:Number(e.target.value)})} style={{width:"100%"}}/>
   </label>;
+
+  // 상하좌우 화살표 묶음
+  const arrowPad=(title,can,move,reset,hint,extra)=>{
+    const ab=(on,label,f)=><button disabled={!on} onClick={f} style={{...S.small,width:"38px",height:"32px",fontSize:"15px",padding:0,opacity:on?1:.35,cursor:on?"pointer":"default"}}>{label}</button>;
+    return <div>
+      <span style={S.label}>{title}</span>
+      <div style={{display:"grid",gridTemplateColumns:"38px 38px 38px",gap:"4px",justifyContent:"start"}}>
+        <span/>{ab(can.up,"↑",()=>move(0,-1))}<span/>
+        {ab(can.left,"←",()=>move(-1,0))}
+        <button onClick={reset} title="가운데(처음 자리)로" style={{...S.small,width:"38px",height:"32px",padding:0}}>⊙</button>
+        {ab(can.right,"→",()=>move(1,0))}
+        <span/>{ab(can.down,"↓",()=>move(0,1))}<span/>
+      </div>
+      {hint&&<div style={{fontSize:"11px",color:"#8b949e",marginTop:"4px"}}>{hint}</div>}
+      {extra}
+    </div>;
+  };
+  // 글씨·띠 설정 (모든 카드 공통)
+  const fontCol=(who)=>{
+    const isT=who==="t", fk=isT?txt.tFont:txt.bFont, w=isT?txt.tWeight:txt.bWeight, sz=isT?txt.tSize:txt.bSize, ws=snsWeights(fk);
+    const list=isT?SNS_TITLE_FONTS:SNS_BODY_FONTS;
+    return <div>
+      <span style={{...S.label,color:"#c9d1d9"}}>{isT?"제목":"본문"}</span>
+      <select style={{...S.input,marginBottom:"8px"}} value={fk} onChange={e=>{ const k=e.target.value; txtUp(isT?{tFont:k,tWeight:snsSnapWeight(k,w)}:{bFont:k,bWeight:snsSnapWeight(k,w)}); }}>
+        {list.map(k=><option key={k} value={k}>{SNS_FONTS[k].label} · 두께 {snsWeights(k).length}단계</option>)}
+      </select>
+      <label style={{display:"block",marginBottom:"6px"}}>
+        <span style={{...S.label,display:"flex",justifyContent:"space-between"}}><span>크기</span><span style={{color:"#c9d1d9"}}>{sz}%</span></span>
+        <input type="range" min="70" max="150" step="5" value={sz} onChange={e=>txtUp(isT?{tSize:Number(e.target.value)}:{bSize:Number(e.target.value)})} style={{width:"100%"}}/>
+      </label>
+      <label style={{display:"block"}}>
+        <span style={{...S.label,display:"flex",justifyContent:"space-between"}}><span>두께</span><span style={{color:"#c9d1d9"}}>{ws.length>1?`${SNS_WEIGHT_NAME[w]||w} (${w})`:"이 글꼴은 두께 고정"}</span></span>
+        <input type="range" min="0" max={Math.max(0,ws.length-1)} step="1" value={Math.max(0,ws.indexOf(w))} disabled={ws.length<2}
+          onChange={e=>{ const v=ws[Number(e.target.value)]; txtUp(isT?{tWeight:v}:{bWeight:v}); }} style={{width:"100%",opacity:ws.length<2?.35:1}}/>
+      </label>
+    </div>;
+  };
+  const fontPanel=<div style={{background:"#161b22",border:"1px solid #21262d",borderRadius:"10px",padding:"12px 14px",marginBottom:"14px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",flexWrap:"wrap",gap:"6px"}}>
+      <b style={{color:"#e6edf3",fontSize:"14px"}}>✏️ 글씨 · 띠 <span style={{fontWeight:400,color:"#8b949e",fontSize:"12px"}}>(모든 카드 공통)</span></b>
+      <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+        {fontLoading&&<span style={{fontSize:"12px",color:"#d29922"}}>⏳ 글꼴 불러오는 중…</span>}
+        <button style={S.small} onClick={()=>{ setTxt(SNS_TXT_DEFAULT); keep("sns_txt",JSON.stringify(SNS_TXT_DEFAULT)); }}>처음 설정으로</button>
+      </div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"14px"}}>
+      {fontCol("t")}{fontCol("b")}
+      <div>
+        <span style={{...S.label,color:"#c9d1d9"}}>정렬</span>
+        <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
+          {[["left","왼쪽"],["center","가운데"]].map(([k,l])=><button key={k} style={S.chip(txt.align===k)} onClick={()=>txtUp({align:k})}>{l}</button>)}
+        </div>
+        <span style={{...S.label,color:"#c9d1d9"}}>글 띠 (쇼츠 자막 칸처럼)</span>
+        <div style={{display:"flex",gap:"6px",marginBottom:"8px"}}>
+          {[["none","없음"],["top","위 띠"],["bottom","아래 띠"]].map(([k,l])=><button key={k} style={S.chip(txt.band===k)} onClick={()=>txtUp({band:k})}>{l}</button>)}
+        </div>
+        {txt.band!=="none"&&<>
+          <label style={{display:"block",marginBottom:"6px"}}>
+            <span style={{...S.label,display:"flex",justifyContent:"space-between"}}><span>띠 높이</span><span style={{color:"#c9d1d9"}}>{txt.bandH}%</span></span>
+            <input type="range" min="20" max="50" step="1" value={txt.bandH} onChange={e=>txtUp({bandH:Number(e.target.value)})} style={{width:"100%"}}/>
+          </label>
+          <div style={{display:"flex",gap:"6px",alignItems:"center"}}><span style={S.label}>띠 색</span>
+            {[["black","검정"],["white","흰색"],["accent","강조색"]].map(([k,l])=><button key={k} style={S.chip(txt.bandColor===k)} onClick={()=>txtUp({bandColor:k})}>{l}</button>)}
+          </div>
+          <div style={{fontSize:"11px",color:"#8b949e",marginTop:"6px"}}>띠를 켜면 위 「디자인」 대신 사진 구간 + 글 구간으로 나뉘어요. 사진 위에 글씨가 없어서 「어둡게 덮기」는 쓰지 않아요.</div>
+        </>}
+      </div>
+    </div>
+  </div>;
 
   return <div style={{maxWidth:"1100px"}}>
     {/* 1. 글 넣기 */}
@@ -11454,6 +11660,7 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
           {cards.map((c,i)=><canvas key={i} ref={el=>thumbRefs.current[i]=el} onClick={()=>setSel(i)}
             style={{width:"104px",height:"130px",borderRadius:"6px",cursor:"pointer",flex:"none",outline:sel===i?"3px solid #58a6ff":"1px solid #30363d"}}/>)}
         </div>
+        {fontPanel}
         {card&&<div style={{display:"flex",gap:"18px",flexWrap:"wrap",alignItems:"flex-start"}}>
           <div style={{flex:"none"}}>
             <canvas ref={mainRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
@@ -11470,7 +11677,19 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
                 <button style={S.small} onClick={()=>upAdj({mosaic:[]})}>모자이크 전부 지우기</button>
               </div>
             </div>}
-            <div style={{fontSize:"12px",color:"#8b949e",marginTop:"8px",width:"360px"}}>{tool==="move"?"사진을 끌어서 위치를 맞추세요.":"가릴 곳(얼굴·번호·가격표 등)을 문지르세요."}</div>
+            <div style={{fontSize:"12px",color:"#8b949e",marginTop:"8px",width:"360px"}}>{tool==="move"?"사진을 끌거나 아래 화살표로 위치를 맞추세요. 사진 끝이 칸 안으로는 안 들어와요.":"가릴 곳(얼굴·번호·가격표 등)을 문지르세요."}</div>
+            {mainInfo.shrunk&&<div style={{fontSize:"12px",color:"#d29922",marginTop:"6px",width:"360px"}}>⚠ 글이 길어서 글씨를 자동으로 줄였어요 (크기를 줄이거나 내용을 짧게 하면 그대로 나와요)</div>}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginTop:"12px",width:"360px"}}>
+              {(()=>{ const r=photoR(); const e=0.0005;
+                return arrowPad("🖼 사진 위치",
+                  { up:r&&r.oy>-r.my+e, down:r&&r.oy<r.my-e, left:r&&r.ox>-r.mx+e, right:r&&r.ox<r.mx-e },
+                  movePhoto, ()=>upAdj({ox:0,oy:0}),
+                  !r?"사진이 없어요":(r.mx<e&&r.my<e?"확대하면 움직일 수 있어요":r.mx<e?"좌우는 확대해야 움직여요":r.my<e?"위아래는 확대해야 움직여요":"")); })()}
+              {(()=>{ const R=mainInfo.range;
+                return arrowPad("🔤 글씨 위치",
+                  { up:R&&R.dy>R.lo.y, down:R&&R.dy<R.hi.y, left:R&&R.dx>R.lo.x, right:R&&R.dx<R.hi.x },
+                  moveText, ()=>upCard({tx:0,ty:0}), "", <button style={{...S.small,marginTop:"6px"}} onClick={textAll}>모든 카드에 이 위치</button>); })()}
+            </div>
           </div>
 
           <div style={{flex:"1",minWidth:"280px"}}>
