@@ -11172,17 +11172,6 @@ function snsRenderCard(canvas, { card, idx, total, img, tpl, accent, brand, txt 
   ctx.fillStyle=L.bg||"#111"; ctx.fillRect(0,0,SNS_W,SNS_H);
   if(img) snsDrawPhoto(ctx, img, adj, L.photo, L.radius);
   else { ctx.fillStyle="#2b2f36"; snsRoundRect(ctx,L.photo.x,L.photo.y,L.photo.w,L.photo.h,L.radius); ctx.fill(); }
-  // 글씨가 잘 보이게 어둡게 덮기 (띠 모드는 글씨가 사진 위에 없으니 안 함)
-  const ov=(adj.overlay??35)/100;
-  if(ov>0 && !L.band){
-    ctx.save(); snsRoundRect(ctx,L.photo.x,L.photo.y,L.photo.w,L.photo.h,L.radius); ctx.clip();
-    if(L.bottom){
-      ctx.fillStyle=`rgba(0,0,0,${ov*0.35})`; ctx.fillRect(0,0,SNS_W,SNS_H);
-      const g=ctx.createLinearGradient(0,SNS_H*0.35,0,SNS_H); g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,`rgba(0,0,0,${Math.min(0.92,ov*1.6)})`);
-      ctx.fillStyle=g; ctx.fillRect(0,0,SNS_W,SNS_H);
-    } else { ctx.fillStyle=`rgba(0,0,0,${ov*(L.boxed?0.8:0.5)})`; ctx.fillRect(L.photo.x,L.photo.y,L.photo.w,L.photo.h); }
-    ctx.restore();
-  }
   if(L.band){
     const B=L.band;
     ctx.fillStyle=B.color==="white"?"#ffffff":B.color==="accent"?accent:"#111418";
@@ -11224,6 +11213,24 @@ function snsRenderCard(canvas, { card, idx, total, img, tpl, accent, brand, txt 
   const hi={ x:Math.max(0,lim.x+lim.w-(rect.x+rect.w)), y:Math.max(0,lim.y+lim.h-(rect.y+rect.h)) };
   const dx=Math.max(lo.x,Math.min(hi.x,card.tx||0)), dy=Math.max(lo.y,Math.min(hi.y,card.ty||0));
   canvas._textRange={ lo, hi, dx, dy };
+  canvas._textRect={ x:rect.x+dx, y:rect.y+dy, w:rect.w, h:rect.h };
+  // 글씨가 잘 보이게 어둡게 덮기 (띠 모드는 글씨가 사진 위에 없으니 안 함)
+  //   「사진 가득 + 아래 글」은 글이 있는 쪽(아래·위·가운데)을 진하게
+  const ov=(adj.overlay??35)/100;
+  if(ov>0 && !L.band){
+    ctx.save(); snsRoundRect(ctx,L.photo.x,L.photo.y,L.photo.w,L.photo.h,L.radius); ctx.clip();
+    if(L.bottom){
+      const tc=(rect.y+dy+rect.h/2)/SNS_H;
+      if(tc>=0.4 && tc<=0.6){ ctx.fillStyle=`rgba(0,0,0,${Math.min(0.85,ov*0.9)})`; ctx.fillRect(0,0,SNS_W,SNS_H); }
+      else {
+        ctx.fillStyle=`rgba(0,0,0,${ov*0.35})`; ctx.fillRect(0,0,SNS_W,SNS_H);
+        const g=tc>0.6?ctx.createLinearGradient(0,SNS_H*0.35,0,SNS_H):ctx.createLinearGradient(0,SNS_H*0.65,0,0);
+        g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,`rgba(0,0,0,${Math.min(0.92,ov*1.6)})`);
+        ctx.fillStyle=g; ctx.fillRect(0,0,SNS_W,SNS_H);
+      }
+    } else { ctx.fillStyle=`rgba(0,0,0,${ov*(L.boxed?0.8:0.5)})`; ctx.fillRect(L.photo.x,L.photo.y,L.photo.w,L.photo.h); }
+    ctx.restore();
+  }
 
   let y=y0+dy;
   if(L.boxed){
@@ -11260,6 +11267,76 @@ function snsRenderCard(canvas, { card, idx, total, img, tpl, accent, brand, txt 
   return canvas;
 }
 
+// ── AI 자동 배치: AI가 알려준 주인공 상자(subject)·글 위치로 사진 위치·확대·어둡게 덮기를 계산
+//   글 칸 밝기를 재서 어둡게 덮기 정도를 정함 (밝을수록·복잡할수록 진하게)
+function snsRegionLum(img, adj, box, rect){
+  const k=0.25, c=document.createElement("canvas"); c.width=Math.round(SNS_W*k); c.height=Math.round(SNS_H*k);
+  const ctx=c.getContext("2d"); ctx.setTransform(k,0,0,k,0,0);
+  snsDrawPhoto(ctx, img, { ...adj, mosaic:[] }, box, 0);
+  const x=Math.max(0,Math.round(rect.x*k)), y=Math.max(0,Math.round(rect.y*k));
+  const w=Math.max(1,Math.min(c.width-x,Math.round(rect.w*k))), h=Math.max(1,Math.min(c.height-y,Math.round(rect.h*k)));
+  try{
+    const d=ctx.getImageData(x,y,w,h).data; let sum=0, sq=0, n=0;
+    for(let i=0;i<d.length;i+=4){ const l=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; sum+=l; sq+=l*l; n++; }
+    const mean=sum/n; return { mean, std:Math.sqrt(Math.max(0,sq/n-mean*mean)) };
+  }catch(e){ return null; }
+}
+function snsAutoPlace(card, img, subject, textPos, opt){
+  const L=snsLayout(opt.tpl, opt.txt), B=L.photo;
+  const textOnPhoto=!L.band && (L.bottom||L.boxed);
+  const base={ ...card, tx:0, ty:0 };
+  const cv=document.createElement("canvas");
+  snsRenderCard(cv,{ card:base, idx:opt.idx, total:opt.total, img, tpl:opt.tpl, accent:opt.accent, brand:opt.brand, txt:opt.txt },0.25);
+  const R=cv._textRange, r0=cv._textRect;
+  let [x0,y0,x1,y1]=Array.isArray(subject)&&subject.length===4?subject.map(Number):[0.3,0.3,0.7,0.7];
+  if(!(x1>x0&&y1>y0)) [x0,y0,x1,y1]=[0.3,0.3,0.7,0.7];
+  if(card.adj?.flip) [x0,x1]=[1-x1,1-x0];
+  const s0=Math.max(B.w/img.width, B.h/img.height);
+  // 글 위치 하나·확대 하나로 배치해 보고 '주인공이 글에 가려지는 넓이'를 잰다
+  const tryOne=(pos, zWant)=>{
+    let ty=0;
+    if(textOnPhoto && R){ if(pos==="top") ty=R.lo.y; else if(pos==="middle") ty=(R.lo.y+R.hi.y)/2; else if(pos==="bottom") ty=R.hi.y; }
+    ty=Math.round(ty);
+    const tr=r0?{ ...r0, y:r0.y+ty }:null;
+    let z0=B.y, z1=B.y+B.h;
+    if(textOnPhoto && tr){
+      const above=tr.y-B.y, below=B.y+B.h-(tr.y+tr.h);
+      if(Math.max(above,below)>B.h*0.25){ if(above>=below) z1=tr.y; else z0=tr.y+tr.h; }
+    }
+    const zoom=Math.max(1,Math.round(zWant*20)/20);
+    const sc=s0*zoom, w=img.width*sc, h=img.height*sc;
+    const cx=(x0+x1)/2, cy=(y0+y1)/2;
+    const ox=(B.w/2-(B.w-w)/2-cx*w)/B.w, oy=((z0+z1)/2-B.y-(B.h-h)/2-cy*h)/B.h;
+    const adj={ ...(card.adj||snsAdj()), zoom };
+    const r=snsPhotoRect(img,{ ...adj, ox, oy },B); adj.ox=r.ox; adj.oy=r.oy;
+    // 카드 위 주인공 자리 (사진 칸 밖으로 나간 부분은 잘림)
+    const sx0=Math.max(B.x,r.x+x0*r.w), sx1=Math.min(B.x+B.w,r.x+x1*r.w), sy0=Math.max(B.y,r.y+y0*r.h), sy1=Math.min(B.y+B.h,r.y+y1*r.h);
+    const sArea=Math.max(1,(x1-x0)*r.w*(y1-y0)*r.h);
+    const visible=Math.max(0,sx1-sx0)*Math.max(0,sy1-sy0)/sArea;          // 주인공이 칸 안에 보이는 비율
+    let hidden=0;
+    if(textOnPhoto && tr){
+      const ix=Math.max(0,Math.min(sx1,tr.x+tr.w)-Math.max(sx0,tr.x)), iy=Math.max(0,Math.min(sy1,tr.y+tr.h)-Math.max(sy0,tr.y));
+      hidden=ix*iy/sArea;                                                    // 주인공이 글에 가려지는 비율
+    }
+    const score=hidden*3+(1-visible)*2+(pos===textPos?0:0.08)+(zoom>1?0:0.02);
+    return { card:{ ...card, adj, tx:0, ty }, tr, score };
+  };
+  // 주인공이 작으면 조금 확대 (최대 1.5배)
+  const sw=(x1-x0)*img.width*s0, sh=(y1-y0)*img.height*s0;
+  const zBig=(sw<B.w*0.45 && sh<B.h*0.3)?Math.min(1.5,(B.h*0.45)/sh,(B.w*0.7)/sw):1;
+  const poss=textOnPhoto?[textPos||"bottom",...["bottom","top","middle"].filter(p=>p!==(textPos||"bottom"))]:[""];
+  const zooms=[...new Set([zBig,(zBig+1)/2,1].map(z=>Math.round(Math.max(1,z)*20)/20))];
+  let best=null;
+  for(const pos of poss) for(const z of zooms){ const t=tryOne(pos,z); if(!best||t.score<best.score) best=t; }
+  const out=best.card;
+  // 「사진 가득 + 아래 글」: 글 칸 밝기로 어둡게 덮기 (밝을수록·복잡할수록 진하게)
+  if(textOnPhoto && L.bottom && best.tr){
+    const lum=snsRegionLum(img, out.adj, B, best.tr);
+    if(lum) out.adj={ ...out.adj, overlay:Math.max(15,Math.min(70,Math.round(15+(lum.mean-60)/140*50+(lum.std>55?10:0)))) };
+  }
+  return out;
+}
+
 async function snsLoadImg(src){
   return await new Promise((ok,no)=>{ const im=new Image(); im.onload=()=>ok(im); im.onerror=()=>no(new Error("사진을 열 수 없어요")); im.src=src; });
 }
@@ -11271,7 +11348,13 @@ function snsDownload(canvas, name){
 }
 
 function SnsConvertTab({ setActive }){
-  const [src,setSrc]=React.useState("url");                  // url | paste
+  const [src,setSrc]=React.useState(()=>{ try{ return localStorage.getItem("sns_src")||"url"; }catch(e){ return "url"; } });   // url | paste | id
+  const [ids,setIds]=React.useState(()=>{ try{ return JSON.parse(localStorage.getItem("sns_blog_ids")||"[]"); }catch(e){ return []; } });
+  const [bid,setBid]=React.useState(()=>{ try{ return JSON.parse(localStorage.getItem("sns_blog_ids")||"[]")[0]||""; }catch(e){ return ""; } });
+  const [posts,setPosts]=React.useState([]);               // {title,link,date}
+  const [done,setDone]=React.useState(()=>{ try{ return JSON.parse(localStorage.getItem("sns_done")||"{}"); }catch(e){ return {}; } });
+  const [curLink,setCurLink]=React.useState("");
+  const [autoLay,setAutoLay]=React.useState(()=>{ try{ return localStorage.getItem("sns_autolayout")!=="0"; }catch(e){ return true; } });
   const [url,setUrl]=React.useState("");
   const [title,setTitle]=React.useState("");
   const [text,setText]=React.useState("");
@@ -11341,11 +11424,13 @@ function SnsConvertTab({ setActive }){
     }
     setPhotos(p=>{ let n=Math.max(0,...p.map(x=>x.n||0)); return [...p,...list.map(x=>({...x,n:++n}))]; });
   };
-  const fetchPost=async()=>{
-    if(!url.trim()) return;
+  const fetchPost=async(u0)=>{
+    const u=(typeof u0==="string"?u0:url).trim();
+    if(!u) return;
+    setCurLink(u); setCards([]);
     setBusy("fetch"); setMsg("글과 사진 가져오는 중…");
     try{
-      const r=await fetch("/api/sns-source",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ url:url.trim() }) });
+      const r=await fetch("/api/sns-source",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ url:u }) });
       const d=await r.json();
       if(!d.success) throw new Error(d.error||"가져오기 실패");
       setTitle(d.title||""); setText(d.text||"");
@@ -11362,6 +11447,88 @@ function SnsConvertTab({ setActive }){
       setPhotos(list);
       setMsg(`✓ 본문 ${(d.text||"").length.toLocaleString()}자 · 사진 ${list.length}장${fail?` (못 받은 사진 ${fail}장 — 필요하면 직접 추가)`:""}`);
     }catch(e){ setMsg("✗ "+e.message); }
+    setBusy("");
+  };
+
+  // ── 블로그 아이디로 글 목록
+  const linkKey=l=>String(l||"").trim().replace(/^https?:\/\//,"").replace(/^m\.blog\.naver\.com/,"blog.naver.com").replace(/[?#].*$/,"").replace(/\/$/,"");
+  const isDone=l=>!!done[linkKey(l)];
+  const setDoneMark=(l,on)=>setDone(d=>{ const n={ ...d }; if(on) n[linkKey(l)]=new Date().toISOString().slice(0,10); else delete n[linkKey(l)]; keep("sns_done",JSON.stringify(n)); return n; });
+  const saveIds=list=>{ setIds(list); keep("sns_blog_ids",JSON.stringify(list)); };
+  const loadList=async(v0)=>{
+    const v=String(v0??bid).trim(); if(!v){ setMsg("✗ 블로그 아이디를 넣어주세요"); return; }
+    setBid(v); setBusy("list"); setMsg("글 목록 불러오는 중…"); setPosts([]);
+    try{
+      const naver=!v.includes(".")||/blog\.naver\.com/i.test(v);
+      let list=[];
+      if(naver){
+        const d=await (await fetch(`/api/blog-posts?blogId=${encodeURIComponent(v)}&page=1&size=30`)).json();
+        if(!d.success) throw new Error(d.error||"목록을 못 가져왔어요");
+        list=(d.posts||[]).map(p=>({ title:p.title, link:p.link, date:p.date }));
+      } else {
+        const d=await (await fetch("/api/sns-source",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ action:"list", blog:v }) })).json();
+        if(!d.success) throw new Error(d.error||"목록을 못 가져왔어요");
+        list=d.posts||[];
+      }
+      setPosts(list);
+      if(!ids.includes(v)) saveIds([v,...ids].slice(0,12));
+      const left=list.filter(p=>!isDone(p.link)).length;
+      setMsg(`✓ 최신 글 ${list.length}개 · 아직 카드 안 만든 글 ${left}개`);
+    }catch(e){ setMsg("✗ "+e.message); }
+    setBusy("");
+  };
+  const pickPost=p=>{ setUrl(p.link); fetchPost(p.link); };
+  const nextPost=()=>{ const p=posts.find(x=>!isDone(x.link)); if(!p){ setMsg("✓ 목록의 글은 모두 카드를 만들었어요"); return; } pickPost(p); };
+
+  // ── AI 자동 배치: 카드마다 사진 고르기·주인공 자리·글 위치 → 사진 위치·확대·어둡게 덮기 계산
+  const autoLayout=async(list0)=>{
+    const list=Array.isArray(list0)?list0:cards;
+    if(!list.length||!photos.length) return;
+    setBusy("layout"); setMsg("🤖 AI가 사진 위치·글씨 자리를 잡는 중… (20~40초)");
+    try{
+      const use=photos.slice(0,12);
+      const content=[];
+      for(const p of use){
+        const k=Math.min(1,512/Math.max(p.img.width,p.img.height)), c=document.createElement("canvas");
+        c.width=Math.round(p.img.width*k); c.height=Math.round(p.img.height*k); c.getContext("2d").drawImage(p.img,0,0,c.width,c.height);
+        content.push({type:"text",text:`사진 ${p.n}`});
+        content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:c.toDataURL("image/jpeg",0.8).split(",")[1]}});
+      }
+      const L=snsLayout(tpl,txt);
+      const how=L.band?"글은 사진 밖 띠에 들어감 (글 위치는 신경 안 써도 됨)"
+        :L.bottom?"사진이 카드 전체를 채우고 흰 글씨가 사진 위에 얹힘 — 글 위치(top/middle/bottom)를 고를 수 있음"
+        :L.boxed?"사진이 카드 전체를 채우고 흰 글상자가 사진 위에 얹힘 — 글상자 위치(top/middle/bottom)를 고를 수 있음"
+        :"사진 칸과 글 칸이 따로 있음 (글 위치는 신경 안 써도 됨)";
+      const pn=id=>photos.find(p=>p.id===id)?.n;
+      content.push({type:"text",text:`위 사진들로 인스타그램 카드뉴스(4:5 세로)를 만든다. 카드 배치: ${how}
+
+[카드 목록 — 지금 배정된 사진]
+${list.map((c,i)=>`${i+1}번: 제목 "${c.title}" / 내용 "${String(c.body).replace(/\n/g," ")}" / 사진 ${pn(c.photo)??"없음"}`).join("\n")}
+
+할 일:
+1. photos: 사진마다 주인공(가장 보여줘야 할 것 — 폰 화면·제품·매장 간판·사람 얼굴 등)을 감싸는 상자 [x0,y0,x1,y1] (사진 기준 0~1, 왼쪽 위가 0,0).
+2. cards: 카드마다
+   - photo: 카드 내용과 가장 맞는 사진 번호. 지금 배정이 괜찮으면 그대로 두고, 확실히 더 맞는 사진이 있을 때만 바꾼다. 같은 사진이 여러 카드에 반복되지 않게.
+   - text: 글을 사진의 어느 쪽에 둘지 "top" / "middle" / "bottom" — 주인공을 가리지 않고, 사진에서 비어 있거나 단순한(하늘·벽·바닥 등) 쪽.
+순수 JSON만: {"photos":[{"n":1,"subject":[0.2,0.1,0.8,0.6]}],"cards":[{"i":1,"photo":1,"text":"bottom"}]}`});
+      const out=await callClaude([{role:"user",content}],"You are a Korean social media card-news designer. Output only valid JSON.",2500,"claude-sonnet-4-5-20250929");
+      const j=safeParseJson(out);
+      if(!j||!Array.isArray(j.cards)) throw new Error("AI 응답 형식이 깨졌어요 — 다시 눌러주세요");
+      const subj={};
+      (j.photos||[]).forEach(p=>{ const b=(p.subject||[]).map(Number); if(b.length===4&&b.every(v=>isFinite(v))) subj[Number(p.n)]=b.map(v=>Math.max(0,Math.min(1,v))); });
+      let changed=0;
+      const next=list.map((c,i)=>{
+        const a=j.cards.find(x=>Number(x.i)===i+1)||{};
+        const np=use.find(p=>p.n===Number(a.photo));
+        const pid=np?np.id:c.photo; if(pid!==c.photo) changed++;
+        const ph=photos.find(p=>p.id===pid);
+        const card={ ...c, photo:pid, adj:{ ...(c.adj||snsAdj()), zoom:1, ox:0, oy:0, ...(pid!==c.photo?{mosaic:[]}:{}) } };
+        if(!ph) return card;
+        return snsAutoPlace(card, ph.img, subj[ph.n], ["top","middle","bottom"].includes(a.text)?a.text:"", { idx:i, total:list.length, tpl, accent, brand, txt });
+      });
+      setCards(next);
+      setMsg(`✓ AI 자동 배치 완료${changed?` (사진 ${changed}장 바꿈)`:""} — 마음에 안 드는 카드만 화살표·슬라이더로 고치세요`);
+    }catch(e){ setMsg("✗ 자동 배치 실패: "+e.message); }
     setBusy("");
   };
 
@@ -11421,6 +11588,7 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
       setThreads(th); setThreadTag(String(j.threadTag||"").replace(/^#/,"").replace(/\s+/g,""));
       setView("insta");
       setMsg(`✓ 카드 ${cs.length}장 · 쓰레드 ${th.length}개 — 카드를 눌러 문구·사진을 고칠 수 있어요`);
+      if(autoLay&&photos.length){ setBusy(""); await autoLayout(cs); return; }
     }catch(e){ setMsg("✗ "+e.message); }
     setBusy("");
   };
@@ -11486,7 +11654,17 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
     snsRenderCard(c,{ card:cards[i], idx:i, total:cards.length, img:photoById(cards[i].photo)?.img, tpl, accent, brand, txt },1);
     await snsDownload(c, `${slug}_${String(i+1).padStart(2,"0")}.png`);
   };
-  const saveMany=async list=>{ setBusy("save"); for(const i of list){ await saveCard(i); await new Promise(r=>setTimeout(r,350)); } setBusy(""); };
+  const saveCaption=()=>{
+    const b=new Blob(["\ufeff"+`${caption}\n\n${tags}`.trim()+"\n"],{ type:"text/plain;charset=utf-8" });
+    const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=`${slug}_캡션.txt`; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  };
+  const saveMany=async list=>{
+    setBusy("save");
+    for(const i of list){ await saveCard(i); await new Promise(r=>setTimeout(r,350)); }
+    if(list.length===cards.length){ saveCaption(); if(curLink) setDoneMark(curLink,true); }
+    setBusy("");
+  };
   const copy=async(t,k)=>{ try{ await navigator.clipboard.writeText(t); setCopied(k); setTimeout(()=>setCopied(""),1500); }catch(e){} };
 
   // ── 쇼츠 만들기로 넘기기
@@ -11590,10 +11768,40 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
     <div style={S.card}>
       <div style={S.h}>1. 블로그 글 넣기</div>
       <div style={{display:"flex",gap:"8px",marginBottom:"12px"}}>
-        <button style={S.chip(src==="url")} onClick={()=>setSrc("url")}>🔗 블로그 주소</button>
-        <button style={S.chip(src==="paste")} onClick={()=>setSrc("paste")}>📋 직접 붙여넣기</button>
+        <button style={S.chip(src==="url")} onClick={()=>{ setSrc("url"); keep("sns_src","url"); }}>🔗 블로그 주소</button>
+        <button style={S.chip(src==="paste")} onClick={()=>{ setSrc("paste"); keep("sns_src","paste"); }}>📋 직접 붙여넣기</button>
+        <button style={S.chip(src==="id")} onClick={()=>{ setSrc("id"); keep("sns_src","id"); }}>🆔 블로그 아이디로 불러오기</button>
       </div>
-      {src==="url"
+      {src==="id"&&<div>
+        <div style={{display:"flex",gap:"8px"}}>
+          <input style={S.input} value={bid} onChange={e=>setBid(e.target.value)} onKeyDown={e=>e.key==="Enter"&&loadList()} placeholder="네이버 블로그 아이디 (예: bandphone-) 또는 티스토리 주소 (예: xxx.tistory.com)"/>
+          <button style={{...S.btn("#238636",busy),whiteSpace:"nowrap"}} disabled={!!busy} onClick={()=>loadList()}>목록 불러오기</button>
+        </div>
+        {ids.length>0&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"8px",alignItems:"center"}}>
+          <span style={{fontSize:"12px",color:"#8b949e"}}>저장한 블로그</span>
+          {ids.map(v=><span key={v} style={{...S.chip(v===bid),display:"inline-flex",gap:"6px",alignItems:"center",padding:"4px 8px"}}>
+            <span onClick={()=>!busy&&loadList(v)}>{v}</span>
+            <span title="목록에서 빼기" onClick={()=>saveIds(ids.filter(x=>x!==v))} style={{color:"#8b949e"}}>✕</span>
+          </span>)}
+        </div>}
+        {posts.length>0&&<div style={{marginTop:"10px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px",flexWrap:"wrap",gap:"6px"}}>
+            <span style={{fontSize:"13px",color:"#8b949e"}}>최신 글 {posts.length}개 · 글을 누르면 가져와요</span>
+            <button style={S.btn("#1f6feb",busy)} disabled={!!busy} onClick={nextPost}>▶ 다음 글 (아직 안 만든 최신 글)</button>
+          </div>
+          <div style={{maxHeight:"260px",overflowY:"auto",border:"1px solid #21262d",borderRadius:"8px"}}>
+            {posts.map(p=>{ const d=isDone(p.link), cur=linkKey(p.link)===linkKey(curLink);
+              return <div key={p.link} style={{display:"flex",gap:"8px",alignItems:"center",padding:"7px 10px",borderBottom:"1px solid #21262d",background:cur?"#1f6feb22":"transparent"}}>
+                <span style={{fontSize:"12px",color:"#8b949e",flex:"none",width:"78px"}}>{p.date}</span>
+                <span onClick={()=>!busy&&pickPost(p)} style={{flex:1,cursor:busy?"default":"pointer",color:d?"#8b949e":"#e6edf3",fontSize:"14px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.title}</span>
+                {d&&<span style={{fontSize:"11px",color:"#3fb950",flex:"none"}}>✓ 카드 만듦 {done[linkKey(p.link)]}</span>}
+                <button style={{...S.small,flex:"none"}} title={d?"표시 지우기":"카드 만든 글로 표시"} onClick={()=>setDoneMark(p.link,!d)}>{d?"표시 지우기":"✓ 표시"}</button>
+              </div>; })}
+          </div>
+          <div style={{fontSize:"11px",color:"#8b949e",marginTop:"4px"}}>「⬇ 전체 저장」을 하면 그 글에 자동으로 ✓ 표시가 붙어요 (이 브라우저에만 기록).</div>
+        </div>}
+      </div>}
+      {src==="id"?null:src==="url"
         ?<div style={{display:"flex",gap:"8px"}}>
           <input style={S.input} value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&fetchPost()} placeholder="네이버 블로그 · 티스토리 글 주소"/>
           <button style={{...S.btn("#238636",busy),whiteSpace:"nowrap"}} disabled={!!busy} onClick={fetchPost}>가져오기</button>
@@ -11644,6 +11852,9 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
       </div>
       <div style={{display:"flex",gap:"8px",marginTop:"14px",alignItems:"center",flexWrap:"wrap"}}>
         <button style={S.btn("#1f6feb",busy||!text.trim())} disabled={!!busy||!text.trim()} onClick={convert}>{cards.length?"🔄 다시 만들기":"✨ 인스타·쓰레드로 바꾸기"}</button>
+        <label style={{display:"flex",gap:"5px",alignItems:"center",fontSize:"13px",color:"#c9d1d9",cursor:"pointer"}}>
+          <input type="checkbox" checked={autoLay} onChange={e=>{ setAutoLay(e.target.checked); keep("sns_autolayout",e.target.checked?"1":"0"); }}/> 바꾼 뒤 🤖 AI 자동 배치까지</label>
+        {cards.length>0&&<button style={S.btn("#6e40c9",busy||!photos.length)} disabled={!!busy||!photos.length} onClick={()=>autoLayout()}>🤖 AI 자동 배치</button>}
         {msg&&<span style={{fontSize:"13px",color:msg.startsWith("✗")?"#f85149":msg.startsWith("✓")?"#3fb950":"#d29922"}}>{busy&&"⏳ "}{msg}</span>}
       </div>
     </div>
@@ -11730,7 +11941,7 @@ S3. threadTag: 쓰레드 주제 태그 1개(# 없이, 띄어쓰기 없이).
 
         <div style={{display:"flex",gap:"8px",marginTop:"16px",flexWrap:"wrap"}}>
           <button style={S.btn("#238636",busy)} disabled={!!busy} onClick={()=>saveCard(sel)}>⬇ 이 카드 저장</button>
-          <button style={S.btn("#238636",busy)} disabled={!!busy} onClick={()=>saveMany(cards.map((_,i)=>i))}>⬇ 전체 {cards.length}장 저장</button>
+          <button style={S.btn("#238636",busy)} disabled={!!busy} onClick={()=>saveMany(cards.map((_,i)=>i))}>⬇ 전체 {cards.length}장 + 캡션.txt 저장</button>
           <button style={S.btn("#6e40c9",busy||!photos.length)} disabled={!!busy||!photos.length} onClick={toShorts}>🎬 이 글로 릴스(쇼츠) 만들기</button>
         </div>
         <div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px"}}>전체 저장 때 브라우저가 "여러 파일 다운로드"를 물으면 허용을 눌러주세요.</div>
