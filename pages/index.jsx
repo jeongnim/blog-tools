@@ -11414,8 +11414,6 @@ function SnsConvertTab({ setActive }){
   const [title,setTitle]=React.useState("");
   const [text,setText]=React.useState("");
   const [photos,setPhotos]=React.useState([]);              // {id,name,url,img}
-  const [tone,setTone]=React.useState(()=>{ try{ return localStorage.getItem("sns_tone")||"hq"; }catch(e){ return "hq"; } });
-  const [branch,setBranch]=React.useState(()=>{ try{ return localStorage.getItem("sns_branch")||""; }catch(e){ return ""; } });
   const [count,setCount]=React.useState(7);
   const [tpl,setTpl]=React.useState(()=>{ try{ return localStorage.getItem("sns_tpl")||"bottom"; }catch(e){ return "bottom"; } });
   const [accent,setAccent]=React.useState(SNS_ACCENTS[0]);
@@ -11650,18 +11648,19 @@ ${list.map((c,i)=>`${i+1}번: 제목 "${c.title}" / 내용 "${String(c.body).rep
     const nCards=wantI?count:(photos.length?1:0);
     const what=[wantI&&"인스타그램 카드뉴스·캡션", wantT&&"쓰레드 연결글"].filter(Boolean).join("과 ");
     setBusy("ai"); setMsg(`${wantI&&wantT?"인스타·쓰레드":wantI?"인스타":"쓰레드"}용으로 바꾸는 중… (${wantI?"30초~1분":"20~40초"})`);
-    const who=tone==="hq"?"휴대폰 판매점 '밴드폰' 공식 계정":tone==="branch"?`휴대폰 판매점 '밴드폰 ${branch||"○○점"}' 매장 계정`:"휴대폰·생활 정보를 나누는 개인 계정(업체·매장 언급 없음)";
+    // 말투는 블로그 글 그대로 (업체 글이면 업체 계정처럼, 개인 글이면 개인 계정처럼)
+    const who="블로그 글을 쓴 사람의 계정 — 블로그 글의 말투·호칭·관점을 그대로 따른다. 블로그가 휴대폰 매장·업체(밴드폰, ○○점 등) 글이면 그 업체 계정처럼, 개인 글이면 업체·매장 언급 없는 개인 계정처럼 쓴다. 매장·지점 이름은 글에 나온 그대로만 쓴다";
     const marks=(body.match(/\[사진\d+\]/g)||[]).length;
     const cardRules=wantI?`[카드뉴스 — 정확히 ${count}장]
 C1. 1장(표지): title 16자 이내 후킹 제목(숫자·질문·반전 중 하나), body 26자 이내 부제.
 C2. 2~${count-1}장: 한 장에 핵심 한 가지. title 15자 이내, body 2~4줄·70자 이내. 줄바꿈은 \\n. 순서대로 읽으면 글 전체가 이해되게.
-C3. ${count}장(마지막): 정리 한 줄 + "저장해두고 필요할 때 꺼내보세요" 같은 저장 유도${tone==="personal"?"":" + 매장 상담·문의 한 줄"}.
+C3. ${count}장(마지막): 정리 한 줄 + "저장해두고 필요할 때 꺼내보세요" 같은 저장 유도. 블로그가 매장·업체 글이면 + 매장 상담·문의 한 줄 (개인 글이면 넣지 않음).
 C4. photo: 그 카드 내용과 가장 맞는 사진 번호(위 목록 중). ${marks?"본문에서 그 내용 가까이 있던 [사진N]을 고르고, ":""}같은 사진은 되도록 반복하지 않는다.
 C5. 블로그 문장을 그대로 옮기지 말고 짧게 다시 쓴다.
 
 [인스타 캡션]
 I1. 첫 줄은 피드에서 '더 보기'를 누르게 만드는 한 문장. 그다음 본문 5~8줄(짧은 줄, 이모지는 줄 앞에 몇 개만).
-I2. 해시태그는 caption에 넣지 말고 hashtags에 10~15개(# 없이). 검색될 만한 한국어 태그 위주${tone==="personal"?"":", 계정 이름 태그 1개 포함"}.
+I2. 해시태그는 caption에 넣지 말고 hashtags에 10~15개(# 없이). 검색될 만한 한국어 태그 위주. 블로그가 매장·업체 글이면 업체 이름 태그 1개 포함 (개인 글이면 넣지 않음).
 `:nCards?`[표지 카드 — 정확히 1장] 쓰레드 첫 글에 붙일 이미지용.
 C1. title 16자 이내 후킹 제목(숫자·질문·반전 중 하나), body 26자 이내 부제. photo: 글 전체를 가장 잘 보여주는 사진 번호(위 목록 중).
 `:"";
@@ -11956,16 +11955,10 @@ ${outShape}`;
     <div style={S.card}>
       <div style={S.h}>2. 설정</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:"12px"}}>
-        <div><span style={S.label}>말투(계정)</span>
-          <select style={S.input} value={tone} onChange={e=>{ setTone(e.target.value); keep("sns_tone",e.target.value); }}>
-            <option value="hq">본사 (밴드폰 공식)</option><option value="branch">지점</option><option value="personal">개인 (업체 언급 없음)</option>
-          </select>
-          {tone==="branch"&&<input style={{...S.input,marginTop:"6px"}} value={branch} placeholder="지점 이름 (예: 중랑점)" onChange={e=>{ setBranch(e.target.value); keep("sns_branch",e.target.value); }}/>}
-        </div>
         <div><span style={S.label}>만들 것</span>
           <div style={{display:"flex",gap:"6px",paddingTop:"2px"}}>
-            <button style={S.chip(doInsta)} onClick={()=>{ if(doInsta&&!doThreads) return; setDoInsta(!doInsta); keep("sns_do_insta",doInsta?"0":"1"); }}>{doInsta?"☑":"☐"} 📸 인스타</button>
-            <button style={S.chip(doThreads)} onClick={()=>{ if(doThreads&&!doInsta) return; setDoThreads(!doThreads); keep("sns_do_threads",doThreads?"0":"1"); }}>{doThreads?"☑":"☐"} 🧵 쓰레드</button>
+            <button style={{...S.chip(doInsta),whiteSpace:"nowrap",flex:1}} onClick={()=>{ if(doInsta&&!doThreads) return; setDoInsta(!doInsta); keep("sns_do_insta",doInsta?"0":"1"); }}>인스타</button>
+            <button style={{...S.chip(doThreads),whiteSpace:"nowrap",flex:1}} onClick={()=>{ if(doThreads&&!doInsta) return; setDoThreads(!doThreads); keep("sns_do_threads",doThreads?"0":"1"); }}>쓰레드</button>
           </div>
           {!doInsta&&<div style={{fontSize:"11px",color:"#8b949e",marginTop:"4px"}}>쓰레드 첫 글용 표지 카드 1장도 같이 만들어요</div>}
         </div>
