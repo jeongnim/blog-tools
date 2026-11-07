@@ -407,55 +407,34 @@ function salvageTruncatedJson(raw) {
   return out;
 }
 
-// ── 블로그 ID별 API 키 ──
-// 맞춤 프로필에서 고른 블로그 ID에 키가 등록돼 있으면 그 키로, 없으면 서버 기본 키(Vercel 환경변수)로 AI를 부른다.
-// 키는 이 브라우저에만 저장하고(백업 파일에 포함 안 됨: mt_/bp_ 접두어가 아님), 화면에는 가려서 보여준다.
-const LS_BLOG_KEYS="vk_blog_api_keys";
+// ── API 키 (Claude) ──
+// 서버 기본 키는 없음. 상단 🔑 에서 이름 붙인 키(본사용·지점용 등)를 등록하고 「지금 쓸 키」 하나를 고르면 그 키로 과금.
+// 예외: 자동화 프로그램(blog_auto.py 등)이 config 키를 넘겨주면 그 블로그 작업은 그 키로.
+// 키는 이 브라우저에만 저장하고(백업 파일에 포함 안 됨), 화면에는 가려서 보여준다.
+const LS_BLOG_KEYS="vk_blog_api_keys";      // 자동화가 넣어주는 블로그별 키 전용
 function blogKeysLoad(){ try{ return JSON.parse(localStorage.getItem(LS_BLOG_KEYS)||"{}")||{}; }catch(e){ return {}; } }
 function blogKeysSave(m){ try{ localStorage.setItem(LS_BLOG_KEYS,JSON.stringify(m)); }catch(e){} }
-// ── 이름 붙인 키 (예: 본사용·지점용) — 키는 몇 개만 두고, 블로그 ID는 직접 추가해서 그 키에 연결한다 ──
-// 프로필을 새로 만들어도 키 목록은 그대로. { slots:[{id,name,key}], map:{블로그ID: slotId} }
-const LS_KEY_SLOTS="vk_key_slots";
+const LS_KEY_SLOTS="vk_key_slots";           // { slots:[{id,name,key}], def: 지금 쓸 키 id }
 function keySlotsLoad(){
   let d=null;
   try{ d=JSON.parse(localStorage.getItem(LS_KEY_SLOTS)||"null"); }catch(e){}
-  if(d&&Array.isArray(d.slots)) return { slots:d.slots, map:d.map||{}, def:d.def!==undefined?d.def:siteDefaultSlot(d.slots) };
-  // 처음 열 때: 예전 방식(블로그 ID마다 키)으로 저장된 키가 있으면 같은 키끼리 묶어서 옮겨온다
-  const legacy=(()=>{ try{ return blogKeysLoad(); }catch(e){ return {}; } })();
-  const slots=[], map={};
-  Object.entries(legacy).forEach(([id,k])=>{
-    if(!k) return;
-    let sl=slots.find(x=>x.key===k);
-    if(!sl){ sl={ id:"s"+(slots.length+1), name:`키 ${slots.length+1}`, key:k }; slots.push(sl); }
-    map[id]=sl.id;
-  });
-  if(!slots.length){ slots.push({id:"s1",name:"본사용",key:""},{id:"s2",name:"지점용",key:""}); }
-  const out={slots,map,def:siteDefaultSlot(slots)}; keySlotsSave(out);
-  try{ blogKeysSave({}); }catch(e){}     // 옮겨왔으니 예전 칸은 비운다 (이후 이 칸은 자동화가 넣는 키 전용)
-  return out;
+  if(d&&Array.isArray(d.slots)) return { slots:d.slots, def:d.def||"" };
+  const out={ slots:[{id:"s1",name:"본사용",key:""},{id:"s2",name:"지점용",key:""}], def:"s1" };
+  keySlotsSave(out); return out;
 }
-// 회사용 사이트(bandphone-auto)는 처음부터 "본사용"을 기본 키로 — 개인 키(서버 기본 키)로 과금되지 않게
-function siteDefaultSlot(slots){
-  try{ if(!/bandphone/i.test(location.hostname)) return ""; }catch(e){ return ""; }
-  const hq=(slots||[]).find(x=>/본사/.test(x.name))||(slots||[])[0];
-  return hq?hq.id:"";
-}
-function keySlotsSave(d){ try{ localStorage.setItem(LS_KEY_SLOTS,JSON.stringify(d)); }catch(e){} }
-// 블로그 ID에 쓸 키: ① 자동화 프로그램이 config 키로 넣어준 키(항상 우선) ② 🔑에서 연결한 이름 키 ③ 없으면 ""(기본 키)
-function keyForBlog(id){
-  id=String(id||"").toLowerCase(); if(!id) return defaultKeyInfo();
-  const d=keySlotsLoad();                 // (처음이면 예전 키를 옮겨오므로 먼저 부른다)
-  const direct=blogKeysLoad()[id];
-  if(direct) return {key:direct,name:"자동화 키"};
-  const sl=d.slots.find(x=>x.id===d.map[id]);
-  if(sl&&sl.key) return {key:sl.key,name:sl.name};
-  return defaultKeyInfo(d);
-}
-// 이 사이트의 기본 키: 🔑에서 고른 이름 키(있으면) → 없으면 서버 기본 키("")
+function keySlotsSave(d){ try{ localStorage.setItem(LS_KEY_SLOTS,JSON.stringify({ slots:d.slots, def:d.def||"" })); }catch(e){} }
+// 지금 쓸 키: 고른 키 → (안 골랐거나 비어 있으면) 키가 들어 있는 첫 번째 키 → 없으면 ""
 function defaultKeyInfo(d){
   d=d||keySlotsLoad();
-  const sl=d.slots.find(x=>x.id===d.def);
-  return sl&&sl.key?{key:sl.key,name:sl.name}:{key:"",name:""};
+  const sl=d.slots.find(x=>x.id===d.def&&x.key)||d.slots.find(x=>x.key);
+  return sl?{key:sl.key,name:sl.name,id:sl.id}:{key:"",name:"",id:""};
+}
+// 블로그 ID 작업에 쓸 키: ① 자동화가 넣어준 키 ② 지금 쓸 키
+function keyForBlog(id){
+  id=String(id||"").toLowerCase();
+  const direct=id?blogKeysLoad()[id]:"";
+  if(direct) return {key:direct,name:"자동화 키"};
+  return defaultKeyInfo();
 }
 function slotKey(slotId){ const sl=keySlotsLoad().slots.find(x=>x.id===slotId); return sl?.key||""; }
 function activeKeyInfo(){
@@ -463,15 +442,21 @@ function activeKeyInfo(){
   const r=keyForBlog(id);
   return {id,key:r.key,name:r.name};
 }
-function maskKey(k){ return k?`${k.slice(0,10)}…${k.slice(-4)}`:""; }
-// forceId: undefined → 선택한 프로필 기준 / "" → 기본 키 / "slot:ID" → 그 이름 키 / "블로그ID" → 그 ID에 연결된 키
+// forceId: undefined → 지금 쓸 키(자동화 키 우선) / "slot:ID" → 그 이름 키 / "블로그ID" → 그 ID 기준
+// 키가 하나도 없으면 상단 🔑 를 열고 멈춘다 (서버 기본 키 없음)
 function claudeHeaders(forceId){
   const h={"Content-Type":"application/json"};
-  const f=forceId==null?forceId:String(forceId);
-  const key=f===undefined?activeKeyInfo().key:!f?defaultKeyInfo().key:f.startsWith("slot:")?slotKey(f.slice(5)):keyForBlog(f).key;
-  if(key) h["x-user-api-key"]=key;
+  const f=forceId==null?undefined:String(forceId);
+  const key=f===undefined||!f?activeKeyInfo().key:f.startsWith("slot:")?slotKey(f.slice(5)):keyForBlog(f).key;
+  if(!key){
+    try{ window.dispatchEvent(new Event("need-api-key")); }catch(e){}
+    throw new Error("API 키를 등록해주세요 — 상단 🔑 버튼에서 키를 넣고 「지금 쓸 키」를 골라주세요");
+  }
+  h["x-user-api-key"]=key;
   return h;
 }
+function maskKey(k){ return k?`${k.slice(0,10)}…${k.slice(-4)}`:""; }
+// forceId: undefined → 선택한 프로필 기준 / "" → 기본 키 / "slot:ID" → 그 이름 키 / "블로그ID" → 그 ID에 연결된 키
 
 async function callClaude(messages,system,maxTokens=2000,model="claude-haiku-4-5-20251001"){
   const body={model,max_tokens:maxTokens,messages};
@@ -662,10 +647,9 @@ const IMAGE_SUBTABS=[
   {id:"localimg",    icon:"🎨", label:"AI 이미지 생성"},
   {id:"ocr",         icon:"🖼️", label:"이미지 텍스트추출"},
   {id:"convert",     icon:"🔄", label:"이미지 형식변환"},
-  {id:"crop",        icon:"✂️",  label:"이미지 자르기"},
-  {id:"resize",      icon:"📐", label:"이미지 크기조절"},
-  {id:"imgcompress", icon:"💾", label:"이미지 용량압축"},
-  {id:"restore",     icon:"✨", label:"사진 복원·향상"},
+  {id:"crop",        icon:"✂️",  label:"이미지 자르기·크기조절"},   // 크기조절은 이 안의 탭으로 합침
+  {id:"imgcompress", icon:"💾", label:"이미지 용량압축", hidden:true},
+  {id:"restore",     icon:"✨", label:"사진 복원·향상", hidden:true},
   {id:"exif",        icon:"🔒", label:"이미지 데이터제거"},
 ];
 
@@ -4451,10 +4435,7 @@ function MissingTab(){
     if(saved!==null) return saved;
     const sl=keySlotsLoad().slots.find(x=>x.key); return sl?"slot:"+sl.id:"";
   }catch(e){return "";}});
-  const keyForAnalyze=()=>{
-    if(mode==="blogId"){ const id=(posts?.blogId||"").toLowerCase(); return id&&keySlotsLoad().map[id]?id:missingKeyId; }
-    return missingKeyId;
-  };   // 방법2: 확인할 키워드 직접 입력 (비우면 AI가 뽑음)
+  const keyForAnalyze=()=>undefined;      // 상단 🔑 에서 고른 키로   // 방법2: 확인할 키워드 직접 입력 (비우면 AI가 뽑음)
   // 공통
   const [posts,setPosts]=useState(null);
   const [analysis,setAnalysis]=useState({});
@@ -5276,20 +5257,10 @@ recommend는 8개.`;
       ))}
     </div>
 
-    {/* AI 키 선택 (키워드 추출용) */}
-    {(()=>{const slots=keySlotsLoad().slots.filter(x=>x.key);
-      const bid=(posts?.blogId||"").toLowerCase(); const bk=bid?keyForBlog(bid):{key:""};
-      return <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",fontSize:"13px",color:"#8b949e"}}>
-        <span>🔑 키워드 추출 AI 키</span>
-        {mode==="blogId"&&bid&&keySlotsLoad().map[bid]&&bk.key
-          ?<span style={{color:"#e3b341"}}>@{bid} 에 연결된 {bk.name} 키 (분석하는 블로그 ID 기준)</span>
-          :<select value={missingKeyId} onChange={e=>{setMissingKeyId(e.target.value);try{localStorage.setItem("mt_missing_key_id",e.target.value);}catch(_){}}}
-            style={{padding:"4px 8px",background:"#0d1117",border:`1px solid ${missingKeyId?"#d2992266":"#30363d"}`,borderRadius:"6px",color:missingKeyId?"#e3b341":"#c9d1d9",fontSize:"13px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-            <option value="">기본 키{defaultKeyInfo().name?` (${defaultKeyInfo().name})`:""}</option>
-            {slots.map(x=><option key={x.id} value={"slot:"+x.id}>{x.name} 키</option>)}
-          </select>}
-        {!slots.length&&<span style={{color:"#484f58"}}>· 상단 🔑 버튼에서 키를 먼저 등록해주세요</span>}
-      </div>;})()}
+    {/* AI 키 (키워드 추출용) — 상단 🔑 에서 고른 키 */}
+    {(()=>{ const k=defaultKeyInfo(); return <div style={{fontSize:"13px",color:"#8b949e"}}>
+      🔑 키워드 추출 AI는 상단에서 고른 키로 과금돼요 — {k.key?<b style={{color:"#e3b341"}}>{k.name} 키</b>:<b style={{color:"#f85149"}}>키 없음 (상단 🔑 에서 등록)</b>}
+    </div>; })()}
 
     {/* ── 방법1: 블로그 ID ── */}
     {mode==="blogId"&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"18px",display:"flex",flexDirection:"column",gap:"12px"}}>
@@ -7876,8 +7847,14 @@ function detectRatio(text){
 function gptUsageLoad(){ const mo=new Date().toISOString().slice(0,7); try{ const u=JSON.parse(localStorage.getItem(GPT_USAGE_KEY)||"{}"); return u.mo===mo?u:{mo,n:0,usd:0}; }catch(e){ return {mo,n:0,usd:0}; } }
 function gptUsageAdd(usd){ const u=gptUsageLoad(); u.n++; u.usd+=(usd||0); try{ localStorage.setItem(GPT_USAGE_KEY,JSON.stringify(u)); }catch(e){} return u; }
 
+// OpenAI 키 (GPT 이미지 전용) — 이 브라우저에만 저장, 서버 기본 키 없음
+const LS_OPENAI_KEY="vk_openai_key";
+function openaiKeyLoad(){ try{ return localStorage.getItem(LS_OPENAI_KEY)||""; }catch(e){ return ""; } }
+function openaiKeySave(k){ try{ if(k) localStorage.setItem(LS_OPENAI_KEY,k); else localStorage.removeItem(LS_OPENAI_KEY); }catch(e){} try{ window.dispatchEvent(new Event("openai-key-changed")); }catch(e){} }
 async function gptImgCall(body){
-  const r=await fetch("/api/gpt-image",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+  const key=openaiKeyLoad();
+  if(!key) throw new Error("OpenAI 키를 넣어주세요 — 이 화면 위쪽 「OpenAI 키」 칸");
+  const r=await fetch("/api/gpt-image",{ method:"POST", headers:{"Content-Type":"application/json","x-openai-key":key}, body:JSON.stringify(body) });
   const j=await r.json().catch(()=>({ error:r.status===413?"보내는 사진이 너무 커요":r.status===504?"시간 초과 — 품질을 낮추거나 다시 시도":"응답 오류 "+r.status }));
   if(j.error) throw new Error(j.error);
   return j;
@@ -8015,7 +7992,27 @@ function GptLightbox({ items, index, setIndex, onClose, onEdit }){
   </div>;
 }
 
-function GptImagePanel({ configured }){
+// OpenAI 키 칸 (GPT 이미지 화면 맨 위)
+function OpenAiKeyBar(){
+  const [key,setKey]=useState(openaiKeyLoad);
+  const [edit,setEdit]=useState(false);
+  const [v,setV]=useState("");
+  const saveKey=()=>{ const t=v.trim(); if(!/^sk-[A-Za-z0-9_\-]{20,}$/.test(t)){ alert("OpenAI 키는 sk- 로 시작해요 (예: sk-proj-...)"); return; } openaiKeySave(t); setKey(t); setV(""); setEdit(false); };
+  const inp={flex:1,minWidth:"200px",padding:"6px 8px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"13px",fontFamily:"monospace"};
+  const b={padding:"5px 10px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",fontSize:"13px",cursor:"pointer",whiteSpace:"nowrap"};
+  return <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",padding:"10px 12px",background:"#0d1117",border:`1px solid ${key?"#30363d":"#f8514966"}`,borderRadius:"10px"}}>
+    <b style={{color:"#e6edf3",fontSize:"13px"}}>🔑 OpenAI 키</b>
+    {key&&!edit
+      ?<><span style={{color:"#3fb950",fontFamily:"monospace",fontSize:"13px"}}>{maskKey(key)}</span>
+        <button style={b} onClick={()=>setEdit(true)}>바꾸기</button>
+        <button style={{...b,color:"#ff7b72",borderColor:"#f8514944"}} onClick={()=>{ if(!confirm("OpenAI 키를 지울까요?")) return; openaiKeySave(""); setKey(""); }}>지우기</button></>
+      :<><input type="password" value={v} onChange={e=>setV(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveKey()} placeholder="sk-proj-..." style={inp}/>
+        <button style={{...b,background:"#238636",borderColor:"#238636",color:"#fff"}} onClick={saveKey}>저장</button>
+        {key&&<button style={b} onClick={()=>{ setEdit(false); setV(""); }}>취소</button>}
+        {!key&&<span style={{color:"#ff7b72",fontSize:"12px"}}>키를 넣어야 GPT 이미지를 만들 수 있어요 (이 브라우저에만 저장)</span>}</>}
+  </div>;
+}
+function GptImagePanel(){
   const [tab,setTab]=useState("new");
   const [prompt,setPrompt]=useState("");
   const [ratioSel,setRatioSel]=useState("auto");
@@ -8188,12 +8185,8 @@ function GptImagePanel({ configured }){
   const small={padding:"4px 10px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",fontSize:"13px",cursor:"pointer"};
   const won=d=>d==null?"":`약 ${Math.round(d*1400).toLocaleString()}원`;
 
-  if(!configured) return <div style={box}>
-    <div style={{color:"#e6edf3",fontWeight:700,marginBottom:"8px"}}>💳 GPT API 이미지</div>
-    <div style={{color:"#8b949e",fontSize:"14px",lineHeight:1.7}}>이 사이트에는 GPT 키가 없어요. 회사 사이트 Vercel → Settings → Environment Variables 에 <code>OPENAI_API_KEY</code> 를 넣고 다시 배포하면 쓸 수 있어요.</div>
-  </div>;
-
   return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+    <OpenAiKeyBar/>
     <div ref={panelRef} style={{...box,position:"relative"}} {...dropProps}>
       {dragOn&&<div style={{position:"absolute",inset:0,zIndex:5,borderRadius:"12px",border:"3px dashed #58a6ff",background:"rgba(31,111,235,.18)",display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
         <div style={{background:"#0d1117",border:"1px solid #1f6feb",borderRadius:"10px",padding:"14px 22px",color:"#58a6ff",fontSize:"16px",fontWeight:700}}>
@@ -8323,12 +8316,12 @@ function GptImagePanel({ configured }){
 // 이미지 편집 > AI 이미지 생성 — 집 PC(무료) / GPT API(유료) 나눠 쓰기
 function ImageGenTab(){
   const [mode,setMode]=useState(()=>{ try{ return localStorage.getItem("img_gen_mode")||""; }catch(e){ return ""; } });
-  const [gpt,setGpt]=useState(null);         // null=확인 중, true/false
+  const [gpt,setGpt]=useState(null);         // OpenAI 키를 넣었는지
+  useEffect(()=>{ const f=()=>setGpt(!!openaiKeyLoad()); window.addEventListener("openai-key-changed",f); return ()=>window.removeEventListener("openai-key-changed",f); },[]);
   useEffect(()=>{
     let alive=true;
     (async()=>{
-      let ok=false;
-      try{ const j=await (await fetch("/api/gpt-image",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ action:"info" }) })).json(); ok=!!j.configured; }catch(e){}
+      const ok=!!openaiKeyLoad();
       if(!alive) return; setGpt(ok);
       if(!mode){ // 처음: 집 PC 서버가 켜져 있으면 집 PC, 아니면 GPT
         const h=await localImgHealth();
@@ -8345,7 +8338,7 @@ function ImageGenTab(){
       <button style={tab(mode==="gpt")} onClick={()=>pick("gpt")}>💳 GPT API (유료){gpt===false?" · 키 없음":""}</button>
     </div>
     <div style={{display:mode==="gpt"?"none":"block"}}><LocalImageTab/></div>
-    <div style={{display:mode==="gpt"?"block":"none"}}>{gpt===null?<div style={{color:"#8b949e"}}>확인 중…</div>:<GptImagePanel configured={gpt}/>}</div>
+    <div style={{display:mode==="gpt"?"block":"none"}}><GptImagePanel/></div>
   </div>;
 }
 
@@ -8789,6 +8782,20 @@ function ExifTab() {
 }
 
 // ─── TAB: 이미지 자르기 ──────────────────────────────────────────────────
+// 이미지 자르기 + 크기조절 — 한 메뉴 안에서 탭으로 (마지막 탭 기억)
+function CropResizeTab(){
+  const [t,setT]=useState(()=>{ try{ return localStorage.getItem("img_cropresize_tab")||"crop"; }catch(e){ return "crop"; } });
+  const pick=v=>{ setT(v); try{ localStorage.setItem("img_cropresize_tab",v); }catch(e){} };
+  const tb=on=>({padding:"8px 16px",borderRadius:"8px",border:"1px solid "+(on?"#1f6feb":"#30363d"),background:on?"#1f6feb22":"#161b22",color:on?"#58a6ff":"#8b949e",cursor:"pointer",fontSize:"14px",fontWeight:600});
+  return <div>
+    <div style={{display:"flex",gap:"8px",marginBottom:"14px"}}>
+      <button style={tb(t==="crop")} onClick={()=>pick("crop")}>✂️ 자르기</button>
+      <button style={tb(t==="resize")} onClick={()=>pick("resize")}>📐 크기조절</button>
+    </div>
+    <div style={{display:t==="crop"?"block":"none"}}><CropTab/></div>
+    <div style={{display:t==="resize"?"block":"none"}}><ResizeTab/></div>
+  </div>;
+}
 function CropTab() {
   const [img, setImg] = useState(null);       // {src, el, w, h, name, type}
   const [sliceH, setSliceH] = useState(8000);
@@ -12133,7 +12140,7 @@ ${outShape}`;
   </div>;
 }
 
-const TOOL_MAP={gsc:GscTab,keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:ImageGenTab,crop:CropTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab,videodl:VideoDownloadTab,snsconvert:SnsConvertTab};
+const TOOL_MAP={gsc:GscTab,keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:ImageGenTab,crop:CropResizeTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab,videodl:VideoDownloadTab,snsconvert:SnsConvertTab};
 
 
 // ─── 블로그 글쓰기 공통 프롬프트 빌더 ───────────────────────────────────────
@@ -13902,9 +13909,9 @@ function autoUseBlog(blogId, { mode="hq", key="" }={}){
   let prof=bpLoad(id);
   if(!prof){ prof=defaultAutoProfile(id, mode); bpSave(prof); }
   if(key){ const m=blogKeysLoad(); m[id.toLowerCase()]=key; blogKeysSave(m); }
-  // 자동화는 블로그 전용 키가 있어야만 돈다 — 키가 빠진 블로그 비용이 사이트 기본 키로 조용히 넘어가지 않게
-  const k=keyForBlog(id).key;
-  if(!k) throw new Error(`@${id} 에 등록된 전용 API 키가 없어서 멈췄어요 (기본 키로는 자동화를 돌리지 않아요)`);
+  // 자동화는 config 키(자동화가 넘겨준 키)가 있어야만 돈다 — 상단에서 고른 키로 조용히 과금되지 않게
+  const k=key||blogKeysLoad()[id.toLowerCase()]||"";
+  if(!k) throw new Error(`@${id} 에 자동화용 API 키가 없어서 멈췄어요 (config.json 의 키를 확인해주세요)`);
   bpSetActiveId(id);
   return { blogId:id, profile:prof.isDefault?"기본":"분석됨", profileAgeDays:prof.createdAt?Math.floor((Date.now()-prof.createdAt)/864e5):null, hasKey:true, keyMask:maskKey(k) };
 }
@@ -14399,85 +14406,63 @@ function PasswordGate({children}){
   );
 }
 
-// 헤더: API 키 (이름 붙인 키 몇 개) + 블로그 ID → 키 연결
+// 헤더: API 키 — 이름 붙인 키 목록 + 「지금 쓸 키」 하나 (서버 기본 키 없음)
 function ApiKeySwitch(){
   const [open,setOpen]=useState(false);
-  const [data,setData]=useState({slots:[],map:{}});
+  const [data,setData]=useState({slots:[],def:""});
   const [draft,setDraft]=useState({});
-  const [newId,setNewId]=useState("");
   const [newSlot,setNewSlot]=useState("");
-  const [,tick]=useState(0);
+  const [warn,setWarn]=useState(false);
   useEffect(()=>{ setData(keySlotsLoad()); },[]);
-  useEffect(()=>{ const t=setInterval(()=>tick(x=>x+1),3000); return ()=>clearInterval(t); },[]);   // 프로필 전환 반영
+  useEffect(()=>{ // AI 기능을 눌렀는데 키가 없으면 메뉴를 연다
+    const f=()=>{ setData(keySlotsLoad()); setOpen(true); setWarn(true); };
+    window.addEventListener("need-api-key",f); return ()=>window.removeEventListener("need-api-key",f);
+  },[]);
   const save=d=>{ keySlotsSave(d); setData({...d}); };
-  const info=typeof window!=="undefined"?activeKeyInfo():{id:"",key:"",name:""};
-  const own=!!info.key;
+  const cur=defaultKeyInfo(data);
   const inp={flex:1,minWidth:0,padding:"5px 7px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"monospace"};
   const btn={padding:"4px 8px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px",whiteSpace:"nowrap"};
   const del={...btn,border:"1px solid #f8514944",background:"transparent",color:"#ff7b72"};
-  const head={fontWeight:700,margin:"10px 0 4px",color:"#e6edf3"};
-  const setSlotKey=(sid,v)=>{ save({...data,slots:data.slots.map(x=>x.id===sid?{...x,key:v}:x)}); setDraft(d=>({...d,[sid]:""})); };
-  const ids=Object.keys(data.map).sort();
+  const setSlotKey=(sid,v)=>{ const d={...data,slots:data.slots.map(x=>x.id===sid?{...x,key:v}:x)}; if(!d.slots.find(x=>x.id===d.def&&x.key)) d.def=sid; save(d); setDraft(x=>({...x,[sid]:""})); setWarn(false); };
+  const withKey=data.slots.filter(x=>x.key);
   return <div style={{marginLeft:"auto",position:"relative"}}>
-    <button onClick={()=>{ setData(keySlotsLoad()); setOpen(o=>!o); }} title="AI 비용을 어느 API 키로 낼지"
-      style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${own?"#d2992266":"#30363d"}`,background:own?"#d2992215":"#161b22",color:own?"#e3b341":"#8b949e",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
-      🔑 {own?`${info.name} 키`:"기본 키(개인)"}
+    <button onClick={()=>{ setData(keySlotsLoad()); setOpen(o=>!o); setWarn(false); }} title="AI 비용을 어느 API 키로 낼지"
+      style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${cur.key?"#d2992266":"#f8514966"}`,background:cur.key?"#d2992215":"#f8514915",color:cur.key?"#e3b341":"#ff7b72",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
+      🔑 {cur.key?`${cur.name} 키`:"키 등록 필요"}
     </button>
     {open&&<div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:999}}/>}
     {open&&<div style={{position:"absolute",right:0,top:"38px",zIndex:1000,width:"360px",maxWidth:"calc(100vw - 24px)",maxHeight:"75vh",overflowY:"auto",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",boxShadow:"0 8px 24px #0008",fontSize:"13px",color:"#c9d1d9"}}>
-      <div style={{color:"#8b949e",fontSize:"12px",lineHeight:1.5}}>
-        지금 선택한 프로필: {info.id?`@${info.id}`:"없음"} → <b style={{color:own?"#e3b341":"#f0883e"}}>{own?info.name:"서버 기본 키(개인)"}</b>로 과금
-      </div>
-
-      <div style={{display:"flex",alignItems:"center",gap:"6px",marginTop:"10px",padding:"8px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px"}}>
-        <span style={{flex:1,fontWeight:700,color:"#e6edf3"}}>이 사이트 기본 키</span>
-        <select value={data.def||""} onChange={e=>save({...data,def:e.target.value})}
+      {warn&&!cur.key&&<div style={{padding:"8px",marginBottom:"8px",borderRadius:"8px",background:"#f8514922",border:"1px solid #f8514966",color:"#ff7b72",fontWeight:700}}>AI 기능을 쓰려면 API 키를 등록해주세요</div>}
+      <div style={{display:"flex",alignItems:"center",gap:"6px",padding:"8px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px"}}>
+        <span style={{flex:1,fontWeight:700,color:"#e6edf3"}}>지금 쓸 키</span>
+        <select value={cur.id||""} onChange={e=>save({...data,def:e.target.value})} disabled={!withKey.length}
           style={{padding:"4px 6px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-          <option value="">서버 기본 키 (개인)</option>
-          {data.slots.map(sl=><option key={sl.id} value={sl.id}>{sl.name}</option>)}
+          {!withKey.length&&<option value="">아래에 키를 먼저 넣어주세요</option>}
+          {withKey.map(sl=><option key={sl.id} value={sl.id}>{sl.name}</option>)}
         </select>
       </div>
-      {data.def&&!data.slots.find(x=>x.id===data.def)?.key&&<div style={{color:"#f0883e",fontSize:"12px",marginTop:"4px"}}>기본으로 고른 키가 아직 비어 있어요 — 아래에 키를 넣기 전까지는 서버 기본 키(개인)로 과금돼요.</div>}
+      <div style={{color:"#8b949e",fontSize:"12px",margin:"6px 0 10px",lineHeight:1.5}}>이 사이트의 AI 비용은 모두 이 키로 나가요 (지점 블로그 작업도 마찬가지). 자동화 프로그램은 config.json 의 키를 따로 써요.</div>
 
-      <div style={head}>① API 키</div>
+      <div style={{fontWeight:700,margin:"4px 0",color:"#e6edf3"}}>API 키 목록</div>
       {data.slots.map(sl=>(
         <div key={sl.id} style={{padding:"6px 0",borderTop:"1px solid #21262d"}}>
           <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
             <input value={sl.name} onChange={e=>save({...data,slots:data.slots.map(x=>x.id===sl.id?{...x,name:e.target.value}:x)})}
               style={{...inp,fontFamily:"'Noto Sans KR',sans-serif",fontWeight:700,flex:"0 0 110px"}}/>
-            <span style={{flex:1,color:sl.key?"#3fb950":"#484f58",fontSize:"12px",fontFamily:"monospace",textAlign:"right"}}>{sl.key?maskKey(sl.key):"키 없음"}</span>
+            <span style={{flex:1,color:sl.key?"#3fb950":"#484f58",fontSize:"12px",fontFamily:"monospace",textAlign:"right"}}>{sl.key?maskKey(sl.key):"키 없음"}{cur.id===sl.id?" ✓":""}</span>
           </div>
           <div style={{display:"flex",gap:"5px",marginTop:"4px"}}>
             <input type="password" value={draft[sl.id]||""} onChange={e=>setDraft(d=>({...d,[sl.id]:e.target.value}))} placeholder={sl.key?"새 키로 바꾸려면 입력":"sk-ant-..."} style={inp}/>
             <button style={btn} disabled={!(draft[sl.id]||"").trim()} onClick={()=>{const v=(draft[sl.id]||"").trim(); if(!/^sk-ant-/.test(v)){alert("Anthropic API 키는 sk-ant- 로 시작해요.");return;} setSlotKey(sl.id,v);}}>저장</button>
-            <button style={del} onClick={()=>{ if(!confirm(`"${sl.name}" 키를 목록에서 지울까요? (연결된 블로그 ID는 기본 키로 바뀌어요)`)) return;
-              const map={...data.map}; Object.keys(map).forEach(k=>{ if(map[k]===sl.id) delete map[k]; });
-              save({slots:data.slots.filter(x=>x.id!==sl.id),map}); }}>삭제</button>
+            <button style={del} onClick={()=>{ if(!confirm(`"${sl.name}" 키를 목록에서 지울까요?`)) return;
+              save({...data,slots:data.slots.filter(x=>x.id!==sl.id),def:data.def===sl.id?"":data.def}); }}>삭제</button>
           </div>
         </div>))}
       <div style={{display:"flex",gap:"5px",marginTop:"6px"}}>
         <input value={newSlot} onChange={e=>setNewSlot(e.target.value)} placeholder="키 이름 추가 (예: 개인용)" style={{...inp,fontFamily:"'Noto Sans KR',sans-serif"}}/>
         <button style={btn} onClick={()=>{ const n=newSlot.trim(); if(!n) return; const sid="s"+Date.now().toString(36); save({...data,slots:[...data.slots,{id:sid,name:n,key:""}]}); setNewSlot(""); }}>추가</button>
       </div>
-
-      <div style={head}>② 블로그 ID → 어느 키로</div>
-      {!ids.length&&<div style={{color:"#484f58",fontSize:"12px",lineHeight:1.5}}>다른 키를 써야 하는 블로그 ID만 추가하세요. 추가하지 않은 ID는 위의 "이 사이트 기본 키"로 과금돼요.</div>}
-      {ids.map(id=>(
-        <div key={id} style={{display:"flex",gap:"6px",alignItems:"center",padding:"5px 0",borderTop:"1px solid #21262d"}}>
-          <b style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",color:info.id===id?"#58a6ff":"#c9d1d9"}}>@{id}{info.id===id?" · 선택됨":""}</b>
-          <select value={data.map[id]||""} onChange={e=>save({...data,map:{...data.map,[id]:e.target.value}})}
-            style={{padding:"4px 6px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-            <option value="">이 사이트 기본 키</option>
-            {data.slots.map(sl=><option key={sl.id} value={sl.id}>{sl.name}</option>)}
-          </select>
-          <button style={del} onClick={()=>{ const map={...data.map}; delete map[id]; save({...data,map}); }}>✕</button>
-        </div>))}
-      <div style={{display:"flex",gap:"5px",marginTop:"6px"}}>
-        <input value={newId} onChange={e=>setNewId(e.target.value)} placeholder="블로그 ID 추가" style={{...inp,fontFamily:"'Noto Sans KR',sans-serif"}}/>
-        <button style={btn} onClick={()=>{ const id=newId.trim().replace(/^@/,"").toLowerCase(); if(!id) return;
-          const firstKey=data.slots.find(x=>x.key)?.id||""; save({...data,map:{...data.map,[id]:data.map[id]??firstKey}}); setNewId(""); }}>추가</button>
-      </div>
-      <div style={{marginTop:"10px",color:"#484f58",fontSize:"11px",lineHeight:1.5}}>프로필을 새로 만들거나 불러와도 이 목록은 바뀌지 않아요. 키는 이 브라우저에만 저장되고 백업 파일에는 들어가지 않아요.</div>
+      <div style={{marginTop:"10px",color:"#484f58",fontSize:"11px",lineHeight:1.5}}>키는 이 브라우저에만 저장되고 백업 파일에는 들어가지 않아요. 다른 PC·브라우저에서는 다시 넣어야 해요.</div>
     </div>}
   </div>;
 }
@@ -14754,7 +14739,7 @@ export default function BlogTools(){
                     color:"#58a6ff",fontSize:"13px",fontWeight:700,background:"#0d1117"}}>
                     🖼️ 이미지 편집 도구
                   </div>
-                  {IMAGE_SUBTABS.map(sub=>{
+                  {IMAGE_SUBTABS.filter(sub=>!sub.hidden).map(sub=>{
                     const isSel=active===sub.id;
                     return <button key={sub.id}
                       onClick={()=>selectImageSub(sub.id)}
@@ -14874,7 +14859,7 @@ export default function BlogTools(){
     {/* 이미지 서브탭 활성 시 상단 서브 네비바 */}
     {isImageSub && (
       <div style={{background:"#0d1117",borderBottom:"1px solid #21262d",padding:"0",display:"flex",gap:"2px",overflowX:"auto"}}>
-        {IMAGE_SUBTABS.map(sub=>(
+        {IMAGE_SUBTABS.filter(sub=>!sub.hidden).map(sub=>(
           <button key={sub.id} onClick={()=>setActive(sub.id)} style={{
             padding:"8px 13px",border:"none",background:"none",
             borderBottom:`2px solid ${active===sub.id?"#58a6ff":"transparent"}`,
