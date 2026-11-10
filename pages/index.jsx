@@ -414,20 +414,55 @@ function salvageTruncatedJson(raw) {
 const LS_BLOG_KEYS="vk_blog_api_keys";      // 자동화가 넣어주는 블로그별 키 전용
 function blogKeysLoad(){ try{ return JSON.parse(localStorage.getItem(LS_BLOG_KEYS)||"{}")||{}; }catch(e){ return {}; } }
 function blogKeysSave(m){ try{ localStorage.setItem(LS_BLOG_KEYS,JSON.stringify(m)); }catch(e){} }
-const LS_KEY_SLOTS="vk_key_slots";           // { slots:[{id,name,key}], def: 지금 쓸 키 id }
+// 유료 AI 서비스 — 이름(본사용·지점용…)마다 각각 키를 넣는다. key 칸은 예전부터 쓰던 Claude 키 자리
+const KEY_SVCS=[
+  { id:"claude",    field:"key",       label:"Claude",    ph:"sk-ant-...", ok:v=>/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(v), use:"글쓰기·SNS 변환 등 AI 대부분" },
+  { id:"openai",    field:"openai",    label:"OpenAI",    ph:"sk-proj-...", ok:v=>/^sk-[A-Za-z0-9_\-]{20,}$/.test(v), use:"GPT 이미지" },
+  { id:"replicate", field:"replicate", label:"Replicate", ph:"r8_...", ok:v=>/^r8_[A-Za-z0-9]{20,}$/.test(v), use:"AI 영상 움직임" },
+  { id:"pixverse",  field:"pixverse",  label:"PixVerse",  ph:"PixVerse API 키", ok:v=>v.length>=10&&!/\s/.test(v), use:"AI 영상 움직임 (다른 업체)" },
+];
+const LS_KEY_SLOTS="vk_key_slots";           // { slots:[{id,name,key,openai,replicate,pixverse}], def: 지금 쓸 이름 id }
 function keySlotsLoad(){
   let d=null;
   try{ d=JSON.parse(localStorage.getItem(LS_KEY_SLOTS)||"null"); }catch(e){}
-  if(d&&Array.isArray(d.slots)) return { slots:d.slots, def:d.def||"" };
-  const out={ slots:[{id:"s1",name:"본사용",key:""},{id:"s2",name:"지점용",key:""}], def:"s1" };
-  keySlotsSave(out); return out;
+  if(!(d&&Array.isArray(d.slots))){ d={ slots:[{id:"s1",name:"본사용",key:""},{id:"s2",name:"지점용",key:""}], def:"s1" }; keySlotsSave(d); }
+  d={ slots:d.slots, def:d.def||"" };
+  // 예전에 따로 저장하던 키(GPT 화면·영상 화면)를 지금 쓰는 이름 아래로 한 번 옮김
+  try{
+    const mv=[["vk_openai_key","openai"],["vm_replicate_key","replicate"],["vm_pixverse_key","pixverse"]];
+    let changed=false;
+    for(const [ls,f] of mv){
+      const v=(localStorage.getItem(ls)||"").trim(); if(!v) continue;
+      const sl=d.slots.find(x=>x.id===d.def)||d.slots[0];
+      if(sl&&!sl[f]){ sl[f]=v; changed=true; }
+      localStorage.removeItem(ls);
+    }
+    if(changed) keySlotsSave(d);
+  }catch(e){}
+  return d;
 }
-function keySlotsSave(d){ try{ localStorage.setItem(LS_KEY_SLOTS,JSON.stringify({ slots:d.slots, def:d.def||"" })); }catch(e){} }
-// 지금 쓸 키: 고른 키 → (안 골랐거나 비어 있으면) 키가 들어 있는 첫 번째 키 → 없으면 ""
-function defaultKeyInfo(d){
+function keySlotsSave(d){
+  try{ localStorage.setItem(LS_KEY_SLOTS,JSON.stringify({ slots:d.slots, def:d.def||"" })); }catch(e){}
+  try{ window.dispatchEvent(new Event("keys-changed")); }catch(e){}
+}
+// 지금 쓰는 이름: 고른 이름 → 없으면 키가 하나라도 있는 첫 이름 → 첫 이름
+function activeSlot(d){
   d=d||keySlotsLoad();
-  const sl=d.slots.find(x=>x.id===d.def&&x.key)||d.slots.find(x=>x.key);
-  return sl?{key:sl.key,name:sl.name,id:sl.id}:{key:"",name:"",id:""};
+  const has=x=>KEY_SVCS.some(v=>x[v.field]);
+  return d.slots.find(x=>x.id===d.def)||d.slots.find(has)||d.slots[0]||{id:"",name:""};
+}
+function svcKey(svc){ const v=KEY_SVCS.find(x=>x.id===svc); return v?(activeSlot()[v.field]||""):""; }
+// 그 서비스 키가 없으면 상단 🔑 를 열고 멈춘다
+function needSvcKey(svc){
+  const k=svcKey(svc); if(k) return k;
+  const v=KEY_SVCS.find(x=>x.id===svc), sl=activeSlot();
+  try{ window.dispatchEvent(new Event("need-api-key")); }catch(e){}
+  throw new Error(`「${sl.name||"지금 쓰는 이름"}」에 ${v?.label||svc} 키가 없어요 — 상단 🔑 에서 넣어주세요`);
+}
+// Claude: 지금 쓰는 이름의 Claude 키
+function defaultKeyInfo(d){
+  const sl=activeSlot(d);
+  return {key:sl.key||"",name:sl.name||"",id:sl.id||""};
 }
 // 블로그 ID 작업에 쓸 키: ① 자동화가 넣어준 키 ② 지금 쓸 키
 function keyForBlog(id){
@@ -450,7 +485,7 @@ function claudeHeaders(forceId){
   const key=f===undefined||!f?activeKeyInfo().key:f.startsWith("slot:")?slotKey(f.slice(5)):keyForBlog(f).key;
   if(!key){
     try{ window.dispatchEvent(new Event("need-api-key")); }catch(e){}
-    throw new Error("API 키를 등록해주세요 — 상단 🔑 버튼에서 키를 넣고 「지금 쓸 키」를 골라주세요");
+    throw new Error(`「${activeSlot().name||"지금 쓰는 이름"}」에 Claude 키가 없어요 — 상단 🔑 에서 넣어주세요`);
   }
   h["x-user-api-key"]=key;
   return h;
@@ -7958,11 +7993,10 @@ function gptUsageAdd(usd){ const u=gptUsageLoad(); u.n++; u.usd+=(usd||0); try{ 
 
 // OpenAI 키 (GPT 이미지 전용) — 이 브라우저에만 저장, 서버 기본 키 없음
 const LS_OPENAI_KEY="vk_openai_key";
-function openaiKeyLoad(){ try{ return localStorage.getItem(LS_OPENAI_KEY)||""; }catch(e){ return ""; } }
+function openaiKeyLoad(){ return svcKey("openai"); }        // 상단 🔑 의 지금 쓰는 이름의 OpenAI 키
 function openaiKeySave(k){ try{ if(k) localStorage.setItem(LS_OPENAI_KEY,k); else localStorage.removeItem(LS_OPENAI_KEY); }catch(e){} try{ window.dispatchEvent(new Event("openai-key-changed")); }catch(e){} }
 async function gptImgCall(body){
-  const key=openaiKeyLoad();
-  if(!key) throw new Error("OpenAI 키를 넣어주세요 — 이 화면 위쪽 「OpenAI 키」 칸");
+  const key=needSvcKey("openai");
   const r=await fetch("/api/gpt-image",{ method:"POST", headers:{"Content-Type":"application/json","x-openai-key":key}, body:JSON.stringify(body) });
   const j=await r.json().catch(()=>({ error:r.status===413?"보내는 사진이 너무 커요":r.status===504?"시간 초과 — 품질을 낮추거나 다시 시도":"응답 오류 "+r.status }));
   if(j.error) throw new Error(j.error);
@@ -8295,7 +8329,6 @@ function GptImagePanel(){
   const won=d=>d==null?"":`약 ${Math.round(d*1400).toLocaleString()}원`;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
-    <OpenAiKeyBar/>
     <div ref={panelRef} style={{...box,position:"relative"}} {...dropProps}>
       {dragOn&&<div style={{position:"absolute",inset:0,zIndex:5,borderRadius:"12px",border:"3px dashed #58a6ff",background:"rgba(31,111,235,.18)",display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
         <div style={{background:"#0d1117",border:"1px solid #1f6feb",borderRadius:"10px",padding:"14px 22px",color:"#58a6ff",fontSize:"16px",fontWeight:700}}>
@@ -8426,7 +8459,8 @@ function GptImagePanel(){
 function ImageGenTab(){
   const [mode,setMode]=useState(()=>{ try{ return localStorage.getItem("img_gen_mode")||""; }catch(e){ return ""; } });
   const [gpt,setGpt]=useState(null);         // OpenAI 키를 넣었는지
-  useEffect(()=>{ const f=()=>setGpt(!!openaiKeyLoad()); window.addEventListener("openai-key-changed",f); return ()=>window.removeEventListener("openai-key-changed",f); },[]);
+  const [slotName,setSlotName]=useState("");
+  useEffect(()=>{ const f=()=>{ setGpt(!!openaiKeyLoad()); setSlotName(activeSlot().name||""); }; f(); window.addEventListener("keys-changed",f); return ()=>window.removeEventListener("keys-changed",f); },[]);
   useEffect(()=>{
     let alive=true;
     (async()=>{
@@ -8444,7 +8478,7 @@ function ImageGenTab(){
   return <div>
     <div style={{display:"flex",gap:"8px",marginBottom:"14px",flexWrap:"wrap",alignItems:"center"}}>
       <button style={tab(mode==="home")} onClick={()=>pick("home")}>🏠 집 PC (무료)</button>
-      <button style={tab(mode==="gpt")} onClick={()=>pick("gpt")}>💳 GPT API (유료){gpt===false?" · 키 없음":""}</button>
+      <button style={tab(mode==="gpt")} onClick={()=>pick("gpt")}>💳 GPT API (유료) · {gpt?`${slotName} 키`:"키 없음"}</button>
     </div>
     <div style={{display:mode==="gpt"?"none":"block"}}><LocalImageTab/></div>
     <div style={{display:mode==="gpt"?"block":"none"}}><GptImagePanel/></div>
@@ -10058,7 +10092,7 @@ function BlogShortsMaker(){
 
   // AI 움직임 클립 (기존 프록시 그대로)
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-  const post=async(action,payload)=>{ const r=await fetch("/api/video-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,payload})}); return r.json(); };
+  const post=async(action,payload)=>{ const r=await fetch("/api/video-proxy",{method:"POST",headers:videoHeaders(action.startsWith("pixverse")?"pixverse":"replicate"),body:JSON.stringify({action,payload})}); return r.json(); };
   const aiClip=async(dataUrl,prompt,label)=>{
     const img=await shortsThumb(dataUrl,1280);
     const p=await post("replicate_create",{image:img,prompt:prompt||"subtle natural motion, slow camera push in, realistic",num_frames:80,fps:16,resolution:res==="1080"?"720p":"480p"});
@@ -10334,6 +10368,12 @@ const VM_MOTION_PRESETS=[
 ];
 const vmPresetOf=prompt=>(VM_MOTION_PRESETS.find(p=>p.prompt===prompt)||{}).id||"";
 
+// 영상 AI 키 (상단 🔑 의 지금 쓰는 이름) — 없으면 🔑 를 열고 멈춤
+function videoHeaders(svc){
+  const k=needSvcKey(svc);
+  return { "Content-Type":"application/json", [svc==="pixverse"?"x-pixverse-key":"x-replicate-key"]:k };
+}
+
 // ─── 이미지별 AI 영상 (예전 방식) ──────────────────────────────────────────
 function VideoMakeAiSingle() {
   const [replicateKey, setReplicateKey] = React.useState("");
@@ -10381,7 +10421,7 @@ function VideoMakeAiSingle() {
   const callReplicate = async (_token, dataUrl, prompt, dur, res, idx) => {
     updateProg(idx, 25, "Replicate 요청 중...");
     const r1 = await fetch("/api/video-proxy", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: videoHeaders("replicate"),
       body: JSON.stringify({ action: "replicate_create", payload: { image: dataUrl, prompt, num_frames: parseInt(dur) * 16, fps: 16, resolution: res } }),
     });
     const pred = await r1.json();
@@ -10391,7 +10431,7 @@ function VideoMakeAiSingle() {
       await sleep(3000);
       updateProg(idx, Math.min(35 + i * 0.5, 90), `생성 중... (${(i+1)*3}초)`);
       const r2 = await fetch("/api/video-proxy", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: videoHeaders("replicate"),
         body: JSON.stringify({ action: "replicate_status", payload: { id: pred.id } }),
       });
       const st = await r2.json();
@@ -10406,7 +10446,7 @@ function VideoMakeAiSingle() {
     const [h, d] = dataUrl.split(",");
     const mimeType = h.match(/:(.*?);/)[1];
     const r1 = await fetch("/api/video-proxy", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: videoHeaders("pixverse"),
       body: JSON.stringify({ action: "pixverse_upload", payload: { imageBase64: d, mimeType } }),
     });
     const upData = await r1.json();
@@ -10415,7 +10455,7 @@ function VideoMakeAiSingle() {
     if (!imgId) throw new Error("PixVerse 이미지 ID 없음");
     updateProg(idx, 40, "PixVerse 생성 요청...");
     const r2 = await fetch("/api/video-proxy", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: videoHeaders("pixverse"),
       body: JSON.stringify({ action: "pixverse_create", payload: { img_id: imgId, prompt, duration: parseInt(dur) } }),
     });
     const genData = await r2.json();
@@ -10426,7 +10466,7 @@ function VideoMakeAiSingle() {
       await sleep(3000);
       updateProg(idx, Math.min(50 + i * 0.4, 90), `PixVerse 생성 중... (${(i+1)*3}초)`);
       const r3 = await fetch("/api/video-proxy", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: videoHeaders("pixverse"),
         body: JSON.stringify({ action: "pixverse_status", payload: { video_id: videoId } }),
       });
       if (!r3.ok) continue;
@@ -14638,60 +14678,64 @@ function PasswordGate({children}){
   );
 }
 
-// 헤더: API 키 — 이름 붙인 키 목록 + 「지금 쓸 키」 하나 (서버 기본 키 없음)
+// 헤더: 유료 AI 키 — 이름(본사용·지점용…)마다 Claude·OpenAI·Replicate·PixVerse + 「지금 쓸 이름」 하나 (서버 기본 키 없음)
 function ApiKeySwitch(){
   const [open,setOpen]=useState(false);
   const [data,setData]=useState({slots:[],def:""});
-  const [draft,setDraft]=useState({});
+  const [draft,setDraft]=useState({});              // `${slotId}:${svc}` → 입력 중인 값
   const [newSlot,setNewSlot]=useState("");
   const [warn,setWarn]=useState(false);
   useEffect(()=>{ setData(keySlotsLoad()); },[]);
-  useEffect(()=>{ // AI 기능을 눌렀는데 키가 없으면 메뉴를 연다
+  useEffect(()=>{
     const f=()=>{ setData(keySlotsLoad()); setOpen(true); setWarn(true); };
     window.addEventListener("need-api-key",f); return ()=>window.removeEventListener("need-api-key",f);
   },[]);
-  const save=d=>{ keySlotsSave(d); setData({...d}); };
-  const cur=defaultKeyInfo(data);
+  const save=d=>{ keySlotsSave(d); setData({...d,slots:[...d.slots]}); };
+  const cur=activeSlot(data);
+  const nKeys=sl=>KEY_SVCS.filter(v=>sl[v.field]).length;
+  const setField=(sid,field,v)=>save({...data,slots:data.slots.map(x=>x.id===sid?{...x,[field]:v}:x)});
   const inp={flex:1,minWidth:0,padding:"5px 7px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"monospace"};
   const btn={padding:"4px 8px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px",whiteSpace:"nowrap"};
   const del={...btn,border:"1px solid #f8514944",background:"transparent",color:"#ff7b72"};
-  const setSlotKey=(sid,v)=>{ const d={...data,slots:data.slots.map(x=>x.id===sid?{...x,key:v}:x)}; if(!d.slots.find(x=>x.id===d.def&&x.key)) d.def=sid; save(d); setDraft(x=>({...x,[sid]:""})); setWarn(false); };
-  const withKey=data.slots.filter(x=>x.key);
+  const ok=!!(cur&&cur.key);
   return <div style={{marginLeft:"auto",position:"relative"}}>
-    <button onClick={()=>{ setData(keySlotsLoad()); setOpen(o=>!o); setWarn(false); }} title="AI 비용을 어느 API 키로 낼지"
-      style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${cur.key?"#d2992266":"#f8514966"}`,background:cur.key?"#d2992215":"#f8514915",color:cur.key?"#e3b341":"#ff7b72",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
-      🔑 {cur.key?`${cur.name} 키`:"키 등록 필요"}
+    <button onClick={()=>{ setData(keySlotsLoad()); setOpen(o=>!o); setWarn(false); }} title="유료 AI 비용을 어느 키로 낼지"
+      style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${ok?"#d2992266":"#f8514966"}`,background:ok?"#d2992215":"#f8514915",color:ok?"#e3b341":"#ff7b72",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
+      🔑 {cur.name?`${cur.name} 키`:"키 등록 필요"}{cur.name&&!ok?" (Claude 없음)":""}
     </button>
     {open&&<div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:999}}/>}
-    {open&&<div style={{position:"absolute",right:0,top:"38px",zIndex:1000,width:"360px",maxWidth:"calc(100vw - 24px)",maxHeight:"75vh",overflowY:"auto",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",boxShadow:"0 8px 24px #0008",fontSize:"13px",color:"#c9d1d9"}}>
-      {warn&&!cur.key&&<div style={{padding:"8px",marginBottom:"8px",borderRadius:"8px",background:"#f8514922",border:"1px solid #f8514966",color:"#ff7b72",fontWeight:700}}>AI 기능을 쓰려면 API 키를 등록해주세요</div>}
+    {open&&<div style={{position:"absolute",right:0,top:"38px",zIndex:1000,width:"420px",maxWidth:"calc(100vw - 24px)",maxHeight:"80vh",overflowY:"auto",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",boxShadow:"0 8px 24px #0008",fontSize:"13px",color:"#c9d1d9"}}>
+      {warn&&<div style={{padding:"8px",marginBottom:"8px",borderRadius:"8px",background:"#f8514922",border:"1px solid #f8514966",color:"#ff7b72",fontWeight:700}}>이 기능을 쓰려면 아래에서 키를 넣어주세요</div>}
       <div style={{display:"flex",alignItems:"center",gap:"6px",padding:"8px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px"}}>
         <span style={{flex:1,fontWeight:700,color:"#e6edf3"}}>지금 쓸 키</span>
-        <select value={cur.id||""} onChange={e=>save({...data,def:e.target.value})} disabled={!withKey.length}
+        <select value={cur.id||""} onChange={e=>save({...data,def:e.target.value})}
           style={{padding:"4px 6px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-          {!withKey.length&&<option value="">아래에 키를 먼저 넣어주세요</option>}
-          {withKey.map(sl=><option key={sl.id} value={sl.id}>{sl.name}</option>)}
+          {data.slots.map(sl=><option key={sl.id} value={sl.id}>{sl.name} ({nKeys(sl)}/{KEY_SVCS.length})</option>)}
         </select>
       </div>
-      <div style={{color:"#8b949e",fontSize:"12px",margin:"6px 0 10px",lineHeight:1.5}}>이 사이트의 AI 비용은 모두 이 키로 나가요 (지점 블로그 작업도 마찬가지). 자동화 프로그램은 config.json 의 키를 따로 써요.</div>
+      <div style={{color:"#8b949e",fontSize:"12px",margin:"6px 0 10px",lineHeight:1.5}}>고른 이름의 키들로 이 사이트의 유료 AI 비용이 모두 나가요 (지점 블로그 작업도 마찬가지). 자동화 프로그램은 config.json 의 키를 따로 써요.</div>
 
-      <div style={{fontWeight:700,margin:"4px 0",color:"#e6edf3"}}>API 키 목록</div>
       {data.slots.map(sl=>(
-        <div key={sl.id} style={{padding:"6px 0",borderTop:"1px solid #21262d"}}>
-          <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
-            <input value={sl.name} onChange={e=>save({...data,slots:data.slots.map(x=>x.id===sl.id?{...x,name:e.target.value}:x)})}
-              style={{...inp,fontFamily:"'Noto Sans KR',sans-serif",fontWeight:700,flex:"0 0 110px"}}/>
-            <span style={{flex:1,color:sl.key?"#3fb950":"#484f58",fontSize:"12px",fontFamily:"monospace",textAlign:"right"}}>{sl.key?maskKey(sl.key):"키 없음"}{cur.id===sl.id?" ✓":""}</span>
+        <div key={sl.id} style={{padding:"8px",marginBottom:"8px",border:`1px solid ${cur.id===sl.id?"#d2992266":"#21262d"}`,borderRadius:"8px",background:cur.id===sl.id?"#d2992208":"transparent"}}>
+          <div style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"6px"}}>
+            <input value={sl.name} onChange={e=>setField(sl.id,"name",e.target.value)} style={{...inp,fontFamily:"'Noto Sans KR',sans-serif",fontWeight:700,flex:"0 0 130px"}}/>
+            {cur.id===sl.id&&<span style={{color:"#e3b341",fontSize:"12px",fontWeight:700}}>✓ 지금 쓰는 중</span>}
+            <button style={{...del,marginLeft:"auto"}} onClick={()=>{ if(!confirm(`"${sl.name}" 이름과 그 안의 키를 모두 지울까요?`)) return;
+              save({...data,slots:data.slots.filter(x=>x.id!==sl.id),def:data.def===sl.id?"":data.def}); }}>이름 삭제</button>
           </div>
-          <div style={{display:"flex",gap:"5px",marginTop:"4px"}}>
-            <input type="password" value={draft[sl.id]||""} onChange={e=>setDraft(d=>({...d,[sl.id]:e.target.value}))} placeholder={sl.key?"새 키로 바꾸려면 입력":"sk-ant-..."} style={inp}/>
-            <button style={btn} disabled={!(draft[sl.id]||"").trim()} onClick={()=>{const v=(draft[sl.id]||"").trim(); if(!/^sk-ant-/.test(v)){alert("Anthropic API 키는 sk-ant- 로 시작해요.");return;} setSlotKey(sl.id,v);}}>저장</button>
-            <button style={del} onClick={()=>{ if(!confirm(`"${sl.name}" 키를 목록에서 지울까요?`)) return;
-              save({...data,slots:data.slots.filter(x=>x.id!==sl.id),def:data.def===sl.id?"":data.def}); }}>삭제</button>
-          </div>
+          {KEY_SVCS.map(v=>{ const dk=`${sl.id}:${v.id}`, val=sl[v.field]||"";
+            return <div key={v.id} style={{display:"flex",gap:"5px",alignItems:"center",marginTop:"4px"}}>
+              <span style={{flex:"0 0 70px",fontWeight:700,color:"#c9d1d9"}} title={v.use}>{v.label}</span>
+              <input type="password" value={draft[dk]||""} onChange={e=>setDraft(d=>({...d,[dk]:e.target.value}))}
+                placeholder={val?`${maskKey(val)} (바꾸려면 입력)`:`${v.ph}  · ${v.use}`} style={{...inp,borderColor:val?"#2ea04355":"#30363d"}}/>
+              <button style={btn} disabled={!(draft[dk]||"").trim()} onClick={()=>{ const t=(draft[dk]||"").trim();
+                if(!v.ok(t)){ alert(`${v.label} 키 형식이 아니에요 (예: ${v.ph})`); return; }
+                setField(sl.id,v.field,t); setDraft(d=>({...d,[dk]:""})); setWarn(false); }}>저장</button>
+              <button style={{...del,opacity:val?1:.35}} disabled={!val} onClick={()=>{ if(!confirm(`"${sl.name}"의 ${v.label} 키를 지울까요?`)) return; setField(sl.id,v.field,""); }}>삭제</button>
+            </div>; })}
         </div>))}
       <div style={{display:"flex",gap:"5px",marginTop:"6px"}}>
-        <input value={newSlot} onChange={e=>setNewSlot(e.target.value)} placeholder="키 이름 추가 (예: 개인용)" style={{...inp,fontFamily:"'Noto Sans KR',sans-serif"}}/>
+        <input value={newSlot} onChange={e=>setNewSlot(e.target.value)} placeholder="이름 추가 (예: 개인용)" style={{...inp,fontFamily:"'Noto Sans KR',sans-serif"}}/>
         <button style={btn} onClick={()=>{ const n=newSlot.trim(); if(!n) return; const sid="s"+Date.now().toString(36); save({...data,slots:[...data.slots,{id:sid,name:n,key:""}]}); setNewSlot(""); }}>추가</button>
       </div>
       <div style={{marginTop:"10px",color:"#484f58",fontSize:"11px",lineHeight:1.5}}>키는 이 브라우저에만 저장되고 백업 파일에는 들어가지 않아요. 다른 PC·브라우저에서는 다시 넣어야 해요.</div>
