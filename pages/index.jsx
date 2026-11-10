@@ -624,11 +624,11 @@ const TABS=[
 
 // 동영상 편집 서브탭
 const VIDEO_SUBTABS=[
-  {id:"video",    icon:"🎬", label:"동영상 용량 조절"},
-  {id:"videogif", icon:"🎞️", label:"동영상 → GIF 변환"},
   {id:"videomake-ai",  icon:"🤖", label:"AI 영상 생성"},
-  {id:"videomake-sub", icon:"💬", label:"자막 + 음성"},
-  {id:"videodl", icon:"⬇️", label:"동영상 다운로드"},
+  {id:"video",    icon:"🎬", label:"동영상 용량조절"},
+  {id:"videogif", icon:"🎞️", label:"동영상 GIF 변환"},
+  {id:"videodl", icon:"⬇️", label:"링크 동영상 다운로드"},
+  {id:"videomake-sub", icon:"💬", label:"자막 + 음성", hidden:true},   // 브라우저 목소리는 영상에 안 들어가서 숨김
 ];
 
 // 글쓰기 서브탭
@@ -638,7 +638,7 @@ const WRITE_SUBTABS=[
   {id:"analyze",   icon:"📊", label:"글분석"},
   {id:"snsconvert", icon:"📱", label:"SNS 변환(인스타·쓰레드)"},
   {id:"rewrite",   icon:"🔗", label:"기사 리라이팅", hidden:true},
-  {id:"emoji",     icon:"😃", label:"이모지"},
+  {id:"emoji",     icon:"😃", label:"이모지", hidden:true},
 ];
 
 // 이미지 편집 서브탭
@@ -650,7 +650,7 @@ const IMAGE_SUBTABS=[
   {id:"imgcompress", icon:"💾", label:"이미지 용량압축", hidden:true},
   {id:"restore",     icon:"✨", label:"사진 복원·향상", hidden:true},
   {id:"exif",        icon:"🔒", label:"이미지 데이터제거", hidden:true},   // 형식변환 화면의 체크박스로 합침
-  {id:"videomake-ken", icon:"✨", label:"켄번스 효과"},   // API 안 씀 — 사진에 줌·패닝을 입히는 작업이라 이미지 편집으로
+  {id:"videomake-ken", icon:"✨", label:"켄번스 효과", hidden:true},   // API 안 씀 — 사진에 줌·패닝을 입히는 작업이라 이미지 편집으로
 ];
 
 // 전체 렌더링 대상 탭 (display:none 마운트용 — 서브탭 포함)
@@ -9944,6 +9944,9 @@ function BlogShortsMaker(){
   const [res,setRes]=React.useState("1080");
   const [subs,setSubs]=React.useState(true);
   const [accent,setAccent]=React.useState(SHORTS_ACCENTS[0][0]);
+  // 자막 위치·크기·색 (기억)
+  const [subOpt,setSubOpt]=React.useState(()=>{ try{ return { pos:"top", size:"m", color:"white", ...JSON.parse(localStorage.getItem("vm_sub_opt")||"{}") }; }catch(e){ return { pos:"top", size:"m", color:"white" }; } });
+  const subUp=patch=>setSubOpt(o=>{ const n={ ...o, ...patch }; try{ localStorage.setItem("vm_sub_opt",JSON.stringify(n)); }catch(e){} return n; });
   const [plan,setPlan]=React.useState(null);              // {title, scenes:[{pid,sec,effect,ai,motion,caps:[{text,hl}],narration,clipUrl}]}
   const [bgm,setBgm]=React.useState(null);                // {name,buf,dur,url?,credit?}
   const [bgmVol,setBgmVol]=React.useState(0.25);
@@ -10123,16 +10126,17 @@ function BlogShortsMaker(){
       };
       const drawCaption=(cap,a)=>{
         if(!cap||!cap.text) return;
-        const lines=String(cap.text).split("\n").slice(0,2); const fs=Math.round(W*0.078);
+        const lines=String(cap.text).split("\n").slice(0,2); const fs=Math.round(W*({s:0.062,m:0.078,l:0.095}[subOpt.size]||0.078));
         ctx.save(); ctx.globalAlpha=a; ctx.textBaseline="middle"; ctx.font=`900 ${fs}px "Noto Sans KR","Malgun Gothic",sans-serif`;
-        const y0=H*0.30-(lines.length-1)*fs*0.62;
+        const y0=H*({top:0.30,middle:0.5,bottom:0.78}[subOpt.pos]||0.30)-(lines.length-1)*fs*0.62;
+        const dark=subOpt.color==="black";
         lines.forEach((ln,li)=>{
           const y=y0+li*fs*1.25; const hl=cap.hl&&ln.includes(cap.hl)?cap.hl:"";
           const parts=hl?[ln.slice(0,ln.indexOf(hl)),hl,ln.slice(ln.indexOf(hl)+hl.length)]:[ln,"",""];
           const wsum=parts.reduce((a,t)=>a+ctx.measureText(t).width,0); let x=(W-wsum)/2;
-          parts.forEach((t,k)=>{ if(!t) return; ctx.lineJoin="round"; ctx.lineWidth=fs*0.16; ctx.strokeStyle="rgba(0,0,0,.55)";
+          parts.forEach((t,k)=>{ if(!t) return; ctx.lineJoin="round"; ctx.lineWidth=fs*(dark?0.2:0.16); ctx.strokeStyle=dark?"#ffffff":"rgba(0,0,0,.55)";
             ctx.shadowColor="rgba(0,0,0,.45)"; ctx.shadowBlur=fs*0.25; ctx.strokeText(t,x,y); ctx.shadowBlur=0;
-            ctx.fillStyle=k===1?accent:"#ffffff"; ctx.fillText(t,x,y); x+=ctx.measureText(t).width; });
+            ctx.fillStyle=k===1?accent:(subOpt.color==="yellow"?"#ffe14d":dark?"#111418":"#ffffff"); ctx.fillText(t,x,y); x+=ctx.measureText(t).width; });
         });
         ctx.restore();
       };
@@ -10221,6 +10225,15 @@ function BlogShortsMaker(){
           <label style={{...S.input,display:"flex",alignItems:"center",gap:"6px",cursor:"pointer"}}><input type="checkbox" checked={subs} onChange={e=>setSubs(e.target.checked)}/> 자막 넣기</label></div>
         <div><label style={S.label}>강조 색</label>
           <select style={S.input} value={accent} onChange={e=>setAccent(e.target.value)}>{SHORTS_ACCENTS.map(([c,l])=><option key={c} value={c}>{l}</option>)}</select></div>
+        <div><label style={S.label}>자막 위치</label>
+          <select style={S.input} disabled={!subs} value={subOpt.pos} onChange={e=>subUp({pos:e.target.value})}>
+            <option value="top">위</option><option value="middle">가운데</option><option value="bottom">아래</option></select></div>
+        <div><label style={S.label}>자막 크기</label>
+          <select style={S.input} disabled={!subs} value={subOpt.size} onChange={e=>subUp({size:e.target.value})}>
+            <option value="s">작게</option><option value="m">보통</option><option value="l">크게</option></select></div>
+        <div><label style={S.label}>자막 색</label>
+          <select style={S.input} disabled={!subs} value={subOpt.color} onChange={e=>subUp({color:e.target.value})}>
+            <option value="white">흰색</option><option value="yellow">노랑</option><option value="black">검정 (흰 테두리)</option></select></div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"10px",marginTop:"10px"}}>
         <div><label style={S.label}>배경음악</label>
@@ -14996,7 +15009,7 @@ export default function BlogTools(){
           <button
             ref={videoBtnRef}
             onClick={()=>videoMenuOpen?setVideoMenuOpen(false):openVideoMenu()}
-            onTouchStart={e=>{e.preventDefault();setVideoMenuOpen(false);if(!isVideoSub)setActive("video");}}
+            onTouchStart={e=>{e.preventDefault();setVideoMenuOpen(false);if(!isVideoSub)setActive("videomake-ai");}}
             style={{
               padding:"11px 16px",border:"none",background:"none",
               borderBottom:`2px solid ${isVideoSub?"#1f6feb":"transparent"}`,
@@ -15018,7 +15031,7 @@ export default function BlogTools(){
                 color:"#58a6ff",fontSize:"13px",fontWeight:700,background:"#0d1117"}}>
                 🎬 동영상 편집 도구
               </div>
-              {VIDEO_SUBTABS.map(sub=>{
+              {VIDEO_SUBTABS.filter(sub=>!sub.hidden).map(sub=>{
                 const isSel=active===sub.id;
                 return <button key={sub.id}
                   onClick={()=>selectVideoSub(sub.id)}
@@ -15048,7 +15061,7 @@ export default function BlogTools(){
     {/* 동영상 서브탭 활성 시 상단 서브 네비바 */}
     {isVideoSub&&(
       <div style={{background:"#0d1117",borderBottom:"1px solid #21262d",padding:"0",display:"flex",gap:"2px",overflowX:"auto"}}>
-        {VIDEO_SUBTABS.map(sub=>(
+        {VIDEO_SUBTABS.filter(sub=>!sub.hidden).map(sub=>(
           <button key={sub.id} onClick={()=>setActive(sub.id)} style={{
             padding:"8px 13px",border:"none",background:"none",
             borderBottom:`2px solid ${active===sub.id?"#58a6ff":"transparent"}`,
