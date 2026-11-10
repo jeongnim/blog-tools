@@ -2,8 +2,8 @@
   "name": "blog-tools",
   "version": "1.0.0",
    "scripts": {
-     "predev": "node scripts/bgm-list.js",
-     "prebuild": "node scripts/bgm-list.js",
+     "predev": "node scripts/bgm-list.js && node scripts/shorts-assets-list.js",
+     "prebuild": "node scripts/bgm-list.js && node scripts/shorts-assets-list.js",
      "dev": "next dev",
      "build": "next build",
      "start": "next start"
