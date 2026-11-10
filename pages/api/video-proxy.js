@@ -1,5 +1,5 @@
 // pages/api/video-proxy.js
-// Replicate(WAN 2.2) & PixVerse API 프록시 — 키는 Vercel 환경변수에만 저장
+// Replicate(WAN 2.1) & PixVerse API 프록시 — 키는 화면(상단 🔑)에서 고른 이름의 키를 헤더로 받는다 (서버 기본 키 없음)
 import { requireAuth } from "../../lib/auth";
 
 export const config = { maxDuration: 60 };
@@ -11,12 +11,12 @@ export default async function handler(req, res) {
 
   const { action, payload } = req.body;
 
-  const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN;
-  const PIXVERSE_KEY    = process.env.PIXVERSE_API_KEY;
+  const REPLICATE_TOKEN = String(req.headers["x-replicate-key"] || "").trim();
+  const PIXVERSE_KEY    = String(req.headers["x-pixverse-key"] || "").trim();
 
   // ── Replicate: 영상 생성 요청 ──────────────────────────────────────────
   if (action === "replicate_create") {
-    if (!REPLICATE_TOKEN) return res.status(200).json({ error: "REPLICATE_API_TOKEN 환경변수 없음" });
+    if (!REPLICATE_TOKEN) return res.status(200).json({ error: "Replicate 키를 넣어주세요 — 상단 🔑" });
     const { image, prompt, num_frames, fps, resolution } = payload;
     const model = resolution === "720p"
       ? "wavespeedai/wan-2.1-i2v-720p"
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
 
   // ── Replicate: 결과 폴링 ───────────────────────────────────────────────
   if (action === "replicate_status") {
-    if (!REPLICATE_TOKEN) return res.status(200).json({ error: "REPLICATE_API_TOKEN 환경변수 없음" });
+    if (!REPLICATE_TOKEN) return res.status(200).json({ error: "Replicate 키를 넣어주세요 — 상단 🔑" });
     const { id } = payload;
     try {
       const r = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
 
   // ── PixVerse: 이미지 업로드 ────────────────────────────────────────────
   if (action === "pixverse_upload") {
-    if (!PIXVERSE_KEY) return res.status(200).json({ error: "PIXVERSE_API_KEY 환경변수 없음" });
+    if (!PIXVERSE_KEY) return res.status(200).json({ error: "PixVerse 키를 넣어주세요 — 상단 🔑" });
     const { imageBase64, mimeType } = payload;
     try {
       const binary = Buffer.from(imageBase64, "base64");
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
 
   // ── PixVerse: 영상 생성 요청 ───────────────────────────────────────────
   if (action === "pixverse_create") {
-    if (!PIXVERSE_KEY) return res.status(200).json({ error: "PIXVERSE_API_KEY 환경변수 없음" });
+    if (!PIXVERSE_KEY) return res.status(200).json({ error: "PixVerse 키를 넣어주세요 — 상단 🔑" });
     const { img_id, prompt, duration } = payload;
     try {
       const r = await fetch("https://app-api.pixverse.ai/openapi/v2/video/img/generate", {
@@ -90,7 +90,7 @@ export default async function handler(req, res) {
 
   // ── PixVerse: 결과 폴링 ────────────────────────────────────────────────
   if (action === "pixverse_status") {
-    if (!PIXVERSE_KEY) return res.status(200).json({ error: "PIXVERSE_API_KEY 환경변수 없음" });
+    if (!PIXVERSE_KEY) return res.status(200).json({ error: "PixVerse 키를 넣어주세요 — 상단 🔑" });
     const { video_id } = payload;
     try {
       const r = await fetch(`https://app-api.pixverse.ai/openapi/v2/video/result/${video_id}`, {
