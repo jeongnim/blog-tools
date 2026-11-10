@@ -627,7 +627,6 @@ const VIDEO_SUBTABS=[
   {id:"video",    icon:"🎬", label:"동영상 용량 조절"},
   {id:"videogif", icon:"🎞️", label:"동영상 → GIF 변환"},
   {id:"videomake-ai",  icon:"🤖", label:"AI 영상 생성"},
-  {id:"videomake-ken", icon:"✨", label:"켄번스 효과"},
   {id:"videomake-sub", icon:"💬", label:"자막 + 음성"},
   {id:"videodl", icon:"⬇️", label:"동영상 다운로드"},
 ];
@@ -651,6 +650,7 @@ const IMAGE_SUBTABS=[
   {id:"imgcompress", icon:"💾", label:"이미지 용량압축", hidden:true},
   {id:"restore",     icon:"✨", label:"사진 복원·향상", hidden:true},
   {id:"exif",        icon:"🔒", label:"이미지 데이터제거", hidden:true},   // 형식변환 화면의 체크박스로 합침
+  {id:"videomake-ken", icon:"✨", label:"켄번스 효과"},   // API 안 씀 — 사진에 줌·패닝을 입히는 작업이라 이미지 편집으로
 ];
 
 // 전체 렌더링 대상 탭 (display:none 마운트용 — 서브탭 포함)
