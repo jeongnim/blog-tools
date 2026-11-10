@@ -646,11 +646,11 @@ const WRITE_SUBTABS=[
 const IMAGE_SUBTABS=[
   {id:"localimg",    icon:"🎨", label:"AI 이미지 생성"},
   {id:"ocr",         icon:"🖼️", label:"이미지 텍스트추출"},
-  {id:"convert",     icon:"🔄", label:"이미지 형식변환"},
+  {id:"convert",     icon:"🔄", label:"이미지 형식변환·데이터제거"},
   {id:"crop",        icon:"✂️",  label:"이미지 자르기·크기조절"},   // 크기조절은 이 안의 탭으로 합침
   {id:"imgcompress", icon:"💾", label:"이미지 용량압축", hidden:true},
   {id:"restore",     icon:"✨", label:"사진 복원·향상", hidden:true},
-  {id:"exif",        icon:"🔒", label:"이미지 데이터제거"},
+  {id:"exif",        icon:"🔒", label:"이미지 데이터제거", hidden:true},   // 형식변환 화면의 체크박스로 합침
 ];
 
 // 전체 렌더링 대상 탭 (display:none 마운트용 — 서브탭 포함)
@@ -2251,31 +2251,118 @@ function OcrTab(){
 }
 
 // ─── TAB 4: 이미지 변환기 (Canvas API) ───────────────────────────────────
+// ── JPEG 메타데이터(EXIF) 도우미: 확인 · 화질 손실 없이 빼기 · 다른 JPEG 에 다시 붙이기
+function jpegSegs(u8){            // SOS 전까지의 마커 목록 [{m, s(시작), e(끝)}]
+  const out=[]; let i=2;
+  if(u8[0]!==0xFF||u8[1]!==0xD8) return null;
+  while(i<u8.length-3){
+    if(u8[i]!==0xFF){ i++; continue; }
+    const m=u8[i+1];
+    if(m===0xDA||m===0xD9) break;
+    if(m===0xD8||(m>=0xD0&&m<=0xD7)||m===0x01||m===0xFF){ i++; continue; }
+    const len=(u8[i+2]<<8)|u8[i+3];
+    out.push({ m, s:i, e:Math.min(u8.length,i+2+len) }); i+=2+len;
+  }
+  out.sos=i; return out;
+}
+const isExifSeg=(u8,sg)=>sg.m===0xE1&&u8[sg.s+4]===0x45&&u8[sg.s+5]===0x78&&u8[sg.s+6]===0x69&&u8[sg.s+7]===0x66;   // "Exif"
+function jpegMetaInfo(u8){         // { exif, gps, orient, other(XMP·IPTC 등) }
+  const sg=jpegSegs(u8); const r={ exif:false, gps:false, orient:1, other:false };
+  if(!sg) return r;
+  for(const x of sg){
+    if(isExifSeg(u8,x)){
+      r.exif=true;
+      try{
+        const t=x.s+10, dv=new DataView(u8.buffer,u8.byteOffset);
+        const le=dv.getUint16(t)===0x4949, ifd=dv.getUint32(t+4,le), n=dv.getUint16(t+ifd,le);
+        for(let k=0;k<n;k++){ const en=t+ifd+2+k*12; const tag=dv.getUint16(en,le);
+          if(tag===0x8825) r.gps=true;
+          if(tag===0x0112) r.orient=dv.getUint16(en+8,le); }
+      }catch(e){}
+    } else if(x.m===0xE1||x.m===0xED||x.m===0xFE) r.other=true;
+  }
+  return r;
+}
+// 메타데이터만 빼기 (그림 데이터는 그대로 → 화질 손실 없음). 색 정보(APP2 ICC)·Adobe(APP14)·JFIF(APP0)는 남김
+function jpegStripMeta(u8){
+  const sg=jpegSegs(u8); if(!sg) return u8;
+  const keep=x=>!(x.m===0xE1||(x.m>=0xE3&&x.m<=0xED)||x.m===0xEF||x.m===0xFE);
+  const parts=[u8.subarray(0,2), ...sg.filter(keep).map(x=>u8.subarray(x.s,x.e)), u8.subarray(sg.sos)];
+  const out=new Uint8Array(parts.reduce((a,p)=>a+p.length,0)); let o=0; for(const p of parts){ out.set(p,o); o+=p.length; }
+  return out;
+}
+// 원본의 EXIF 를 새로 만든 JPEG 에 다시 붙이기 (방향 값은 1로 — 이미 바르게 돌려서 그렸으므로)
+function jpegCopyExif(srcU8, outU8){
+  const ss=jpegSegs(srcU8), os=jpegSegs(outU8); if(!ss||!os) return outU8;
+  const ex=ss.filter(x=>isExifSeg(srcU8,x)).map(x=>srcU8.slice(x.s,x.e));
+  if(!ex.length) return outU8;
+  for(const seg of ex){
+    try{
+      const dv=new DataView(seg.buffer), t=10, le=dv.getUint16(t)===0x4949, ifd=dv.getUint32(t+4,le), n=dv.getUint16(t+ifd,le);
+      for(let k=0;k<n;k++){ const en=t+ifd+2+k*12; if(dv.getUint16(en,le)===0x0112) dv.setUint16(en+8,1,le); }
+    }catch(e){}
+  }
+  const at=os.length&&os[0].m===0xE0?os[0].e:2;      // JFIF(APP0) 뒤에
+  const parts=[outU8.subarray(0,at), ...ex, outU8.subarray(at)];
+  const out=new Uint8Array(parts.reduce((a,p)=>a+p.length,0)); let o=0; for(const p of parts){ out.set(p,o); o+=p.length; }
+  return out;
+}
+
+// ─── 이미지 형식변환 + 데이터(EXIF) 제거 — 한 화면 ───
 function ConvertTab(){
   const [files,setFiles]=useState([]);
-  const [outputFormat,setOutputFormat]=useState("jpeg");
+  const [outputFormat,setOutputFormat]=useState("keep");     // keep = 원본 형식 그대로
+  const [stripMeta,setStripMeta]=useState(true);
   const [quality,setQuality]=useState(90);
   const [resize,setResize]=useState(false);
   const [maxWidth,setMaxWidth]=useState(1920);
   const [dragOver,setDragOver]=useState(false);
   const fileInputRef=useRef(null);
 
-  const fmt=OUTPUT_FORMATS.find(f=>f.id===outputFormat);
+  const KEEP={ id:"keep", label:"원본 그대로", hasQuality:true };
+  const fmt=outputFormat==="keep"?KEEP:OUTPUT_FORMATS.find(f=>f.id===outputFormat);
+  const isJpg=t=>/jpe?g/i.test(t||"");
+  // 원본 형식 그대로일 때 실제로 저장할 형식
+  const outOf=file=>{
+    if(outputFormat!=="keep") return OUTPUT_FORMATS.find(f=>f.id===outputFormat);
+    const t=file.type||"";
+    return isJpg(t)?OUTPUT_FORMATS[0]:/webp/.test(t)?OUTPUT_FORMATS[2]:OUTPUT_FORMATS[1];   // gif·bmp 등은 png
+  };
 
   const addFiles=useCallback((newFiles)=>{
     const valid=[...newFiles].filter(f=>f.type.startsWith("image/"));
     if(!valid.length) return;
-    setFiles(prev=>[...prev,...valid.map(f=>({
+    const items=valid.map(f=>({
       file:f, preview:URL.createObjectURL(f), result:null,
       loading:false, error:"", id:Date.now()+Math.random(),
-      origSize:f.size,
-    }))]);
+      origSize:f.size, meta:null,
+    }));
+    setFiles(prev=>[...prev,...items]);
+    // 원본에 위치·촬영정보가 있는지 (JPEG)
+    items.forEach(async it=>{
+      let meta={ exif:false, gps:false, orient:1, other:false, checked:false };
+      if(isJpg(it.file.type)){ try{ meta={ ...jpegMetaInfo(new Uint8Array(await it.file.arrayBuffer())), checked:true }; }catch(e){} }
+      setFiles(prev=>prev.map(f=>f.id===it.id?{...f,meta}:f));
+    });
   },[]);
 
   const convertFile=useCallback(async(item)=>{
     setFiles(prev=>prev.map(f=>f.id===item.id?{...f,loading:true,result:null,error:""}:f));
     try{
-      const blob=await new Promise((resolve,reject)=>{
+      const of=outOf(item.file), srcJpg=isJpg(item.file.type), outJpg=of.id==="jpeg";
+      const srcU8=srcJpg?new Uint8Array(await item.file.arrayBuffer()):null;
+      const info=srcU8?jpegMetaInfo(srcU8):null;
+      let note="";
+      // ① 원본 그대로 + 크기 그대로 + JPEG → 다시 그리지 않음 (화질 손실 없음)
+      if(outputFormat==="keep"&&!resize&&srcJpg){
+        if(!stripMeta){ const b=item.file; setFiles(prev=>prev.map(f=>f.id===item.id?{...f,loading:false,result:{url:URL.createObjectURL(b),blob:b,size:b.size,ext:"jpg",note:"원본 그대로"}}:f)); return; }
+        if((info?.orient||1)===1){
+          const b=new Blob([jpegStripMeta(srcU8)],{type:"image/jpeg"});
+          setFiles(prev=>prev.map(f=>f.id===item.id?{...f,loading:false,result:{url:URL.createObjectURL(b),blob:b,size:b.size,ext:"jpg",note:"데이터 제거 (화질 그대로)"}}:f)); return;
+        }
+        note="회전 정보가 있어 바르게 돌려서 다시 저장";     // 데이터만 빼면 사진이 누워 보이므로
+      }
+      let blob=await new Promise((resolve,reject)=>{
         const img=new Image();
         img.onload=()=>{
           let w=img.naturalWidth, h=img.naturalHeight;
@@ -2286,17 +2373,22 @@ function ConvertTab(){
           // fill white background for JPEG (transparent → white)
           if(outputFormat==="jpeg"){ ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,w,h); }
           ctx.drawImage(img,0,0,w,h);
-          canvas.toBlob(b=>{ if(b) resolve(b); else reject(new Error("변환 실패")); }, fmt.mime, outputFormat!=="png"?quality/100:undefined);
+          canvas.toBlob(b=>{ if(b) resolve(b); else reject(new Error("변환 실패")); }, of.mime, of.hasQuality?quality/100:undefined);
         };
         img.onerror=()=>reject(new Error("이미지 로드 실패"));
         img.src=URL.createObjectURL(item.file);
       });
+      // 새로 그리면 데이터는 자동으로 빠진다 → '제거 안 함'이면 원본 촬영정보를 다시 붙임 (JPEG → JPEG 만 가능)
+      if(!stripMeta&&info?.exif){
+        if(outJpg){ blob=new Blob([jpegCopyExif(srcU8,new Uint8Array(await blob.arrayBuffer()))],{type:"image/jpeg"}); note=note||"촬영정보 유지"; }
+        else note="이 형식은 촬영정보를 유지할 수 없어 빠짐";
+      } else if(stripMeta&&(info?.exif||info?.other)) note=note||"데이터 제거됨";
       const resultUrl=URL.createObjectURL(blob);
-      setFiles(prev=>prev.map(f=>f.id===item.id?{...f,loading:false,result:{url:resultUrl,blob,size:blob.size}}:f));
+      setFiles(prev=>prev.map(f=>f.id===item.id?{...f,loading:false,result:{url:resultUrl,blob,size:blob.size,ext:of.ext,note}}:f));
     }catch(e){
       setFiles(prev=>prev.map(f=>f.id===item.id?{...f,loading:false,error:e.message}:f));
     }
-  },[outputFormat,quality,resize,maxWidth,fmt]);
+  },[outputFormat,quality,resize,maxWidth,stripMeta]);
 
   const convertAll=()=>files.filter(f=>!f.loading).forEach(f=>convertFile(f));
 
@@ -2304,7 +2396,7 @@ function ConvertTab(){
     const a=document.createElement("a");
     a.href=item.result.url;
     const base=item.file.name.replace(/\.[^.]+$/,"");
-    a.download=`${base}.${fmt.ext}`;
+    a.download=`${base}.${item.result.ext||outOf(item.file).ext}`;
     a.click();
   };
 
@@ -2323,7 +2415,7 @@ function ConvertTab(){
         <div>
           <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"8px"}}>출력 형식</div>
           <div style={{display:"flex",gap:"6px"}}>
-            {OUTPUT_FORMATS.map(f=>(
+            {[KEEP,...OUTPUT_FORMATS].map(f=>(
               <button key={f.id} onClick={()=>{setOutputFormat(f.id);setFiles(p=>p.map(i=>({...i,result:null,error:""})));}} style={{
                 padding:"8px 18px",borderRadius:"8px",border:`1px solid ${outputFormat===f.id?"#58a6ff":"#30363d"}`,
                 background:outputFormat===f.id?"#1f6feb":"#21262d",
@@ -2333,7 +2425,15 @@ function ConvertTab(){
             ))}
           </div>
           <div style={{marginTop:"6px",fontSize:"13px",color:"#484f58"}}>
-            입력: {INPUT_FORMATS.join(", ")} → 출력: {fmt.label}
+            입력: {INPUT_FORMATS.join(", ")} → 출력: {fmt.label}{outputFormat==="keep"?" (GIF·BMP 등은 PNG)":""}
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"12px",cursor:"pointer",color:"#e6edf3",fontSize:"15px",fontWeight:600}}>
+            <input type="checkbox" checked={stripMeta} onChange={e=>{setStripMeta(e.target.checked);setFiles(p=>p.map(i=>({...i,result:null,error:""})));}} style={{width:"17px",height:"17px",accentColor:"#1f6feb"}}/>
+            🔒 위치·촬영정보(EXIF) 데이터 제거
+          </label>
+          <div style={{fontSize:"12px",color:"#484f58",marginTop:"4px",lineHeight:1.5}}>
+            {stripMeta?(outputFormat==="keep"?"JPG 는 그림은 그대로 두고 정보만 빼요 (화질 손실 없음)":"새로 저장하면서 정보를 모두 빼요")
+              :"원본 촬영정보를 남겨요 (JPG → JPG 만 가능, PNG·WEBP 로 바꾸면 빠져요)"}
           </div>
         </div>
 
@@ -2341,7 +2441,7 @@ function ConvertTab(){
         {fmt.hasQuality&&<div style={{flex:1,minWidth:"200px"}}>
           <div style={{color:"#8b949e",fontSize:"13px",marginBottom:"8px"}}>
             품질 <span style={{color:"#58a6ff",fontWeight:700}}>{quality}%</span>
-            <span style={{color:"#484f58",marginLeft:"8px"}}>{quality>=85?"높은 품질":quality>=60?"보통 품질":"낮은 품질 (파일 작음)"}</span>
+            <span style={{color:"#484f58",marginLeft:"8px"}}>{quality>=85?"높은 품질":quality>=60?"보통 품질":"낮은 품질 (파일 작음)"}{outputFormat==="keep"?" · 원본 그대로일 땐 다시 저장할 때만 적용":""}</span>
           </div>
           <input type="range" min={10} max={100} value={quality} onChange={e=>{setQuality(Number(e.target.value));setFiles(p=>p.map(i=>({...i,result:null,error:""})));}}
             style={{width:"100%",accentColor:"#1f6feb",cursor:"pointer"}}/>
@@ -2381,7 +2481,7 @@ function ConvertTab(){
         이미지를 드래그하거나 클릭하여 업로드
       </div>
       <div style={{color:"#484f58",fontSize:"15px"}}>
-        {INPUT_FORMATS.join(", ")} → <span style={{color:"#58a6ff",fontWeight:600}}>{fmt.label}</span> 변환
+        {INPUT_FORMATS.join(", ")} → <span style={{color:"#58a6ff",fontWeight:600}}>{fmt.label}</span>{stripMeta?" · 데이터 제거":""}
       </div>
       <input ref={fileInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>addFiles(e.target.files)}/>
     </div>
@@ -2406,15 +2506,15 @@ function ConvertTab(){
       {/* 파일 목록 */}
       <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
         {/* 헤더 */}
-        <div style={{display:"grid",gridTemplateColumns:"60px 1fr 120px 120px 90px 80px",gap:"10px",
+        <div style={{display:"grid",gridTemplateColumns:"60px 1fr 120px 110px 110px 90px 80px",gap:"10px",
           padding:"8px 14px",background:"#21262d",borderRadius:"8px",
           fontSize:"13px",color:"#8b949e",fontWeight:600}}>
-          <span>미리보기</span><span>파일명</span><span>원본 크기</span><span>변환 후 크기</span><span>압축률</span><span>액션</span>
+          <span>미리보기</span><span>파일명</span><span>원본 데이터</span><span>원본 크기</span><span>변환 후 크기</span><span>압축률</span><span>액션</span>
         </div>
 
         {files.map((item,idx)=>{
           const saving=item.result?Math.round((1-item.result.size/item.origSize)*100):null;
-          return <div key={item.id} style={{display:"grid",gridTemplateColumns:"60px 1fr 120px 120px 90px 80px",gap:"10px",
+          return <div key={item.id} style={{display:"grid",gridTemplateColumns:"60px 1fr 120px 110px 110px 90px 80px",gap:"10px",
             padding:"10px 14px",background:"#161b22",borderRadius:"8px",
             border:`1px solid ${item.error?"#da363333":item.result?"#2ea04333":"#21262d"}`,
             alignItems:"center"}}>
@@ -2425,6 +2525,15 @@ function ConvertTab(){
               <div style={{color:"#e6edf3",fontSize:"15px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.file.name}</div>
               <div style={{color:"#484f58",fontSize:"13px",marginTop:"2px"}}>{item.file.type||"unknown"}</div>
               {item.error&&<div style={{color:"#ff7b72",fontSize:"13px",marginTop:"2px"}}>⚠️ {item.error}</div>}
+              {item.result?.note&&<div style={{color:"#8b949e",fontSize:"12px",marginTop:"2px"}}>→ {item.result.note}</div>}
+            </div>
+            {/* 원본 데이터 */}
+            <div style={{fontSize:"13px",lineHeight:1.5}}>
+              {!item.meta?<span style={{color:"#484f58"}}>확인 중</span>
+               :!item.meta.checked?<span style={{color:"#484f58"}}>-</span>
+               :item.meta.gps?<span style={{color:"#ff7b72",fontWeight:700}}>📍 위치정보 있음</span>
+               :item.meta.exif?<span style={{color:"#e3b341"}}>📷 촬영정보 있음</span>
+               :<span style={{color:"#3fb950"}}>없음</span>}
             </div>
             {/* 원본 크기 */}
             <div style={{color:"#8b949e",fontSize:"15px"}}>{fmtSize(item.origSize)}</div>
@@ -8782,18 +8891,128 @@ function ExifTab() {
 }
 
 // ─── TAB: 이미지 자르기 ──────────────────────────────────────────────────
-// 이미지 자르기 + 크기조절 — 한 메뉴 안에서 탭으로 (마지막 탭 기억)
+// ─── 이미지 크기조절 + 자르기(긴 이미지 나누기) — 한 화면 ───
+//   ① 크기: 원본 유지 / 너비·높이(px) / 퍼센트  ② 나누기: 켜면 기준 높이마다 잘라 여러 장  → ⬇️ 저장
 function CropResizeTab(){
-  const [t,setT]=useState(()=>{ try{ return localStorage.getItem("img_cropresize_tab")||"crop"; }catch(e){ return "crop"; } });
-  const pick=v=>{ setT(v); try{ localStorage.setItem("img_cropresize_tab",v); }catch(e){} };
-  const tb=on=>({padding:"8px 16px",borderRadius:"8px",border:"1px solid "+(on?"#1f6feb":"#30363d"),background:on?"#1f6feb22":"#161b22",color:on?"#58a6ff":"#8b949e",cursor:"pointer",fontSize:"14px",fontWeight:600});
-  return <div>
-    <div style={{display:"flex",gap:"8px",marginBottom:"14px"}}>
-      <button style={tb(t==="crop")} onClick={()=>pick("crop")}>✂️ 자르기</button>
-      <button style={tb(t==="resize")} onClick={()=>pick("resize")}>📐 크기조절</button>
-    </div>
-    <div style={{display:t==="crop"?"block":"none"}}><CropTab/></div>
-    <div style={{display:t==="resize"?"block":"none"}}><ResizeTab/></div>
+  const [img,setImg]=useState(null);              // {src, el, w, h, name, type}
+  const [sizeMode,setSizeMode]=useState("keep");  // keep | px | percent
+  const [w,setW]=useState(0), [h,setH]=useState(0), [pct,setPct]=useState(100);
+  const [lockRatio,setLockRatio]=useState(true);
+  const [split,setSplit]=useState(false);
+  const [sliceH,setSliceH]=useState(()=>{ try{ return Number(localStorage.getItem("img_slice_h"))||8000; }catch(e){ return 8000; } });
+  const [busy,setBusy]=useState(false), [prog,setProg]=useState("");
+  const fileRef=useRef(null);
+  const COLORS=["#f59e0b","#10b981","#6366f1","#ef4444","#3b82f6","#ec4899","#14b8a6","#f97316"];
+  const loadFile=file=>{
+    if(!file||!file.type.startsWith("image/")) return;
+    const url=URL.createObjectURL(file), el=new Image();
+    el.onload=()=>{ setImg({src:url,el,w:el.naturalWidth,h:el.naturalHeight,name:file.name.replace(/\.[^.]+$/,""),type:file.type}); setW(el.naturalWidth); setH(el.naturalHeight); setPct(100);
+      if(el.naturalHeight>el.naturalWidth*3) setSplit(true); };   // 아주 긴 이미지면 나누기를 켜 둠
+    el.src=url;
+  };
+  const ratio=img?img.w/img.h:1;
+  // 최종 크기
+  const tw=!img?0:sizeMode==="px"?Math.max(1,w|0):sizeMode==="percent"?Math.max(1,Math.round(img.w*pct/100)):img.w;
+  const th=!img?0:sizeMode==="px"?Math.max(1,h|0):sizeMode==="percent"?Math.max(1,Math.round(img.h*pct/100)):img.h;
+  const slices=[];
+  if(img){ if(split&&sliceH>0){ for(let y=0;y<th;y+=sliceH) slices.push({y,h:Math.min(sliceH,th-y)}); } else slices.push({y:0,h:th}); }
+  const PREV_W=420, sc=img?Math.min(1,PREV_W/tw):1;
+  const mime=img&&/jpe?g/.test(img.type)?"image/jpeg":img&&/webp/.test(img.type)?"image/webp":"image/png";
+  const ext=mime==="image/jpeg"?"jpg":mime==="image/webp"?"webp":"png";
+  const save=async()=>{
+    if(!img) return;
+    setBusy(true);
+    const full=document.createElement("canvas"); full.width=tw; full.height=th;
+    const fx=full.getContext("2d"); fx.imageSmoothingQuality="high";
+    if(mime==="image/jpeg"){ fx.fillStyle="#fff"; fx.fillRect(0,0,tw,th); }
+    fx.drawImage(img.el,0,0,tw,th);
+    for(let i=0;i<slices.length;i++){
+      setProg(`${i+1}/${slices.length}`);
+      const {y,h:sh}=slices[i], out=document.createElement("canvas"); out.width=tw; out.height=sh;
+      out.getContext("2d").drawImage(full,0,y,tw,sh,0,0,tw,sh);
+      await new Promise(res=>out.toBlob(blob=>{
+        const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+        a.download=slices.length>1?`${img.name}-${i+1}.${ext}`:`${img.name}_${tw}x${th}.${ext}`; a.click();
+        setTimeout(()=>{ URL.revokeObjectURL(a.href); res(); },300);
+      },mime,0.92));
+      await new Promise(r=>setTimeout(r,200));
+    }
+    setBusy(false); setProg("");
+  };
+  const box={background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"14px 16px"};
+  const lab={color:"#8b949e",fontSize:"13px",fontWeight:700,marginBottom:"8px"};
+  const num={width:"96px",padding:"6px 9px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"7px",color:"#e6edf3",fontSize:"15px",outline:"none",fontFamily:"'Noto Sans KR',sans-serif"};
+  const chip=on=>({padding:"6px 13px",background:on?"#1f6feb":"#21262d",color:on?"#fff":"#8b949e",border:`1px solid ${on?"#1f6feb":"#30363d"}`,borderRadius:"7px",cursor:"pointer",fontSize:"14px",fontWeight:600,fontFamily:"'Noto Sans KR',sans-serif"});
+  return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+    {!img&&<div onClick={()=>fileRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileRef.current?.click();}}
+      onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();loadFile(e.dataTransfer.files[0]);}}
+      style={{border:"2px dashed #30363d",borderRadius:"12px",padding:"32px",textAlign:"center",cursor:"pointer",background:"#0d1117"}}>
+      <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>loadFile(e.target.files[0])}/>
+      <div style={{fontSize:"28px",marginBottom:"8px"}}>✂️</div>
+      <div style={{color:"#e6edf3",fontWeight:700,fontSize:"16px",marginBottom:"4px"}}>이미지를 드래그하거나 클릭해서 업로드</div>
+      <div style={{color:"#484f58",fontSize:"14px"}}>크기 바꾸기 · 긴 이미지 나누기를 한 번에 (JPG · PNG · WebP · GIF)</div>
+    </div>}
+    {img&&<>
+      <div style={{display:"flex",gap:"12px",flexWrap:"wrap"}}>
+        {/* ① 크기 */}
+        <div style={{...box,flex:"1 1 320px"}}>
+          <div style={lab}>📐 크기 <span style={{fontWeight:400,color:"#484f58"}}>원본 {img.w} × {img.h}px</span></div>
+          <div style={{display:"flex",gap:"6px",marginBottom:"10px",flexWrap:"wrap"}}>
+            {[["keep","원본 크기"],["px","픽셀 (px)"],["percent","퍼센트 (%)"]].map(([v,l])=><button key={v} style={chip(sizeMode===v)} onClick={()=>setSizeMode(v)}>{l}</button>)}
+          </div>
+          {sizeMode==="px"&&<div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+            <input type="number" value={w} min={1} style={num} onChange={e=>{ const n=parseInt(e.target.value)||0; setW(n); if(lockRatio) setH(Math.round(n/ratio)); }}/>
+            <span style={{color:"#484f58"}}>×</span>
+            <input type="number" value={h} min={1} style={num} onChange={e=>{ const n=parseInt(e.target.value)||0; setH(n); if(lockRatio) setW(Math.round(n*ratio)); }}/>
+            <button style={chip(lockRatio)} onClick={()=>setLockRatio(!lockRatio)}>{lockRatio?"🔒 비율 고정":"🔓 비율 해제"}</button>
+            <div style={{display:"flex",gap:"4px",flexWrap:"wrap",width:"100%"}}>
+              {[860,1080,1280,1920].map(pw=><button key={pw} onClick={()=>{ setW(pw); setH(lockRatio?Math.round(pw/ratio):h); }}
+                style={{padding:"3px 8px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"5px",cursor:"pointer",fontSize:"12px"}}>너비 {pw}</button>)}
+            </div>
+          </div>}
+          {sizeMode==="percent"&&<div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+            <input type="number" value={pct} min={1} max={300} style={num} onChange={e=>setPct(parseFloat(e.target.value)||0)}/>
+            <span style={{color:"#8b949e",fontSize:"14px"}}>% → {tw} × {th}px</span>
+          </div>}
+          {sizeMode==="keep"&&<div style={{color:"#484f58",fontSize:"13px"}}>크기는 그대로 두고 나누기만 해요</div>}
+        </div>
+        {/* ② 나누기 */}
+        <div style={{...box,flex:"1 1 280px"}}>
+          <label style={{...lab,display:"flex",gap:"8px",alignItems:"center",cursor:"pointer",color:"#e6edf3"}}>
+            <input type="checkbox" checked={split} onChange={e=>setSplit(e.target.checked)} style={{width:"16px",height:"16px",accentColor:"#1f6feb"}}/>
+            ✂️ 긴 이미지 나누기 (세로로 자르기)
+          </label>
+          {split?<>
+            <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+              <span style={{color:"#8b949e",fontSize:"14px"}}>기준 높이</span>
+              <input type="number" value={sliceH} min={1} style={num} onChange={e=>{ const n=Math.max(1,parseInt(e.target.value)||1); setSliceH(n); try{ localStorage.setItem("img_slice_h",n); }catch(_){} }}/>
+              <span style={{color:"#8b949e",fontSize:"14px"}}>px</span>
+            </div>
+            <div style={{color:"#484f58",fontSize:"12px",marginTop:"6px"}}>크기를 바꾼 뒤의 높이 기준으로 나눠요</div>
+          </>:<div style={{color:"#484f58",fontSize:"13px"}}>끄면 한 장으로 저장해요</div>}
+        </div>
+      </div>
+      {/* 결과 요약 + 저장 */}
+      <div style={{...box,display:"flex",gap:"12px",alignItems:"center",flexWrap:"wrap"}}>
+        <span style={{color:"#e6edf3",fontSize:"15px",fontWeight:700}}>결과: {tw} × {th}px{slices.length>1?` → ${slices.length}장`:""}</span>
+        {slices.length>1&&<span style={{color:"#8b949e",fontSize:"13px"}}>{slices.filter(x=>x.h===sliceH).length}장 × {sliceH}px{slices[slices.length-1].h!==sliceH?` + 마지막 ${slices[slices.length-1].h}px`:""}</span>}
+        <div style={{marginLeft:"auto",display:"flex",gap:"8px"}}>
+          <button onClick={()=>setImg(null)} style={{padding:"7px 12px",background:"#21262d",color:"#8b949e",border:"1px solid #30363d",borderRadius:"7px",cursor:"pointer",fontSize:"14px"}}>✕ 다른 이미지</button>
+          <button onClick={save} disabled={busy||tw<1||th<1} style={{padding:"8px 20px",background:busy?"#21262d":"#2ea043",color:busy?"#484f58":"#fff",border:"none",borderRadius:"7px",cursor:busy?"not-allowed":"pointer",fontSize:"15px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}>
+            {busy?`⬇️ ${prog} 저장 중...`:`⬇️ 저장 (${slices.length}장)`}</button>
+        </div>
+      </div>
+      {/* 미리보기 */}
+      <div>
+        <div style={{color:"#484f58",fontSize:"13px",marginBottom:"6px",fontWeight:600}}>미리보기{slices.length>1?" — 점선이 나누는 위치":""}</div>
+        <div style={{position:"relative",display:"inline-block",lineHeight:0,border:"1px solid #30363d",borderRadius:"8px",overflow:"hidden"}}>
+          <img src={img.src} style={{width:Math.round(tw*sc),height:Math.round(th*sc),display:"block"}} draggable={false} alt=""/>
+          {slices.map((x,i)=>i===0?null:<div key={i} style={{position:"absolute",left:0,right:0,top:Math.round(x.y*sc),borderTop:`2px dashed ${COLORS[i%COLORS.length]}`,pointerEvents:"none"}}>
+            <span style={{fontSize:"12px",fontWeight:700,padding:"1px 5px",background:`${COLORS[i%COLORS.length]}cc`,color:"#fff",borderRadius:"0 3px 3px 0",display:"inline-block"}}>{img.name}-{i+1} · {x.h}px</span>
+          </div>)}
+        </div>
+      </div>
+    </>}
   </div>;
 }
 function CropTab() {
