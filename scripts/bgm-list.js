@@ -1,16 +1,17 @@
-// scripts/bgm-list.js — 배포할 때 public/bgm/ 아래 폴더를 읽어 public/bgm/list.json 을 만든다
+// scripts/bgm-list.js — 배포할 때 public/shorts-assets/bgm/ 아래 폴더를 읽어 public/bgm/list.json 을 만든다
+// (사이트 'AI 영상생성'과 쇼츠 프로그램이 이 목록을 같이 씀)
 // (package.json 의 predev·prebuild 에서 자동 실행 — 직접 돌릴 필요 없음)
 //
-//  · public/bgm/<폴더>/곡.mp3   → 폴더 하나 = 분위기 하나. 폴더 이름은 아무거나 OK (새로 만들면 자동으로 목록에 뜸)
+//  · public/shorts-assets/bgm/<폴더>/곡.mp3   → 폴더 하나 = 분위기 하나. 폴더 이름은 아무거나 OK (새로 만들면 자동으로 목록에 뜸)
 //  · 곡이 없는 폴더는 목록에서 뺌
 //  · 출처 표기가 필요한 곡: 곡 옆에 같은 이름의 .txt (예: 곡.mp3 + 곡.txt) 에 출처 문구를 적으면 그 곡에만 붙음
 //                          폴더 전체에 같은 문구면 그 폴더에 credit.txt 하나
-//  · public/bgm/ 바로 아래에 둔 곡은 읽지 않음 (분위기 폴더에 넣어주세요)
+//  · public/shorts-assets/bgm/ 바로 아래에 둔 곡은 읽지 않음 (분위기 폴더에 넣어주세요)
 const fs = require("fs");
 const path = require("path");
 
-const ROOT = path.join(__dirname, "..", "public", "bgm");
-const OUT = path.join(ROOT, "list.json");
+const ROOT = path.join(__dirname, "..", "public", "shorts-assets", "bgm");
+const OUT = path.join(__dirname, "..", "public", "bgm", "list.json");   // 목록 주소는 그대로 /bgm/list.json
 const AUDIO = /\.(mp3|m4a|wav|ogg|aac)$/i;
 
 // 선택칸에 보일 한글 이름 (여기 없는 폴더는 폴더 이름 그대로)
@@ -21,9 +22,10 @@ const LABELS = {
 };
 
 const readTxt = f => { try { return fs.readFileSync(f, "utf8").replace(/^﻿/, "").trim(); } catch (e) { return ""; } };
-const url = (...parts) => "/bgm/" + parts.map(encodeURIComponent).join("/");
+const url = (...parts) => "/shorts-assets/bgm/" + parts.map(encodeURIComponent).join("/");
 
 fs.mkdirSync(ROOT, { recursive: true });
+fs.mkdirSync(path.dirname(OUT), { recursive: true });
 const cats = {};
 let total = 0;
 const loose = [];
@@ -45,6 +47,6 @@ for (const ent of fs.readdirSync(ROOT, { withFileTypes: true }).sort((a, b) => a
 }
 
 fs.writeFileSync(OUT, JSON.stringify({ generated: new Date().toISOString(), cats }, null, 1));
-console.log(`[bgm] 분위기 ${Object.keys(cats).length}개 · 곡 ${total}개 → public/bgm/list.json`);
+console.log(`[bgm] 분위기 ${Object.keys(cats).length}개 · 곡 ${total}개 (public/shorts-assets/bgm) → public/bgm/list.json`);
 for (const [k, c] of Object.entries(cats)) console.log(`   ${k} (${c.label}) ${c.tracks.length}곡`);
-if (loose.length) console.log(`[bgm] ⚠ public/bgm/ 바로 아래 곡 ${loose.length}개는 읽지 않았어요 — 분위기 폴더에 넣어주세요: ${loose.slice(0, 5).join(", ")}${loose.length > 5 ? " …" : ""}`);
+if (loose.length) console.log(`[bgm] ⚠ public/shorts-assets/bgm/ 바로 아래 곡 ${loose.length}개는 읽지 않았어요 — 분위기 폴더에 넣어주세요: ${loose.slice(0, 5).join(", ")}${loose.length > 5 ? " …" : ""}`);
