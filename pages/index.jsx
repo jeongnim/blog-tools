@@ -415,18 +415,21 @@ const LS_BLOG_KEYS="vk_blog_api_keys";      // 자동화가 넣어주는 블로�
 function blogKeysLoad(){ try{ return JSON.parse(localStorage.getItem(LS_BLOG_KEYS)||"{}")||{}; }catch(e){ return {}; } }
 function blogKeysSave(m){ try{ localStorage.setItem(LS_BLOG_KEYS,JSON.stringify(m)); }catch(e){} }
 // 유료 AI 서비스 — 이름(본사용·지점용…)마다 각각 키를 넣는다. key 칸은 예전부터 쓰던 Claude 키 자리
+// group: "write" = 글쓰기·이미지 / "media" = 영상·음성 — 용도마다 「지금 쓸 이름」을 따로 고른다
 const KEY_SVCS=[
-  { id:"claude",    field:"key",       label:"Claude",    ph:"sk-ant-...", ok:v=>/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(v), use:"글쓰기·SNS 변환 등 AI 대부분" },
-  { id:"openai",    field:"openai",    label:"OpenAI",    ph:"sk-proj-...", ok:v=>/^sk-[A-Za-z0-9_\-]{20,}$/.test(v), use:"GPT 이미지" },
-  { id:"replicate", field:"replicate", label:"Replicate", ph:"r8_...", ok:v=>/^r8_[A-Za-z0-9]{20,}$/.test(v), use:"AI 영상 움직임" },
-  { id:"pixverse",  field:"pixverse",  label:"PixVerse",  ph:"PixVerse API 키", ok:v=>v.length>=10&&!/\s/.test(v), use:"AI 영상 움직임 (다른 업체)" },
+  { id:"claude",    field:"key",       group:"write", label:"Claude",    ph:"sk-ant-...", ok:v=>/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(v), use:"글쓰기·SNS 변환·장면 구성 등 AI 대부분" },
+  { id:"openai",    field:"openai",    group:"write", label:"OpenAI",    ph:"sk-proj-...", ok:v=>/^sk-[A-Za-z0-9_\-]{20,}$/.test(v), use:"GPT 이미지" },
+  { id:"gemini",    field:"gemini",    group:"media", label:"Gemini",    ph:"AIza...", ok:v=>/^AIza[0-9A-Za-z_\-]{30,}$/.test(v), use:"AI 영상(Veo) · 나레이션 음성" },
+  { id:"pixverse",  field:"pixverse",  group:"media", label:"PixVerse",  ph:"PixVerse API 키", ok:v=>v.length>=10&&!/\s/.test(v), use:"AI 영상 움직임" },
+  { id:"replicate", field:"replicate", group:"media", label:"Replicate", ph:"r8_...", ok:v=>/^r8_[A-Za-z0-9]{20,}$/.test(v), use:"(안 씀)", hidden:true },
 ];
+const KEY_GROUPS=[{id:"write",label:"글쓰기·이미지",sub:"Claude · OpenAI"},{id:"media",label:"영상·음성",sub:"Gemini · PixVerse"}];
 const LS_KEY_SLOTS="vk_key_slots";           // { slots:[{id,name,key,openai,replicate,pixverse}], def: 지금 쓸 이름 id }
 function keySlotsLoad(){
   let d=null;
   try{ d=JSON.parse(localStorage.getItem(LS_KEY_SLOTS)||"null"); }catch(e){}
   if(!(d&&Array.isArray(d.slots))){ d={ slots:[{id:"s1",name:"본사용",key:""},{id:"s2",name:"지점용",key:""}], def:"s1" }; keySlotsSave(d); }
-  d={ slots:d.slots, def:d.def||"" };
+  d={ slots:d.slots, def:d.def||"", defMedia:d.defMedia||"" };
   // 예전에 따로 저장하던 키(GPT 화면·영상 화면)를 지금 쓰는 이름 아래로 한 번 옮김
   try{
     const mv=[["vk_openai_key","openai"],["vm_replicate_key","replicate"],["vm_pixverse_key","pixverse"]];
@@ -442,7 +445,7 @@ function keySlotsLoad(){
   return d;
 }
 function keySlotsSave(d){
-  try{ localStorage.setItem(LS_KEY_SLOTS,JSON.stringify({ slots:d.slots, def:d.def||"" })); }catch(e){}
+  try{ localStorage.setItem(LS_KEY_SLOTS,JSON.stringify({ slots:d.slots, def:d.def||"", defMedia:d.defMedia||"" })); }catch(e){}
   try{ window.dispatchEvent(new Event("keys-changed")); }catch(e){}
 }
 // 지금 쓰는 이름: 고른 이름 → 없으면 키가 하나라도 있는 첫 이름 → 첫 이름
@@ -451,11 +454,14 @@ function activeSlot(d){
   const has=x=>KEY_SVCS.some(v=>x[v.field]);
   return d.slots.find(x=>x.id===d.def)||d.slots.find(has)||d.slots[0]||{id:"",name:""};
 }
-function svcKey(svc){ const v=KEY_SVCS.find(x=>x.id===svc); return v?(activeSlot()[v.field]||""):""; }
+// 영상·음성 용 이름 (따로 안 골랐으면 글쓰기와 같은 이름)
+function mediaSlot(d){ d=d||keySlotsLoad(); return d.slots.find(x=>x.id===d.defMedia)||activeSlot(d); }
+function slotFor(svc,d){ const v=KEY_SVCS.find(x=>x.id===svc); return v&&v.group==="media"?mediaSlot(d):activeSlot(d); }
+function svcKey(svc){ const v=KEY_SVCS.find(x=>x.id===svc); return v?(slotFor(svc)[v.field]||""):""; }
 // 그 서비스 키가 없으면 상단 🔑 를 열고 멈춘다
 function needSvcKey(svc){
   const k=svcKey(svc); if(k) return k;
-  const v=KEY_SVCS.find(x=>x.id===svc), sl=activeSlot();
+  const v=KEY_SVCS.find(x=>x.id===svc), sl=slotFor(svc);
   try{ window.dispatchEvent(new Event("need-api-key")); }catch(e){}
   throw new Error(`「${sl.name||"지금 쓰는 이름"}」에 ${v?.label||svc} 키가 없어요 — 상단 🔑 에서 넣어주세요`);
 }
@@ -9971,29 +9977,194 @@ function shortsPickMime(){
   return list.find(m=>{ try{ return window.MediaRecorder&&MediaRecorder.isTypeSupported(m); }catch(e){ return false; } })||"";
 }
 
+// ── AI 영상·나레이션 공용 (PixVerse · Gemini) — 「블로그 글로 쇼츠」와 「이미지별 AI 영상」이 같이 씀 ──
+const GEM_VOICES=[["Kore","여성 · 차분"],["Zephyr","여성 · 밝음"],["Leda","여성 · 젊음"],["Aoede","여성 · 산뜻"],["Autonoe","여성 · 또렷"],
+  ["Puck","남성 · 경쾌"],["Charon","남성 · 안정"],["Fenrir","남성 · 힘있음"],["Orus","남성 · 단단"],["Sadachbia","남성 · 활기"]];
+const GEM_TTS_MODELS=["gemini-3.8-flash-tts","gemini-3.1-flash-tts-preview","gemini-2.5-flash-preview-tts"];
+// 구글이 모델 이름을 자주 바꿈 — 칸에서 직접 고쳐 쓸 수 있고, 틀리면 "모델 이름을 확인" 안내가 뜸
+const GEM_VEO_MODELS=[["veo-3.1-fast-generate-001","Veo 3.1 Fast (기본)"],["veo-3.1-generate-001","Veo 3.1 (최고 품질)"],["veo-3.1-lite-generate-001","Veo 3.1 Lite (가장 저렴)"],["gemini-omni-1.1-flash","Gemini Omni Flash 1.1"],["veo-3.1-fast-generate-preview","Veo 3.1 Fast (예전 미리보기 이름)"]];
+function mlsGet(k,d){ try{ return localStorage.getItem(k)||d; }catch(e){ return d; } }
+function mlsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+const mediaSleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function geminiCall(action,payload){
+  const r=await fetch("/api/gemini",{method:"POST",headers:{"Content-Type":"application/json","x-gemini-key":needSvcKey("gemini")},body:JSON.stringify({action,payload})});
+  const j=await r.json().catch(()=>({error:`Gemini 중계 오류 ${r.status} — api/gemini.js 가 올라가 있는지 확인해 주세요`}));
+  return j;
+}
+function b64ToBytes(b64){ const bin=atob(b64); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return a; }
+// Gemini 음성(PCM 16bit)을 WAV 파일로
+function pcmToWav(pcm,rate=24000){
+  const buf=new ArrayBuffer(44+pcm.length), v=new DataView(buf), w=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+  w(0,"RIFF"); v.setUint32(4,36+pcm.length,true); w(8,"WAVE"); w(12,"fmt "); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,rate,true); v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,"data"); v.setUint32(40,pcm.length,true);
+  new Uint8Array(buf,44).set(pcm); return buf;
+}
+// 나레이션: 고른 모델이 없으면 다음 모델로 (성공한 모델을 기억)
+async function geminiTTS(text,voice,model){
+  const list=[model,...GEM_TTS_MODELS.filter(m=>m!==model)].filter(Boolean); let last="";
+  for(const m of list){
+    const j=await geminiCall("tts",{model:m,text,voice});
+    if(j.error){ last=j.error; if(/모델 이름/.test(j.error)) continue; throw new Error(j.error); }
+    const bytes=b64ToBytes(j.data), mime=String(j.mime||"");
+    const buf=/wav/i.test(mime)?bytes.buffer:pcmToWav(bytes,Number((mime.match(/rate=(\d+)/)||[])[1]||24000));
+    if(m!==model) mlsSet("vm_tts_model",m);
+    return buf;
+  }
+  throw new Error(last||"나레이션 만들기 실패");
+}
+// 만든 영상을 이 사이트 주소(blob)로 — 캔버스에 그려 녹화하려면 필요. 직접 받기 → 안 되면 사이트 서버를 거쳐서
+async function mediaBlobUrl(direct,viaProxy){
+  try{ const r=await direct(); if(r&&r.ok){ const b=await r.blob(); if(b.size>1000) return URL.createObjectURL(b); } }catch(e){}
+  const r=await viaProxy();
+  if(!r.ok||!/video|octet/.test(r.headers.get("content-type")||"")){ let e="영상 파일 받기 실패"; try{ e=(await r.json()).error||e; }catch(_){} throw new Error(e); }
+  return URL.createObjectURL(await r.blob());
+}
+async function pixverseClip(dataUrl,prompt,seconds,tick){
+  const post=async(action,payload)=>{ const r=await fetch("/api/video-proxy",{method:"POST",headers:videoHeaders("pixverse"),body:JSON.stringify({action,payload})}); return r.json(); };
+  const img=await shortsThumb(dataUrl,1280);
+  const up=await post("pixverse_upload",{imageBase64:img.split(",")[1],mimeType:"image/jpeg"});
+  if(up.error) throw new Error(up.error); if(!up.img_id) throw new Error("PixVerse 사진 올리기 실패");
+  const g=await post("pixverse_create",{img_id:up.img_id,prompt:prompt||"subtle natural motion, slow camera push in, realistic, no text",duration:Number(seconds)>=8?8:5});
+  if(g.error) throw new Error(g.error); if(!g.video_id) throw new Error("PixVerse 영상 요청 실패 (크레딧 확인)");
+  for(let i=0;i<120;i++){ await mediaSleep(3000); tick&&tick((i+1)*3);
+    const st=await post("pixverse_status",{video_id:g.video_id});
+    if(st.status===1&&st.url) return mediaBlobUrl(()=>fetch(st.url),
+      ()=>fetch("/api/video-proxy",{method:"POST",headers:videoHeaders("pixverse"),body:JSON.stringify({action:"media_get",payload:{url:st.url}})}));
+    if(st.status===7) throw new Error("PixVerse 안전 기준에 걸렸어요 — 사진이나 프롬프트를 바꿔주세요");
+    if(st.status===8||st.status===-1) throw new Error("PixVerse 생성 실패");
+  }
+  throw new Error("PixVerse 시간 초과");
+}
+async function geminiClip(dataUrl,prompt,seconds,model,tick){
+  const img=await shortsThumb(dataUrl,1280);
+  const c=await geminiCall("video_create",{model,prompt,image:{mime:"image/jpeg",data:img.split(",")[1]},seconds:Number(seconds)||6,aspect:"9:16",resolution:"720p"});
+  if(c.error) throw new Error(c.error);
+  for(let i=0;i<90;i++){ await mediaSleep(5000); tick&&tick((i+1)*5);
+    const st=await geminiCall("video_status",{name:c.name});
+    if(st.error) throw new Error(st.error);
+    if(st.done){ const key=needSvcKey("gemini");
+      return mediaBlobUrl(()=>fetch(st.uri,{headers:{"x-goog-api-key":key}}),
+        ()=>fetch("/api/gemini",{method:"POST",headers:{"Content-Type":"application/json","x-gemini-key":key},body:JSON.stringify({action:"video_get",payload:{uri:st.uri}})})); }
+  }
+  throw new Error("Gemini 영상 시간 초과 (7분)");
+}
+// 나레이션 길이를 장면마다 나눔 — 장면 나레이션 글자 수 비율대로
+function fitByNarration(scenes,dur){
+  const w=scenes.map(s=>Math.max(4,String(s.narration||"").replace(/\s/g,"").length));
+  const sum=w.reduce((a,b)=>a+b,0)||1;
+  return scenes.map((s,i)=>({...s,sec:Math.max(1.5,Math.round(dur*w[i]/sum*10)/10)}));
+}
+
+// ── 쇼츠 장면 그리기 (미리보기·영상 만들기·썸네일이 같은 함수를 써서 보이는 그대로 나옴) ──
+const BSM_VIG=[0,0.35,0.55,0.75];                       // 테두리 어둡게: 없음·약하게·보통·강하게
+const BSM_BOX={ none:0, band:0.45, "band-dark":0.8, round:0.6 };
+const BSM_ADJ0={ zoom:1, ox:0, oy:0, bright:100, contrast:100, sat:100, blur:0, vig:null };
+function bsmAdj(s){ return { ...BSM_ADJ0, ...(s&&s.adj||{}) }; }
+// 효과(줌·패닝) + 장면별 위치·확대 → 그릴 배율·위치
+function bsmMotion(s,lt){
+  const p=Math.min(1,Math.max(0,lt/Math.max(0.1,Number(s.sec)||1))), Z=1.14;
+  let sc=1.06,tx=0,ty=0;
+  switch(s.effect){ case"zoom-in":sc=1+(Z-1)*p;break; case"zoom-out":sc=Z-(Z-1)*p;break;
+    case"pan-left":sc=1.12;tx=0.9-1.8*p;break; case"pan-right":sc=1.12;tx=-0.9+1.8*p;break;
+    case"pan-up":sc=1.12;ty=0.9-1.8*p;break; case"pan-down":sc=1.12;ty=-0.9+1.8*p;break; }
+  const a=bsmAdj(s);
+  const cl=v=>Math.max(-1,Math.min(1,v));
+  // 패닝 폭은 확대에 맞춰 줄이고, 장면 위치(ox·oy)를 기준점으로
+  return { sc:sc*a.zoom, tx:cl(a.ox+tx*(a.zoom>1?0.6:1)), ty:cl(a.oy+ty*(a.zoom>1?0.6:1)) };
+}
+function bsmCover(ctx,W,H,src,sw,sh,s,tx,ty){
+  const ir=sw/sh, cr=W/H; let dw,dh; if(ir>cr){ dh=H*s; dw=dh*ir; } else { dw=W*s; dh=dw/ir; }
+  ctx.drawImage(src,(W-dw)/2+tx*(dw-W)/2,(H-dh)/2+ty*(dh-H)/2,dw,dh);
+}
+function bsmDrawScene(ctx,W,H,s,lt,look,src){
+  const a=bsmAdj(s);
+  ctx.save();
+  const f=[]; if(a.bright!==100) f.push(`brightness(${a.bright}%)`); if(a.contrast!==100) f.push(`contrast(${a.contrast}%)`);
+  if(a.sat!==100) f.push(`saturate(${a.sat}%)`); if(a.blur>0) f.push(`blur(${(a.blur*W/1080).toFixed(1)}px)`);
+  ctx.filter=f.length?f.join(" "):"none";
+  if(src&&src.video&&src.video.readyState>=2) bsmCover(ctx,W,H,src.video,src.video.videoWidth,src.video.videoHeight,1.02*a.zoom,a.ox,a.oy);
+  else if(src&&src.img){ const m=bsmMotion(s,lt); bsmCover(ctx,W,H,src.img,src.img.width,src.img.height,m.sc,m.tx,m.ty); }
+  ctx.filter="none";
+  const v=BSM_VIG[a.vig==null?(look&&look.vig)||0:a.vig]||0;
+  if(v>0){ const g=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.32,W/2,H/2,Math.hypot(W,H)/2);
+    g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,`rgba(0,0,0,${v})`); ctx.fillStyle=g; ctx.fillRect(0,0,W,H); }
+  ctx.restore();
+}
+function bsmRoundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function bsmDrawCaption(ctx,W,H,cap,alpha,subOpt,accent,look){
+  if(!cap||!cap.text||alpha<=0) return;
+  const lines=String(cap.text).split("\n").slice(0,2); const fs=Math.round(W*({s:0.062,m:0.078,l:0.095}[subOpt.size]||0.078));
+  ctx.save(); ctx.globalAlpha=alpha; ctx.textBaseline="middle"; ctx.font=`900 ${fs}px "Noto Sans KR","Malgun Gothic",sans-serif`;
+  const yc=H*({top:0.30,middle:0.5,bottom:0.78}[subOpt.pos]||0.30);
+  const y0=yc-(lines.length-1)*fs*0.62;
+  const box=(look&&look.box)||"none", boxOn=box!=="none";
+  const boxWhite=boxOn&&look.boxColor==="white";
+  if(boxOn){
+    const op=Math.max(0.1,Math.min(0.95,look.boxAlpha!=null?look.boxAlpha:BSM_BOX[box]||0.6));
+    const bh=lines.length*fs*1.25+fs*0.7, by=yc-bh/2;
+    ctx.fillStyle=boxWhite?`rgba(255,255,255,${op})`:`rgba(0,0,0,${op})`;
+    if(box==="round"){ const tw=Math.max(...lines.map(l=>ctx.measureText(l).width)); const bw=Math.min(W*0.94,tw+fs*1.2);
+      bsmRoundRect(ctx,(W-bw)/2,by,bw,bh,fs*0.35); ctx.fill(); }
+    else ctx.fillRect(0,by,W,bh);
+  }
+  // 흰 박스 위에서는 글씨를 진하게 (흰 글씨가 안 보이니)
+  const dark=subOpt.color==="black"||(boxWhite&&subOpt.color!=="yellow");
+  lines.forEach((ln,li)=>{
+    const y=y0+li*fs*1.25; const hl=cap.hl&&ln.includes(cap.hl)?cap.hl:"";
+    const parts=hl?[ln.slice(0,ln.indexOf(hl)),hl,ln.slice(ln.indexOf(hl)+hl.length)]:[ln,"",""];
+    const wsum=parts.reduce((a,t)=>a+ctx.measureText(t).width,0); let x=(W-wsum)/2;
+    parts.forEach((t,k)=>{ if(!t) return; ctx.lineJoin="round";
+      if(!boxOn){   // 박스가 없을 때만 테두리·그림자 (박스 위에서는 깔끔하게 글씨만)
+        ctx.lineWidth=fs*(dark?0.2:0.16); ctx.strokeStyle=dark?"#ffffff":"rgba(0,0,0,.55)";
+        ctx.shadowColor="rgba(0,0,0,.45)"; ctx.shadowBlur=fs*0.25; ctx.strokeText(t,x,y); ctx.shadowBlur=0; }
+      ctx.fillStyle=k===1?accent:(subOpt.color==="yellow"?"#ffe14d":dark?"#111418":"#ffffff"); ctx.fillText(t,x,y); x+=ctx.measureText(t).width; });
+  });
+  ctx.restore();
+}
+function bsmCapAt(s,lt){ const list=(s.caps||[]).filter(c=>c&&c.text); const n=list.length; if(!n) return [null,0];
+  const k=Math.min(n-1,Math.floor(lt/(Number(s.sec)/n))); const ct=lt-k*(Number(s.sec)/n); return [list[k],Math.min(1,ct/0.15)]; }
+
+// 페이지를 닫기 전까지 화면 내용 유지 (다른 메뉴·탭으로 갔다 와도 그대로) — 새로고침하면 비워짐
+const BSM_MEM={};
+function useKeep(key,init){
+  const [v,setV]=React.useState(()=>key in BSM_MEM?BSM_MEM[key]:(typeof init==="function"?init():init));
+  const set=React.useCallback(x=>setV(prev=>{ const n=typeof x==="function"?x(prev):x; BSM_MEM[key]=n; return n; }),[key]);
+  return [v,set];
+}
+
 function BlogShortsMaker(){
-  const [photos,setPhotos]=React.useState([]);           // {id,name,dataUrl}
-  const [text,setText]=React.useState("");
-  const [lengthMode,setLengthMode]=React.useState("auto");
-  const [res,setRes]=React.useState("1080");
-  const [subs,setSubs]=React.useState(true);
-  const [accent,setAccent]=React.useState(SHORTS_ACCENTS[0][0]);
-  // 자막 위치·크기·색 (기억)
+  // ── 화면 내용 (페이지를 닫기 전까지 유지 — 다른 메뉴로 갔다 와도 그대로)
+  const [photos,setPhotos]=useKeep("photos",[]);           // {id,name,dataUrl}
+  const [text,setText]=useKeep("text","");
+  const [lengthMode,setLengthMode]=useKeep("lengthMode","auto");
+  const [res,setRes]=useKeep("res","1080");
+  const [subs,setSubs]=useKeep("subs",true);
+  const [accent,setAccent]=useKeep("accent",SHORTS_ACCENTS[0][0]);
+  const [plan,setPlan]=useKeep("plan",null);               // {title, scenes:[{pid,sec,effect,ai,motion,caps:[{text,hl}],narration,adj}]}
+  const [bgm,setBgm]=useKeep("bgm",null);                  // {name,buf,dur,url?,credit?}
+  const [bgmVol,setBgmVol]=useKeep("bgmVol",0.25);
+  const [narr,setNarr]=useKeep("narr",null);               // {name,buf,dur}
+  const [result,setResult]=useKeep("result",null);
+  const [msg,setMsg]=useKeep("msg","");
+  const [sel,setSel]=useKeep("sel",0);                     // 크게 보는 장면
+  const [voice,setVoice]=React.useState(()=>mlsGet("vm_tts_voice","Kore"));
+  const narrUrl=React.useMemo(()=>narr?URL.createObjectURL(new Blob([narr.buf])):"",[narr]);
+  const [scrub,setScrub]=useKeep("scrub",0);               // 미리보기 시점 (0~1)
+  // 자막 위치·크기·색 / 자막 박스·테두리 어둡게 (기억)
   const [subOpt,setSubOpt]=React.useState(()=>{ try{ return { pos:"top", size:"m", color:"white", ...JSON.parse(localStorage.getItem("vm_sub_opt")||"{}") }; }catch(e){ return { pos:"top", size:"m", color:"white" }; } });
   const subUp=patch=>setSubOpt(o=>{ const n={ ...o, ...patch }; try{ localStorage.setItem("vm_sub_opt",JSON.stringify(n)); }catch(e){} return n; });
-  const [plan,setPlan]=React.useState(null);              // {title, scenes:[{pid,sec,effect,ai,motion,caps:[{text,hl}],narration,clipUrl}]}
-  const [bgm,setBgm]=React.useState(null);                // {name,buf,dur,url?,credit?}
-  const [bgmVol,setBgmVol]=React.useState(0.25);
+  const [look,setLook]=React.useState(()=>{ try{ return { box:"none", boxColor:"black", boxAlpha:0.6, vig:0, ...JSON.parse(localStorage.getItem("vm_look")||"{}") }; }catch(e){ return { box:"none", boxColor:"black", boxAlpha:0.6, vig:0 }; } });
+  const lookUp=patch=>setLook(o=>{ const n={ ...o, ...patch }; try{ localStorage.setItem("vm_look",JSON.stringify(n)); }catch(e){} return n; });
   const [bgmCat,setBgmCat]=React.useState(()=>{ try{ return localStorage.getItem("vm_bgm_cat")||"none"; }catch(e){ return "none"; } });
-  const [bgmList,setBgmList]=React.useState(null);        // public/bgm/list.json (배포 때 자동 생성)
-  const [narr,setNarr]=React.useState(null);              // {name,buf,dur}
+  const [bgmList,setBgmList]=React.useState(null);        // /bgm/list.json (배포 때 자동 생성)
   const [busy,setBusy]=React.useState("");
-  const [msg,setMsg]=React.useState("");
-  const [result,setResult]=React.useState(null);
   const fileRef=React.useRef(); const canvasRef=React.useRef(); const stopRef=React.useRef(false);
+  const prevRef=React.useRef(); const imgCache=React.useRef({}); const [imgTick,setImgTick]=React.useState(0);
+  const dragRef=React.useRef(null);
+
   React.useEffect(()=>{ // SNS 변환 탭에서 「릴스 만들기」로 넘어온 글·사진
     const take=()=>{ const d=window.__snsToShorts; if(!d) return; window.__snsToShorts=null;
-      setText(d.text||""); setPhotos(d.photos||[]); setPlan(null); setResult(null); setMsg("✓ SNS 변환에서 글·사진을 가져왔어요"); };
+      setText(d.text||""); setPhotos(d.photos||[]); setPlan(null); setResult(null); setSel(0); setMsg("✓ SNS 변환에서 글·사진을 가져왔어요"); };
     take(); window.addEventListener("sns-to-shorts",take); return ()=>window.removeEventListener("sns-to-shorts",take);
   },[]);
 
@@ -10034,8 +10205,19 @@ function BlogShortsMaker(){
     let dur=0; try{ const ac=new (window.AudioContext||window.webkitAudioContext)(); const d=await ac.decodeAudioData(buf.slice(0)); dur=d.duration; ac.close(); }catch(e){ setMsg("음악/음성 파일을 읽지 못했어요 (mp3·wav·m4a 권장)"); return; }
     setter({name:f.name,buf,dur});
   };
+  const resetAll=()=>{
+    if(!window.confirm("올린 사진·글·장면 구성·음악·결과를 모두 비우고 처음부터 할까요?")) return;
+    Object.keys(BSM_MEM).filter(k=>!k.startsWith("ai.")).forEach(k=>delete BSM_MEM[k]);
+    setPhotos([]); setText(""); setLengthMode("auto"); setRes("1080"); setSubs(true); setAccent(SHORTS_ACCENTS[0][0]);
+    setPlan(null); setBgm(null); setBgmVol(0.25); setNarr(null); setResult(null); setSel(0); setScrub(0); setMsg("");
+    if(bgmCat!=="none"&&bgmCat!=="upload") pickBgm(bgmCat);
+  };
   const total=plan?plan.scenes.reduce((a,s)=>a+Number(s.sec||0),0):0;
   const photoOf=pid=>photos.find(p=>p.id===pid);
+  // 미리보기용 사진 (한 번 읽어 둔 것을 계속 씀)
+  const imgOf=pid=>{ const c=imgCache.current; if(c[pid]) return c[pid].ok?c[pid].img:null;
+    const p=photoOf(pid); if(!p) return null; const im=new Image(); c[pid]={img:im,ok:false};
+    im.onload=()=>{ c[pid].ok=true; setImgTick(t=>t+1); }; im.src=p.dataUrl; return null; };
 
   // ① 구성 만들기 (Claude)
   const makePlan=async()=>{
@@ -10070,15 +10252,15 @@ function BlogShortsMaker(){
         pid:use[Number(s.photo)-1].id, sec:Math.min(6,Math.max(2.5,Number(s.sec)||4)),
         effect:SHORTS_EFFECTS.some(e=>e[0]===s.effect)?s.effect:"zoom-in",
         caps:(s.captions||[]).slice(0,2).map(c=>({text:String(c.text||"").slice(0,40),hl:String(c.hl||"")})),
-        narration:String(s.narration||""), motion:String(s.motion||""), ai:false, suggest:picks.has(Number(s.photo))
+        narration:String(s.narration||""), motion:String(s.motion||""), ai:false, suggest:picks.has(Number(s.photo)), adj:{...BSM_ADJ0}
       }));
       // 사진 10장 넘게 올렸으면 남은 사진도 뒤에 붙임 (자막 없이)
-      photos.slice(10).forEach(p=>scenes.push({pid:p.id,sec:3.5,effect:"zoom-in",caps:[],narration:"",motion:"",ai:false}));
+      photos.slice(10).forEach(p=>scenes.push({pid:p.id,sec:3.5,effect:"zoom-in",caps:[],narration:"",motion:"",ai:false,adj:{...BSM_ADJ0}}));
       if(!scenes.length) throw new Error("장면을 만들지 못했어요");
       const target=narr&&lengthMode==="auto"?narr.dur:(lengthMode==="auto"?null:Number(lengthMode));
       scenes=fitSecs(scenes,target);
-      setPlan({title:String(j.title||"쇼츠"),scenes});
-      setMsg(`구성 완료 — 장면 ${scenes.length}개 · ${scenes.reduce((a,s)=>a+s.sec,0).toFixed(1)}초. 아래에서 자막·순서·효과를 고친 뒤 ② 영상 만들기`);
+      setPlan({title:String(j.title||"쇼츠"),scenes}); setSel(0); setScrub(0);
+      setMsg(`구성 완료 — 장면 ${scenes.length}개 · ${scenes.reduce((a,s)=>a+s.sec,0).toFixed(1)}초. 장면 사진을 누르면 크게 보며 위치·보정을 고칠 수 있어요 → ② 영상 만들기`);
     }catch(e){ setMsg("구성 실패: "+e.message); }
     setBusy("");
   };
@@ -10090,24 +10272,51 @@ function BlogShortsMaker(){
     if(sum>60){ const k=60/sum; scenes=scenes.map(s=>({...s,sec:Math.floor(s.sec*k*10)/10})); }
     return scenes;
   };
-  const upd=(i,patch)=>setPlan(p=>({...p,scenes:p.scenes.map((s,j)=>j===i?{...s,...patch}:s)}));
-  const move=(i,d)=>setPlan(p=>{ const a=[...p.scenes]; const j=i+d; if(j<0||j>=a.length) return p; [a[i],a[j]]=[a[j],a[i]]; return {...p,scenes:a}; });
-
-  // AI 움직임 클립 (기존 프록시 그대로)
-  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-  const post=async(action,payload)=>{ const r=await fetch("/api/video-proxy",{method:"POST",headers:videoHeaders(action.startsWith("pixverse")?"pixverse":"replicate"),body:JSON.stringify({action,payload})}); return r.json(); };
-  const aiClip=async(dataUrl,prompt,label)=>{
-    const img=await shortsThumb(dataUrl,1280);
-    const p=await post("replicate_create",{image:img,prompt:prompt||"subtle natural motion, slow camera push in, realistic",num_frames:80,fps:16,resolution:res==="1080"?"720p":"480p"});
-    if(p.error) throw new Error(p.error);
-    for(let i=0;i<120;i++){ await sleep(3000); setMsg(`${label} AI 움직임 만드는 중… ${(i+1)*3}초`);
-      const st=await post("replicate_status",{id:p.id});
-      if(st.status==="succeeded"){ const o=Array.isArray(st.output)?st.output[0]:st.output;
-        const b=await (await fetch(o)).blob(); return URL.createObjectURL(b); }   // 같은 출처로 만들어야 캔버스에 그릴 수 있음
-      if(st.status==="failed") throw new Error(st.error||"생성 실패");
-    }
-    throw new Error("시간 초과");
+  // 🎙 나레이션 자동 만들기 (Gemini — 무료 등급도 됨). 장면 길이를 그 음성에 맞춤
+  const makeTTS=async()=>{
+    if(!plan?.scenes?.length) return;
+    const lines=plan.scenes.map(s=>String(s.narration||"").trim()).filter(Boolean);
+    if(!lines.length){ setMsg("장면 나레이션 문장이 비어 있어요"); return; }
+    setBusy("tts"); setMsg(`나레이션 만드는 중… (Gemini · ${voice})`);
+    try{
+      const buf=await geminiTTS(lines.join("\n"),voice,mlsGet("vm_tts_model",GEM_TTS_MODELS[0]));
+      const ac=new (window.AudioContext||window.webkitAudioContext)(); const d=await ac.decodeAudioData(buf.slice(0)); ac.close();
+      setNarr({name:`Gemini 나레이션 (${voice})`,buf,dur:d.duration});
+      if(d.duration>60.5) setMsg(`나레이션이 ${d.duration.toFixed(1)}초로 60초를 넘어요 — 나레이션 문장을 줄여 다시 만들어 주세요`);
+      else { setPlan(p=>({...p,scenes:fitByNarration(p.scenes,d.duration)})); setMsg(`✓ 나레이션 ${d.duration.toFixed(1)}초 — 장면 길이를 나레이션에 맞췄어요. 아래 ▶로 들어보세요`); }
+    }catch(e){ setMsg("나레이션 실패: "+e.message+" — 보이스박스 파일을 올려서 해도 돼요"); }
+    setBusy("");
   };
+  const upd=(i,patch)=>setPlan(p=>({...p,scenes:p.scenes.map((s,j)=>j===i?{...s,...patch}:s)}));
+  const updAdj=(i,patch)=>setPlan(p=>({...p,scenes:p.scenes.map((s,j)=>j===i?{...s,adj:{...bsmAdj(s),...patch}}:s)}));
+  const move=(i,d)=>{ setPlan(p=>{ const a=[...p.scenes]; const j=i+d; if(j<0||j>=a.length) return p; [a[i],a[j]]=[a[j],a[i]]; return {...p,scenes:a}; });
+    if(sel===i) setSel(Math.max(0,Math.min((plan?.scenes.length||1)-1,i+d))); };
+  const delScene=i=>{ setPlan(p=>({...p,scenes:p.scenes.filter((_,j)=>j!==i)})); setSel(s=>Math.max(0,Math.min(s,(plan?.scenes.length||1)-2))); };
+  const adjToAll=()=>{ const a=bsmAdj(plan.scenes[sel]);
+    setPlan(p=>({...p,scenes:p.scenes.map(s=>({...s,adj:{...bsmAdj(s),bright:a.bright,contrast:a.contrast,sat:a.sat,blur:a.blur,vig:a.vig}}))}));
+    setMsg("✓ 밝기·대비·채도·흐림·테두리를 모든 장면에 적용했어요 (위치·확대는 장면마다 따로)"); };
+
+  // ── 큰 미리보기 그리기 (영상 만들기와 같은 함수)
+  const cur=plan?.scenes?.[Math.min(sel,(plan?.scenes?.length||1)-1)]||null;
+  React.useEffect(()=>{
+    const cv=prevRef.current; if(!cv||!cur) return;
+    const W=cv.width, H=cv.height, ctx=cv.getContext("2d");
+    ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
+    const img=imgOf(cur.pid);
+    const lt=scrub*Number(cur.sec||0);
+    if(img) bsmDrawScene(ctx,W,H,cur,lt,look,{img});
+    if(subs){ const [c]=bsmCapAt(cur,Math.min(lt,Number(cur.sec)-0.01)); bsmDrawCaption(ctx,W,H,c,1,subOpt,accent,look); }
+  });
+  const onDragStart=e=>{ if(!cur) return; const r=prevRef.current.getBoundingClientRect(); const a=bsmAdj(cur);
+    dragRef.current={x:e.clientX,y:e.clientY,ox:a.ox,oy:a.oy,w:r.width,h:r.height}; e.currentTarget.setPointerCapture?.(e.pointerId); };
+  const onDragMove=e=>{ const d=dragRef.current; if(!d) return;
+    const cl=v=>Math.max(-1,Math.min(1,v));
+    updAdj(sel,{ox:cl(d.ox+(e.clientX-d.x)/(d.w/2)),oy:cl(d.oy+(e.clientY-d.y)/(d.h/2))}); };
+  const onDragEnd=()=>{ dragRef.current=null; };
+
+  // AI 움직임 클립 — PixVerse (장면 길이 5초 기준)
+  const sleep=mediaSleep;
+  const aiClip=(dataUrl,prompt,label)=>pixverseClip(dataUrl,prompt,5,t=>setMsg(`${label} AI 움직임 만드는 중… ${t}초`));
 
   // ② 영상 만들기 (캔버스 → 녹화)
   const render=async()=>{
@@ -10130,9 +10339,10 @@ function BlogShortsMaker(){
       const cv=canvasRef.current; cv.width=W; cv.height=H; const ctx=cv.getContext("2d");
       // 소스 준비
       for(const s of scenes){
+        s.src={};
         if(s.clipUrl){ const v=document.createElement("video"); v.src=s.clipUrl; v.muted=true; v.playsInline=true; v.loop=true;
-          await new Promise(r=>{ v.onloadeddata=r; v.onerror=r; }); s.video=v; }
-        s.img=await new Promise((ok,bad)=>{ const im=new Image(); im.onload=()=>ok(im); im.onerror=bad; im.src=photoOf(s.pid).dataUrl; });
+          await new Promise(r=>{ v.onloadeddata=r; v.onerror=r; }); s.src.video=v; }
+        s.src.img=await new Promise((ok,bad)=>{ const im=new Image(); im.onload=()=>ok(im); im.onerror=bad; im.src=photoOf(s.pid).dataUrl; });
       }
       let t0=0; scenes.forEach(s=>{ s.start=t0; t0+=Number(s.sec); }); const T=t0;
       // 소리 (배경음악·내레이션을 올린 경우만 — 소리 없는 빈 오디오 트랙은 녹화를 망가뜨릴 수 있어서 안 넣음)
@@ -10150,58 +10360,28 @@ function BlogShortsMaker(){
       const chunks=[]; rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
       const done=new Promise(r=>{ rec.onstop=r; });
 
-      const cover=(src,sw,sh,s,tx,ty)=>{ const ir=sw/sh, cr=W/H; let dw,dh; if(ir>cr){ dh=H*s; dw=dh*ir; } else { dw=W*s; dh=dw/ir; }
-        ctx.drawImage(src,(W-dw)/2+tx*(dw-W)/2,(H-dh)/2+ty*(dh-H)/2,dw,dh); };
-      const drawScene=(s,lt)=>{
-        const p=Math.min(1,Math.max(0,lt/s.sec)), Z=1.14;
-        if(s.video&&s.video.readyState>=2){ cover(s.video,s.video.videoWidth,s.video.videoHeight,1.02,0,0); return; }
-        let sc=1.06,tx=0,ty=0;
-        switch(s.effect){ case"zoom-in":sc=1+(Z-1)*p;break; case"zoom-out":sc=Z-(Z-1)*p;break;
-          case"pan-left":sc=1.12;tx=0.9-1.8*p;break; case"pan-right":sc=1.12;tx=-0.9+1.8*p;break;
-          case"pan-up":sc=1.12;ty=0.9-1.8*p;break; case"pan-down":sc=1.12;ty=-0.9+1.8*p;break; }
-        cover(s.img,s.img.width,s.img.height,sc,tx,ty);
-      };
-      const drawCaption=(cap,a)=>{
-        if(!cap||!cap.text) return;
-        const lines=String(cap.text).split("\n").slice(0,2); const fs=Math.round(W*({s:0.062,m:0.078,l:0.095}[subOpt.size]||0.078));
-        ctx.save(); ctx.globalAlpha=a; ctx.textBaseline="middle"; ctx.font=`900 ${fs}px "Noto Sans KR","Malgun Gothic",sans-serif`;
-        const y0=H*({top:0.30,middle:0.5,bottom:0.78}[subOpt.pos]||0.30)-(lines.length-1)*fs*0.62;
-        const dark=subOpt.color==="black";
-        lines.forEach((ln,li)=>{
-          const y=y0+li*fs*1.25; const hl=cap.hl&&ln.includes(cap.hl)?cap.hl:"";
-          const parts=hl?[ln.slice(0,ln.indexOf(hl)),hl,ln.slice(ln.indexOf(hl)+hl.length)]:[ln,"",""];
-          const wsum=parts.reduce((a,t)=>a+ctx.measureText(t).width,0); let x=(W-wsum)/2;
-          parts.forEach((t,k)=>{ if(!t) return; ctx.lineJoin="round"; ctx.lineWidth=fs*(dark?0.2:0.16); ctx.strokeStyle=dark?"#ffffff":"rgba(0,0,0,.55)";
-            ctx.shadowColor="rgba(0,0,0,.45)"; ctx.shadowBlur=fs*0.25; ctx.strokeText(t,x,y); ctx.shadowBlur=0;
-            ctx.fillStyle=k===1?accent:(subOpt.color==="yellow"?"#ffe14d":dark?"#111418":"#ffffff"); ctx.fillText(t,x,y); x+=ctx.measureText(t).width; });
-        });
-        ctx.restore();
-      };
-      const capAt=(s,lt)=>{ const n=s.caps.filter(c=>c.text).length; if(!n) return [null,0];
-        const k=Math.min(n-1,Math.floor(lt/(s.sec/n))); const ct=lt-k*(s.sec/n); return [s.caps.filter(c=>c.text)[k],Math.min(1,ct/0.15)]; };
-
       rec.start(1000); srcs.forEach(n=>n.start());
       if(bgmGain){ const a0=ac.currentTime, fo=Math.min(1.5,T/4);   // 살짝 페이드인 → 끝 1.5초 페이드아웃
         bgmGain.gain.setValueAtTime(0,a0); bgmGain.gain.linearRampToValueAtTime(bgmLevel,a0+0.6);
-        bgmGain.gain.setValueAtTime(bgmLevel,a0+Math.max(0.7,T-fo)); bgmGain.gain.linearRampToValueAtTime(0,a0+T); } const begin=performance.now(); let cur=-1;
+        bgmGain.gain.setValueAtTime(bgmLevel,a0+Math.max(0.7,T-fo)); bgmGain.gain.linearRampToValueAtTime(0,a0+T); } const begin=performance.now(); let curI=-1;
       await new Promise(resolve=>{
         const tick=()=>{
           if(stopRef.current){ resolve(); return; }
           const t=(performance.now()-begin)/1000; if(t>=T){ resolve(); return; }
           let i=scenes.findIndex(s=>t<s.start+Number(s.sec)); if(i<0) i=scenes.length-1;
           const s=scenes[i], lt=t-s.start;
-          if(i!==cur){ cur=i; if(s.video){ s.video.currentTime=0; s.video.play().catch(()=>{}); } setMsg(`영상 합치는 중… ${Math.round(t/T*100)}% (장면 ${i+1}/${scenes.length})`); }
-          ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; drawScene(s,lt);
+          if(i!==curI){ curI=i; if(s.src.video){ s.src.video.currentTime=0; s.src.video.play().catch(()=>{}); } setMsg(`영상 합치는 중… ${Math.round(t/T*100)}% (장면 ${i+1}/${scenes.length})`); }
+          ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; bsmDrawScene(ctx,W,H,s,lt,look,s.src);
           const nx=scenes[i+1]; const left=Number(s.sec)-lt;
-          if(nx&&left<X){ if(nx.video&&nx.video.paused){ nx.video.currentTime=0; nx.video.play().catch(()=>{}); }
-            ctx.globalAlpha=1-left/X; drawScene(nx,0); ctx.globalAlpha=1; }
-          if(subs){ const [c,a]=capAt(s,lt); drawCaption(c,a*(nx&&left<X?left/X:1)); }
+          if(nx&&left<X){ if(nx.src.video&&nx.src.video.paused){ nx.src.video.currentTime=0; nx.src.video.play().catch(()=>{}); }
+            ctx.globalAlpha=1-left/X; bsmDrawScene(ctx,W,H,nx,0,look,nx.src); ctx.globalAlpha=1; }
+          if(subs){ const [c,a]=bsmCapAt(s,lt); bsmDrawCaption(ctx,W,H,c,a*(nx&&left<X?left/X:1),subOpt,accent,look); }
           requestAnimationFrame(tick);
         };
         tick();
       });
       srcs.forEach(n=>{ try{ n.stop(); }catch(e){} }); rec.stop(); await done; if(ac) ac.close().catch(()=>{});
-      scenes.forEach(s=>s.video&&s.video.pause());
+      scenes.forEach(s=>s.src.video&&s.src.video.pause());
       if(stopRef.current){ setMsg("멈췄어요"); setBusy(""); return; }
       const type=(mime||"video/webm").split(";")[0]; const ext=type.includes("mp4")?"mp4":"webm";
       const blob=new Blob(chunks,{type});
@@ -10216,10 +10396,9 @@ function BlogShortsMaker(){
     const s=plan.scenes[0]; const W=1080,H=1920; const c=document.createElement("canvas"); c.width=W; c.height=H; const x=c.getContext("2d");
     await document.fonts.load('900 60px "Noto Sans KR"').catch(()=>{});
     const im=await new Promise(ok=>{ const i=new Image(); i.onload=()=>ok(i); i.src=photoOf(s.pid).dataUrl; });
-    const ir=im.width/im.height, cr=W/H; let dw,dh; if(ir>cr){ dh=H; dw=dh*ir; } else { dw=W; dh=dw/ir; }
-    x.drawImage(im,(W-dw)/2,(H-dh)/2,dw,dh);
-    const cap=s.caps.find(c=>c.text)||{text:plan.title,hl:""}; const fs=86; x.font=`900 ${fs}px "Noto Sans KR",sans-serif`; x.textAlign="center"; x.textBaseline="middle";
-    String(cap.text).split("\n").slice(0,2).forEach((ln,li)=>{ const y=H*0.30+li*fs*1.25; x.lineWidth=14; x.strokeStyle="rgba(0,0,0,.6)"; x.lineJoin="round"; x.strokeText(ln,W/2,y); x.fillStyle="#fff"; x.fillText(ln,W/2,y); });
+    x.fillStyle="#000"; x.fillRect(0,0,W,H); bsmDrawScene(x,W,H,s,0,look,{img:im});
+    const cap=s.caps.find(c=>c.text)||{text:plan.title,hl:""};
+    bsmDrawCaption(x,W,H,cap,1,{...subOpt,size:"l"},accent,look);
     const a=document.createElement("a"); a.href=c.toDataURL("image/png"); a.download=`${plan.title}_썸네일.png`; a.click();
   };
   const script=plan?plan.scenes.map((s,i)=>`${i+1}. ${s.narration||s.caps.map(c=>c.text.replace(/\n/g," ")).join(" ")}`).join("\n"):"";
@@ -10230,10 +10409,19 @@ function BlogShortsMaker(){
     input:{width:"100%",background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"8px 10px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none",boxSizing:"border-box"},
     btn:(c="#1f6feb",dis)=>({padding:"10px 18px",border:"none",borderRadius:"8px",background:c,color:"#fff",fontSize:"15px",fontWeight:700,cursor:dis?"not-allowed":"pointer",opacity:dis?.5:1}),
     small:{padding:"3px 8px",border:"1px solid #30363d",borderRadius:"6px",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px"}};
+  const ca=cur?bsmAdj(cur):BSM_ADJ0;
+  const slider=(label,key,min,max,step=1,unit="")=><label style={{display:"block",marginBottom:"6px"}}>
+    <span style={{...S.label,marginBottom:"2px",display:"flex",justifyContent:"space-between"}}><span>{label}</span><span style={{color:"#c9d1d9"}}>{ca[key]}{unit}</span></span>
+    <input type="range" min={min} max={max} step={step} value={ca[key]} onChange={e=>updAdj(sel,{[key]:Number(e.target.value)})} style={{width:"100%"}}/>
+  </label>;
+  const nudge=(dx,dy)=>{ const cl=v=>Math.max(-1,Math.min(1,Math.round(v*100)/100)); updAdj(sel,{ox:cl(ca.ox+dx),oy:cl(ca.oy+dy)}); };
 
   return <div>
     <div style={S.card}>
-      <div style={S.h}>📸 사진 + 📝 블로그 글 <span style={{color:"#484f58",fontWeight:400,fontSize:"13px"}}>(사진 3~12장 권장 · 세로 9:16 쇼츠/릴스로 만들어요)</span></div>
+      <div style={{...S.h,display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+        <span>📸 사진 + 📝 블로그 글 <span style={{color:"#484f58",fontWeight:400,fontSize:"13px"}}>(사진 3~12장 권장 · 세로 9:16 쇼츠/릴스로 만들어요)</span></span>
+        <button style={S.small} disabled={busy==="render"} onClick={resetAll} title="페이지를 닫기 전까지는 다른 메뉴로 갔다 와도 그대로 남아 있어요">🔄 처음부터</button>
+      </div>
       <div onClick={()=>fileRef.current.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();addPhotos(e.dataTransfer.files);}}
         style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"18px",textAlign:"center",cursor:"pointer",background:"#161b22",color:"#8b949e",fontSize:"14px"}}>
         <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{addPhotos(e.target.files); e.target.value="";}}/>
@@ -10271,6 +10459,16 @@ function BlogShortsMaker(){
         <div><label style={S.label}>자막 색</label>
           <select style={S.input} disabled={!subs} value={subOpt.color} onChange={e=>subUp({color:e.target.value})}>
             <option value="white">흰색</option><option value="yellow">노랑</option><option value="black">검정 (흰 테두리)</option></select></div>
+        <div><label style={S.label}>자막 박스</label>
+          <select style={S.input} disabled={!subs} value={look.box} onChange={e=>lookUp({box:e.target.value,boxAlpha:BSM_BOX[e.target.value]||0.6})}>
+            <option value="none">없음</option><option value="band">반투명 띠</option><option value="band-dark">진한 띠</option><option value="round">둥근 상자</option></select></div>
+        {subs&&look.box!=="none"&&<div><label style={S.label}>박스 색 · 진하기 {Math.round(look.boxAlpha*100)}%</label>
+          <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+            <select style={{...S.input,width:"80px"}} value={look.boxColor} onChange={e=>lookUp({boxColor:e.target.value})}><option value="black">검정</option><option value="white">흰색</option></select>
+            <input type="range" min="0.2" max="0.95" step="0.05" value={look.boxAlpha} onChange={e=>lookUp({boxAlpha:Number(e.target.value)})} style={{flex:1}}/></div></div>}
+        <div><label style={S.label}>테두리 어둡게</label>
+          <select style={S.input} value={look.vig} onChange={e=>lookUp({vig:Number(e.target.value)})}>
+            <option value={0}>없음</option><option value={1}>약하게</option><option value={2}>보통</option><option value={3}>강하게</option></select></div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"10px",marginTop:"10px"}}>
         <div><label style={S.label}>배경음악</label>
@@ -10289,9 +10487,15 @@ function BlogShortsMaker(){
             {bgm.credit&&<div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"6px",padding:"6px 8px",color:"#d29922"}}>
               출처 표기 필요: {bgm.credit} <button style={S.small} onClick={()=>{ try{ navigator.clipboard.writeText(bgm.credit); setMsg("출처 문구를 복사했어요 — 쇼츠 설명란에 붙여넣으세요"); }catch(e){} }}>📋 복사</button></div>}
           </div>}</div>
-        <div><label style={S.label}>내레이션 음성 (선택 · 보이스박스 등으로 만든 파일)</label>
-          <input type="file" accept="audio/*" onChange={e=>readAudio(e.target.files[0],setNarr)} style={{...S.input,padding:"6px"}}/>
-          {narr&&<div style={{fontSize:"12px",color:"#8b949e",marginTop:"4px"}}>{narr.name} · {narr.dur.toFixed(1)}초 {plan&&<button style={S.small} onClick={()=>setPlan(p=>({...p,scenes:fitSecs(p.scenes,narr.dur)}))}>장면 길이를 음성에 맞추기</button>} <button style={S.small} onClick={()=>setNarr(null)}>빼기</button></div>}</div>
+        <div><label style={S.label}>내레이션 음성 — 🎙 자동(Gemini) 또는 파일 올리기(보이스박스 등)</label>
+          <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
+            <select style={{...S.input,width:"auto",padding:"6px"}} value={voice} onChange={e=>{ setVoice(e.target.value); mlsSet("vm_tts_voice",e.target.value); }}>
+              {GEM_VOICES.map(([v,l])=><option key={v} value={v}>{l} ({v})</option>)}</select>
+            <button style={S.small} disabled={!!busy||!plan} onClick={makeTTS} title={plan?"장면 나레이션 문장을 읽어서 음성을 만들어요":"① 장면 구성을 먼저 만들어 주세요"}>{busy==="tts"?"만드는 중…":"🎙 나레이션 자동 만들기"}</button>
+          </div>
+          <input type="file" accept="audio/*" onChange={e=>readAudio(e.target.files[0],setNarr)} style={{...S.input,padding:"6px",marginTop:"6px"}}/>
+          {narr&&<div style={{fontSize:"12px",color:"#8b949e",marginTop:"4px"}}>{narr.name} · {narr.dur.toFixed(1)}초 {plan&&<button style={S.small} onClick={()=>setPlan(p=>({...p,scenes:fitByNarration(p.scenes,narr.dur)}))}>장면 길이를 음성에 맞추기</button>} <button style={S.small} onClick={()=>setNarr(null)}>빼기</button>
+            {narrUrl&&<audio src={narrUrl} controls style={{width:"100%",height:"32px",marginTop:"4px"}}/>}</div>}</div>
       </div>
       <div style={{display:"flex",gap:"8px",marginTop:"12px",flexWrap:"wrap"}}>
         <button style={S.btn("#1f6feb",!!busy)} disabled={!!busy} onClick={makePlan}>{busy==="plan"?"구성 중…":"① 장면 구성 만들기"}</button>
@@ -10310,28 +10514,70 @@ function BlogShortsMaker(){
         </span>
       </div>
       <input value={plan.title} onChange={e=>setPlan(p=>({...p,title:e.target.value}))} style={{...S.input,marginBottom:"10px"}}/>
-      {plan.scenes.map((s,i)=><div key={i} style={{display:"flex",gap:"10px",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"10px",marginBottom:"8px"}}>
-        <img src={photoOf(s.pid)?.dataUrl} alt="" style={{width:"60px",height:"106px",objectFit:"cover",borderRadius:"6px",flexShrink:0}}/>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap",marginBottom:"6px"}}>
-            <b style={{color:"#e6edf3",fontSize:"14px"}}>장면 {i+1}</b>
-            <input type="number" step="0.5" min="1.5" max="10" value={s.sec} onChange={e=>upd(i,{sec:Number(e.target.value)})} style={{...S.input,width:"70px",padding:"4px 6px"}}/><span style={{fontSize:"12px",color:"#8b949e"}}>초</span>
-            <select value={s.effect} onChange={e=>upd(i,{effect:e.target.value})} style={{...S.input,width:"auto",padding:"4px 6px"}}>{SHORTS_EFFECTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
-            <label style={{fontSize:"12px",color:s.ai?"#d2a8ff":"#8b949e",cursor:"pointer"}}><input type="checkbox" checked={s.ai} onChange={e=>upd(i,{ai:e.target.checked})}/> AI 움직임{s.suggest?" (추천)":""}</label>
-            <span style={{marginLeft:"auto",display:"flex",gap:"4px"}}>
-              <button style={S.small} onClick={()=>move(i,-1)}>↑</button><button style={S.small} onClick={()=>move(i,1)}>↓</button>
-              <button style={S.small} onClick={()=>setPlan(p=>({...p,scenes:p.scenes.filter((_,j)=>j!==i)}))}>삭제</button></span>
+      {/* 넓은 화면: 왼쪽 장면 목록 + 오른쪽 큰 미리보기 / 좁은 화면: 미리보기가 위 */}
+      <div style={{display:"flex",flexDirection:"row-reverse",flexWrap:"wrap",gap:"12px",alignItems:"flex-start"}}>
+        {cur&&<div style={{width:"320px",maxWidth:"100%",flexShrink:0,position:"sticky",top:"10px",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"10px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+            <button style={S.small} disabled={sel<=0} onClick={()=>{setSel(sel-1);setScrub(0);}}>◀</button>
+            <b style={{color:"#e6edf3",fontSize:"14px"}}>장면 {sel+1} / {plan.scenes.length} 크게 보기</b>
+            <button style={S.small} disabled={sel>=plan.scenes.length-1} onClick={()=>{setSel(sel+1);setScrub(0);}}>▶</button>
           </div>
-          {[0,1].map(k=><div key={k} style={{display:"flex",gap:"6px",marginBottom:"4px"}}>
-            <input value={(s.caps[k]?.text||"").replace(/\n/g," / ")} placeholder={`자막 ${k+1} (줄바꿈은 " / ")`}
-              onChange={e=>{ const caps=[...s.caps]; caps[k]={...(caps[k]||{hl:""}),text:e.target.value.replace(/\s*\/\s*/g,"\n")}; upd(i,{caps}); }} style={{...S.input,padding:"5px 8px"}}/>
-            <input value={s.caps[k]?.hl||""} placeholder="강조 단어" onChange={e=>{ const caps=[...s.caps]; caps[k]={...(caps[k]||{text:""}),hl:e.target.value}; upd(i,{caps}); }} style={{...S.input,width:"110px",padding:"5px 8px",color:accent}}/>
+          <canvas ref={prevRef} width={360} height={640} onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}
+            style={{width:"100%",aspectRatio:"9/16",borderRadius:"8px",display:"block",background:"#000",cursor:"grab",touchAction:"none"}}/>
+          <label style={{display:"block",margin:"6px 0"}}>
+            <span style={{...S.label,marginBottom:"2px",display:"flex",justifyContent:"space-between"}}><span>시점 (효과 움직임 확인)</span><span style={{color:"#c9d1d9"}}>{(scrub*Number(cur.sec)).toFixed(1)}초 / {Number(cur.sec).toFixed(1)}초</span></span>
+            <input type="range" min="0" max="1" step="0.01" value={scrub} onChange={e=>setScrub(Number(e.target.value))} style={{width:"100%"}}/></label>
+          <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"6px"}}>사진을 끌어서 위치를 옮길 수 있어요{ca.zoom<=1?" (확대를 올리면 더 많이 움직여요)":""}</div>
+          <div style={{display:"flex",gap:"4px",alignItems:"center",marginBottom:"8px",flexWrap:"wrap"}}>
+            <button style={S.small} onClick={()=>nudge(-0.1,0)}>←</button><button style={S.small} onClick={()=>nudge(0,-0.1)}>↑</button>
+            <button style={S.small} onClick={()=>nudge(0,0.1)}>↓</button><button style={S.small} onClick={()=>nudge(0.1,0)}>→</button>
+            <button style={S.small} onClick={()=>updAdj(sel,{ox:0,oy:0,zoom:1})}>가운데로</button>
+          </div>
+          {slider("확대","zoom",1,3,0.05,"배")}
+          {slider("밝기","bright",50,150,1,"%")}{slider("대비","contrast",50,150,1,"%")}
+          {slider("채도","sat",0,200,1,"%")}{slider("흐림","blur",0,20,1,"")}
+          <label style={{display:"block",marginBottom:"8px"}}><span style={S.label}>이 장면 테두리 어둡게</span>
+            <select style={{...S.input,padding:"5px 8px"}} value={ca.vig==null?"":ca.vig} onChange={e=>updAdj(sel,{vig:e.target.value===""?null:Number(e.target.value)})}>
+              <option value="">위 설정 따라가기</option><option value={0}>없음</option><option value={1}>약하게</option><option value={2}>보통</option><option value={3}>강하게</option></select></label>
+          <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"8px"}}>
+            <button style={S.small} onClick={adjToAll}>보정값 모든 장면에 적용</button>
+            <button style={S.small} onClick={()=>updAdj(sel,{...BSM_ADJ0})}>이 장면 원래대로</button>
+          </div>
+          <div style={S.label}>사진 바꾸기</div>
+          <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+            {photos.map(p=><img key={p.id} src={p.dataUrl} alt="" onClick={()=>upd(sel,{pid:p.id,adj:{...bsmAdj(cur),zoom:1,ox:0,oy:0}})}
+              style={{width:"38px",height:"54px",objectFit:"cover",borderRadius:"4px",cursor:"pointer",border:p.id===cur.pid?"2px solid #58a6ff":"2px solid transparent"}}/>)}
+          </div>
+        </div>}
+        <div style={{flex:"1 1 340px",minWidth:0}}>
+          {plan.scenes.map((s,i)=><div key={i} style={{display:"flex",gap:"10px",background:"#161b22",border:"1px solid "+(i===sel?"#1f6feb":"#30363d"),borderRadius:"10px",padding:"10px",marginBottom:"8px"}}>
+            <div onClick={()=>{setSel(i);setScrub(0);}} title="크게 보기" style={{position:"relative",flexShrink:0,cursor:"pointer"}}>
+              <img src={photoOf(s.pid)?.dataUrl} alt="" style={{width:"60px",height:"106px",objectFit:"cover",borderRadius:"6px",display:"block"}}/>
+              <span style={{position:"absolute",left:0,right:0,bottom:"3px",textAlign:"center",fontSize:"11px",color:"#fff",textShadow:"0 0 3px #000"}}>{i===sel?"보는 중":"🔍 크게"}</span>
+              {s.clipUrl&&<span style={{position:"absolute",left:"2px",top:"2px",fontSize:"10px",background:"#8957e5",color:"#fff",borderRadius:"4px",padding:"1px 4px"}}>AI 클립</span>}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap",marginBottom:"6px"}}>
+                <b style={{color:"#e6edf3",fontSize:"14px"}}>장면 {i+1}</b>
+                <input type="number" step="0.5" min="1.5" max="10" value={s.sec} onChange={e=>upd(i,{sec:Number(e.target.value)})} style={{...S.input,width:"70px",padding:"4px 6px"}}/><span style={{fontSize:"12px",color:"#8b949e"}}>초</span>
+                <select value={s.effect} onChange={e=>upd(i,{effect:e.target.value})} style={{...S.input,width:"auto",padding:"4px 6px"}}>{SHORTS_EFFECTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+                <label style={{fontSize:"12px",color:s.ai?"#d2a8ff":"#8b949e",cursor:"pointer"}}><input type="checkbox" checked={s.ai} onChange={e=>upd(i,{ai:e.target.checked})}/> AI 움직임{s.suggest?" (추천)":""}</label>
+                <span style={{marginLeft:"auto",display:"flex",gap:"4px"}}>
+                  <button style={S.small} onClick={()=>move(i,-1)}>↑</button><button style={S.small} onClick={()=>move(i,1)}>↓</button>
+                  <button style={S.small} onClick={()=>delScene(i)}>삭제</button></span>
+              </div>
+              {[0,1].map(k=><div key={k} style={{display:"flex",gap:"6px",marginBottom:"4px"}}>
+                <input value={(s.caps[k]?.text||"").replace(/\n/g," / ")} placeholder={`자막 ${k+1} (줄바꿈은 " / ")`} onFocus={()=>{ if(sel!==i){ setSel(i); } setScrub(k===1&&s.caps.filter(c=>c&&c.text).length>1?0.75:0.2); }}
+                  onChange={e=>{ const caps=[...s.caps]; caps[k]={...(caps[k]||{hl:""}),text:e.target.value.replace(/\s*\/\s*/g,"\n")}; upd(i,{caps}); }} style={{...S.input,padding:"5px 8px"}}/>
+                <input value={s.caps[k]?.hl||""} placeholder="강조 단어" onChange={e=>{ const caps=[...s.caps]; caps[k]={...(caps[k]||{text:""}),hl:e.target.value}; upd(i,{caps}); }} style={{...S.input,width:"110px",padding:"5px 8px",color:accent}}/>
+              </div>)}
+              <input value={s.narration} placeholder="내레이션 문장" onChange={e=>upd(i,{narration:e.target.value})} style={{...S.input,padding:"5px 8px",color:"#8b949e",fontSize:"13px"}}/>
+              {s.ai&&<input value={s.motion} placeholder="AI 움직임 프롬프트 (영어)" onChange={e=>upd(i,{motion:e.target.value})} style={{...S.input,padding:"5px 8px",color:"#d2a8ff",fontSize:"13px",marginTop:"4px"}}/>}
+            </div>
           </div>)}
-          <input value={s.narration} placeholder="내레이션 문장" onChange={e=>upd(i,{narration:e.target.value})} style={{...S.input,padding:"5px 8px",color:"#8b949e",fontSize:"13px"}}/>
-          {s.ai&&<input value={s.motion} placeholder="AI 움직임 프롬프트 (영어)" onChange={e=>upd(i,{motion:e.target.value})} style={{...S.input,padding:"5px 8px",color:"#d2a8ff",fontSize:"13px",marginTop:"4px"}}/>}
         </div>
-      </div>)}
-      <div style={{fontSize:"12px",color:"#484f58",lineHeight:1.7}}>· AI 움직임은 장면마다 Replicate 비용이 들고 1~3분 걸려요. 체크 안 한 장면은 줌·패닝 효과(무료)로 만들어요.<br/>· 영상 만들기는 실제 길이만큼 걸려요 (30초 영상 ≈ 30초). 그동안 이 탭을 띄워두세요.</div>
+      </div>
+      <div style={{fontSize:"12px",color:"#484f58",lineHeight:1.7}}>· 장면 사진을 누르면 실제 영상과 똑같이(자막·박스·테두리 포함) 크게 보면서 위치·확대·보정을 고칠 수 있어요.<br/>· AI 움직임은 장면마다 PixVerse 크레딧이 들고 1~3분 걸려요(하루 무료분 있음). 체크 안 한 장면은 줌·패닝 효과(무료)로 만들어요.<br/>· 「AI 클립」 표시 장면은 이미지별 AI 영상에서 만든 클립이 들어가요 (미리보기에는 사진으로 보여요).<br/>· 영상 만들기는 실제 길이만큼 걸려요 (30초 영상 ≈ 30초). 그동안 이 탭을 띄워두세요.</div>
     </div>}
 
     {result&&<div style={S.card}>
@@ -10351,7 +10597,8 @@ function BlogShortsMaker(){
 function VideoMakeAiTab(){
   const [mode,setMode]=React.useState(()=>{ try{ return localStorage.getItem("vm_ai_mode")||"blog"; }catch(e){ return "blog"; } });
   const pick=m=>{ setMode(m); try{ localStorage.setItem("vm_ai_mode",m); }catch(e){} };
-  React.useEffect(()=>{ const f=()=>pick("blog"); window.addEventListener("sns-to-shorts",f); return ()=>window.removeEventListener("sns-to-shorts",f); },[]);
+  React.useEffect(()=>{ const f=()=>pick("blog"); window.addEventListener("sns-to-shorts",f); window.addEventListener("ai-to-shorts",f);
+    return ()=>{ window.removeEventListener("sns-to-shorts",f); window.removeEventListener("ai-to-shorts",f); }; },[]);
   const tab=on=>({padding:"8px 14px",borderRadius:"8px",border:"1px solid "+(on?"#1f6feb":"#30363d"),background:on?"#1f6feb22":"#161b22",color:on?"#58a6ff":"#8b949e",cursor:"pointer",fontSize:"14px",fontWeight:700});
   return <div>
     <div style={{display:"flex",gap:"8px",marginBottom:"14px",flexWrap:"wrap"}}>
@@ -10377,249 +10624,192 @@ function videoHeaders(svc){
   return { "Content-Type":"application/json", [svc==="pixverse"?"x-pixverse-key":"x-replicate-key"]:k };
 }
 
-// ─── 이미지별 AI 영상 (예전 방식) ──────────────────────────────────────────
-function VideoMakeAiSingle() {
-  const [replicateKey, setReplicateKey] = React.useState("");
-  const [pixverseKey, setPixverseKey] = React.useState("");
-  const [preferApi, setPreferApi] = React.useState("replicate");
-  const [duration, setDuration] = React.useState("10");
-  const [resolution, setResolution] = React.useState("720p");
-  const [globalPrompt, setGlobalPrompt] = React.useState("");
-  const [images, setImages] = React.useState([]);
-  const [progresses, setProgresses] = React.useState([]);
-  const [results, setResults] = React.useState([]);
-  const [running, setRunning] = React.useState(false);
-  const [toast, setToast] = React.useState(null);
-  const fileRef = React.useRef();
+// ─── 이미지별 AI 영상 (Gemini) ─────────────────────────────────────────────
+// 사진 1장 = 장면 1개 = AI 영상 클립 1개. 짧게 쓴 설명 → Claude가 영상용 프롬프트로 다듬음(이야기 추가 없음)
+// → 장면별 자막·나레이션·배경음악 추천 → Gemini(또는 PixVerse)로 클립 → 「블로그 글로 쇼츠」 편집 화면으로 넘겨 한 편으로
+const AI_STYLES=["실사","동화 일러스트","3D 애니메이션","수채화","시네마틱 광고","레트로 필름"];
+function VideoMakeAiSingle(){
+  const [items,setItems]=useKeep("ai.items",[]);           // {id,name,dataUrl,desc,prompt,ko,cap,hl,narration,clipUrl,err}
+  const [style,setStyle]=useKeep("ai.style","실사");
+  const [engine,setEngine]=useKeep("ai.engine","gemini");
+  const [secs,setSecs]=useKeep("ai.secs",6);
+  const [title,setTitle]=useKeep("ai.title","");
+  const [mood,setMood]=useKeep("ai.mood","");
+  const [msg,setMsg]=useKeep("ai.msg","");
+  const [model,setModel]=React.useState(()=>mlsGet("vm_veo_model",GEM_VEO_MODELS[0][0]));
+  const [busy,setBusy]=React.useState("");
+  const [prog,setProg]=React.useState({});                  // id → 진행 글
+  const [bgmCats,setBgmCats]=React.useState({});
+  const fileRef=React.useRef(); const stopRef=React.useRef(false);
+  React.useEffect(()=>{ fetch("/bgm/list.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(j=>setBgmCats(j?.cats||{})).catch(()=>{}); },[]);
+  const secOpts=engine==="gemini"?[4,6,8]:[5,8];
+  React.useEffect(()=>{ if(!secOpts.includes(Number(secs))) setSecs(secOpts[secOpts.length>2?1:0]); },[engine]);
 
-  React.useEffect(() => {
-    if (typeof window !== "undefined") {
-      setReplicateKey(localStorage.getItem("vm_replicate_key") || "");
-      setPixverseKey(localStorage.getItem("vm_pixverse_key") || "");
-      setPreferApi(localStorage.getItem("vm_prefer_api") || "replicate");
-    }
-  }, []);
-
-  const saveKey = (field, val) => {
-    if (field === "replicate") { setReplicateKey(val); localStorage.setItem("vm_replicate_key", val); }
-    else { setPixverseKey(val); localStorage.setItem("vm_pixverse_key", val); }
-  };
-  const savePrefer = (v) => { setPreferApi(v); localStorage.setItem("vm_prefer_api", v); };
-
-  const showToast = (msg, type="ok") => {
-    setToast({msg, type});
-    setTimeout(() => setToast(null), 3500);
-  };
-
-  const addImages = (files) => {
-    Array.from(files).filter(f => f.type.startsWith("image/")).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = e => setImages(prev => [...prev, { file, dataUrl: e.target.result, name: file.name, prompt: "" }]);
-      reader.readAsDataURL(file);
+  const addPhotos=files=>{
+    Array.from(files).filter(f=>f.type.startsWith("image/")).forEach(f=>{
+      const r=new FileReader(); r.onload=e=>setItems(a=>[...a,{id:Date.now()+Math.random(),name:f.name,dataUrl:e.target.result,desc:"",prompt:"",ko:"",cap:"",hl:"",narration:"",clipUrl:"",err:""}]); r.readAsDataURL(f);
     });
   };
+  const up=(id,patch)=>setItems(a=>a.map(x=>x.id===id?{...x,...patch}:x));
+  const move=(i,d)=>setItems(a=>{ const b=[...a]; const j=i+d; if(j<0||j>=b.length) return a; [b[i],b[j]]=[b[j],b[i]]; return b; });
+  const resetAll=()=>{ if(!window.confirm("올린 사진·프롬프트·만든 클립을 모두 비울까요?")) return;
+    Object.keys(BSM_MEM).filter(k=>k.startsWith("ai.")).forEach(k=>delete BSM_MEM[k]);
+    setItems([]); setTitle(""); setMood(""); setMsg(""); setProg({}); };
 
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-  const callReplicate = async (_token, dataUrl, prompt, dur, res, idx) => {
-    updateProg(idx, 25, "Replicate 요청 중...");
-    const r1 = await fetch("/api/video-proxy", {
-      method: "POST", headers: videoHeaders("replicate"),
-      body: JSON.stringify({ action: "replicate_create", payload: { image: dataUrl, prompt, num_frames: parseInt(dur) * 16, fps: 16, resolution: res } }),
-    });
-    const pred = await r1.json();
-    if (pred.error) throw new Error(pred.error);
-    updateProg(idx, 35, "AI 영상 생성 중...");
-    for (let i = 0; i < 120; i++) {
-      await sleep(3000);
-      updateProg(idx, Math.min(35 + i * 0.5, 90), `생성 중... (${(i+1)*3}초)`);
-      const r2 = await fetch("/api/video-proxy", {
-        method: "POST", headers: videoHeaders("replicate"),
-        body: JSON.stringify({ action: "replicate_status", payload: { id: pred.id } }),
-      });
-      const st = await r2.json();
-      if (st.status === "succeeded") { const o = st.output; return Array.isArray(o) ? o[0] : o; }
-      if (st.status === "failed") throw new Error(st.error || "생성 실패");
-    }
-    throw new Error("타임아웃");
+  // ✨ 프롬프트 다듬기 + 자막·나레이션·배경음악 추천 (Claude) — only: 이 장면만
+  const enhance=async(only)=>{
+    const list=only?items.filter(x=>x.id===only):items;
+    if(!list.length){ setMsg("사진을 먼저 올려주세요"); return; }
+    if(list.some(x=>!x.desc.trim())){ setMsg("장면마다 짧은 설명을 적어주세요 (예: 토끼가 거북이 등에 타서 바다를 구경)"); return; }
+    if(!only&&items.some(x=>x.clipUrl)&&!window.confirm("전체를 다시 다듬으면 프롬프트가 바뀌어서, 이미 만든 클립은 지워지고 다시 만들어야 해요. 계속할까요?")) return;
+    setBusy(only?"enh-"+only:"enh"); setMsg("프롬프트 다듬는 중… (Claude · 15~30초)");
+    try{
+      const content=[];
+      for(let i=0;i<list.length;i++){ const t=await shortsThumb(list[i].dataUrl,512);
+        content.push({type:"text",text:`장면 ${i+1} 사진 — 사용자 설명: ${list[i].desc.trim()}`});
+        content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:t.split(",")[1]}}); }
+      const moods=Object.entries(bgmCats).filter(([,c])=>c.tracks?.length).map(([k,c])=>`${k}(${c.label})`);
+      content.push({type:"text",text:
+`위 사진들을 각각 이미지→영상 AI(Google Veo)로 ${secs}초짜리 세로(9:16) 클립으로 만든다. 스타일: ${style}.
+장면마다 사용자가 쓴 짧은 설명을 영상 AI가 잘 알아듣는 영어 프롬프트로 다듬어라.
+꼭 지킬 것:
+- 사진 속 실제 피사체·구도·색을 그대로 유지한다. 설명에 없는 사건·인물·이야기·대사를 지어내지 않는다 (설명을 영화처럼 '찍는 방법'만 구체화).
+- 넣을 것: 카메라 샷과 움직임(예: slow dolly-in, gentle orbit, low angle), 피사체의 작고 자연스러운 동작·표정(눈 깜빡임, 반짝이는 눈빛, 머리카락·털이 바람에 흔들림, 물결), 조명과 분위기, 스타일 "${style}"에 맞는 질감, ${secs}초 안에 끝나는 하나의 동작.
+- 글자·자막·로고·워터마크 없음. 영어 50~90단어.
+- ko: 무엇을 더했는지 한국어 한 줄 (예: "낮은 앵글로 천천히 다가가며, 토끼 눈빛이 반짝이게").
+- caption: 화면 자막 (한 줄 12자 이내, 최대 2줄, 줄바꿈 \\n), hl: 자막 속 강조할 단어 하나(없으면 ""),
+- narration: 그 장면에서 읽을 한국어 나레이션 한 문장 (${secs}초 동안 읽을 분량, 1초당 4~5글자). 장면끼리 자연스럽게 이어지게.
+${only?"":`- title: 전체 영상 제목 (20자 이내).${moods.length?`\n- bgm: 어울리는 배경음악 분위기 키 하나 — ${moods.join(", ")} 중에서.`:""}`}
+순수 JSON만: {${only?"":`"title":"","bgm":"",`}"scenes":[{"n":1,"prompt":"","ko":"","caption":"","hl":"","narration":""}]}`});
+      const out=await callClaude([{role:"user",content}],"You are a cinematographer who writes prompts for image-to-video AI. Never invent story beyond the user's description. Output only valid JSON.",3000,"claude-sonnet-4-5-20250929");
+      const j=shortsJson(out);
+      const sc=j.scenes||[];
+      setItems(a=>a.map(x=>{ const k=list.findIndex(y=>y.id===x.id); if(k<0) return x; const r=sc.find(s=>Number(s.n)===k+1)||sc[k]; if(!r) return x;
+        return {...x,prompt:String(r.prompt||""),ko:String(r.ko||""),cap:String(r.caption||"").slice(0,40),hl:String(r.hl||""),narration:String(r.narration||""),clipUrl:""}; }));
+      if(!only){ if(j.title) setTitle(String(j.title)); if(j.bgm&&bgmCats[j.bgm]) setMood(String(j.bgm)); }
+      setMsg("✓ 다듬기 완료 — 프롬프트·자막·나레이션을 확인하고 고친 뒤 🎬 클립 만들기");
+    }catch(e){ setMsg("다듬기 실패: "+e.message); }
+    setBusy("");
   };
 
-  const callPixverse = async (_apiKey, dataUrl, prompt, dur, idx) => {
-    updateProg(idx, 25, "PixVerse 이미지 업로드 중...");
-    const [h, d] = dataUrl.split(",");
-    const mimeType = h.match(/:(.*?);/)[1];
-    const r1 = await fetch("/api/video-proxy", {
-      method: "POST", headers: videoHeaders("pixverse"),
-      body: JSON.stringify({ action: "pixverse_upload", payload: { imageBase64: d, mimeType } }),
-    });
-    const upData = await r1.json();
-    if (upData.error) throw new Error(upData.error);
-    const imgId = upData.img_id;
-    if (!imgId) throw new Error("PixVerse 이미지 ID 없음");
-    updateProg(idx, 40, "PixVerse 생성 요청...");
-    const r2 = await fetch("/api/video-proxy", {
-      method: "POST", headers: videoHeaders("pixverse"),
-      body: JSON.stringify({ action: "pixverse_create", payload: { img_id: imgId, prompt, duration: parseInt(dur) } }),
-    });
-    const genData = await r2.json();
-    if (genData.error) throw new Error(genData.error);
-    const videoId = genData.video_id;
-    if (!videoId) throw new Error("PixVerse 영상 ID 없음");
-    for (let i = 0; i < 100; i++) {
-      await sleep(3000);
-      updateProg(idx, Math.min(50 + i * 0.4, 90), `PixVerse 생성 중... (${(i+1)*3}초)`);
-      const r3 = await fetch("/api/video-proxy", {
-        method: "POST", headers: videoHeaders("pixverse"),
-        body: JSON.stringify({ action: "pixverse_status", payload: { video_id: videoId } }),
-      });
-      if (!r3.ok) continue;
-      const sData = await r3.json();
-      if (sData.status === 1) return sData.url;
-      if (sData.status === -1) throw new Error("PixVerse 생성 실패");
-    }
-    throw new Error("PixVerse 타임아웃");
-  };
-
-  const dataURLtoBlob = (dataUrl) => {
-    const [h, d] = dataUrl.split(","); const mime = h.match(/:(.*?);/)[1];
-    const bin = atob(d); const arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-    return new Blob([arr], { type: mime });
-  };
-
-  const updateProg = (idx, pct, msg, err=false) => {
-    setProgresses(prev => prev.map((p, i) => i === idx ? { ...p, pct, msg, err } : p));
-  };
-
-  const startGen = async () => {
-    if (images.length === 0) { showToast("이미지를 먼저 업로드하세요", "err"); return; }
-    setRunning(true);
-    setResults([]);
-    setProgresses(images.map(img => ({ name: img.name, pct: 0, msg: "대기 중...", err: false })));
-    const newResults = [];
-    for (let i = 0; i < images.length; i++) {
-      const img = images[i];
-      const prompt = img.prompt || globalPrompt || "cinematic product showcase, smooth camera movement, high quality";
-      let url = null;
-      updateProg(i, 10, "시작...");
-      try {
-        url = await callReplicate(null, img.dataUrl, prompt, duration, resolution, i);
-      } catch(e) { updateProg(i, 40, `⚠️ Replicate 실패: ${e.message} → PixVerse 폴백...`); }
-      if (!url) {
-        try {
-          url = await callPixverse(null, img.dataUrl, prompt, duration, i);
-        } catch(e) { updateProg(i, 100, `❌ 실패: ${e.message}`, true); continue; }
+  // 🎬 클립 만들기 (이미 만든 장면은 건너뜀 · only: 이 장면만 다시)
+  const makeClips=async(only)=>{
+    const list=items.filter(x=>only?x.id===only:!x.clipUrl);
+    if(!list.length){ setMsg("새로 만들 장면이 없어요 (다시 만들려면 장면의 「다시 만들기」)"); return; }
+    if(list.some(x=>!x.prompt.trim())){ setMsg("프롬프트가 빈 장면이 있어요 — ✨ 프롬프트 다듬기를 먼저 해주세요"); return; }
+    try{ needSvcKey(engine==="gemini"?"gemini":"pixverse"); }catch(e){ setMsg(e.message); return; }
+    setBusy("clip"); stopRef.current=false; mlsSet("vm_veo_model",model);
+    for(const x of list){
+      if(stopRef.current) break;
+      const n=items.findIndex(y=>y.id===x.id)+1;
+      up(x.id,{err:""}); setProg(p=>({...p,[x.id]:"요청 중…"}));
+      try{
+        const tick=t=>setProg(p=>({...p,[x.id]:`만드는 중… ${t}초`}));
+        const url=engine==="gemini"?await geminiClip(x.dataUrl,x.prompt,secs,model,tick):await pixverseClip(x.dataUrl,x.prompt,secs,tick);
+        up(x.id,{clipUrl:url}); setProg(p=>({...p,[x.id]:""}));
+      }catch(e){
+        up(x.id,{err:e.message}); setProg(p=>({...p,[x.id]:""}));
+        if(/결제|키를|키가/.test(e.message)){ setMsg(`장면 ${n}: ${e.message}`); break; }
       }
-      if (url) { updateProg(i, 100, "✅ 완료"); newResults.push({ url, name: img.name.replace(/\.[^.]+$/, "") + "_ai.mp4" }); }
     }
-    setResults(newResults);
-    setRunning(false);
-    showToast(`완료! ${newResults.length}개 생성됨`);
-    if (newResults.length > 0) localStorage.setItem("vm_ai_results", JSON.stringify(newResults));
+    setBusy(""); setMsg(m=>/결제|키를|키가/.test(m)?m:"클립 만들기 끝 — 확인 후 ➡ 쇼츠 편집으로 보내기");
   };
 
-  const S = {
-    card: { background:"#0d1117", border:"1px solid #21262d", borderRadius:"12px", padding:"16px", marginBottom:"14px" },
-    label: { fontSize:"13px", color:"#8b949e", fontWeight:600, marginBottom:"5px", display:"block" },
-    input: { width:"100%", background:"#161b22", border:"1px solid #30363d", borderRadius:"8px", padding:"9px 12px", color:"#e6edf3", fontFamily:"'Noto Sans KR',sans-serif", fontSize:"15px", outline:"none", boxSizing:"border-box" },
-    btn: (c="#1f6feb") => ({ padding:"10px 20px", border:"none", borderRadius:"8px", background:c, color:c==="#1f6feb"?"#fff":"#0d1117", fontFamily:"'Noto Sans KR',sans-serif", fontSize:"15px", fontWeight:700, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:"7px" }),
-    grid2: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px" },
+  // ➡ 「블로그 글로 쇼츠」 편집 화면으로 (자막 박스·테두리·나레이션·배경음악·큰 미리보기를 그대로 씀)
+  const toEditor=()=>{
+    if(!items.length) return;
+    const missing=items.filter(x=>!x.clipUrl).length;
+    if(missing&&!window.confirm(`클립이 없는 장면 ${missing}개는 사진 줌 효과로 들어가요. 보낼까요?`)) return;
+    const effects=["zoom-in","pan-left","zoom-out","pan-right"];
+    BSM_MEM.photos=items.map(x=>({id:x.id,name:x.name,dataUrl:x.dataUrl}));
+    BSM_MEM.plan={title:title||"AI 영상",scenes:items.map((x,i)=>({pid:x.id,sec:Number(secs),effect:effects[i%effects.length],
+      caps:x.cap?[{text:x.cap,hl:x.hl}]:[],narration:x.narration,motion:x.prompt,ai:false,clipUrl:x.clipUrl||"",adj:{...BSM_ADJ0}}))};
+    BSM_MEM.result=null; BSM_MEM.sel=0; BSM_MEM.scrub=0; BSM_MEM.narr=null;
+    BSM_MEM.msg="✓ 이미지별 AI 영상에서 넘어왔어요 — 🎙 나레이션 자동 만들기 → 자막·박스 확인 → ② 영상 만들기";
+    if(mood){ mlsSet("vm_bgm_cat",mood); BSM_MEM.bgm=null; }
+    window.dispatchEvent(new Event("ai-to-shorts"));
   };
+
+  const S={card:{background:"#0d1117",border:"1px solid #21262d",borderRadius:"12px",padding:"16px",marginBottom:"14px"},
+    h:{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"},
+    label:{fontSize:"13px",color:"#8b949e",fontWeight:600,marginBottom:"5px",display:"block"},
+    input:{width:"100%",background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"8px 10px",color:"#e6edf3",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",outline:"none",boxSizing:"border-box"},
+    btn:(c="#1f6feb",dis)=>({padding:"10px 18px",border:"none",borderRadius:"8px",background:c,color:"#fff",fontSize:"15px",fontWeight:700,cursor:dis?"not-allowed":"pointer",opacity:dis?.5:1}),
+    small:{padding:"3px 8px",border:"1px solid #30363d",borderRadius:"6px",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px"}};
+  const made=items.filter(x=>x.clipUrl).length;
 
   return <div>
-    {toast && <div style={{ position:"fixed", bottom:"20px", right:"20px", background:"#161b22", border:`1px solid ${toast.type==="err"?"#f85149":"#3fb950"}`, borderRadius:"10px", padding:"12px 18px", fontSize:"15px", color:toast.type==="err"?"#f85149":"#3fb950", zIndex:9999 }}>{toast.msg}</div>}
-
-
-
-    {/* 이미지 업로드 */}
     <div style={S.card}>
-      <div style={{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>📸 이미지 업로드 <span style={{color:"#484f58",fontWeight:400}}>(핵심 장면 3~4개 권장)</span></div>
-      <div onClick={()=>fileRef.current.click()}
-        style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"28px",textAlign:"center",cursor:"pointer",background:"#161b22"}}
-        onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="#58a6ff";}}
-        onDragLeave={e=>{e.currentTarget.style.borderColor="#30363d";}}
-        onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="#30363d";addImages(e.dataTransfer.files);}}>
-        <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>addImages(e.target.files)} />
-        <div style={{fontSize:"32px",marginBottom:"8px"}}>📸</div>
-        <div style={{fontSize:"15px",color:"#8b949e"}}>클릭하거나 드래그해서 업로드</div>
+      <div style={{...S.h,display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+        <span>🤖 사진을 AI로 움직이는 영상으로 <span style={{color:"#484f58",fontWeight:400,fontSize:"13px"}}>(사진 1장 = 장면 1개 · 짧게 설명만 쓰면 프롬프트는 AI가 다듬어요)</span></span>
+        <button style={S.small} disabled={!!busy} onClick={resetAll}>🔄 처음부터</button>
       </div>
-      {images.length > 0 && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:"10px",marginTop:"12px"}}>
-        {images.map((img,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden",position:"relative"}}>
-          <button onClick={()=>setImages(prev=>prev.filter((_,j)=>j!==i))} style={{position:"absolute",top:"5px",right:"5px",background:"rgba(0,0,0,.7)",border:"none",borderRadius:"50%",width:"20px",height:"20px",color:"#fff",cursor:"pointer",fontSize:"13px",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-          <img src={img.dataUrl} alt={img.name} style={{width:"100%",height:"90px",objectFit:"cover",display:"block"}} />
-          <select value={vmPresetOf(img.prompt)} onChange={e=>{ const pr=VM_MOTION_PRESETS.find(p=>p.id===e.target.value); setImages(prev=>prev.map((p,j)=>j===i?{...p,prompt:pr?pr.prompt:""}:p)); }}
-            style={{width:"100%",background:"#0d1117",border:"none",borderTop:"1px solid #30363d",padding:"5px 6px",color:"#c9d1d9",fontSize:"12px",outline:"none"}}>
-            <option value="">움직임: 공통 설정 따름</option>
-            {VM_MOTION_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
-          <input value={img.prompt} onChange={e=>setImages(prev=>prev.map((p,j)=>j===i?{...p,prompt:e.target.value}:p))}
-            placeholder="개별 프롬프트 (선택)"
-            style={{width:"100%",background:"transparent",border:"none",borderTop:"1px solid #30363d",padding:"6px 8px",color:"#8b949e",fontSize:"13px",outline:"none",boxSizing:"border-box"}} />
-        </div>)}
-      </div>}
-    </div>
-
-    {/* 생성 설정 */}
-    <div style={S.card}>
-      <div style={{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"10px"}}>⚙️ 생성 설정</div>
-      <div style={{...S.grid2, marginBottom:"10px"}}>
-        <div><label style={S.label}>영상 길이</label>
-          <select style={S.input} value={duration} onChange={e=>setDuration(e.target.value)}>
-            <option value="5">5초</option><option value="10">10초</option>
-          </select></div>
-        <div><label style={S.label}>해상도</label>
-          <select style={S.input} value={resolution} onChange={e=>setResolution(e.target.value)}>
-            <option value="720p">720p (권장)</option><option value="480p">480p (빠름)</option>
-          </select></div>
+      <div onClick={()=>fileRef.current.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();addPhotos(e.dataTransfer.files);}}
+        style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"18px",textAlign:"center",cursor:"pointer",background:"#161b22",color:"#8b949e",fontSize:"14px"}}>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{addPhotos(e.target.files); e.target.value="";}}/>
+        클릭하거나 드래그해서 사진 올리기 {items.length?`(${items.length}장)`:""}
       </div>
-      <label style={S.label}>움직임 옵션 (고르면 아래 프롬프트가 자동으로 채워져요)</label>
-      <select style={{...S.input,marginBottom:"10px"}} value={vmPresetOf(globalPrompt)}
-        onChange={e=>{ const pr=VM_MOTION_PRESETS.find(p=>p.id===e.target.value); setGlobalPrompt(pr?pr.prompt:""); }}>
-        <option value="">직접 입력</option>
-        {VM_MOTION_PRESETS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
-      </select>
-      {vmPresetOf(globalPrompt)==="drone"&&<div style={{fontSize:"12px",color:"#d29922",marginBottom:"8px"}}>· 드론 항공샷은 풍경·건물처럼 넓게 찍은 사진에서 잘 나와요. 가까이 찍은 사진은 위로 빠질 때 가장자리가 어색할 수 있어요.</div>}
-      <label style={S.label}>공통 프롬프트 (선택 · 비우면 AI 자동 분석)</label>
-      <textarea value={globalPrompt} onChange={e=>setGlobalPrompt(e.target.value)}
-        placeholder="예: cinematic, slow motion, product showcase, smooth camera movement"
-        style={{...S.input,resize:"vertical",minHeight:"60px",lineHeight:"1.6"}} rows={2} />
-      <div style={{display:"flex",gap:"10px",marginTop:"12px",flexWrap:"wrap"}}>
-        <button style={S.btn()} disabled={running} onClick={startGen}>
-          {running ? <><span style={{width:"14px",height:"14px",border:"2px solid rgba(255,255,255,.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin .8s linear infinite",display:"inline-block"}}></span> 생성 중...</> : "🚀 AI 영상 생성 시작"}
-        </button>
-        <button style={S.btn("#21262d")} onClick={()=>{setImages([]);setProgresses([]);setResults([]);}}>🗑 초기화</button>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"10px",marginTop:"10px"}}>
+        <div><label style={S.label}>스타일</label>
+          <select style={S.input} value={style} onChange={e=>setStyle(e.target.value)}>{AI_STYLES.map(s=><option key={s}>{s}</option>)}</select></div>
+        <div><label style={S.label}>영상 엔진</label>
+          <select style={S.input} value={engine} onChange={e=>setEngine(e.target.value)}>
+            <option value="gemini">Gemini (Veo) — 결제 연결 필요</option><option value="pixverse">PixVerse — 하루 무료분</option></select></div>
+        {engine==="gemini"&&<div><label style={S.label}>Gemini 모델</label>
+          <input list="veo-models" style={S.input} value={model} onChange={e=>setModel(e.target.value.trim())}/>
+          <datalist id="veo-models">{GEM_VEO_MODELS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</datalist></div>}
+        <div><label style={S.label}>장면 길이</label>
+          <select style={S.input} value={secs} onChange={e=>setSecs(Number(e.target.value))}>{secOpts.map(n=><option key={n} value={n}>{n}초</option>)}</select></div>
+      </div>
+      <div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px",lineHeight:1.6}}>
+        비용 참고: Gemini는 결제가 연결된 키만 영상이 만들어져요 (1초에 약 0.05~0.40달러 — Lite가 가장 싸고 Fast는 중간 → {secs}초 장면 1개 약 {(0.05*secs).toFixed(2)}~{(0.4*secs).toFixed(2)}달러). 키는 상단 🔑 「영상·음성」 이름의 Gemini 칸.
       </div>
     </div>
 
-    {/* 진행 상황 */}
-    {progresses.length > 0 && <div style={S.card}>
-      <div style={{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"12px"}}>⏳ 생성 진행</div>
-      {progresses.map((p,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",padding:"12px",marginBottom:"8px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
-          <span style={{fontSize:"14px",fontWeight:600,color:"#e6edf3"}}>{p.name}</span>
-          <span style={{fontSize:"13px",color:p.err?"#f85149":p.pct===100?"#3fb950":"#8b949e"}}>{p.msg}</span>
+    {items.length>0&&<div style={S.card}>
+      <div style={{...S.h,display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+        <span>🎬 장면 {items.length}개 · 클립 {made}/{items.length}</span>
+        {mood&&<span style={{fontSize:"12px",color:"#8b949e",fontWeight:400}}>추천 배경음악: {bgmCats[mood]?.label||mood}</span>}
+      </div>
+      <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="영상 제목 (다듬기 하면 추천돼요)" style={{...S.input,marginBottom:"10px"}}/>
+      {items.map((x,i)=><div key={x.id} style={{display:"flex",gap:"10px",background:"#161b22",border:"1px solid "+(x.err?"#f8514966":"#30363d"),borderRadius:"10px",padding:"10px",marginBottom:"8px",flexWrap:"wrap"}}>
+        <div style={{flexShrink:0,width:"108px"}}>
+          {x.clipUrl?<video src={x.clipUrl} muted loop autoPlay playsInline style={{width:"108px",height:"192px",objectFit:"cover",borderRadius:"6px",display:"block",background:"#000"}}/>
+            :<img src={x.dataUrl} alt="" style={{width:"108px",height:"192px",objectFit:"cover",borderRadius:"6px",display:"block"}}/>}
+          <div style={{fontSize:"11px",color:x.clipUrl?"#3fb950":"#8b949e",textAlign:"center",marginTop:"3px"}}>{prog[x.id]||(x.clipUrl?"✓ 클립 완성":"클립 없음")}</div>
         </div>
-        <div style={{background:"#30363d",borderRadius:"4px",height:"4px"}}>
-          <div style={{width:`${p.pct}%`,height:"100%",borderRadius:"4px",background:p.err?"#f85149":p.pct===100?"#3fb950":"linear-gradient(90deg,#1f6feb,#58a6ff)",transition:"width .4s"}} />
+        <div style={{flex:"1 1 300px",minWidth:0}}>
+          <div style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"6px",flexWrap:"wrap"}}>
+            <b style={{color:"#e6edf3",fontSize:"14px"}}>장면 {i+1}</b>
+            <span style={{marginLeft:"auto",display:"flex",gap:"4px",flexWrap:"wrap"}}>
+              <button style={S.small} disabled={!!busy} onClick={()=>enhance(x.id)}>{busy==="enh-"+x.id?"다듬는 중…":"✨ 이 장면 다시 다듬기"}</button>
+              <button style={S.small} disabled={!!busy||!x.prompt} onClick={()=>makeClips(x.id)}>🎬 {x.clipUrl?"다시 만들기":"이 장면만 만들기"}</button>
+              <button style={S.small} onClick={()=>move(i,-1)}>↑</button><button style={S.small} onClick={()=>move(i,1)}>↓</button>
+              <button style={S.small} disabled={busy==="clip"} onClick={()=>setItems(a=>a.filter(y=>y.id!==x.id))}>삭제</button></span>
+          </div>
+          <label style={S.label}>설명 (짧게 · 한국어)</label>
+          <input value={x.desc} onChange={e=>up(x.id,{desc:e.target.value})} placeholder="예: 토끼가 거북이 등에 타서 바다를 구경" style={{...S.input,padding:"6px 8px"}}/>
+          {(x.prompt||x.ko)&&<>
+            {x.ko&&<div style={{fontSize:"12px",color:"#d2a8ff",margin:"6px 0 2px"}}>✨ {x.ko}</div>}
+            <textarea value={x.prompt} onChange={e=>up(x.id,{prompt:e.target.value,clipUrl:""})} rows={3} placeholder="영상용 프롬프트 (영어)" style={{...S.input,padding:"6px 8px",fontSize:"12px",color:"#c9d1d9",resize:"vertical",lineHeight:1.5}}/>
+            <div style={{display:"flex",gap:"6px",marginTop:"4px"}}>
+              <input value={x.cap.replace(/\n/g," / ")} onChange={e=>up(x.id,{cap:e.target.value.replace(/\s*\/\s*/g,"\n")})} placeholder='자막 (줄바꿈은 " / ")' style={{...S.input,padding:"5px 8px"}}/>
+              <input value={x.hl} onChange={e=>up(x.id,{hl:e.target.value})} placeholder="강조 단어" style={{...S.input,width:"100px",padding:"5px 8px"}}/>
+            </div>
+            <input value={x.narration} onChange={e=>up(x.id,{narration:e.target.value})} placeholder="나레이션 문장" style={{...S.input,padding:"5px 8px",marginTop:"4px",color:"#8b949e",fontSize:"13px"}}/>
+          </>}
+          {x.err&&<div style={{fontSize:"12px",color:"#f85149",marginTop:"4px"}}>⚠ {x.err}</div>}
         </div>
       </div>)}
-    </div>}
-
-    {/* 결과 */}
-    {results.length > 0 && <div style={S.card}>
-      <div style={{fontSize:"15px",fontWeight:700,color:"#3fb950",marginBottom:"12px"}}>✅ 생성 완료 ({results.length}개)</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:"12px"}}>
-        {results.map((v,i)=><div key={i} style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",overflow:"hidden"}}>
-          <video src={v.url} controls muted style={{width:"100%",display:"block",maxHeight:"180px",objectFit:"cover"}} />
-          <div style={{padding:"8px"}}>
-            <a href={v.url} download={v.name} target="_blank" rel="noreferrer"
-              style={{display:"block",textAlign:"center",padding:"7px",background:"#21262d",color:"#58a6ff",borderRadius:"6px",textDecoration:"none",fontSize:"14px",fontWeight:600}}>⬇️ 다운로드</a>
-          </div>
-        </div>)}
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginTop:"6px"}}>
+        <button style={S.btn("#8957e5",!!busy)} disabled={!!busy} onClick={()=>enhance()}>{busy==="enh"?"다듬는 중…":"✨ ① 프롬프트 다듬기 + 자막·나레이션 추천"}</button>
+        <button style={S.btn("#1f6feb",!!busy||!items.some(x=>x.prompt))} disabled={!!busy||!items.some(x=>x.prompt)} onClick={()=>makeClips()}>{busy==="clip"?"만드는 중…":`🎬 ② 클립 만들기 (${engine==="gemini"?"Gemini":"PixVerse"})`}</button>
+        {busy==="clip"&&<button style={S.btn("#da3633")} onClick={()=>{stopRef.current=true;}}>지금 장면까지만</button>}
+        <button style={S.btn("#238636",!!busy||!items.length)} disabled={!!busy||!items.length} onClick={toEditor}>➡ ③ 쇼츠 편집으로 보내기</button>
       </div>
+      {msg&&<div style={{marginTop:"10px",fontSize:"14px",color:/실패|필요|없어요|키/.test(msg)?"#f85149":"#d29922"}}>{msg}</div>}
+      <div style={{fontSize:"12px",color:"#484f58",lineHeight:1.7,marginTop:"8px"}}>· 클립은 장면마다 1~5분 걸려요. 만든 클립은 이 페이지를 닫기 전까지 남아 있어요 (다른 메뉴에 갔다 와도 그대로).<br/>· 프롬프트를 고치면 그 장면 클립은 다시 만들어야 해요.<br/>· ③을 누르면 「블로그 글로 쇼츠 만들기」 화면에서 나레이션(Gemini)·배경음악·자막 박스를 넣고 한 편으로 만들어요.</div>
     </div>}
-
-    <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
   </div>;
 }
 
@@ -14751,8 +14941,9 @@ function ApiKeySwitch(){
     window.addEventListener("need-api-key",f); return ()=>window.removeEventListener("need-api-key",f);
   },[]);
   const save=d=>{ keySlotsSave(d); setData({...d,slots:[...d.slots]}); };
-  const cur=activeSlot(data);
-  const nKeys=sl=>KEY_SVCS.filter(v=>sl[v.field]).length;
+  const cur=activeSlot(data), curM=mediaSlot(data);
+  const SHOW=KEY_SVCS.filter(v=>!v.hidden);
+  const nKeys=(sl,g)=>SHOW.filter(v=>(!g||v.group===g)&&sl[v.field]).length;
   const setField=(sid,field,v)=>save({...data,slots:data.slots.map(x=>x.id===sid?{...x,[field]:v}:x)});
   const inp={flex:1,minWidth:0,padding:"5px 7px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"monospace"};
   const btn={padding:"4px 8px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",cursor:"pointer",fontSize:"12px",whiteSpace:"nowrap"};
@@ -14761,29 +14952,30 @@ function ApiKeySwitch(){
   return <div style={{marginLeft:"auto",position:"relative"}}>
     <button onClick={()=>{ setData(keySlotsLoad()); setOpen(o=>!o); setWarn(false); }} title="유료 AI 비용을 어느 키로 낼지"
       style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${ok?"#d2992266":"#f8514966"}`,background:ok?"#d2992215":"#f8514915",color:ok?"#e3b341":"#ff7b72",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
-      🔑 {cur.name?`${cur.name} 키`:"키 등록 필요"}{cur.name&&!ok?" (Claude 없음)":""}
+      🔑 {cur.name?`${cur.name} 키`:"키 등록 필요"}{cur.name&&!ok?" (Claude 없음)":""}{curM.id&&curM.id!==cur.id?` · 영상 ${curM.name}`:""}
     </button>
     {open&&<div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:999}}/>}
     {open&&<div style={{position:"absolute",right:0,top:"38px",zIndex:1000,width:"420px",maxWidth:"calc(100vw - 24px)",maxHeight:"80vh",overflowY:"auto",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",boxShadow:"0 8px 24px #0008",fontSize:"13px",color:"#c9d1d9"}}>
       {warn&&<div style={{padding:"8px",marginBottom:"8px",borderRadius:"8px",background:"#f8514922",border:"1px solid #f8514966",color:"#ff7b72",fontWeight:700}}>이 기능을 쓰려면 아래에서 키를 넣어주세요</div>}
-      <div style={{display:"flex",alignItems:"center",gap:"6px",padding:"8px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px"}}>
-        <span style={{flex:1,fontWeight:700,color:"#e6edf3"}}>지금 쓸 키</span>
-        <select value={cur.id||""} onChange={e=>save({...data,def:e.target.value})}
-          style={{padding:"4px 6px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-          {data.slots.map(sl=><option key={sl.id} value={sl.id}>{sl.name} ({nKeys(sl)}/{KEY_SVCS.length})</option>)}
-        </select>
-      </div>
-      <div style={{color:"#8b949e",fontSize:"12px",margin:"6px 0 10px",lineHeight:1.5}}>고른 이름의 키들로 이 사이트의 유료 AI 비용이 모두 나가요 (지점 블로그 작업도 마찬가지). 자동화 프로그램은 config.json 의 키를 따로 써요.</div>
+      {KEY_GROUPS.map(g=>{ const c=g.id==="media"?curM:cur, n=SHOW.filter(v=>v.group===g.id).length;
+        return <div key={g.id} style={{display:"flex",alignItems:"center",gap:"6px",padding:"8px",marginBottom:"6px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px"}}>
+          <span style={{flex:1,fontWeight:700,color:"#e6edf3"}}>{g.label} 에 쓸 이름 <span style={{color:"#8b949e",fontWeight:400,fontSize:"11px"}}>({g.sub})</span></span>
+          <select value={c.id||""} onChange={e=>save({...data,[g.id==="media"?"defMedia":"def"]:e.target.value})}
+            style={{padding:"4px 6px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+            {data.slots.map(sl=><option key={sl.id} value={sl.id}>{sl.name} ({nKeys(sl,g.id)}/{n})</option>)}
+          </select>
+        </div>; })}
+      <div style={{color:"#8b949e",fontSize:"12px",margin:"6px 0 10px",lineHeight:1.5}}>글쓰기·이미지는 위쪽 이름의 키로, 영상·나레이션은 아래쪽 이름의 키로 비용이 나가요 (지점 블로그 작업도 마찬가지). 자동화 프로그램은 config.json 의 키를 따로 써요.</div>
 
       {data.slots.map(sl=>(
         <div key={sl.id} style={{padding:"8px",marginBottom:"8px",border:`1px solid ${cur.id===sl.id?"#d2992266":"#21262d"}`,borderRadius:"8px",background:cur.id===sl.id?"#d2992208":"transparent"}}>
           <div style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"6px"}}>
             <input value={sl.name} onChange={e=>setField(sl.id,"name",e.target.value)} style={{...inp,fontFamily:"'Noto Sans KR',sans-serif",fontWeight:700,flex:"0 0 130px"}}/>
-            {cur.id===sl.id&&<span style={{color:"#e3b341",fontSize:"12px",fontWeight:700}}>✓ 지금 쓰는 중</span>}
+            {(cur.id===sl.id||curM.id===sl.id)&&<span style={{color:"#e3b341",fontSize:"12px",fontWeight:700}}>✓ {[cur.id===sl.id&&"글쓰기",curM.id===sl.id&&"영상"].filter(Boolean).join("·")}에 쓰는 중</span>}
             <button style={{...del,marginLeft:"auto"}} onClick={()=>{ if(!confirm(`"${sl.name}" 이름과 그 안의 키를 모두 지울까요?`)) return;
-              save({...data,slots:data.slots.filter(x=>x.id!==sl.id),def:data.def===sl.id?"":data.def}); }}>이름 삭제</button>
+              save({...data,slots:data.slots.filter(x=>x.id!==sl.id),def:data.def===sl.id?"":data.def,defMedia:data.defMedia===sl.id?"":data.defMedia}); }}>이름 삭제</button>
           </div>
-          {KEY_SVCS.map(v=>{ const dk=`${sl.id}:${v.id}`, val=sl[v.field]||"";
+          {SHOW.map(v=>{ const dk=`${sl.id}:${v.id}`, val=sl[v.field]||"";
             return <div key={v.id} style={{display:"flex",gap:"5px",alignItems:"center",marginTop:"4px"}}>
               <span style={{flex:"0 0 70px",fontWeight:700,color:"#c9d1d9"}} title={v.use}>{v.label}</span>
               <input type="password" value={draft[dk]||""} onChange={e=>setDraft(d=>({...d,[dk]:e.target.value}))}
