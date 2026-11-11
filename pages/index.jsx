@@ -3567,7 +3567,11 @@ async function exportInsightPdf(d,meta){
 const BP_PREFIX="mt_blog_profile_", BP_ACTIVE="mt_blog_profile_active";
 const bpKey=id=>BP_PREFIX+String(id||"").toLowerCase();
 function bpLoad(id){ try{return JSON.parse(localStorage.getItem(bpKey(id))||"null");}catch(e){return null;} }
-function bpSave(profile){ try{localStorage.setItem(bpKey(profile.blogId),JSON.stringify(profile));return true;}catch(e){return false;} }
+function bpSave(profile){ try{localStorage.setItem(bpKey(profile.blogId),JSON.stringify(profile));bpNotify(false);return true;}catch(e){return false;} }
+// 글쓰기 맞춤 프로필 선택칸 새로고침 알림 — hard=true면 목록에서 빠진 선택도 풀어준다 (사람이 지우거나 백업 불러올 때만)
+function bpNotify(hard){ try{ window.dispatchEvent(new CustomEvent("bp-sync",{detail:{hard:!!hard}})); }catch(e){} }
+// 규칙: 노출확인 목록에 있는 블로그의 프로필만 글쓰기에 보인다
+function bpListVisible(){ const ids=new Set(bhList().map(h=>String(h.blogId||"").toLowerCase())); return bpList().filter(p=>ids.has(String(p.blogId).toLowerCase())); }
 function bpDelete(id){ try{localStorage.removeItem(bpKey(id)); if(bpGetActiveId().toLowerCase()===String(id).toLowerCase()) bpSetActiveId("");}catch(e){} }
 function bpList(){
   const out=[];
@@ -4281,7 +4285,7 @@ function bhSave(snap,meta){
   while(idx.length>BH_MAX){const old=idx.pop();try{localStorage.removeItem(bhKey(old.blogId));}catch(e){}}
   const body=JSON.stringify(snap);
   for(let tries=0;tries<BH_MAX;tries++){
-    try{localStorage.setItem(bhKey(snap.blogId),body);localStorage.setItem(BH_INDEX,JSON.stringify(idx));return idx;}
+    try{localStorage.setItem(bhKey(snap.blogId),body);localStorage.setItem(BH_INDEX,JSON.stringify(idx));bpNotify(false);return idx;}
     catch(e){ if(idx.length<=1) return null; const old=idx.pop(); try{localStorage.removeItem(bhKey(old.blogId));}catch(_){} }
   }
   return null;
@@ -4654,8 +4658,7 @@ function MissingTab(){
   };
   const removeHistory=(id)=>{
     setHistory(bhDelete(id));if(restored?.blogId===id)setRestored(null);
-    // 이 블로그의 글쓰기 맞춤 프로필도 같이 정리할지 묻는다
-    if(bpLoad(id)&&confirm(`@${id} 의 글쓰기 맞춤 프로필도 같이 지울까요?`)) bpDelete(id);
+    bpDelete(id); bpNotify(true);   // 노출확인에서 빠지면 글쓰기 맞춤 프로필도 함께 지운다
   };
   // 현재 블로그의 저장본을 지우고 처음부터 다시
   const resetSaved=()=>{
@@ -5477,7 +5480,7 @@ recommend는 8개.`;
           <input type="file" accept=".json,application/json" style={{display:"none"}} onChange={async e=>{
             const f=e.target.files?.[0];e.target.value="";if(!f)return;
             if(!confirm("백업을 불러올까요?\n백업 파일과 똑같이 맞춰져요 — 파일에 없는 블로그(분석 저장본·맞춤 프로필)는 이 브라우저에서 지워집니다."))return;
-            try{const r=backupImport(await f.text());setHistory(r.idx);
+            try{const r=backupImport(await f.text());setHistory(r.idx);bpNotify(true);
               setBackupMsg(`✅ 불러오기 완료 · 블로그 ${r.ids.length}개${r.ids.length?` (@${r.ids.join(", @")})`:""}${r.removed?` · 파일에 없던 ${r.removed}개 정리`:""}${r.failed.length?` · ⚠️ 저장공간 부족으로 ${r.failed.length}개 실패`:""}`);
             }catch(ex){setBackupMsg("⚠️ "+(ex?.message||ex));}
           }}/>
@@ -5508,7 +5511,7 @@ recommend는 8개.`;
                 <span style={{color:h.missing?"#ff7b72":"#8b949e"}}>{h.missing}</span>
                 <span style={{color:"#3fb950"}}>{h.topKw}</span>
                 <span style={{color:"#8b949e",fontSize:"12px"}}>{bhAgo(h.savedAt)}</span>
-                <span onClick={e=>{e.stopPropagation();if(confirm(`@${h.blogId} 저장 기록을 삭제할까요?`))removeHistory(h.blogId);}}
+                <span onClick={e=>{e.stopPropagation();if(confirm(`@${h.blogId} 의 저장 기록과 글쓰기 맞춤 프로필을 함께 삭제할까요?`))removeHistory(h.blogId);}}
                   style={{color:"#484f58",textAlign:"center",cursor:"pointer"}} title="삭제">✕</span>
               </div>;
             })}
@@ -7574,7 +7577,19 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   const [selCat,setSelCat]=useState("");
   const [profiles,setProfiles]=useState([]);
   const [activeProfId,setActiveProfId]=useState("");
-  useEffect(()=>{setProfiles(bpList());setActiveProfId(bpGetActiveId());},[]);
+  // 노출확인 목록에 있는 블로그 프로필만 보여준다. hard(처음 열 때·삭제·백업 불러오기)면 목록에 없는 선택은 풀어준다
+  useEffect(()=>{
+    const sync=(hard)=>{
+      const vis=bpListVisible(); setProfiles(vis);
+      const act=bpGetActiveId(); const ok=act&&vis.some(p=>p.blogId.toLowerCase()===act.toLowerCase());
+      if(!ok&&act&&hard) bpSetActiveId("");
+      setActiveProfId(ok?act:"");
+    };
+    sync(true);
+    const on=e=>sync(!!e?.detail?.hard);
+    window.addEventListener("bp-sync",on);
+    return ()=>window.removeEventListener("bp-sync",on);
+  },[]);
   const activeProf=profiles.find(p=>p.blogId===activeProfId)||null;
   const pickProfile=(id)=>{setActiveProfId(id);bpSetActiveId(id);};
   const [costMode,setCostModeState]=useState("save");
