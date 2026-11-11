@@ -10034,10 +10034,19 @@ async function pixverseClip(dataUrl,prompt,seconds,tick){
   }
   throw new Error("PixVerse 시간 초과");
 }
-async function geminiClip(dataUrl,prompt,seconds,model,tick){
-  const img=await shortsThumb(dataUrl,1280);
-  const c=await geminiCall("video_create",{model,prompt,image:{mime:"image/jpeg",data:img.split(",")[1]},seconds:Number(seconds)||6,aspect:"9:16",resolution:"720p"});
+async function geminiClip(dataUrl,prompt,seconds,model,tick,extra={}){
+  const b64=async(u,max)=>({mime:"image/jpeg",data:(await shortsThumb(u,max)).split(",")[1]});
+  const payload={model,prompt,image:await b64(dataUrl,1280),seconds:Number(seconds)||6,aspect:"9:16",resolution:"720p"};
+  if(extra.endUrl) payload.lastFrame=await b64(extra.endUrl,1280);                       // 끝 이미지 (시작 → 끝으로 이어지게)
+  if(extra.refs&&extra.refs.length) payload.refs=await Promise.all(extra.refs.slice(0,3).map(u=>b64(u,1024)));   // 캐릭터·제품 참조
+  let c=await geminiCall("video_create",payload);
+  if(c.error&&payload.refs&&!/결제|키|한도/.test(c.error)){   // 이 모델이 참조 이미지를 같이 못 받으면 참조 없이 한 번 더
+    tick&&tick(0,"참조 이미지 없이 다시 요청");
+    delete payload.refs; c=await geminiCall("video_create",payload);
+    if(!c.error) c.noRefs=true;
+  }
   if(c.error) throw new Error(c.error);
+  if(c.noRefs&&extra.onNote) extra.onNote("이 모델은 참조 이미지를 같이 못 받아 참조 없이 만들었어요");
   for(let i=0;i<90;i++){ await mediaSleep(5000); tick&&tick((i+1)*5);
     const st=await geminiCall("video_status",{name:c.name});
     if(st.error) throw new Error(st.error);
@@ -10703,12 +10712,12 @@ function videoHeaders(svc){
 
 // ─── 이미지별 AI 영상 (Gemini) ─────────────────────────────────────────────
 // 사진 1장 = 장면 1개 = AI 영상 클립 1개. 짧게 쓴 설명 → Claude가 영상용 프롬프트로 다듬음(이야기 추가 없음)
-// → 장면별 자막·나레이션·배경음악 추천 → Gemini(또는 PixVerse)로 클립 → 「블로그 글로 쇼츠」 편집 화면으로 넘겨 한 편으로
+// → 장면별 자막·나레이션·배경음악 추천 → Gemini로 클립 (끝 이미지·참조 이미지 선택) → 「블로그 글로 쇼츠」 편집 화면으로 넘겨 한 편으로
 const AI_STYLES=["실사","동화 일러스트","3D 애니메이션","수채화","시네마틱 광고","레트로 필름"];
 function VideoMakeAiSingle(){
   const [items,setItems]=useKeep("ai.items",[]);           // {id,name,dataUrl,desc,prompt,ko,cap,hl,narration,clipUrl,err}
   const [style,setStyle]=useKeep("ai.style","실사");
-  const [engine,setEngine]=useKeep("ai.engine","gemini");
+  const [refs,setRefs]=useKeep("ai.refs",[]);              // 참조 이미지 (캐릭터·제품) 최대 3장 — dataUrl
   const [secs,setSecs]=useKeep("ai.secs",6);
   const [title,setTitle]=useKeep("ai.title","");
   const [mood,setMood]=useKeep("ai.mood","");
@@ -10717,40 +10726,51 @@ function VideoMakeAiSingle(){
   const [busy,setBusy]=React.useState("");
   const [prog,setProg]=React.useState({});                  // id → 진행 글
   const [bgmCats,setBgmCats]=React.useState({});
-  const fileRef=React.useRef(); const stopRef=React.useRef(false);
+  const fileRef=React.useRef(); const stopRef=React.useRef(false); const refRef=React.useRef(); const endRef=React.useRef(); const endFor=React.useRef(null);
   React.useEffect(()=>{ fetch("/bgm/list.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(j=>setBgmCats(j?.cats||{})).catch(()=>{}); },[]);
-  const secOpts=engine==="gemini"?[4,6,8]:[5,8];
-  React.useEffect(()=>{ if(!secOpts.includes(Number(secs))) setSecs(secOpts[secOpts.length>2?1:0]); },[engine]);
+  const secOpts=[4,6,8];
+  const readUrl=f=>new Promise(ok=>{ const r=new FileReader(); r.onload=e=>ok(e.target.result); r.readAsDataURL(f); });
+  const addRefs=async files=>{ const fs=Array.from(files).filter(f=>f.type.startsWith("image/"));
+    const urls=[]; for(const f of fs) urls.push(await readUrl(f));
+    setRefs(a=>[...a,...urls].slice(0,3)); setItems(a=>a.map(x=>({...x,clipUrl:""}))); };
+  const setEnd=async f=>{ const id=endFor.current; if(!f||!id) return; const u=await readUrl(f); up(id,{endUrl:u,clipUrl:""}); };
 
   const addPhotos=files=>{
     Array.from(files).filter(f=>f.type.startsWith("image/")).forEach(f=>{
-      const r=new FileReader(); r.onload=e=>setItems(a=>[...a,{id:Date.now()+Math.random(),name:f.name,dataUrl:e.target.result,desc:"",prompt:"",ko:"",cap:"",hl:"",narration:"",clipUrl:"",err:""}]); r.readAsDataURL(f);
+      const r=new FileReader(); r.onload=e=>setItems(a=>[...a,{id:Date.now()+Math.random(),name:f.name,dataUrl:e.target.result,endUrl:"",desc:"",prompt:"",ko:"",cap:"",hl:"",narration:"",clipUrl:"",err:""}]); r.readAsDataURL(f);
     });
   };
   const up=(id,patch)=>setItems(a=>a.map(x=>x.id===id?{...x,...patch}:x));
   const move=(i,d)=>setItems(a=>{ const b=[...a]; const j=i+d; if(j<0||j>=b.length) return a; [b[i],b[j]]=[b[j],b[i]]; return b; });
   const resetAll=()=>{ if(!window.confirm("올린 사진·프롬프트·만든 클립을 모두 비울까요?")) return;
     Object.keys(BSM_MEM).filter(k=>k.startsWith("ai.")).forEach(k=>delete BSM_MEM[k]);
-    setItems([]); setTitle(""); setMood(""); setMsg(""); setProg({}); };
+    setItems([]); setRefs([]); setTitle(""); setMood(""); setMsg(""); setProg({}); };
 
   // ✨ 프롬프트 다듬기 + 자막·나레이션·배경음악 추천 (Claude) — only: 이 장면만
   const enhance=async(only)=>{
     const list=only?items.filter(x=>x.id===only):items;
     if(!list.length){ setMsg("사진을 먼저 올려주세요"); return; }
-    if(list.some(x=>!x.desc.trim())){ setMsg("장면마다 짧은 설명을 적어주세요 (예: 토끼가 거북이 등에 타서 바다를 구경)"); return; }
     if(!only&&items.some(x=>x.clipUrl)&&!window.confirm("전체를 다시 다듬으면 프롬프트가 바뀌어서, 이미 만든 클립은 지워지고 다시 만들어야 해요. 계속할까요?")) return;
     setBusy(only?"enh-"+only:"enh"); setMsg("프롬프트 다듬는 중… (Claude · 15~30초)");
     try{
       const content=[];
-      for(let i=0;i<list.length;i++){ const t=await shortsThumb(list[i].dataUrl,512);
-        content.push({type:"text",text:`장면 ${i+1} 사진 — 사용자 설명: ${list[i].desc.trim()}`});
+      for(let i=0;i<refs.length;i++){ const t=await shortsThumb(refs[i],384);
+        content.push({type:"text",text:`참조 이미지 ${i+1} (모든 장면에서 이 캐릭터·제품의 모습을 그대로 유지)`});
         content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:t.split(",")[1]}}); }
+      for(let i=0;i<list.length;i++){ const t=await shortsThumb(list[i].dataUrl,512); const d=list[i].desc.trim();
+        content.push({type:"text",text:`장면 ${i+1} 시작 사진 — 사용자 설명: ${d||"(없음 — 사진을 보고 자연스러운 움직임을 정할 것)"}`});
+        content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:t.split(",")[1]}});
+        if(list[i].endUrl){ const e=await shortsThumb(list[i].endUrl,512);
+          content.push({type:"text",text:`장면 ${i+1} 끝 사진 — 영상은 시작 사진에서 이 사진으로 자연스럽게 이어져야 함`});
+          content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:e.split(",")[1]}}); } }
       const moods=Object.entries(bgmCats).filter(([,c])=>c.tracks?.length).map(([k,c])=>`${k}(${c.label})`);
       content.push({type:"text",text:
 `위 사진들을 각각 이미지→영상 AI(Google Veo)로 ${secs}초짜리 세로(9:16) 클립으로 만든다. 스타일: ${style}.
 장면마다 사용자가 쓴 짧은 설명을 영상 AI가 잘 알아듣는 영어 프롬프트로 다듬어라.
 꼭 지킬 것:
 - 사진 속 실제 피사체·구도·색을 그대로 유지한다. 설명에 없는 사건·인물·이야기·대사를 지어내지 않는다 (설명을 영화처럼 '찍는 방법'만 구체화).
+- 설명이 없는 장면은 사진 내용만 보고, 가장 자연스럽고 작은 움직임과 카메라 움직임을 스스로 정한다 (이야기 추가 금지).
+- 끝 사진이 있는 장면은 시작 사진에서 끝 사진으로 바뀌는 과정(카메라 이동·동작·변화)을 한 동작으로 묘사한다.${refs.length?"\n- 참조 이미지의 캐릭터·제품 생김새(색·모양·옷·로고 위치)를 프롬프트에 구체적으로 적어 장면마다 같은 모습이 나오게 한다.":""}
 - 넣을 것: 카메라 샷과 움직임(예: slow dolly-in, gentle orbit, low angle), 피사체의 작고 자연스러운 동작·표정(눈 깜빡임, 반짝이는 눈빛, 머리카락·털이 바람에 흔들림, 물결), 조명과 분위기, 스타일 "${style}"에 맞는 질감, ${secs}초 안에 끝나는 하나의 동작.
 - 글자·자막·로고·워터마크 없음. 영어 50~90단어.
 - ko: 무엇을 더했는지 한국어 한 줄 (예: "낮은 앵글로 천천히 다가가며, 토끼 눈빛이 반짝이게").
@@ -10774,15 +10794,15 @@ ${only?"":`- title: 전체 영상 제목 (20자 이내).${moods.length?`\n- bgm:
     const list=items.filter(x=>only?x.id===only:!x.clipUrl);
     if(!list.length){ setMsg("새로 만들 장면이 없어요 (다시 만들려면 장면의 「다시 만들기」)"); return; }
     if(list.some(x=>!x.prompt.trim())){ setMsg("프롬프트가 빈 장면이 있어요 — ✨ 프롬프트 다듬기를 먼저 해주세요"); return; }
-    try{ needSvcKey(engine==="gemini"?"gemini":"pixverse"); }catch(e){ setMsg(e.message); return; }
+    try{ needSvcKey("gemini"); }catch(e){ setMsg(e.message); return; }
     setBusy("clip"); stopRef.current=false; mlsSet("vm_veo_model",model);
     for(const x of list){
       if(stopRef.current) break;
       const n=items.findIndex(y=>y.id===x.id)+1;
       up(x.id,{err:""}); setProg(p=>({...p,[x.id]:"요청 중…"}));
       try{
-        const tick=t=>setProg(p=>({...p,[x.id]:`만드는 중… ${t}초`}));
-        const url=engine==="gemini"?await geminiClip(x.dataUrl,x.prompt,secs,model,tick):await pixverseClip(x.dataUrl,x.prompt,secs,tick);
+        const tick=(t,note)=>setProg(p=>({...p,[x.id]:note||`만드는 중… ${t}초`}));
+        const url=await geminiClip(x.dataUrl,x.prompt,secs,model,tick,{endUrl:x.endUrl,refs,onNote:n=>setMsg(n)});
         up(x.id,{clipUrl:url}); setProg(p=>({...p,[x.id]:""}));
       }catch(e){
         up(x.id,{err:e.message}); setProg(p=>({...p,[x.id]:""}));
@@ -10829,15 +10849,24 @@ ${only?"":`- title: 전체 영상 제목 (20자 이내).${moods.length?`\n- bgm:
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"10px",marginTop:"10px"}}>
         <div><label style={S.label}>스타일</label>
           <select style={S.input} value={style} onChange={e=>setStyle(e.target.value)}>{AI_STYLES.map(s=><option key={s}>{s}</option>)}</select></div>
-        <div><label style={S.label}>영상 엔진</label>
-          <select style={S.input} value={engine} onChange={e=>setEngine(e.target.value)}>
-            <option value="gemini">Gemini (Veo) — 결제 연결 필요</option><option value="pixverse">PixVerse — 하루 무료분</option></select></div>
-        {engine==="gemini"&&<div><label style={S.label}>Gemini 모델</label>
+        <div><label style={S.label}>Gemini 모델</label>
           <input list="veo-models" style={S.input} value={model} onChange={e=>setModel(e.target.value.trim())}/>
-          <datalist id="veo-models">{GEM_VEO_MODELS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</datalist></div>}
+          <datalist id="veo-models">{GEM_VEO_MODELS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</datalist></div>
         <div><label style={S.label}>장면 길이</label>
           <select style={S.input} value={secs} onChange={e=>setSecs(Number(e.target.value))}>{secOpts.map(n=><option key={n} value={n}>{n}초</option>)}</select></div>
       </div>
+      <div style={{marginTop:"10px"}}>
+        <label style={S.label}>참조 이미지 (선택 · 캐릭터·제품 최대 3장 — 모든 장면에서 같은 모습 유지)</label>
+        <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
+          {refs.map((u,i)=><div key={i} style={{position:"relative"}}>
+            <img src={u} alt="" style={{width:"64px",height:"64px",objectFit:"cover",borderRadius:"6px",display:"block",border:"1px solid #8957e5"}}/>
+            <button onClick={()=>{ setRefs(a=>a.filter((_,j)=>j!==i)); setItems(a=>a.map(x=>({...x,clipUrl:""}))); }} style={{position:"absolute",right:"2px",top:"2px",background:"rgba(0,0,0,.7)",border:"none",color:"#fff",borderRadius:"50%",width:"18px",height:"18px",cursor:"pointer",fontSize:"11px"}}>✕</button>
+          </div>)}
+          {refs.length<3&&<button onClick={()=>refRef.current.click()} style={{width:"64px",height:"64px",border:"1px dashed #8957e5",borderRadius:"6px",background:"#161b22",color:"#d2a8ff",cursor:"pointer",fontSize:"12px"}}>+ 참조</button>}
+          <input ref={refRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{ addRefs(e.target.files); e.target.value=""; }}/>
+        </div>
+      </div>
+      <input ref={endRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{ setEnd(e.target.files[0]); e.target.value=""; }}/>
       <div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px",lineHeight:1.6}}>
         비용 참고: Gemini는 결제가 연결된 키만 영상이 만들어져요 (1초에 약 0.05~0.40달러 — Lite가 가장 싸고 Fast는 중간 → {secs}초 장면 1개 약 {(0.05*secs).toFixed(2)}~{(0.4*secs).toFixed(2)}달러). 키는 상단 🔑 의 Gemini 칸.
       </div>
@@ -10854,6 +10883,11 @@ ${only?"":`- title: 전체 영상 제목 (20자 이내).${moods.length?`\n- bgm:
           {x.clipUrl?<video src={x.clipUrl} muted loop autoPlay playsInline style={{width:"108px",height:"192px",objectFit:"cover",borderRadius:"6px",display:"block",background:"#000"}}/>
             :<img src={x.dataUrl} alt="" style={{width:"108px",height:"192px",objectFit:"cover",borderRadius:"6px",display:"block"}}/>}
           <div style={{fontSize:"11px",color:x.clipUrl?"#3fb950":"#8b949e",textAlign:"center",marginTop:"3px"}}>{prog[x.id]||(x.clipUrl?"✓ 클립 완성":"클립 없음")}</div>
+          <div style={{marginTop:"6px",fontSize:"11px",color:"#8b949e",textAlign:"center"}}>끝 이미지 (선택)</div>
+          {x.endUrl?<div style={{position:"relative"}}>
+              <img src={x.endUrl} alt="" style={{width:"108px",height:"80px",objectFit:"cover",borderRadius:"6px",display:"block",border:"1px solid #1f6feb"}}/>
+              <button onClick={()=>up(x.id,{endUrl:"",clipUrl:""})} style={{position:"absolute",right:"2px",top:"2px",background:"rgba(0,0,0,.7)",border:"none",color:"#fff",borderRadius:"50%",width:"18px",height:"18px",cursor:"pointer",fontSize:"11px"}}>✕</button></div>
+            :<button onClick={()=>{ endFor.current=x.id; endRef.current.click(); }} style={{width:"108px",height:"40px",border:"1px dashed #30363d",borderRadius:"6px",background:"#0d1117",color:"#8b949e",cursor:"pointer",fontSize:"11px"}}>+ 끝 사진 넣기</button>}
         </div>
         <div style={{flex:"1 1 300px",minWidth:0}}>
           <div style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"6px",flexWrap:"wrap"}}>
@@ -10864,7 +10898,7 @@ ${only?"":`- title: 전체 영상 제목 (20자 이내).${moods.length?`\n- bgm:
               <button style={S.small} onClick={()=>move(i,-1)}>↑</button><button style={S.small} onClick={()=>move(i,1)}>↓</button>
               <button style={S.small} disabled={busy==="clip"} onClick={()=>setItems(a=>a.filter(y=>y.id!==x.id))}>삭제</button></span>
           </div>
-          <label style={S.label}>설명 (짧게 · 한국어)</label>
+          <label style={S.label}>설명 (선택 · 짧게 · 비워두면 사진을 보고 알아서)</label>
           <input value={x.desc} onChange={e=>up(x.id,{desc:e.target.value})} placeholder="예: 토끼가 거북이 등에 타서 바다를 구경" style={{...S.input,padding:"6px 8px"}}/>
           {(x.prompt||x.ko)&&<>
             {x.ko&&<div style={{fontSize:"12px",color:"#d2a8ff",margin:"6px 0 2px"}}>✨ {x.ko}</div>}
@@ -10880,7 +10914,7 @@ ${only?"":`- title: 전체 영상 제목 (20자 이내).${moods.length?`\n- bgm:
       </div>)}
       <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginTop:"6px"}}>
         <button style={S.btn("#8957e5",!!busy)} disabled={!!busy} onClick={()=>enhance()}>{busy==="enh"?"다듬는 중…":"✨ ① 프롬프트 다듬기 + 자막·나레이션 추천"}</button>
-        <button style={S.btn("#1f6feb",!!busy||!items.some(x=>x.prompt))} disabled={!!busy||!items.some(x=>x.prompt)} onClick={()=>makeClips()}>{busy==="clip"?"만드는 중…":`🎬 ② 클립 만들기 (${engine==="gemini"?"Gemini":"PixVerse"})`}</button>
+        <button style={S.btn("#1f6feb",!!busy||!items.some(x=>x.prompt))} disabled={!!busy||!items.some(x=>x.prompt)} onClick={()=>makeClips()}>{busy==="clip"?"만드는 중…":"🎬 ② 클립 만들기 (Gemini)"}</button>
         {busy==="clip"&&<button style={S.btn("#da3633")} onClick={()=>{stopRef.current=true;}}>지금 장면까지만</button>}
         <button style={S.btn("#238636",!!busy||!items.length)} disabled={!!busy||!items.length} onClick={toEditor}>➡ ③ 쇼츠 편집으로 보내기</button>
       </div>
