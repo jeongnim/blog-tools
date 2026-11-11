@@ -15263,7 +15263,7 @@ export default function BlogTools(){
     <div style={{borderBottom:"1px solid #21262d",background:"#0d1117",position:"relative",zIndex:400}}>
       <div style={{padding:"10px 12px",display:"flex",alignItems:"center",gap:"10px"}}>
         <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"19px"}}>✍️</div>
-        <div style={{fontSize:"18px",fontWeight:700,color:"#fff"}}>마케팅 올인원 도구</div>
+        <div style={{fontSize:"18px",fontWeight:700,color:"#fff"}}>마케팅 올인원</div>
         <ApiKeySwitch/>
         <button onClick={doLogout} title="자리를 뜰 때 눌러주세요"
           style={{padding:"5px 12px",borderRadius:"6px",
@@ -15290,7 +15290,7 @@ export default function BlogTools(){
               borderBottom:`2px solid ${isAct?"#1f6feb":"transparent"}`,
               color:isAct?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
               fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:600,flexShrink:0,
-            }}>{t.icon} {t.label}</button>
+            }}>{t.label}</button>
           }
           // ── 글쓰기 드롭다운 ──
           if(t.id==="write"){
@@ -15307,7 +15307,7 @@ export default function BlogTools(){
                     color:isAct?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
                     fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:600,
                     display:"flex",alignItems:"center",gap:"5px"}}>
-                  {t.icon} {t.label}
+                  {t.label}
                   <span style={{fontSize:"11px",opacity:.7,display:"inline-block",
                     transform:writeMenuOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform .2s"}}>▼</span>
                 </button>
@@ -15332,8 +15332,7 @@ export default function BlogTools(){
                           borderLeft:`3px solid ${isSel?"#1f6feb":"transparent"}`,transition:"background .1s"}}
                         onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background="#21262d";}}
                         onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background="transparent";}}>
-                        <span style={{fontSize:"19px"}}>{sub.icon}</span>
-                        <span>{sub.label}</span>
+                                                <span>{sub.label}</span>
                         {isSel&&<span style={{marginLeft:"auto",color:"#1f6feb"}}>✓</span>}
                       </button>
                     })}
@@ -15361,7 +15360,7 @@ export default function BlogTools(){
                   fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:600,
                   display:"flex",alignItems:"center",gap:"5px",
                 }}>
-                {t.icon} {t.label}
+                {t.label}
                 <span style={{fontSize:"11px",opacity:.7,display:"inline-block",
                   transform:imgMenuOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform .2s"}}>▼</span>
               </button>
@@ -15400,8 +15399,7 @@ export default function BlogTools(){
                       }}
                       onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background="#21262d";}}
                       onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background="transparent";}}>
-                      <span style={{fontSize:"19px"}}>{sub.icon}</span>
-                      <span>{sub.label}</span>
+                                            <span>{sub.label}</span>
                       {isSel&&<span style={{marginLeft:"auto",color:"#1f6feb"}}>✓</span>}
                     </button>
                   })}
@@ -15457,8 +15455,7 @@ export default function BlogTools(){
                   }}
                   onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background="#21262d";}}
                   onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background="transparent";}}>
-                  <span style={{fontSize:"19px"}}>{sub.icon}</span>
-                  <span>{sub.label}</span>
+                                    <span>{sub.label}</span>
                   {isSel&&<span style={{marginLeft:"auto",color:"#1f6feb"}}>✓</span>}
                 </button>
               })}
@@ -15478,7 +15475,7 @@ export default function BlogTools(){
             borderBottom:`2px solid ${active===sub.id?"#58a6ff":"transparent"}`,
             color:active===sub.id?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600,
-          }}>{sub.icon} {sub.label}</button>
+          }}>{sub.label}</button>
         ))}
       </div>
     )}
@@ -15493,7 +15490,7 @@ export default function BlogTools(){
             borderBottom:`2px solid ${active===sub.id?"#58a6ff":"transparent"}`,
             color:active===sub.id?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600,
-          }}>{sub.icon} {sub.label}</button>
+          }}>{sub.label}</button>
         ))}
         </div>
       </div>
@@ -15508,7 +15505,7 @@ export default function BlogTools(){
             borderBottom:`2px solid ${active===sub.id?"#58a6ff":"transparent"}`,
             color:active===sub.id?"#58a6ff":"#8b949e",cursor:"pointer",whiteSpace:"nowrap",
             fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:600,
-          }}>{sub.icon} {sub.label}</button>
+          }}>{sub.label}</button>
         ))}
       </div>
     )}
@@ -15521,7 +15518,7 @@ export default function BlogTools(){
         const isActive=active===t.id;
         const meta=WRITE_SUBTABS.find(s=>s.id===t.id)||IMAGE_SUBTABS.find(s=>s.id===t.id)||t;
         return <div key={t.id} style={{display:isActive?"block":"none"}}>
-          <h2 style={{margin:"0 0 16px",fontSize:"17px",fontWeight:700,color:"#e6edf3",display:isActive?"block":"none"}}>{meta.icon} {meta.label}</h2>
+          <h2 style={{margin:"0 0 16px",fontSize:"17px",fontWeight:700,color:"#e6edf3",display:isActive?"block":"none"}}>{meta.label}</h2>
           <TabComp {...sharedProps}/>
         </div>
       })}
