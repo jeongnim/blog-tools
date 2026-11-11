@@ -1,7 +1,7 @@
 // pages/api/gemini.js
 // Gemini 중계 — 나레이션(TTS)과 영상(Veo) 만들기. 키는 화면(상단 🔑 이름)의 Gemini 키를 헤더로만 받는다 (서버 기본 키 없음)
 //   action: "tts"          { model, text, voice }                         → { mime, data(base64) }
-//           "video_create" { model, prompt, image:{mime,data}, seconds, aspect, resolution } → { name }
+//           "video_create" { model, prompt, image:{mime,data}, lastFrame?, refs?[], seconds, aspect, resolution } → { name }
 //           "video_status" { name }                                      → { done, uri, error }
 //           "video_get"    { uri }                                       → 영상 파일 그대로 (브라우저가 직접 못 받을 때만)
 import { requireAuth } from "../../lib/auth";
@@ -51,9 +51,15 @@ export default async function handler(req, res) {
 
     // ── 영상: 만들기 요청 (이미지 → 영상) ─────────────────────────
     if (action === "video_create") {
-      const { model, prompt, image, seconds, aspect, resolution } = payload;
+      const { model, prompt, image, lastFrame, refs, seconds, aspect, resolution } = payload;
       const inst = { prompt: prompt || "subtle natural motion, slow cinematic camera move" };
       if (image?.data) inst.image = { mimeType: image.mime || "image/jpeg", bytesBase64Encoded: image.data };
+      // 끝 이미지: 시작 → 끝으로 이어지는 영상
+      if (lastFrame?.data) inst.lastFrame = { mimeType: lastFrame.mime || "image/jpeg", bytesBase64Encoded: lastFrame.data };
+      // 참조 이미지(캐릭터·제품) 최대 3장 — 장면마다 같은 모습 유지
+      if (Array.isArray(refs) && refs.length)
+        inst.referenceImages = refs.slice(0, 3).filter(r => r?.data).map(r => ({
+          image: { mimeType: r.mime || "image/jpeg", bytesBase64Encoded: r.data }, referenceType: "asset" }));
       const parameters = { aspectRatio: aspect || "9:16", sampleCount: 1 };
       if (seconds) parameters.durationSeconds = Number(seconds);
       if (resolution) parameters.resolution = resolution;
