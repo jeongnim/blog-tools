@@ -4319,13 +4319,17 @@ function backupImport(text){
   if(!file||file.app!=="blog-tools"||!file.data) throw new Error("blog-tools 백업 파일이 아니에요.");
   const parse=v=>{try{return JSON.parse(v);}catch(e){return null;}};
   const isBlogKey=k=>k!==BH_INDEX&&k!==BP_ACTIVE&&(k.startsWith(BH_PREFIX)||k.startsWith(BP_PREFIX));
-  // ① 파일에 없는 블로그 데이터 지우기
+  // 기준 = 백업 파일의 노출확인 목록. 맞춤 프로필은 이 목록에 있는 블로그 것만 받는다
+  // (예전 백업엔 목록에서 뺀 블로그의 프로필이 남아 있을 수 있음)
+  const keepIds=new Set((parse(file.data[BH_INDEX])||[]).map(m=>String(m?.blogId||"").toLowerCase()).filter(Boolean));
+  const wanted=k=>{ if(!(k in file.data)) return false; if(k.startsWith(BP_PREFIX)&&k!==BP_ACTIVE) return keepIds.has(k.slice(BP_PREFIX.length).toLowerCase()); return true; };
+  // ① 받지 않을 블로그 데이터는 이 브라우저에서 지우기
   const mine=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&isBlogKey(k))mine.push(k);}
   let removed=0;
-  mine.forEach(k=>{ if(!(k in file.data)){ try{localStorage.removeItem(k);removed++;}catch(e){} } });
+  mine.forEach(k=>{ if(!wanted(k)){ try{localStorage.removeItem(k);removed++;}catch(e){} } });
   // ② 파일 내용 넣기 (목록은 맨 마지막에 다시 만든다)
   let added=0,failed=[];
-  Object.entries(file.data).forEach(([k,v])=>{ if(k===BH_INDEX) return; try{localStorage.setItem(k,v);added++;}catch(e){failed.push(k);} });
+  Object.entries(file.data).forEach(([k,v])=>{ if(k===BH_INDEX) return; if(isBlogKey(k)&&!wanted(k)) return; try{localStorage.setItem(k,v);added++;}catch(e){failed.push(k);} });
   // ③ 최근 조회 목록 = 파일 목록 중 실제 저장본이 있는 것만
   const idx=(parse(file.data[BH_INDEX])||[]).filter(m=>m?.blogId&&localStorage.getItem(bhKey(m.blogId))!=null).slice(0,BH_MAX);
   try{localStorage.setItem(BH_INDEX,JSON.stringify(idx));}catch(e){failed.push(BH_INDEX);}
