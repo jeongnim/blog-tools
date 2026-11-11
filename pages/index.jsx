@@ -14288,12 +14288,48 @@ function autoHeadings(content){
 // ───────── 티스토리(구글 애드센스)용: 네이버 글을 구글 검색에 맞는 HTML 글로 다시 쓴다 ─────────
 // 사실 확인·금칙어 점검은 네이버 글쓰기 단계에서 이미 끝난 원고를 바탕으로, 형식·길이만 바꾼다 (새 사실 추가 금지)
 function tistoryPlainLen(html){ return String(html||"").replace(/<[^>]+>/g,"").replace(/&[a-z#0-9]+;/gi," ").replace(/\s+/g,"").length; }
+// 티스토리 제목 검사 — 규칙(특수문자 ! ? , 1개까지 · 총정리 금지 · 길이) + 최근 제목과 겹침 점수 (낮을수록 좋음)
+function tistoryTitleCheck(t, mainKeyword, recent=[]){
+  const s=String(t||"").trim(), why=[];
+  const bare=s.replace(/(\d)[.%]/g,"$1");
+  const odd=[...new Set(bare.match(/[^0-9A-Za-z가-힣\s!?,]/g)||[])];
+  if(odd.length) why.push(`허용 안 된 특수문자(${odd.join("")})`);
+  if((s.match(/[!?,]/g)||[]).length>1) why.push("특수문자 2개 이상");
+  if(/총정리|완벽\s*정리/.test(s)) why.push("'총정리'");
+  if(s.length<15||s.length>42) why.push(`길이 ${s.length}자`);
+  const R=(recent||[]).slice(0,10), R3=R.slice(0,3), R5=R.slice(0,5);
+  const cnt=(re,arr)=>arr.filter(x=>re.test(String(x))).length;
+  let score=0;
+  if(/방법/.test(s)) score+=1+2*cnt(/방법/,R3);
+  if(/\d+\s*(가지|단계)/.test(s)) score+=2+3*cnt(/\d+\s*(가지|단계)/,R3);
+  const tail=x=>(String(x).trim().split(/\s+/).pop()||"").replace(/[!?,.]/g,"");
+  if(R5.some(x=>tail(x)===tail(s))) score+=3;
+  const kw=String(mainKeyword||"").replace(/\s+/g,"");
+  const flat=s.replace(/\s+/g,"");
+  if(kw&&!flat.includes(kw.slice(0,Math.min(kw.length,4)))) score+=3;                 // 메인 키워드가 안 보임
+  if(/^[가-힣]{6,}$/.test(kw)&&s.includes(kw)) score+=2;                                 // 붙여 쓴 키워드 그대로
+  const words=x=>new Set((String(x).match(/[가-힣A-Za-z0-9]{2,}/g)||[]).filter(w=>!kw.includes(w)));
+  const me=words(s); for(const x of R5) for(const w of words(x)) if(me.has(w)) score+=0.5;
+  return { title:s, why, bad:why.length>0, score:score+(why.length?100:0) };
+}
+function tistoryPickTitle(cands, mainKeyword, recent){
+  const rs=[...new Set((cands||[]).map(x=>String(x||"").trim()).filter(Boolean))].map(t=>tistoryTitleCheck(t,mainKeyword,recent));
+  rs.sort((a,b)=>a.score-b.score);
+  return { best:rs[0]||null, all:rs };
+}
+// 규칙을 끝내 못 지켰을 때 마지막 정리 — 막힌 특수문자를 띄어쓰기·쉼표로
+function tistoryCleanTitle(t){
+  let s=String(t||"").replace(/\s*[|:·–—]\s*/g,", ").replace(/[()[\]「」"'“”]/g,"").replace(/총정리|완벽\s*정리/g,"정리");
+  let k=0; s=s.replace(/[!?,]/g,c=>(++k>1?(c===","?" ":""):c));
+  return s.replace(/\s{2,}/g," ").replace(/\s+([!?,])/g,"$1").trim();
+}
 function tistoryParse(raw){
   const t=String(raw||"");
   const sec=name=>{ const m=t.match(new RegExp("===\\s*"+name+"\\s*===\\s*([\\s\\S]*?)(?====\\s*[A-Z]+\\s*===|$)")); return m?m[1].trim():""; };
   let html=sec("HTML").replace(/^```(?:html)?\s*/i,"").replace(/```\s*$/,"").trim();
   html=html.replace(/<h1\b/gi,"<h2").replace(/<\/h1>/gi,"</h2>").replace(/\sstyle="[^"]*"/gi,"");
-  return { title:sec("TITLE").replace(/^["'「]|["'」]$/g,"").split("\n")[0].trim(),
+  const titles=sec("TITLE").split("\n").map(x=>x.replace(/^\s*(?:[-*•]|\d+[.)]|후보\s*\d+\s*[:.)]?)\s*/,"").replace(/^["'「“]|["'」”]$/g,"").trim()).filter(Boolean).slice(0,5);
+  return { title:titles[0]||"", titles,
            tags:sec("TAGS").split(/[,\n]/).map(x=>x.replace(/^#/,"").trim()).filter(Boolean).slice(0,10),
            html };
 }
@@ -14356,6 +14392,15 @@ H6. <h2>마무리</h2> 아래 <p> 1~2개: 핵심 정리 + "${ym} 기준으로 �
     :`L1. 태그·공백 빼고 2,000~3,000자. 같은 말 반복으로 늘리지 말고 단계·이유·주의점·예시로 채운다.
 `;
   if(useRecipe) autoLog(`[${mainKeyword}] 이번 글 구성: ${recipe.name||"랜덤"}`);
+  const tt=recipe?.title||null, recentT=(Array.isArray(tt?.recent)?tt.recent:[]).slice(0,10);
+  const titleBlock=`[제목 — 후보 3개]
+T1. ${tt?.line?`이번 글 제목 유형: ${tt.type} — ${tt.line}`:"제목 유형(상황형·질문형·원인형·결론형·숫자형 등)은 주제에 맞게 고른다."} 예시 문장을 그대로 베끼지 말 것.
+T2. 25~38자. 메인 키워드를 제목 앞쪽 절반 안에 넣되, 붙어 있는 키워드는 사람이 검색하듯 띄어 쓴다(예: "소액결제미납" → "소액결제 미납", "배터리수명" → "배터리 수명").
+T3. 특수문자는 ! ? , 중 1개까지만. | : · - ( ) [ ] 따옴표는 쓰지 않는다. 연도가 꼭 필요하면 "${now.getFullYear()}년"처럼 글자로.
+T4. "총정리", "완벽 정리"는 쓰지 않는다. 과장·낚시 금지("놀라운", "10배", "이것 모르면 손해").
+T5. 세 후보는 서로 다른 짜임으로.${recentT.length?` 아래 최근 제목들과 끝맺음·숫자 위치·반복 단어("방법", "○단계", "○가지")가 겹치지 않게:
+${recentT.map(x=>`- ${x}`).join("\n")}`:""}
+`;
   const prompt=`티스토리 블로그에 올릴 정보성 글을 써라. 구글 검색 노출과 구글 애드센스 승인이 목적이다.
 
 주제: ${topic}
@@ -14363,10 +14408,7 @@ H6. <h2>마무리</h2> 아래 <p> 1~2개: 핵심 정리 + "${ym} 기준으로 �
 오늘: ${today}
 ${formatProductStatusBlock(productStatus)}
 ${notesBlock}
-[제목]
-T1. 32자 안팎. 메인 키워드를 맨 앞에. 숫자(○가지·○단계)나 "총정리·방법·해결" 중 하나를 넣는다. 연도가 의미 있는 주제면 "(${now.getFullYear()})"를 붙여도 된다.
-T2. 과장·낚시 금지("놀라운", "10배", "이것 모르면 손해"). 특수문자는 | 또는 : 1개까지.
-
+${titleBlock}
 ${structureBlock}H7. 쓸 수 있는 태그: h2 h3 p ul ol li strong blockquote pre table thead tbody tr th td. h1·style·class·이모지·느낌표 남발 금지.
 
 [분량·말투]
@@ -14383,7 +14425,9 @@ F4. 특정 매장·지점 이름, 연락처, 홍보 문구 금지.
 
 [출력 — 이 형식 그대로, 다른 말 없이]
 ===TITLE===
-제목
+제목 후보1
+제목 후보2
+제목 후보3
 ===TAGS===
 태그1, 태그2
 ===HTML===
@@ -14398,9 +14442,22 @@ ${useRecipe?"<p>...</p>":"<blockquote>...</blockquote>"}
     const more=tistoryParse(await callClaudeStream([{role:"user",content:prompt},
       {role:"assistant",content:`===TITLE===\n${out.title}\n===TAGS===\n${out.tags.join(", ")}\n===HTML===\n${out.html}`},
       {role:"user",content:`본문이 ${len}자로 짧다. 같은 형식으로 전체를 다시 출력하되, 각 <h2>의 단계·이유·주의점·예시를 더 구체적으로 풀어 태그·공백 빼고 2,000자 이상으로. 새 사실은 [조사 메모] 밖에서 지어내지 말 것.`}],sys,8000,model));
-    if(tistoryPlainLen(more.html)>len){ out={...more, title:more.title||out.title, tags:more.tags.length?more.tags:out.tags}; len=tistoryPlainLen(out.html); }
+    if(tistoryPlainLen(more.html)>len){ out={...more, title:more.title||out.title, titles:[...(more.titles||[]),...(out.titles||[])], tags:more.tags.length?more.tags:out.tags}; len=tistoryPlainLen(out.html); }
   }
   if(!out.html||!out.title) return { ok:false, topic, mainKeyword, reasons:["티스토리 글 형식이 깨짐"] };
+  // 제목: 후보 중 규칙을 지키고 최근 제목과 가장 덜 겹치는 것. 모두 규칙에 걸리면 제목만 한 번 더 받기
+  let tp=tistoryPickTitle(out.titles?.length?out.titles:[out.title], mainKeyword, recentT);
+  if(tp.best?.bad){
+    autoLog(`[${mainKeyword}] 제목 후보가 모두 규칙에 걸려(${tp.best.why.join(", ")}) 제목만 다시 받기`);
+    try{
+      const again=tistoryParse(await callClaudeStream([{role:"user",content:`주제: ${topic}\n메인 키워드: ${mainKeyword}\n\n${titleBlock}\n앞서 낸 후보: ${tp.all.map(x=>x.title).join(" / ")}\n걸린 이유: ${[...new Set(tp.all.flatMap(x=>x.why))].join(", ")}\n\n규칙을 지킨 새 후보 3개를 이 형식으로만 출력:\n===TITLE===\n후보1\n후보2\n후보3`}],sys,600,model));
+      const tp2=tistoryPickTitle([...(again.titles||[]),...tp.all.map(x=>x.title)], mainKeyword, recentT);
+      if(tp2.best&&tp2.best.score<tp.best.score) tp=tp2;
+    }catch(e){ autoLog(`[${mainKeyword}] 제목 다시 받기 실패: ${e.message}`); }
+  }
+  const titleAlts=tp.all.filter(x=>x!==tp.best&&!x.bad).map(x=>x.title).slice(0,2);
+  out.title=tp.best?.bad?tistoryCleanTitle(tp.best.title):(tp.best?.title||out.title);
+  autoLog(`[${mainKeyword}] 제목: ${out.title}${tt?.type?` (${tt.type})`:""}`);
   // 참고 자료 (실제 조사에 쓴 공식 페이지)
   if(research.sources.length){
     const esc=t=>String(t||"").replace(/[<>&"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
@@ -14437,7 +14494,7 @@ ${useRecipe?"<p>...</p>":"<blockquote>...</blockquote>"}
   }
   const checks=(out.html.match(/\[확인필요:[^\]]*\]/g)||[]);
   autoLog(`[${mainKeyword}] 티스토리 글 ${len}자 · 이미지 ${images.length}장 · 확인필요 ${checks.length}곳`);
-  return { ok:true, platform:"tistory", topic, mainKeyword, title:out.title, html:out.html, length:len, checks,
+  return { ok:true, platform:"tistory", topic, mainKeyword, title:out.title, titleAlts, titleType:tt?.type||"", html:out.html, length:len, checks,
     tags:out.tags.slice(0,10), images, sources:research.sources, notes:[] };
 }
 
@@ -14589,7 +14646,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
 
 if(typeof window!=="undefined"){
   window.__blogAuto={
-    version:1, tistory:true, tistoryRecipe:true, writer:true,
+    version:1, tistory:true, tistoryRecipe:true, tistoryTitle:true, writer:true,
     status:()=>({ busy:AUTO_STATE.busy, step:AUTO_STATE.step, log:AUTO_STATE.log.slice(-30) }),
     profiles:()=>bpList().map(p=>({ blogId:p.blogId, isDefault:!!p.isDefault, hasKey:!!keyForBlog(p.blogId).key })),
     categories:()=>Object.keys(NAVER_DIR_MAP),
