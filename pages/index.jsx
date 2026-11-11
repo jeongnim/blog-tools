@@ -10011,9 +10011,12 @@ function BlogShortsMaker(){
       const buf=await (await fetch(t.url)).arrayBuffer();
       const ac=new (window.AudioContext||window.webkitAudioContext)(); const d=await ac.decodeAudioData(buf.slice(0)); ac.close();
       setBgm({name:t.name,buf,dur:d.duration,url:t.url,credit:t.credit||""});
+      setMsg(m=>/폴더에 곡이 없어요|배경음악을 불러오지 못했어요/.test(String(m||""))?"":m);   // 전에 뜬 배경음악 안내는 지움
     }catch(e){ setBgm(null); setMsg("배경음악을 불러오지 못했어요: "+t.name); }
   };
-  React.useEffect(()=>{ if(bgmList&&bgmCat!=="none"&&bgmCat!=="upload"&&!bgm) pickBgm(bgmCat); },[bgmList]);
+  React.useEffect(()=>{ if(bgmList&&bgmCat!=="none"&&bgmCat!=="upload"&&!bgm){
+    if(!bgmList.cats?.[bgmCat]?.tracks?.length){ setBgmCat("none"); try{ localStorage.setItem("vm_bgm_cat","none"); }catch(e){} return; }   // 예전에 고른 분위기가 없어졌으면 안내 없이 '없음'
+    pickBgm(bgmCat); } },[bgmList]);
 
   React.useEffect(()=>{ // 자막용 굵은 글꼴
     if(document.getElementById("shorts-font")) return;
