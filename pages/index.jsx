@@ -3249,6 +3249,11 @@ function KeywordTab({goWrite, goAutoWrite, kwResult, setKwResult, isMobile, pend
           <GoogleKeywordPanel keyword={result.keyword} data={gk[result.keyword]} onPick={k=>{window.scrollTo({top:0,behavior:"smooth"});analyze(k);}}/>
         </div>
 
+        {/* ── 📡 이 키워드 카테고리의 네이버 인기글 10개 ── */}
+        <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
+          <CategoryTopPosts keyword={result.keyword}/>
+        </div>
+
         {/* ── 글 주제 정하기 (직접 입력 + AI 추천) ── */}
         <div style={{background:"#161b22",border:"1px solid #30363d",borderRadius:"12px",padding:"14px",...(!isMobile&&{gridColumn:"1/3"})}}>
           <SectionTitle>✍️ 글 주제 정하기</SectionTitle>
@@ -7411,57 +7416,148 @@ ${buildProfileBlock(profile,"keyword")}
   return { list, excluded, volRange: vr, trendingCount: trendingTitles.length, googleCount: googleTrends.length };
 }
 
-// ── 자동화 미리 실행: 실행기가 매일 할 일을 이 화면에서 1편만 돌려본다 (임시저장·발행 안 함) ──
-function AutoTestPanel({ category, blogId }){
-  const [open,setOpen]=useState(false);
-  const [mode,setMode]=useState("hq");
-  const [region,setRegion]=useState("");
+// ═══ 🔥 지금 뜨는 검색어 (카테고리별 키워드추출 맨 위) ═══
+// 후보: 구글 트렌드 한국 급상승 + AI가 뽑은 이번 달·다음 달 시즌 키워드
+// 확인: 네이버 검색어 트렌드(최근 2주 vs 그 전 4주 상승률) + 검색광고 월 검색수 → 카테고리별로 나눠 보여줌
+const HOT_TTL=60*60*1000;
+const HOT_CATS=()=>NAVER_AUTO_CATEGORIES.flatMap(g=>g.items.map(i=>i.value));
+async function loadHotKeywords(onStep){
+  onStep&&onStep("구글 급상승 검색어 불러오는 중…");
+  const g=await fetch("/api/hot-keywords").then(r=>r.json()).catch(()=>({google:[]}));
+  const google=(g.google||[]);
+  const now=new Date(); const md=`${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일`;
+  const cats=HOT_CATS();
+  onStep&&onStep("AI가 시즌 키워드 고르고 카테고리 나누는 중…");
+  const prompt=`오늘은 ${md}이다. 한국 네이버에서 지금부터 6주 안에 검색이 몰리는 키워드를 찾는 중이다.
+1) 아래 "구글 급상승 검색어"를 하나씩 카테고리에 넣어라. 어느 카테고리에도 안 맞는 정치·사건사고·인물 가십은 category를 "시사·이슈"로.
+2) 이 시기에 해마다 검색이 오르는 "시즌 키워드"를 35개 만들어라 (예: 12월이면 크리스마스 선물, 연말정산 간소화, 송년회 장소, 신년운세, 겨울 여행지).
+   - 사람들이 네이버 검색창에 실제로 치는 1~3어절. 올해 연도·날짜가 붙는 말은 붙여도 됨.
+   - 카테고리를 골고루. "스마트폰·앱"과 "IT·가전"은 각각 4개 이상 (연말 폰 할인, 새해 요금제, 블랙프라이데이 노트북 같은 것).
+   - 블로그 글로 쓸 수 있는 말만.
+카테고리 목록 (이 중 정확히 하나, 또는 "시사·이슈"): ${cats.join(", ")}
+구글 급상승 검색어: ${google.map(x=>x.keyword).join(", ")||"(없음)"}
+순수 JSON만: {"items":[{"keyword":"...","category":"...","src":"google|season","why":"왜 지금 뜨는지 한 줄(15자 안팎)"}]}`;
+  const raw=await callClaude([{role:"user",content:prompt}],"You pick Korean seasonal and trending search keywords. Output ONLY valid JSON.",3000,"claude-haiku-4-5-20251001");
+  let items=(safeParseJson(raw)?.items||[]).filter(x=>x?.keyword).map(x=>({
+    keyword:String(x.keyword).trim(), category:cats.includes(x.category)?x.category:"시사·이슈",
+    src:x.src==="google"?"google":"season", why:x.why||"" }));
+  // AI가 빠뜨린 구글 검색어도 넣는다
+  const flat=t=>String(t).replace(/\s+/g,"");
+  google.forEach(gk=>{ if(!items.some(x=>flat(x.keyword)===flat(gk.keyword))) items.push({keyword:gk.keyword,category:"시사·이슈",src:"google",why:""}); });
+  items=items.filter((x,i,a)=>a.findIndex(y=>flat(y.keyword)===flat(x.keyword))===i);
+  items.forEach(x=>{ const gk=google.find(y=>flat(y.keyword)===flat(x.keyword)); if(gk){ x.src="google"; x.traffic=gk.traffic; if(!x.why&&gk.news) x.why=gk.news; } });
+
+  onStep&&onStep(`네이버 검색어 트렌드로 ${items.length}개 확인 중…`);
+  const t=await fetch("/api/hot-keywords",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({keywords:items.map(x=>x.keyword)})}).then(r=>r.json()).catch(e=>({trends:{},error:e.message}));
+  onStep&&onStep("월 검색수 붙이는 중…");
+  const vols=await fetchMonthlyVolumes(items.map(x=>x.keyword)).catch(()=>({}));
+  items.forEach(x=>{ const tr=t.trends?.[x.keyword]; x.rise=tr?.rise??null; x.spark=tr?.spark||null; x.monthly=vols[x.keyword]?.monthly??null; });
+  // 오르는 것만: 상승률 10% 이상, 또는 구글 급상승(데이터랩에 아직 안 잡혔을 수 있음)
+  items=items.filter(x=>(x.rise!=null&&x.rise>=1.1)||(x.src==="google"&&x.rise==null));
+  const score=x=>Math.log10((x.monthly||300)+10)*Math.min(x.rise||1.3,6);
+  items.sort((a,b)=>score(b)-score(a));
+  return {items, googleCount:google.length, trendError:t.error||null, fetchedAt:Date.now()};
+}
+
+function HotKeywordPanel({category,onPick}){
+  const [data,setData]=useState(()=>{ try{ const c=JSON.parse(localStorage.getItem("hot_kw_v1")||"null"); return c&&Date.now()-c.fetchedAt<HOT_TTL?c:null; }catch(e){ return null; } });
   const [busy,setBusy]=useState(false);
-  const [res,setRes]=useState(null);
   const [step,setStep]=useState("");
-  useEffect(()=>{ if(!busy) return; const t=setInterval(()=>setStep(window.__blogAuto?.status()?.step||""),1000); return ()=>clearInterval(t); },[busy]);
-  const go=async()=>{
-    if(!category||!blogId) return;
-    setBusy(true); setRes(null);
-    try{ setRes(await window.__blogAuto.run({ blogId, mode, category, count:1, region:region.trim(), regionChance:region.trim()?1:0 })); }
-    catch(e){ setRes({ error:e.message }); }
-    setBusy(false);
+  const [err,setErr]=useState("");
+  const [scope,setScope]=useState("all");
+  const [open,setOpen]=useState(true);
+  const load=async()=>{
+    setBusy(true); setErr("");
+    try{ const d=await loadHotKeywords(setStep); setData(d); try{ localStorage.setItem("hot_kw_v1",JSON.stringify(d)); }catch(e){} }
+    catch(e){ setErr(e.message||"불러오기 실패"); }
+    setBusy(false); setStep("");
   };
-  const box={background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px",padding:"10px 12px",fontSize:"13px",color:"#c9d1d9",whiteSpace:"pre-wrap",lineHeight:1.6};
-  const p=res?.posts?.[0];
-  return <div style={{background:"#161b22",border:"1px solid #8957e555",borderRadius:"12px",padding:"12px 16px"}}>
-    <div onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer",display:"flex",alignItems:"center",gap:"8px"}}>
-      <span style={{color:"#d2a8ff",fontSize:"14px",fontWeight:700}}>🤖 자동화 미리 실행</span>
-      <span style={{color:"#484f58",fontSize:"12px"}}>실행기가 매일 하는 일(주제 고르기 → 글 → 이미지 프롬프트)을 1편만 돌려봐요 · 임시저장·발행은 안 함</span>
-      <span style={{marginLeft:"auto",color:"#8b949e"}}>{open?"▲":"▼"}</span>
-    </div>
-    {open&&<div style={{marginTop:"10px",display:"flex",flexDirection:"column",gap:"8px"}}>
-      <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",fontSize:"13px",color:"#8b949e"}}>
-        <span>블로그 <b style={{color:"#e6edf3"}}>{blogId?`@${blogId}`:"(위에서 프로필 선택)"}</b></span>
-        <span>카테고리 <b style={{color:"#e6edf3"}}>{category||"(아래에서 선택)"}</b></span>
-        <select value={mode} onChange={e=>setMode(e.target.value)} style={{padding:"4px 8px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3"}}>
-          <option value="hq">본사 (체급 안 큰 키워드)</option><option value="branch">지점 (롱테일·AI 인용형)</option>
-        </select>
-        <input value={region} onChange={e=>setRegion(e.target.value)} placeholder="지역 각도 (선택, 예: 천안)" style={{padding:"4px 8px",width:"170px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3"}}/>
-        <button onClick={go} disabled={busy||!category||!blogId} style={{marginLeft:"auto",padding:"6px 14px",borderRadius:"6px",border:"none",background:busy||!category||!blogId?"#21262d":"#8957e5",color:"#fff",fontWeight:700,cursor:busy?"wait":"pointer"}}>{busy?"실행 중...":"▶ 1편 돌려보기"}</button>
-      </div>
-      {busy&&<div style={{color:"#8b949e",fontSize:"12px"}}>{step||"시작 중..."}</div>}
-      {res?.error&&<div style={{color:"#ff7b72",fontSize:"13px"}}>⚠️ {res.error}</div>}
-      {res&&!res.error&&<>
-        {!p&&<div style={{color:"#ffa657",fontSize:"13px"}}>통과한 글이 없어요 (보류 {res.skipped?.length||0}편)</div>}
-        {res.skipped?.map((x,i)=><div key={i} style={{color:"#8b949e",fontSize:"12px"}}>⏸ 보류: {x.mainKeyword} — {(x.reasons||[]).join(" / ")}</div>)}
-        {p&&<>
-          <div style={{color:"#e6edf3",fontSize:"15px",fontWeight:700}}>{p.title}</div>
-          <div style={{color:"#8b949e",fontSize:"12px"}}>메인 키워드 {p.mainKeyword}{p.monthly!=null?` · 월 ${p.monthly.toLocaleString()}`:""}{p.region?` · 지역 ${p.region}`:""} · 태그 {p.tags.join(", ")}</div>
-          {p.notes?.length>0&&<div style={{color:"#ffa657",fontSize:"12px"}}>ℹ️ {p.notes.join(" · ")}</div>}
-          <div style={{...box,maxHeight:"360px",overflow:"auto"}}>{p.bodyWithImages}</div>
-          {p.images.map(im=><div key={im.n} style={{...box,fontSize:"12px",color:"#8b949e"}}><b style={{color:"#d2a8ff"}}>[이미지 {im.n}] {im.sectionTitle}</b>{"\n"}{im.prompt}</div>)}
-        </>}
-        <details><summary style={{color:"#484f58",fontSize:"12px",cursor:"pointer"}}>진행 기록 · 제외된 후보</summary>
-          <div style={{...box,fontSize:"12px",color:"#8b949e"}}>{(res.log||[]).join("\n")}{res.dropped?.length?"\n\n제외: "+res.dropped.map(d=>`${d.mainKeyword}(${d.why})`).join(", "):""}</div>
-        </details>
+  useEffect(()=>{ if(!data&&!busy) load(); /* 처음 열 때 한 번 */ // eslint-disable-next-line
+  },[]);
+  useEffect(()=>{ if(!category) setScope("all"); },[category]);
+  const all=data?.items||[];
+  const list=scope==="cat"&&category?all.filter(x=>x.category===category):all.slice(0,30);
+  const fmt=n=>n==null?"-":Number(n).toLocaleString();
+  const ago=t=>{ const m=Math.round((Date.now()-t)/60000); return m<1?"방금":m<60?`${m}분 전`:`${Math.round(m/60)}시간 전`; };
+  const pill=(on)=>({padding:"5px 12px",borderRadius:"14px",cursor:"pointer",fontSize:"13px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
+    border:`1px solid ${on?"#f0883e":"#30363d"}`,background:on?"#f0883e":"#0d1117",color:on?"#fff":"#c9d1d9"});
+  return <div style={{background:"#161b22",border:"1px solid #f0883e55",borderRadius:"12px",padding:"14px 18px",display:"flex",flexDirection:"column",gap:"10px"}}>
+    <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+      <span onClick={()=>setOpen(o=>!o)} style={{color:"#f0883e",fontSize:"16px",fontWeight:700,cursor:"pointer"}}>🔥 지금 뜨는 검색어 <span style={{fontSize:"11px",color:"#8b949e"}}>{open?"▲":"▼"}</span></span>
+      {open&&<>
+        <button onClick={()=>setScope("all")} style={pill(scope==="all")}>전체</button>
+        <button onClick={()=>category&&setScope("cat")} disabled={!category} title={category?"":"아래 STEP 1에서 카테고리를 고르면 켜져요"}
+          style={{...pill(scope==="cat"),opacity:category?1:.4,cursor:category?"pointer":"not-allowed"}}>{category?`${category}만`:"카테고리만"}</button>
       </>}
-    </div>}
+      <span style={{marginLeft:"auto",color:"#484f58",fontSize:"12px"}}>{data?`${ago(data.fetchedAt)} 불러옴`:""}</span>
+      <button onClick={load} disabled={busy} style={{padding:"5px 12px",borderRadius:"6px",border:"1px solid #30363d",background:"#0d1117",color:busy?"#484f58":"#c9d1d9",fontSize:"13px",cursor:busy?"wait":"pointer",fontFamily:"'Noto Sans KR',sans-serif"}}>{busy?"불러오는 중…":"🔄 새로고침"}</button>
+    </div>
+    {open&&<>
+      <div style={{color:"#484f58",fontSize:"12px",lineHeight:1.6}}>구글 급상승 + 시즌 키워드를 네이버 검색어 트렌드로 확인해 <b style={{color:"#8b949e"}}>최근 2주 검색이 오른 것</b>만 보여줘요 · 키워드를 누르면 키워드 글쓰기로 넘어가 바로 분석해요</div>
+      {busy&&<div style={{color:"#8b949e",fontSize:"13px"}}>⏳ {step}</div>}
+      {err&&<div style={{color:"#ff7b72",fontSize:"13px"}}>⚠️ {err}</div>}
+      {data?.trendError&&<div style={{color:"#ffa657",fontSize:"12px"}}>네이버 검색어 트렌드: {data.trendError} (상승률 없이 보여줘요)</div>}
+      {data&&!busy&&list.length===0&&<div style={{color:"#8b949e",fontSize:"13px"}}>{scope==="cat"?`지금 "${category}"에서 오르는 검색어가 없어요. [전체]를 눌러 보세요.`:"오르는 검색어를 못 찾았어요. 잠시 뒤 새로고침해 보세요."}</div>}
+      {list.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"2px"}}>
+        {list.map((x,i)=>{
+          const up=x.rise!=null?Math.round((x.rise-1)*100):null;
+          return <div key={x.keyword} style={{display:"flex",alignItems:"center",gap:"10px",padding:"7px 10px",borderRadius:"8px",background:i%2?"transparent":"#0d111788",flexWrap:"wrap"}}>
+            <span style={{color:"#484f58",fontSize:"12px",width:"20px",textAlign:"right"}}>{i+1}</span>
+            <button onClick={()=>onPick(x.keyword,x.category)} title={x.why||""}
+              style={{background:"none",border:"none",padding:0,color:"#e6edf3",fontSize:"15px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",textAlign:"left"}}
+              onMouseEnter={e=>e.currentTarget.style.color="#58a6ff"} onMouseLeave={e=>e.currentTarget.style.color="#e6edf3"}>{x.keyword}</button>
+            <span style={{color:up==null?"#8b949e":"#3fb950",fontSize:"13px",fontWeight:700}}>{up==null?"새로 뜸":up>=899?"▲ 급등":`▲ ${up}%`}</span>
+            <span style={{color:"#8b949e",fontSize:"12px"}}>월 {fmt(x.monthly)}</span>
+            {x.why&&<span style={{color:"#6e7681",fontSize:"12px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"260px"}}>{x.why}</span>}
+            <span style={{marginLeft:"auto",display:"flex",gap:"5px"}}>
+              {x.src==="google"&&<span style={{fontSize:"11px",color:"#3fb950",border:"1px solid #3fb95044",borderRadius:"8px",padding:"1px 7px"}}>구글 급상승</span>}
+              <span style={{fontSize:"11px",color:"#58a6ff",border:"1px solid #1f6feb44",borderRadius:"8px",padding:"1px 7px"}}>{x.category}</span>
+            </span>
+          </div>;
+        })}
+      </div>}
+    </>}
+  </div>;
+}
+
+// ═══ 키워드 글쓰기 > 이 키워드가 속한 카테고리의 네이버 블로그 인기글 제목 ═══
+async function guessKwCategory(kw){
+  const hint=window.__kwCatHint?.[kw]; if(hint&&NAVER_DIR_MAP[hint]) return hint;
+  try{ const c=localStorage.getItem("kw_cat_"+kw); if(c&&NAVER_DIR_MAP[c]) return c; }catch(e){}
+  const cats=Object.keys(NAVER_DIR_MAP);
+  const raw=await callClaude([{role:"user",content:`검색어 "${kw}"는 네이버 블로그 어느 카테고리 글인가? 아래 중 정확히 하나만 그대로 답해라.\n${cats.join(", ")}`}],"Answer with only the category name.",30,"claude-haiku-4-5-20251001");
+  const hit=cats.find(c=>String(raw||"").includes(c))||"";
+  try{ if(hit) localStorage.setItem("kw_cat_"+kw,hit); }catch(e){}
+  return hit;
+}
+function CategoryTopPosts({keyword}){
+  const [cat,setCat]=useState("");
+  const [titles,setTitles]=useState(null);
+  const [busy,setBusy]=useState(false);
+  useEffect(()=>{ let alive=true; setTitles(null); setCat("");
+    if(keyword) guessKwCategory(keyword).then(c=>{ if(alive) setCat(c); }).catch(()=>{});
+    return ()=>{alive=false;}; },[keyword]);
+  useEffect(()=>{ if(!cat) return; let alive=true; setBusy(true);
+    fetch(`/api/trending-keywords?dirNo=${NAVER_DIR_MAP[cat]||0}`).then(r=>r.json())
+      .then(d=>{ if(alive) setTitles((d.naverTopPosts||[]).slice(0,10)); }).catch(()=>{ if(alive) setTitles([]); })
+      .finally(()=>{ if(alive) setBusy(false); });
+    return ()=>{alive=false;}; },[cat]);
+  const pick=c=>{ setCat(c); try{ localStorage.setItem("kw_cat_"+keyword,c); }catch(e){} };
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",marginBottom:"8px"}}>
+      <span style={{color:"#e6edf3",fontSize:"15px",fontWeight:700}}>📡 이 카테고리 네이버 인기글</span>
+      <select value={cat} onChange={e=>pick(e.target.value)}
+        style={{padding:"4px 8px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#c9d1d9",fontSize:"13px",outline:"none",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"}}>
+        <option value="">{keyword?"카테고리 찾는 중…":"-"}</option>
+        {Object.keys(NAVER_DIR_MAP).map(c=><option key={c} value={c}>{c}</option>)}
+      </select>
+      <span style={{color:"#484f58",fontSize:"12px"}}>카테고리가 틀리면 직접 바꿔 주세요 · 글 주제 잡을 때 참고용</span>
+    </div>
+    {busy&&<div style={{color:"#8b949e",fontSize:"13px"}}>⏳ 인기글 불러오는 중…</div>}
+    {!busy&&titles&&titles.length===0&&<div style={{color:"#8b949e",fontSize:"13px"}}>인기글을 못 가져왔어요. 잠시 뒤 다시 열어 보세요.</div>}
+    {!busy&&titles?.length>0&&<ol style={{margin:0,paddingLeft:"22px",display:"flex",flexDirection:"column",gap:"4px"}}>
+      {titles.map((t,i)=><li key={i} style={{color:"#c9d1d9",fontSize:"14px",lineHeight:1.5}}>{t}</li>)}
+    </ol>}
   </div>;
 }
 
@@ -7595,7 +7691,7 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
-    <AutoTestPanel category={selCat} blogId={activeProfId}/>
+    <HotKeywordPanel category={selCat} onPick={(k,c)=>{ window.__kwCatHint={...(window.__kwCatHint||{}),[k]:c}; goKeywordSearch(k); }}/>
     <div style={{background:"#161b22",border:`1px solid ${activeProf?"#2ea04366":"#30363d"}`,borderRadius:"12px",padding:"16px 20px",display:"flex",flexDirection:"column",gap:"10px"}}>
       <div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
         <div style={{color:"#e6edf3",fontSize:"15px",fontWeight:700}}>✍️ 블로그 맞춤 프로필</div>
@@ -7605,20 +7701,6 @@ function AutoWriteTab({setActive, goAutoWrite, setPendingKeywordSearch}){
           {profiles.map(p=><option key={p.blogId} value={p.blogId}>@{p.blogId}{p.hasInflow?" · 유입 반영":" · 순위만"}</option>)}
         </select>
         {activeProf&&<span style={{color:"#3fb950",fontSize:"13px"}}>● 키워드 추천 + 본문 작성에 적용 중</span>}
-        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:"6px"}}>
-          <span style={{color:"#8b949e",fontSize:"13px"}}>글쓰기 비용</span>
-          <div style={{display:"flex",border:"1px solid #30363d",borderRadius:"6px",overflow:"hidden"}}>
-            {[["save","💰 절약"],["full","🔬 정밀"]].map(([k,l])=>(
-              <button key={k} onClick={()=>pickCost(k)} style={{padding:"5px 11px",border:"none",cursor:"pointer",fontSize:"13px",fontWeight:600,
-                fontFamily:"'Noto Sans KR',sans-serif",background:costMode===k?"#1f6feb":"#0d1117",color:costMode===k?"#fff":"#8b949e"}}>{l}</button>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div style={{color:"#484f58",fontSize:"12px",lineHeight:1.6}}>
-        {costMode==="save"
-          ?"절약: 수치·정책이 핵심인 주제만 웹검색으로 사실 확인하고, 그 확인 작업은 Haiku로 처리합니다. 본문 작성은 그대로 Sonnet. (편당 대략 130~280원)"
-          :"정밀: 모든 글에 Sonnet으로 사전 사실 확인 + 확인필요 항목 재검색. (편당 대략 330~550원)"}
       </div>
       {profiles.length===0&&<div style={{color:"#484f58",fontSize:"13px",lineHeight:1.7}}>아직 만든 프로필이 없어요. 누락 확인 탭에서 블로그 분석 → 🧠 인사이트 → (📥 유입 파일) → <b style={{color:"#8b949e"}}>✨ 프로필 만들기</b>를 누르면 여기에 나타납니다.</div>}
       {activeProf&&<>
@@ -13241,7 +13323,7 @@ function applyResolvedValues(text, items) {
 // ── 비용 모드: "save"(절약, 기본) | "full"(정밀) ──
 // 절약: 사실표·[확인필요] 해결을 Haiku로, 검색 횟수 축소, 수치가 안 걸린 주제는 사실표 생략. 본문 작성은 항상 Sonnet.
 const LS_COST_MODE = "mt_cost_mode";
-function getCostMode() { try { return localStorage.getItem(LS_COST_MODE) === "full" ? "full" : "save"; } catch(e) { return "save"; } }
+function getCostMode() { return "save"; }  // 정밀 모드는 없앴다 (2026-11) — 항상 절약
 function setCostMode(m) { try { localStorage.setItem(LS_COST_MODE, m === "full" ? "full" : "save"); } catch(e) {} }
 const MODEL_SONNET = "claude-sonnet-4-5-20250929", MODEL_HAIKU = "claude-haiku-4-5-20251001";
 
@@ -15262,7 +15344,6 @@ export default function BlogTools(){
     {/* 헤더 — 탭 줄(zIndex 300)보다 위에 있어야 🔑 패널이 가려지지 않는다 */}
     <div style={{borderBottom:"1px solid #21262d",background:"#0d1117",position:"relative",zIndex:400}}>
       <div style={{padding:"10px 12px",display:"flex",alignItems:"center",gap:"10px"}}>
-        <div style={{width:"34px",height:"34px",background:"linear-gradient(135deg,#1f6feb,#58a6ff)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"19px"}}>✍️</div>
         <div style={{fontSize:"18px",fontWeight:700,color:"#fff"}}>마케팅 올인원</div>
         <ApiKeySwitch/>
         <button onClick={doLogout} title="자리를 뜰 때 눌러주세요"
@@ -15315,10 +15396,6 @@ export default function BlogTools(){
                   <div style={{position:"fixed",top:`${writeDropdownTop}px`,left:`${writeDropdownLeft}px`,
                     background:"#161b22",border:"1px solid #444c56",borderRadius:"0 0 12px 12px",
                     minWidth:"180px",boxShadow:"0 16px 48px rgba(0,0,0,.9)",zIndex:99999,overflow:"hidden"}}>
-                    <div style={{padding:"8px 16px 7px",borderBottom:"1px solid #30363d",
-                      color:"#58a6ff",fontSize:"13px",fontWeight:700,background:"#0d1117"}}>
-                      ✍️ 글쓰기 도구
-                    </div>
                     {WRITE_SUBTABS.filter(sub=>!sub.hidden).map(sub=>{
                       const isSel=active===sub.id;
                       return <button key={sub.id}
@@ -15377,10 +15454,6 @@ export default function BlogTools(){
                   zIndex:99999,
                   overflow:"hidden",
                 }}>
-                  <div style={{padding:"8px 16px 7px",borderBottom:"1px solid #30363d",
-                    color:"#58a6ff",fontSize:"13px",fontWeight:700,background:"#0d1117"}}>
-                    🖼️ 이미지 편집 도구
-                  </div>
                   {IMAGE_SUBTABS.filter(sub=>!sub.hidden).map(sub=>{
                     const isSel=active===sub.id;
                     return <button key={sub.id}
@@ -15426,7 +15499,7 @@ export default function BlogTools(){
               fontFamily:"'Noto Sans KR',sans-serif",fontSize:"15px",fontWeight:600,
               display:"flex",alignItems:"center",gap:"5px",
             }}>
-            🎬 동영상 편집
+            동영상 편집
             <span style={{fontSize:"11px",opacity:.7,display:"inline-block",
               transform:videoMenuOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform .2s"}}>▼</span>
           </button>
@@ -15436,10 +15509,6 @@ export default function BlogTools(){
               background:"#161b22",border:"1px solid #444c56",borderRadius:"0 0 12px 12px",
               minWidth:"190px",boxShadow:"0 16px 48px rgba(0,0,0,.9)",zIndex:99999,overflow:"hidden",
             }}>
-              <div style={{padding:"8px 16px 7px",borderBottom:"1px solid #30363d",
-                color:"#58a6ff",fontSize:"13px",fontWeight:700,background:"#0d1117"}}>
-                🎬 동영상 편집 도구
-              </div>
               {VIDEO_SUBTABS.filter(sub=>!sub.hidden).map(sub=>{
                 const isSel=active===sub.id;
                 return <button key={sub.id}
