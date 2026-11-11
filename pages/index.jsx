@@ -10147,6 +10147,14 @@ function BlogShortsMaker(){
   const [result,setResult]=useKeep("result",null);
   const [msg,setMsg]=useKeep("msg","");
   const [sel,setSel]=useKeep("sel",0);                     // 크게 보는 장면
+  // 글 넣기: 블로그 주소 / 아이디로 목록 / 직접 넣기 (SNS 변환과 같은 방식 · 저장한 아이디도 같이 씀)
+  const [srcTab,setSrcTab]=React.useState(()=>mlsGet("vm_src","url"));
+  const [srcUrl,setSrcUrl]=useKeep("srcUrl","");
+  const [curLink,setCurLink]=useKeep("curLink","");
+  const [bid,setBid]=useKeep("bid",()=>{ try{ return JSON.parse(localStorage.getItem("sns_blog_ids")||"[]")[0]||""; }catch(e){ return ""; } });
+  const [posts,setPosts]=useKeep("posts",[]);
+  const [ids,setIds]=React.useState(()=>{ try{ return JSON.parse(localStorage.getItem("sns_blog_ids")||"[]"); }catch(e){ return []; } });
+  const [sdone,setSdone]=React.useState(()=>{ try{ return JSON.parse(localStorage.getItem("shorts_done")||"{}"); }catch(e){ return {}; } });
   const [voice,setVoice]=React.useState(()=>mlsGet("vm_tts_voice","Kore"));
   const narrUrl=React.useMemo(()=>narr?URL.createObjectURL(new Blob([narr.buf])):"",[narr]);
   const [scrub,setScrub]=useKeep("scrub",0);               // 미리보기 시점 (0~1)
@@ -10164,7 +10172,7 @@ function BlogShortsMaker(){
 
   React.useEffect(()=>{ // SNS 변환 탭에서 「릴스 만들기」로 넘어온 글·사진
     const take=()=>{ const d=window.__snsToShorts; if(!d) return; window.__snsToShorts=null;
-      setText(d.text||""); setPhotos(d.photos||[]); setPlan(null); setResult(null); setSel(0); setMsg("✓ SNS 변환에서 글·사진을 가져왔어요"); };
+      setText(d.text||""); setPhotos(d.photos||[]); setPlan(null); setResult(null); setSel(0); setCurLink(d.link||""); setMsg("✓ SNS 변환에서 처음 가져온 글·사진 그대로 넘어왔어요"); };
     take(); window.addEventListener("sns-to-shorts",take); return ()=>window.removeEventListener("sns-to-shorts",take);
   },[]);
 
@@ -10200,6 +10208,45 @@ function BlogShortsMaker(){
       const r=new FileReader(); r.onload=e=>setPhotos(p=>[...p,{id:Date.now()+Math.random(),name:f.name,dataUrl:e.target.result}]); r.readAsDataURL(f);
     });
   };
+  // ── 블로그 글 가져오기 (SNS 변환과 같은 서버 기능)
+  const linkKey=l=>String(l||"").trim().replace(/^https?:\/\//,"").replace(/^m\.blog\.naver\.com/,"blog.naver.com").replace(/[?#].*$/,"").replace(/\/$/,"");
+  const isSdone=l=>!!sdone[linkKey(l)];
+  const markSdone=(l,on)=>setSdone(d=>{ const n={...d}; if(on) n[linkKey(l)]=new Date().toISOString().slice(0,10); else delete n[linkKey(l)]; mlsSet("shorts_done",JSON.stringify(n)); return n; });
+  const saveIds=list=>{ setIds(list); mlsSet("sns_blog_ids",JSON.stringify(list)); };
+  const fetchPost=async(u0)=>{
+    const u=String(u0||srcUrl).trim(); if(!u){ setMsg("블로그 글 주소를 넣어주세요"); return; }
+    setBusy("fetch"); setMsg("글과 사진 가져오는 중…"); setPlan(null); setResult(null);
+    try{
+      const d=await (await fetch("/api/sns-source",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:u})})).json();
+      if(!d.success) throw new Error(d.error||"가져오기 실패");
+      const list=[]; let fail=0;
+      for(const [i,im] of (d.images||[]).entries()){
+        setMsg(`사진 받는 중 ${i+1}/${d.images.length}`);
+        try{ const b=await fetch(`/api/sns-source?img=${encodeURIComponent(im)}`); if(!b.ok) throw new Error();
+          const ou=URL.createObjectURL(await b.blob()); const du=await shortsThumb(ou,1600); URL.revokeObjectURL(ou);
+          list.push({id:Date.now()+Math.random(),name:`사진${i+1}`,dataUrl:du}); }catch(e){ fail++; }
+      }
+      setText(`${d.title||""}\n\n${String(d.text||"").replace(/\[사진\d+\]\n?/g,"")}`.trim()); setPhotos(list); setCurLink(u); setSel(0);
+      setMsg(`✓ 본문 ${(d.text||"").length.toLocaleString()}자 · 사진 ${list.length}장${fail?` (못 받은 사진 ${fail}장 — 필요하면 직접 추가)`:""} → ① 장면 구성 만들기`);
+    }catch(e){ setMsg("가져오기 실패: "+e.message); }
+    setBusy("");
+  };
+  const loadList=async(v0)=>{
+    const v=String(v0??bid).trim(); if(!v){ setMsg("블로그 아이디를 넣어주세요"); return; }
+    setBid(v); setBusy("list"); setMsg("글 목록 불러오는 중…"); setPosts([]);
+    try{
+      const naver=!v.includes(".")||/blog\.naver\.com/i.test(v); let list=[];
+      if(naver){ const d=await (await fetch(`/api/blog-posts?blogId=${encodeURIComponent(v)}&page=1&size=30`)).json();
+        if(!d.success) throw new Error(d.error||"목록을 못 가져왔어요"); list=(d.posts||[]).map(p=>({title:p.title,link:p.link,date:p.date})); }
+      else { const d=await (await fetch("/api/sns-source",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"list",blog:v})})).json();
+        if(!d.success) throw new Error(d.error||"목록을 못 가져왔어요"); list=d.posts||[]; }
+      setPosts(list);
+      const cur=(()=>{ try{ return JSON.parse(localStorage.getItem("sns_blog_ids")||"[]"); }catch(e){ return ids; } })();
+      if(!cur.includes(v)) saveIds([v,...cur].slice(0,12)); else setIds(cur);
+      setMsg(`✓ 최신 글 ${list.length}개 · 아직 쇼츠 안 만든 글 ${list.filter(p=>!isSdone(p.link)).length}개`);
+    }catch(e){ setMsg("목록 실패: "+e.message); }
+    setBusy("");
+  };
   const readAudio=async(f,setter)=>{
     if(!f) return; const buf=await f.arrayBuffer();
     let dur=0; try{ const ac=new (window.AudioContext||window.webkitAudioContext)(); const d=await ac.decodeAudioData(buf.slice(0)); dur=d.duration; ac.close(); }catch(e){ setMsg("음악/음성 파일을 읽지 못했어요 (mp3·wav·m4a 권장)"); return; }
@@ -10209,7 +10256,7 @@ function BlogShortsMaker(){
     if(!window.confirm("올린 사진·글·장면 구성·음악·결과를 모두 비우고 처음부터 할까요?")) return;
     Object.keys(BSM_MEM).filter(k=>!k.startsWith("ai.")).forEach(k=>delete BSM_MEM[k]);
     setPhotos([]); setText(""); setLengthMode("auto"); setRes("1080"); setSubs(true); setAccent(SHORTS_ACCENTS[0][0]);
-    setPlan(null); setBgm(null); setBgmVol(0.25); setNarr(null); setResult(null); setSel(0); setScrub(0); setMsg("");
+    setPlan(null); setBgm(null); setBgmVol(0.25); setNarr(null); setResult(null); setSel(0); setScrub(0); setMsg(""); setSrcUrl(""); setCurLink("");
     if(bgmCat!=="none"&&bgmCat!=="upload") pickBgm(bgmCat);
   };
   const total=plan?plan.scenes.reduce((a,s)=>a+Number(s.sec||0),0):0;
@@ -10386,6 +10433,7 @@ function BlogShortsMaker(){
       const type=(mime||"video/webm").split(";")[0]; const ext=type.includes("mp4")?"mp4":"webm";
       const blob=new Blob(chunks,{type});
       setResult({url:URL.createObjectURL(blob),name:`${plan.title.replace(/[\\/:*?"<>|]/g,"")}_쇼츠.${ext}`,ext,size:blob.size});
+      if(curLink) markSdone(curLink,true);
       setMsg(`완료 — ${T.toFixed(1)}초 · ${W}x${H} · ${ext.toUpperCase()}`+(ext==="webm"?" (이 크롬은 mp4 녹화를 지원하지 않아 webm으로 저장)":""));
     }catch(e){ setMsg("영상 만들기 실패: "+e.message); if(ac) ac.close().catch(()=>{}); }
     setBusy("");
@@ -10422,10 +10470,40 @@ function BlogShortsMaker(){
         <span>📸 사진 + 📝 블로그 글 <span style={{color:"#484f58",fontWeight:400,fontSize:"13px"}}>(사진 3~12장 권장 · 세로 9:16 쇼츠/릴스로 만들어요)</span></span>
         <button style={S.small} disabled={busy==="render"} onClick={resetAll} title="페이지를 닫기 전까지는 다른 메뉴로 갔다 와도 그대로 남아 있어요">🔄 처음부터</button>
       </div>
+      <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap"}}>
+        {[["url","🔗 블로그 주소"],["id","🆔 블로그 아이디로 불러오기"],["paste","📋 직접 넣기"]].map(([k,l])=>
+          <button key={k} onClick={()=>{ setSrcTab(k); mlsSet("vm_src",k); }} style={{padding:"6px 12px",borderRadius:"8px",border:"1px solid "+(srcTab===k?"#1f6feb":"#30363d"),background:srcTab===k?"#1f6feb22":"#161b22",color:srcTab===k?"#58a6ff":"#8b949e",cursor:"pointer",fontSize:"13px",fontWeight:600}}>{l}</button>)}
+      </div>
+      {srcTab==="url"&&<div style={{display:"flex",gap:"8px",marginBottom:"10px"}}>
+        <input style={S.input} value={srcUrl} onChange={e=>setSrcUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!busy&&fetchPost()} placeholder="네이버 블로그 · 티스토리 글 주소"/>
+        <button style={{...S.btn("#238636",!!busy),whiteSpace:"nowrap"}} disabled={!!busy} onClick={()=>fetchPost()}>{busy==="fetch"?"가져오는 중…":"가져오기"}</button>
+      </div>}
+      {srcTab==="id"&&<div style={{marginBottom:"10px"}}>
+        <div style={{display:"flex",gap:"8px"}}>
+          <input style={S.input} value={bid} onChange={e=>setBid(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!busy&&loadList()} placeholder="네이버 블로그 아이디 (예: bandphone-) 또는 티스토리 주소 (예: xxx.tistory.com)"/>
+          <button style={{...S.btn("#238636",!!busy),whiteSpace:"nowrap"}} disabled={!!busy} onClick={()=>loadList()}>{busy==="list"?"불러오는 중…":"목록 불러오기"}</button>
+        </div>
+        {ids.length>0&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"8px",alignItems:"center"}}>
+          <span style={{fontSize:"12px",color:"#8b949e"}}>저장한 블로그</span>
+          {ids.map(v=><span key={v} style={{display:"inline-flex",gap:"6px",alignItems:"center",padding:"4px 8px",borderRadius:"8px",border:"1px solid "+(v===bid?"#1f6feb":"#30363d"),background:v===bid?"#1f6feb22":"#161b22",color:v===bid?"#58a6ff":"#8b949e",fontSize:"13px",cursor:"pointer"}}>
+            <span onClick={()=>!busy&&loadList(v)}>{v}</span>
+            <span title="목록에서 빼기" onClick={()=>saveIds(ids.filter(x=>x!==v))}>✕</span></span>)}
+        </div>}
+        {posts.length>0&&<div style={{marginTop:"10px",maxHeight:"240px",overflowY:"auto",border:"1px solid #21262d",borderRadius:"8px"}}>
+          {posts.map(p=>{ const d=isSdone(p.link), cur=linkKey(p.link)===linkKey(curLink);
+            return <div key={p.link} style={{display:"flex",gap:"8px",alignItems:"center",padding:"7px 10px",borderBottom:"1px solid #21262d",background:cur?"#1f6feb22":"transparent"}}>
+              <span style={{fontSize:"12px",color:"#8b949e",flex:"none",width:"78px"}}>{p.date}</span>
+              <span onClick={()=>{ if(busy) return; setSrcUrl(p.link); fetchPost(p.link); }} style={{flex:1,cursor:busy?"default":"pointer",color:d?"#8b949e":"#e6edf3",fontSize:"14px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.title}</span>
+              {d&&<span style={{fontSize:"11px",color:"#3fb950",flex:"none"}}>✓ 쇼츠 만듦 {sdone[linkKey(p.link)]}</span>}
+              <button style={{...S.small,flex:"none"}} onClick={()=>markSdone(p.link,!d)}>{d?"표시 지우기":"✓ 표시"}</button>
+            </div>; })}
+        </div>}
+      </div>}
+      {srcTab==="paste"&&<div style={{fontSize:"13px",color:"#8b949e",marginBottom:"10px"}}>아래에 사진을 올리고 본문을 붙여넣어 주세요.</div>}
       <div onClick={()=>fileRef.current.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();addPhotos(e.dataTransfer.files);}}
-        style={{border:"2px dashed #30363d",borderRadius:"10px",padding:"18px",textAlign:"center",cursor:"pointer",background:"#161b22",color:"#8b949e",fontSize:"14px"}}>
+        style={{border:"2px dashed #30363d",borderRadius:"10px",padding:srcTab==="paste"?"18px":"10px",textAlign:"center",cursor:"pointer",background:"#161b22",color:"#8b949e",fontSize:"14px"}}>
         <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{addPhotos(e.target.files); e.target.value="";}}/>
-        클릭하거나 드래그해서 블로그 사진 올리기 {photos.length?`(${photos.length}장)`:""}
+        {srcTab==="paste"?"클릭하거나 드래그해서 블로그 사진 올리기":"+ 사진 더 넣기 (클릭·드래그)"} {photos.length?`(${photos.length}장)`:""}
       </div>
       {photos.length>0&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"10px"}}>
         {photos.map((p,i)=><div key={p.id} style={{position:"relative"}}>
@@ -10434,7 +10512,7 @@ function BlogShortsMaker(){
           <button onClick={()=>setPhotos(a=>a.filter(x=>x.id!==p.id))} style={{position:"absolute",right:"2px",top:"2px",background:"rgba(0,0,0,.7)",border:"none",color:"#fff",borderRadius:"50%",width:"18px",height:"18px",cursor:"pointer",fontSize:"11px"}}>✕</button>
         </div>)}
       </div>}
-      <label style={{...S.label,marginTop:"12px"}}>블로그 본문 (그대로 붙여넣기)</label>
+      <label style={{...S.label,marginTop:"12px"}}>블로그 본문 {srcTab==="paste"?"(그대로 붙여넣기)":"(가져온 글 · 고쳐도 돼요)"}</label>
       <textarea value={text} onChange={e=>setText(e.target.value)} rows={6} placeholder="블로그에 올린 글 내용을 붙여넣으세요" style={{...S.input,resize:"vertical",lineHeight:1.6}}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:"10px",marginTop:"10px"}}>
         <div><label style={S.label}>영상 길이</label>
@@ -11915,6 +11993,7 @@ function SnsConvertTab({ setActive }){
   const [mainInfo,setMainInfo]=React.useState({ shrunk:false, range:null });
   const [copied,setCopied]=React.useState("");
   const fileRef=React.useRef(); const mainRef=React.useRef(); const thumbRefs=React.useRef([]); const dragRef=React.useRef(null);
+  const origRef=React.useRef(null);                         // 블로그에서 처음 가져온 제목·본문·사진 (쇼츠로 넘길 때 씀 — SNS용으로 고친 것과 별개)
 
   React.useEffect(()=>{ loadSnsFont().then(()=>setFontOk(true)); },[]);
   const keep=(k,v)=>{ try{ localStorage.setItem(k,v); }catch(e){} };
@@ -11996,6 +12075,7 @@ function SnsConvertTab({ setActive }){
         }catch(e){ fail++; }
       }
       setPhotos(list);
+      origRef.current={ link:u, title:d.title||"", text:d.text||"", photos:list.slice() };
       setMsg(`✓ 본문 ${(d.text||"").length.toLocaleString()}자 · 사진 ${list.length}장${fail?` (못 받은 사진 ${fail}장 — 필요하면 직접 추가)`:""}`);
     }catch(e){ setMsg("✗ "+e.message); }
     setBusy("");
@@ -12266,13 +12346,16 @@ ${outShape}`;
   // ── 쇼츠 만들기로 넘기기
   const toShorts=async()=>{
     setBusy("shorts");
+    // 블로그에서 가져온 글이면 처음 가져온 그대로(제목·본문·사진), 직접 붙여넣은 글이면 지금 화면 그대로
+    const o=origRef.current&&linkKey(origRef.current.link)===linkKey(curLink)?origRef.current:null;
+    const srcTitle=o?o.title:title, srcText=o?o.text:text, srcPhotos=o?o.photos:photos;
     const ph=[];
-    for(const p of photos.slice(0,12)){
+    for(const p of srcPhotos.slice(0,12)){
       const s=Math.min(1,1600/Math.max(p.img.width,p.img.height)); const c=document.createElement("canvas");
       c.width=Math.round(p.img.width*s); c.height=Math.round(p.img.height*s); c.getContext("2d").drawImage(p.img,0,0,c.width,c.height);
       ph.push({ id:Date.now()+Math.random(), name:p.name, dataUrl:c.toDataURL("image/jpeg",0.88) });
     }
-    window.__snsToShorts={ text:`${title}\n\n${text.replace(/\[사진\d+\]\n?/g,"")}`.trim(), photos:ph };
+    window.__snsToShorts={ text:`${srcTitle}\n\n${srcText.replace(/\[사진\d+\]\n?/g,"")}`.trim(), photos:ph, link:o?o.link:"" };
     window.dispatchEvent(new Event("sns-to-shorts"));
     setBusy("");
     if(setActive) setActive("videomake-ai");
