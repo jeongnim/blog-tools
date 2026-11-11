@@ -415,7 +415,7 @@ const LS_BLOG_KEYS="vk_blog_api_keys";      // 자동화가 넣어주는 블로�
 function blogKeysLoad(){ try{ return JSON.parse(localStorage.getItem(LS_BLOG_KEYS)||"{}")||{}; }catch(e){ return {}; } }
 function blogKeysSave(m){ try{ localStorage.setItem(LS_BLOG_KEYS,JSON.stringify(m)); }catch(e){} }
 // 유료 AI 서비스 — 이름(본사용·지점용…)마다 각각 키를 넣는다. key 칸은 예전부터 쓰던 Claude 키 자리
-// group: "write" = 글쓰기·이미지 / "media" = 영상·음성 — 용도마다 「지금 쓸 이름」을 따로 고른다
+// group: 키 종류 구분용 (고르는 이름은 하나 — 글쓰기·이미지·영상·나레이션 모두 같은 이름의 키)
 const KEY_SVCS=[
   { id:"claude",    field:"key",       group:"write", label:"Claude",    ph:"sk-ant-...", ok:v=>/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(v), use:"글쓰기·SNS 변환·장면 구성 등 AI 대부분" },
   { id:"openai",    field:"openai",    group:"write", label:"OpenAI",    ph:"sk-proj-...", ok:v=>/^sk-[A-Za-z0-9_\-]{20,}$/.test(v), use:"GPT 이미지" },
@@ -454,8 +454,7 @@ function activeSlot(d){
   const has=x=>KEY_SVCS.some(v=>x[v.field]);
   return d.slots.find(x=>x.id===d.def)||d.slots.find(has)||d.slots[0]||{id:"",name:""};
 }
-// 영상·음성 용 이름 (따로 안 골랐으면 글쓰기와 같은 이름)
-function mediaSlot(d){ d=d||keySlotsLoad(); return d.slots.find(x=>x.id===d.defMedia)||activeSlot(d); }
+function mediaSlot(d){ return activeSlot(d); }   // 이름 하나로 글쓰기·영상 모두 (용도별로 나누지 않음)
 function slotFor(svc,d){ const v=KEY_SVCS.find(x=>x.id===svc); return v&&v.group==="media"?mediaSlot(d):activeSlot(d); }
 function svcKey(svc){ const v=KEY_SVCS.find(x=>x.id===svc); return v?(slotFor(svc)[v.field]||""):""; }
 // 그 서비스 키가 없으면 상단 🔑 를 열고 멈춘다
@@ -10840,7 +10839,7 @@ ${only?"":`- title: 전체 영상 제목 (20자 이내).${moods.length?`\n- bgm:
           <select style={S.input} value={secs} onChange={e=>setSecs(Number(e.target.value))}>{secOpts.map(n=><option key={n} value={n}>{n}초</option>)}</select></div>
       </div>
       <div style={{fontSize:"12px",color:"#8b949e",marginTop:"6px",lineHeight:1.6}}>
-        비용 참고: Gemini는 결제가 연결된 키만 영상이 만들어져요 (1초에 약 0.05~0.40달러 — Lite가 가장 싸고 Fast는 중간 → {secs}초 장면 1개 약 {(0.05*secs).toFixed(2)}~{(0.4*secs).toFixed(2)}달러). 키는 상단 🔑 「영상·음성」 이름의 Gemini 칸.
+        비용 참고: Gemini는 결제가 연결된 키만 영상이 만들어져요 (1초에 약 0.05~0.40달러 — Lite가 가장 싸고 Fast는 중간 → {secs}초 장면 1개 약 {(0.05*secs).toFixed(2)}~{(0.4*secs).toFixed(2)}달러). 키는 상단 🔑 의 Gemini 칸.
       </div>
     </div>
 
@@ -15024,7 +15023,7 @@ function ApiKeySwitch(){
     window.addEventListener("need-api-key",f); return ()=>window.removeEventListener("need-api-key",f);
   },[]);
   const save=d=>{ keySlotsSave(d); setData({...d,slots:[...d.slots]}); };
-  const cur=activeSlot(data), curM=mediaSlot(data);
+  const cur=activeSlot(data);
   const SHOW=KEY_SVCS.filter(v=>!v.hidden);
   const nKeys=(sl,g)=>SHOW.filter(v=>(!g||v.group===g)&&sl[v.field]).length;
   const setField=(sid,field,v)=>save({...data,slots:data.slots.map(x=>x.id===sid?{...x,[field]:v}:x)});
@@ -15035,26 +15034,25 @@ function ApiKeySwitch(){
   return <div style={{marginLeft:"auto",position:"relative"}}>
     <button onClick={()=>{ setData(keySlotsLoad()); setOpen(o=>!o); setWarn(false); }} title="유료 AI 비용을 어느 키로 낼지"
       style={{padding:"5px 10px",borderRadius:"6px",border:`1px solid ${ok?"#d2992266":"#f8514966"}`,background:ok?"#d2992215":"#f8514915",color:ok?"#e3b341":"#ff7b72",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}}>
-      🔑 {cur.name?`${cur.name} 키`:"키 등록 필요"}{cur.name&&!ok?" (Claude 없음)":""}{curM.id&&curM.id!==cur.id?` · 영상 ${curM.name}`:""}
+      🔑 {cur.name?`${cur.name} 키`:"키 등록 필요"}{cur.name&&!ok?" (Claude 없음)":""}
     </button>
     {open&&<div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:999}}/>}
     {open&&<div style={{position:"absolute",right:0,top:"38px",zIndex:1000,width:"420px",maxWidth:"calc(100vw - 24px)",maxHeight:"80vh",overflowY:"auto",background:"#161b22",border:"1px solid #30363d",borderRadius:"10px",padding:"12px",boxShadow:"0 8px 24px #0008",fontSize:"13px",color:"#c9d1d9"}}>
       {warn&&<div style={{padding:"8px",marginBottom:"8px",borderRadius:"8px",background:"#f8514922",border:"1px solid #f8514966",color:"#ff7b72",fontWeight:700}}>이 기능을 쓰려면 아래에서 키를 넣어주세요</div>}
-      {KEY_GROUPS.map(g=>{ const c=g.id==="media"?curM:cur, n=SHOW.filter(v=>v.group===g.id).length;
-        return <div key={g.id} style={{display:"flex",alignItems:"center",gap:"6px",padding:"8px",marginBottom:"6px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px"}}>
-          <span style={{flex:1,fontWeight:700,color:"#e6edf3"}}>{g.label} 에 쓸 이름 <span style={{color:"#8b949e",fontWeight:400,fontSize:"11px"}}>({g.sub})</span></span>
-          <select value={c.id||""} onChange={e=>save({...data,[g.id==="media"?"defMedia":"def"]:e.target.value})}
-            style={{padding:"4px 6px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-            {data.slots.map(sl=><option key={sl.id} value={sl.id}>{sl.name} ({nKeys(sl,g.id)}/{n})</option>)}
-          </select>
-        </div>; })}
-      <div style={{color:"#8b949e",fontSize:"12px",margin:"6px 0 10px",lineHeight:1.5}}>글쓰기·이미지는 위쪽 이름의 키로, 영상·나레이션은 아래쪽 이름의 키로 비용이 나가요 (지점 블로그 작업도 마찬가지). 자동화 프로그램은 config.json 의 키를 따로 써요.</div>
+      <div style={{display:"flex",alignItems:"center",gap:"6px",padding:"8px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"8px"}}>
+        <span style={{flex:1,fontWeight:700,color:"#e6edf3"}}>지금 쓸 키</span>
+        <select value={cur.id||""} onChange={e=>save({...data,def:e.target.value})}
+          style={{padding:"4px 6px",background:"#010409",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+          {data.slots.map(sl=><option key={sl.id} value={sl.id}>{sl.name} ({nKeys(sl)}/{SHOW.length})</option>)}
+        </select>
+      </div>
+      <div style={{color:"#8b949e",fontSize:"12px",margin:"6px 0 10px",lineHeight:1.5}}>고른 이름의 키들로 이 사이트의 유료 AI 비용(글쓰기·이미지·영상·나레이션)이 모두 나가요 (지점 블로그 작업도 마찬가지). 자동화 프로그램은 config.json 의 키를 따로 써요.</div>
 
       {data.slots.map(sl=>(
         <div key={sl.id} style={{padding:"8px",marginBottom:"8px",border:`1px solid ${cur.id===sl.id?"#d2992266":"#21262d"}`,borderRadius:"8px",background:cur.id===sl.id?"#d2992208":"transparent"}}>
           <div style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"6px"}}>
             <input value={sl.name} onChange={e=>setField(sl.id,"name",e.target.value)} style={{...inp,fontFamily:"'Noto Sans KR',sans-serif",fontWeight:700,flex:"0 0 130px"}}/>
-            {(cur.id===sl.id||curM.id===sl.id)&&<span style={{color:"#e3b341",fontSize:"12px",fontWeight:700}}>✓ {[cur.id===sl.id&&"글쓰기",curM.id===sl.id&&"영상"].filter(Boolean).join("·")}에 쓰는 중</span>}
+            {cur.id===sl.id&&<span style={{color:"#e3b341",fontSize:"12px",fontWeight:700}}>✓ 지금 쓰는 중</span>}
             <button style={{...del,marginLeft:"auto"}} onClick={()=>{ if(!confirm(`"${sl.name}" 이름과 그 안의 키를 모두 지울까요?`)) return;
               save({...data,slots:data.slots.filter(x=>x.id!==sl.id),def:data.def===sl.id?"":data.def,defMedia:data.defMedia===sl.id?"":data.defMedia}); }}>이름 삭제</button>
           </div>
