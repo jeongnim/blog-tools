@@ -90,7 +90,7 @@ export default async function handler(req, res) {
   const conf = datalabConf();
   if (!conf) return res.status(200).json({ error: "네이버 검색어 트렌드 키(NAVER_HUB_CLIENT_ID/SECRET)가 없어요", trends: {} });
 
-  const words = [...new Set((req.body?.keywords || []).map(w => String(w || "").trim()).filter(w => w && w.length <= 30))].slice(0, 60);
+  const words = [...new Set((req.body?.keywords || []).map(w => String(w || "").trim()).filter(w => w && w.length <= 30))].slice(0, 80);
   const trends = {}; const need = [];
   for (const w of words) { const h = cache.get("dl:" + w); if (h && Date.now() - h.at < TTL) trends[w] = h.data; else need.push(w); }
 
