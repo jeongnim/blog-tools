@@ -1,5 +1,5 @@
 // pages/api/gemini.js
-// Gemini 중계 — 나레이션(TTS)과 영상(Veo) 만들기. 키는 화면(상단 🔑 「영상·음성」 이름)의 Gemini 키를 헤더로만 받는다 (서버 기본 키 없음)
+// Gemini 중계 — 나레이션(TTS)과 영상(Veo) 만들기. 키는 화면(상단 🔑 이름)의 Gemini 키를 헤더로만 받는다 (서버 기본 키 없음)
 //   action: "tts"          { model, text, voice }                         → { mime, data(base64) }
 //           "video_create" { model, prompt, image:{mime,data}, seconds, aspect, resolution } → { name }
 //           "video_status" { name }                                      → { done, uri, error }
@@ -13,7 +13,7 @@ const BASE = "https://generativelanguage.googleapis.com/v1beta";
 // 구글 오류를 알아보기 쉬운 말로
 function explain(status, body) {
   const m = String(body?.error?.message || body?.message || "").slice(0, 300);
-  if (status === 401 || /API key not valid|API_KEY_INVALID|PERMISSION_DENIED.*key/i.test(m)) return "Gemini 키가 맞지 않아요 — 상단 🔑 「영상·음성」 이름의 Gemini 키를 확인해 주세요";
+  if (status === 401 || /API key not valid|API_KEY_INVALID|PERMISSION_DENIED.*key/i.test(m)) return "Gemini 키가 맞지 않아요 — 상단 🔑 의 Gemini 키를 확인해 주세요";
   if (/billing|paid tier|FAILED_PRECONDITION|limit: ?0|not available in the free tier/i.test(m) || (status === 429 && /limit: ?0/.test(m)))
     return "Gemini 결제(유료 등급) 연결이 필요해요 — Google AI Studio에서 이 키의 프로젝트에 결제를 연결한 뒤 다시 해주세요";
   if (status === 429) return "Gemini 사용 한도에 걸렸어요 — 1~2분 뒤 다시 해주세요";
@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
   if (req.method !== "POST") return res.status(405).json({ error: "POST만 허용" });
   const KEY = String(req.headers["x-gemini-key"] || "").trim();
-  if (!KEY) return res.status(200).json({ error: "Gemini 키를 넣어주세요 — 상단 🔑 「영상·음성」" });
+  if (!KEY) return res.status(200).json({ error: "Gemini 키를 넣어주세요 — 상단 🔑" });
   const { action, payload = {} } = req.body || {};
   const H = { "x-goog-api-key": KEY, "Content-Type": "application/json" };
 
