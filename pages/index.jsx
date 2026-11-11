@@ -4312,30 +4312,27 @@ function backupExport(){
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   return {keys:Object.keys(data).length,ids,bytes:blob.size};
 }
-// 병합 규칙: 같은 블로그 ID 저장본·프로필은 더 최근 것이 이긴다. 최근 조회 목록은 합친다. 나머지는 파일 값으로 덮는다.
+// 불러오기 = 백업 파일 그대로 맞추기: 파일에 없는 블로그(분석 저장본·맞춤 프로필)는 이 브라우저에서 지우고, 파일에 있는 건 파일 값으로 넣는다.
+// 그 밖의 설정(mt_·bp_)은 파일 값으로 덮어쓰고, 파일에 없는 설정은 그대로 둔다.
 function backupImport(text){
   let file;try{file=JSON.parse(text);}catch(e){throw new Error("백업 파일을 읽지 못했어요 (JSON 형식 아님).");}
   if(!file||file.app!=="blog-tools"||!file.data) throw new Error("blog-tools 백업 파일이 아니에요.");
   const parse=v=>{try{return JSON.parse(v);}catch(e){return null;}};
-  let added=0,kept=0,failed=[];
-  const put=(k,v)=>{try{localStorage.setItem(k,v);added++;}catch(e){failed.push(k);}};
-  Object.entries(file.data).forEach(([k,v])=>{
-    if(k===BH_INDEX) return;
-    const cur=localStorage.getItem(k);
-    if(cur!=null&&(k.startsWith(BH_PREFIX)||k.startsWith(BP_PREFIX))&&k!==BP_ACTIVE){
-      const a=parse(cur),b=parse(v);
-      const ta=a?.savedAt||a?.createdAt||0, tb=b?.savedAt||b?.createdAt||0;
-      if(ta>tb){kept++;return;}
-    }
-    put(k,v);
-  });
-  // 최근 조회 목록 병합 (실제 저장본이 있는 ID만)
-  const incoming=parse(file.data[BH_INDEX])||[];
-  const map={};
-  [...bhList(),...incoming].forEach(m=>{if(!m?.blogId)return;const key=m.blogId.toLowerCase();if(!map[key]||(m.savedAt||0)>(map[key].savedAt||0))map[key]=m;});
-  const idx=Object.values(map).filter(m=>localStorage.getItem(bhKey(m.blogId))!=null).sort((a,b)=>(b.savedAt||0)-(a.savedAt||0)).slice(0,BH_MAX);
+  const isBlogKey=k=>k!==BH_INDEX&&k!==BP_ACTIVE&&(k.startsWith(BH_PREFIX)||k.startsWith(BP_PREFIX));
+  // ① 파일에 없는 블로그 데이터 지우기
+  const mine=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&isBlogKey(k))mine.push(k);}
+  let removed=0;
+  mine.forEach(k=>{ if(!(k in file.data)){ try{localStorage.removeItem(k);removed++;}catch(e){} } });
+  // ② 파일 내용 넣기 (목록은 맨 마지막에 다시 만든다)
+  let added=0,failed=[];
+  Object.entries(file.data).forEach(([k,v])=>{ if(k===BH_INDEX) return; try{localStorage.setItem(k,v);added++;}catch(e){failed.push(k);} });
+  // ③ 최근 조회 목록 = 파일 목록 중 실제 저장본이 있는 것만
+  const idx=(parse(file.data[BH_INDEX])||[]).filter(m=>m?.blogId&&localStorage.getItem(bhKey(m.blogId))!=null).slice(0,BH_MAX);
   try{localStorage.setItem(BH_INDEX,JSON.stringify(idx));}catch(e){failed.push(BH_INDEX);}
-  return {added,kept,failed,idx,exportedAt:file.exportedAt};
+  // ④ 선택돼 있던 맞춤 프로필이 사라졌으면 선택 해제
+  const act=bpGetActiveId(); if(act&&!bpLoad(act)) bpSetActiveId("");
+  const ids=idx.map(m=>m.blogId);
+  return {added,removed,failed,idx,ids,exportedAt:file.exportedAt};
 }
 
 // ── 제목 노출 패널: 비율 막대 + 발행순 타임라인 + 최근/이전 비교 ──
@@ -4651,7 +4648,11 @@ function MissingTab(){
     lsSet(LS_BLOGID,snap.blogId);
     applySnapshot(snap,true);
   };
-  const removeHistory=(id)=>{setHistory(bhDelete(id));if(restored?.blogId===id)setRestored(null);};
+  const removeHistory=(id)=>{
+    setHistory(bhDelete(id));if(restored?.blogId===id)setRestored(null);
+    // 이 블로그의 글쓰기 맞춤 프로필도 같이 정리할지 묻는다
+    if(bpLoad(id)&&confirm(`@${id} 의 글쓰기 맞춤 프로필도 같이 지울까요?`)) bpDelete(id);
+  };
   // 현재 블로그의 저장본을 지우고 처음부터 다시
   const resetSaved=()=>{
     if(!posts?.blogId) return;
@@ -5471,9 +5472,9 @@ recommend는 8개.`;
           ⬆ 백업 불러오기
           <input type="file" accept=".json,application/json" style={{display:"none"}} onChange={async e=>{
             const f=e.target.files?.[0];e.target.value="";if(!f)return;
-            if(!confirm("백업을 불러올까요?\n같은 블로그 ID는 더 최근에 저장된 쪽이 남고, 나머지는 합쳐집니다."))return;
+            if(!confirm("백업을 불러올까요?\n백업 파일과 똑같이 맞춰져요 — 파일에 없는 블로그(분석 저장본·맞춤 프로필)는 이 브라우저에서 지워집니다."))return;
             try{const r=backupImport(await f.text());setHistory(r.idx);
-              setBackupMsg(`✅ 불러오기 완료 · 항목 ${r.added}개 반영${r.kept?` · 이 브라우저 쪽이 더 최신이라 유지 ${r.kept}개`:""}${r.failed.length?` · ⚠️ 저장공간 부족으로 ${r.failed.length}개 실패`:""}`);
+              setBackupMsg(`✅ 불러오기 완료 · 블로그 ${r.ids.length}개${r.ids.length?` (@${r.ids.join(", @")})`:""}${r.removed?` · 파일에 없던 ${r.removed}개 정리`:""}${r.failed.length?` · ⚠️ 저장공간 부족으로 ${r.failed.length}개 실패`:""}`);
             }catch(ex){setBackupMsg("⚠️ "+(ex?.message||ex));}
           }}/>
         </label>
@@ -7430,14 +7431,14 @@ async function loadHotKeywords(onStep){
   onStep&&onStep("AI가 시즌 키워드 고르고 카테고리 나누는 중…");
   const prompt=`오늘은 ${md}이다. 한국 네이버에서 지금부터 6주 안에 검색이 몰리는 키워드를 찾는 중이다.
 1) 아래 "구글 급상승 검색어"를 하나씩 카테고리에 넣어라. 어느 카테고리에도 안 맞는 정치·사건사고·인물 가십은 category를 "시사·이슈"로.
-2) 이 시기에 해마다 검색이 오르는 "시즌 키워드"를 35개 만들어라 (예: 12월이면 크리스마스 선물, 연말정산 간소화, 송년회 장소, 신년운세, 겨울 여행지).
+2) 이 시기에 해마다 검색이 오르는 "시즌 키워드"를 50개 만들어라 (예: 12월이면 크리스마스 선물, 연말정산 간소화, 송년회 장소, 신년운세, 겨울 여행지).
    - 사람들이 네이버 검색창에 실제로 치는 1~3어절. 올해 연도·날짜가 붙는 말은 붙여도 됨.
    - 카테고리를 골고루. "스마트폰·앱"과 "IT·가전"은 각각 4개 이상 (연말 폰 할인, 새해 요금제, 블랙프라이데이 노트북 같은 것).
    - 블로그 글로 쓸 수 있는 말만.
 카테고리 목록 (이 중 정확히 하나, 또는 "시사·이슈"): ${cats.join(", ")}
 구글 급상승 검색어: ${google.map(x=>x.keyword).join(", ")||"(없음)"}
 순수 JSON만: {"items":[{"keyword":"...","category":"...","src":"google|season","why":"왜 지금 뜨는지 한 줄(15자 안팎)"}]}`;
-  const raw=await callClaude([{role:"user",content:prompt}],"You pick Korean seasonal and trending search keywords. Output ONLY valid JSON.",3000,"claude-haiku-4-5-20251001");
+  const raw=await callClaude([{role:"user",content:prompt}],"You pick Korean seasonal and trending search keywords. Output ONLY valid JSON.",4500,"claude-haiku-4-5-20251001");
   let items=(safeParseJson(raw)?.items||[]).filter(x=>x?.keyword).map(x=>({
     keyword:String(x.keyword).trim(), category:cats.includes(x.category)?x.category:"시사·이슈",
     src:x.src==="google"?"google":"season", why:x.why||"" }));
@@ -7452,15 +7453,19 @@ async function loadHotKeywords(onStep){
   onStep&&onStep("월 검색수 붙이는 중…");
   const vols=await fetchMonthlyVolumes(items.map(x=>x.keyword)).catch(()=>({}));
   items.forEach(x=>{ const tr=t.trends?.[x.keyword]; x.rise=tr?.rise??null; x.spark=tr?.spark||null; x.monthly=vols[x.keyword]?.monthly??null; });
-  // 오르는 것만: 상승률 10% 이상, 또는 구글 급상승(데이터랩에 아직 안 잡혔을 수 있음)
-  items=items.filter(x=>(x.rise!=null&&x.rise>=1.1)||(x.src==="google"&&x.rise==null));
+  // 오르는 것: 상승률 10% 이상, 또는 구글 급상승(데이터랩에 아직 안 잡혔을 수 있음)
   const score=x=>Math.log10((x.monthly||300)+10)*Math.min(x.rise||1.3,6);
-  items.sort((a,b)=>score(b)-score(a));
+  items.forEach(x=>{ x.hot=(x.rise!=null&&x.rise>=1.1)||(x.src==="google"&&x.rise==null); });
+  const hot=items.filter(x=>x.hot).sort((a,b)=>score(b)-score(a));
+  // [전체]는 최소 15개 — 모자라면 덜 오른 후보로 채우고 흐리게 표시 (filler)
+  const rest=items.filter(x=>!x.hot&&x.rise!=null).sort((a,b)=>score(b)-score(a)).slice(0,Math.max(0,15-hot.length));
+  rest.forEach(x=>{ x.filler=true; });
+  items=[...hot,...rest];
   return {items, googleCount:google.length, trendError:t.error||null, fetchedAt:Date.now()};
 }
 
 function HotKeywordPanel({category,onPick}){
-  const [data,setData]=useState(()=>{ try{ const c=JSON.parse(localStorage.getItem("hot_kw_v1")||"null"); return c&&Date.now()-c.fetchedAt<HOT_TTL?c:null; }catch(e){ return null; } });
+  const [data,setData]=useState(()=>{ try{ const c=JSON.parse(localStorage.getItem("hot_kw_v2")||"null"); return c&&Date.now()-c.fetchedAt<HOT_TTL?c:null; }catch(e){ return null; } });
   const [busy,setBusy]=useState(false);
   const [step,setStep]=useState("");
   const [err,setErr]=useState("");
@@ -7468,7 +7473,7 @@ function HotKeywordPanel({category,onPick}){
   const [open,setOpen]=useState(true);
   const load=async()=>{
     setBusy(true); setErr("");
-    try{ const d=await loadHotKeywords(setStep); setData(d); try{ localStorage.setItem("hot_kw_v1",JSON.stringify(d)); }catch(e){} }
+    try{ const d=await loadHotKeywords(setStep); setData(d); try{ localStorage.setItem("hot_kw_v2",JSON.stringify(d)); }catch(e){} }
     catch(e){ setErr(e.message||"불러오기 실패"); }
     setBusy(false); setStep("");
   };
@@ -7476,7 +7481,7 @@ function HotKeywordPanel({category,onPick}){
   },[]);
   useEffect(()=>{ if(!category) setScope("all"); },[category]);
   const all=data?.items||[];
-  const list=scope==="cat"&&category?all.filter(x=>x.category===category):all.slice(0,30);
+  const list=scope==="cat"&&category?all.filter(x=>x.category===category&&!x.filler):all.slice(0,30);
   const fmt=n=>n==null?"-":Number(n).toLocaleString();
   const ago=t=>{ const m=Math.round((Date.now()-t)/60000); return m<1?"방금":m<60?`${m}분 전`:`${Math.round(m/60)}시간 전`; };
   const pill=(on)=>({padding:"5px 12px",borderRadius:"14px",cursor:"pointer",fontSize:"13px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
@@ -7501,12 +7506,12 @@ function HotKeywordPanel({category,onPick}){
       {list.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"2px"}}>
         {list.map((x,i)=>{
           const up=x.rise!=null?Math.round((x.rise-1)*100):null;
-          return <div key={x.keyword} style={{display:"flex",alignItems:"center",gap:"10px",padding:"7px 10px",borderRadius:"8px",background:i%2?"transparent":"#0d111788",flexWrap:"wrap"}}>
+          return <div key={x.keyword} title={x.filler?"최근 2주 상승폭이 10% 미만이라 15위를 채우려고 넣은 키워드예요":""} style={{display:"flex",alignItems:"center",gap:"10px",padding:"7px 10px",borderRadius:"8px",background:i%2?"transparent":"#0d111788",flexWrap:"wrap",opacity:x.filler?.55:1}}>
             <span style={{color:"#484f58",fontSize:"12px",width:"20px",textAlign:"right"}}>{i+1}</span>
             <button onClick={()=>onPick(x.keyword,x.category)} title={x.why||""}
               style={{background:"none",border:"none",padding:0,color:"#e6edf3",fontSize:"15px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",textAlign:"left"}}
               onMouseEnter={e=>e.currentTarget.style.color="#58a6ff"} onMouseLeave={e=>e.currentTarget.style.color="#e6edf3"}>{x.keyword}</button>
-            <span style={{color:up==null?"#8b949e":"#3fb950",fontSize:"13px",fontWeight:700}}>{up==null?"새로 뜸":up>=899?"▲ 급등":`▲ ${up}%`}</span>
+            <span style={{color:up==null||x.filler?"#8b949e":"#3fb950",fontSize:"13px",fontWeight:700}}>{up==null?"새로 뜸":x.filler?(up>0?`▲ ${up}%`:"보합"):up>=899?"▲ 급등":`▲ ${up}%`}</span>
             <span style={{color:"#8b949e",fontSize:"12px"}}>월 {fmt(x.monthly)}</span>
             {x.why&&<span style={{color:"#6e7681",fontSize:"12px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"260px"}}>{x.why}</span>}
             <span style={{marginLeft:"auto",display:"flex",gap:"5px"}}>
