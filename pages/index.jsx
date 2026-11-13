@@ -14935,6 +14935,17 @@ function buildAutoImages(sections, { imageRatio="3:2", imageStyle="photo", allow
 }
 
 // 글 1편 + 이미지 프롬프트
+// 검색어 하나 → 지금 시점에 맞는 블로그 글 주제 한 줄 (뜨는 검색어로 바로 쓸 때)
+async function hotTopicFor(kw, category){
+  const now=new Date();
+  try{
+    const raw=await callClaude([{role:"user",content:`오늘은 ${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일이다. 네이버에서 지금 검색이 오르는 검색어 "${kw}"${category?` (카테고리: ${category})`:""}로 블로그 정보글을 쓴다.
+사람들이 이 검색어로 지금 가장 궁금해할 내용을 담은 글 주제를 한 줄(25~40자)로만 답해라. 검색어를 그대로 포함하고, 과장·낚시 표현 없이.`}],"Answer with one Korean line only.",120,"claude-haiku-4-5-20251001");
+    const t=String(raw||"").split("\n").map(x=>x.replace(/^["'\s\-•]+|["'\s]+$/g,"")).find(Boolean);
+    return t||`${kw} 총정리`;
+  }catch(e){ return `${kw} 총정리`; }
+}
+
 async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRatio="3:2", imageStyle="photo", banTopics=[], allowUi=false, creativity=0, platform="naver", tistoryImages=2, tistoryStore=false, tistoryRecipe=null, writer=false, card=null, today=[] }){
   if(platform==="tistory") return tistoryWriteOne({ topic, mainKeyword, mode, banTopics, imageRatio, imageStyle, allowUi, tistoryImages, tistoryStore, recipe:tistoryRecipe });
   autoLog(`[${mainKeyword}] 키워드 노출 전략 분석 중`);
@@ -14986,7 +14997,7 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
 }
 
 // 하루 작업: 주제 고르기 → 필요한 편수만큼 글쓰기 (보류되면 다음 후보로)
-async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null, creativity=0, volume=null, platform="naver", tistoryImages=2, tistoryStore=false, tistoryRecipe=null, writer=false, card=null, todayPosts=[] }){
+async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[], region="", regionChance=0.2, imageRatio="3:2", scope="", maxTries=0, banTopics=[], allowUi=false, history:givenHistory=null, creativity=0, volume=null, platform="naver", tistoryImages=2, tistoryStore=false, tistoryRecipe=null, writer=false, card=null, todayPosts=[], forceKeyword="", forceTopic="", forceMonthly=null }){
   if(AUTO_STATE.busy) throw new Error("이미 실행 중이에요");
   AUTO_STATE.busy=true; AUTO_STATE.log=[];
   const started=Date.now();
@@ -15009,13 +15020,17 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
     const stretch=!!V.stretch;
     const range=stretch?{ volMin:V.stretchMin??5000, volMax:V.stretchMax??30000, stretch:true }
       :{ volMin:V.min??null, volMax:V.max??null };
-    const plan=await autoPlan({ category, count, mode, scope, banTopics, family, recentTitles:mine.map(h=>h.title).filter(Boolean),
+    // 검색어를 정해 주면(🔥 지금 뜨는 검색어에서 고름) 주제 추천을 건너뛰고 그 검색어로 바로 쓴다
+    const plan=forceKeyword
+      ? { candidates:[{ topic: forceTopic || await hotTopicFor(forceKeyword, category), mainKeyword: forceKeyword, monthly: forceMonthly }], dropped:[] }
+      : await autoPlan({ category, count, mode, scope, banTopics, family, recentTitles:mine.map(h=>h.title).filter(Boolean),
       exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)], ...range });
+    if(forceKeyword) autoLog(`검색어 지정: ${forceKeyword} → 주제: ${plan.candidates[0].topic}`);
     void now;
     // 후보가 하나도 안 남으면: 왜 빠졌는지 남기고, 기준을 조금 넓혀 한 번 더 추천받는다
     const dropSummary=p=>{ const m={}; (p.dropped||[]).forEach(d=>{ const w=String(d.why||"").replace(/\(.*?\)|\d+/g,"").trim(); m[w]=(m[w]||0)+1; });
       return Object.entries(m).map(([w,n])=>`${w} ${n}`).join(", ")||"추천 0개"; };
-    if(plan.candidates.length<count){
+    if(!forceKeyword&&plan.candidates.length<count){
       autoLog(`후보 부족 (${plan.candidates.length}개) — 빠진 이유: ${dropSummary(plan)} → 기준 넓혀 다시 추천`);
       const plan2=await autoPlan({ category, count, mode, scope, banTopics, family, recentTitles:mine.map(h=>h.title).filter(Boolean),
         exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)], relax:true, avoid:(plan.dropped||[]).map(d=>d.mainKeyword), ...range });
@@ -15025,7 +15040,7 @@ async function autoRun({ blogId, mode="hq", key="", category, count=1, exclude=[
       if(!plan.candidates.length) autoLog(`다시 추천해도 후보 없음 — 빠진 이유: ${dropSummary(plan2)}`);
     }
     // 체급 밖 도전 후보가 없으면 그날은 평소 범위로 쓴다
-    if(stretch&&plan.candidates.length<count){
+    if(!forceKeyword&&stretch&&plan.candidates.length<count){
       autoLog(`체급 밖 후보 부족 → 평소 범위(월 ${V.min??"-"}~${V.max??"-"})로 다시 추천`);
       const plan3=await autoPlan({ category, count, mode, scope, banTopics, family, recentTitles:mine.map(h=>h.title).filter(Boolean),
         exclude:[...(exclude||[]), ...history.map(x=>x.mainKeyword)], volMin:V.min??null, volMax:V.max??null });
@@ -15068,6 +15083,14 @@ if(typeof window!=="undefined"){
     profiles:()=>bpList().map(p=>({ blogId:p.blogId, isDefault:!!p.isDefault, hasKey:!!keyForBlog(p.blogId).key })),
     categories:()=>Object.keys(NAVER_DIR_MAP),
     useBlog:autoUseBlog, plan:autoPlan, writeOne:autoWriteOne, run:autoRun,
+    forceKeyword:true,
+    // 🔥 지금 뜨는 검색어 목록 (카테고리별 키워드추출 칸과 같은 것) — 1시간 안에 불러온 게 있으면 그걸 씀
+    hot:async(fresh=false)=>{
+      if(!fresh){ try{ const c=JSON.parse(localStorage.getItem("hot_kw_v2")||"null"); if(c&&Date.now()-c.fetchedAt<HOT_TTL) return c; }catch(e){} }
+      const d=await loadHotKeywords(st=>{ AUTO_STATE.step=st; });
+      try{ localStorage.setItem("hot_kw_v2",JSON.stringify(d)); }catch(e){}
+      return d;
+    },
   };
 }
 
