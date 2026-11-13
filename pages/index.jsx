@@ -12087,6 +12087,234 @@ function snsDownload(canvas, name){
   },"image/png"));
 }
 
+// ═══ 🎨 인스타툰 — 블로그 글 → 표지 + 최대 8컷 웹툰 (그림: GPT 이미지, 말풍선·글자: 캔버스로 직접) ═══
+const TOON_W=1080, TOON_H=1350;
+const TOON_STYLE="Cute Korean webtoon (instatoon) style illustration: clean simple black line art, soft pastel flat colors, round friendly chibi-like proportions, simple expressive faces, light simple background.";
+const TOON_NOTEXT=" Absolutely no text, letters, numbers, speech bubbles, captions, signs with writing or logos anywhere in the image.";
+let toonSeq=1;
+const toonId=()=>"b"+(toonSeq++);
+// 말풍선 기본 자리 (위쪽 여백에 번갈아)
+function toonBubbles(lines){
+  const pos=[{x:0.06,y:0.04,tail:"bl"},{x:0.46,y:0.17,tail:"br"},{x:0.08,y:0.30,tail:"bl"}];
+  return (lines||[]).slice(0,3).map((l,i)=>({ id:toonId(), kind:"speech", text:String(l.text||l||"").trim(), who:l.who||"", w:0.48, ...pos[i%3] }));
+}
+function toonDraw(canvas, cut, img){
+  const ctx=canvas.getContext("2d");
+  canvas.width=TOON_W; canvas.height=TOON_H;
+  ctx.fillStyle="#fffdf7"; ctx.fillRect(0,0,TOON_W,TOON_H);
+  if(img){ const s=Math.max(TOON_W/img.width,TOON_H/img.height), w=img.width*s, h=img.height*s; ctx.drawImage(img,(TOON_W-w)/2,(TOON_H-h)/2,w,h); }
+  else { ctx.fillStyle="#d0d7de"; ctx.font=`600 40px ${SNS_FONT}`; ctx.textAlign="center"; ctx.fillText(cut.status==="busy"?"그리는 중…":cut.status==="error"?"그림 실패 — 다시 그리기":"그림 없음",TOON_W/2,TOON_H/2); }
+  ctx.textAlign="left"; ctx.textBaseline="top";
+  // 내레이션 띠
+  if(cut.narr&&cut.narr.trim()){
+    ctx.font=`600 38px ${SNS_FONT}`;
+    const lines=snsWrap(ctx,cut.narr,TOON_W-140).slice(0,3), lh=52, h=lines.length*lh+44;
+    const y=cut.narrPos==="top"?36:TOON_H-h-36;
+    ctx.fillStyle="rgba(255,255,255,0.93)"; snsRoundRect(ctx,36,y,TOON_W-72,h,18); ctx.fill();
+    ctx.strokeStyle="#222"; ctx.lineWidth=4; ctx.stroke();
+    ctx.fillStyle="#222"; lines.forEach((l,i)=>ctx.fillText(l,70,y+22+i*lh));
+  }
+  // 표지 제목
+  if(cut.kind==="cover"){
+    ctx.font=`800 84px ${SNS_FONT}`;
+    const tl=snsWrap(ctx,cut.title||"",TOON_W-160).slice(0,3);
+    ctx.font=`600 40px ${SNS_FONT}`;
+    const sl=cut.sub?snsWrap(ctx,cut.sub,TOON_W-160).slice(0,2):[];
+    const h=tl.length*100+sl.length*54+(sl.length?24:0)+60, y=48;
+    ctx.fillStyle="rgba(255,255,255,0.94)"; snsRoundRect(ctx,40,y,TOON_W-80,h,28); ctx.fill();
+    ctx.strokeStyle="#222"; ctx.lineWidth=5; ctx.stroke();
+    ctx.fillStyle="#1b1b1b"; ctx.font=`800 84px ${SNS_FONT}`; tl.forEach((l,i)=>ctx.fillText(l,80,y+30+i*100));
+    ctx.fillStyle="#555"; ctx.font=`600 40px ${SNS_FONT}`; sl.forEach((l,i)=>ctx.fillText(l,82,y+30+tl.length*100+24+i*54));
+  }
+  // 말풍선
+  (cut.bubbles||[]).forEach(b=>{ const r=toonBubbleRect(ctx,b); b._r=r;
+    ctx.fillStyle="#fff"; ctx.strokeStyle="#1b1b1b"; ctx.lineWidth=5;
+    snsRoundRect(ctx,r.x,r.y,r.w,r.h,Math.min(46,r.h/2)); ctx.fill(); ctx.stroke();
+    if(b.tail&&b.tail!=="none"){ const left=b.tail[1]==="l", top=b.tail[0]==="t";
+      const bx=left?r.x+r.w*0.25:r.x+r.w*0.75, by=top?r.y:r.y+r.h, dir=top?-1:1;
+      ctx.beginPath(); ctx.moveTo(bx-22,by-dir*3); ctx.lineTo(bx+(left?-30:30),by+dir*58); ctx.lineTo(bx+22,by-dir*3); ctx.closePath();
+      ctx.fill(); ctx.stroke(); ctx.fillStyle="#fff"; ctx.fillRect(bx-19,top?by:by-8,38,8); }
+    ctx.fillStyle="#1b1b1b"; ctx.font=`700 42px ${SNS_FONT}`;
+    r.lines.forEach((l,i)=>{ const tw=ctx.measureText(l).width; ctx.fillText(l,r.x+(r.w-tw)/2,r.y+r.pad+i*r.lh); });
+  });
+}
+function toonBubbleRect(ctx,b){
+  ctx.font=`700 42px ${SNS_FONT}`;
+  const maxW=Math.max(220,(b.w||0.48)*TOON_W), pad=30, lh=56;
+  const lines=snsWrap(ctx,b.text||" ",maxW-pad*2).slice(0,5);
+  const w=Math.min(maxW,Math.max(...lines.map(l=>ctx.measureText(l).width))+pad*2+10), h=lines.length*lh+pad*2-8;
+  const x=Math.max(10,Math.min(TOON_W-w-10,b.x*TOON_W)), y=Math.max(10,Math.min(TOON_H-h-10,b.y*TOON_H));
+  return { x, y, w, h, lines, pad, lh };
+}
+
+function InstaToonMaker({ title, text, cutCount }){
+  const [cuts,setCuts]=React.useState([]);          // [{kind:"cover"|"cut", scene, title,sub, narr,narrPos, bubbles, img(dataURL), status}]
+  const [chars,setChars]=React.useState("");
+  const [caption,setCaption]=React.useState("");
+  const [tags,setTags]=React.useState("");
+  const [busy,setBusy]=React.useState("");
+  const [msg,setMsg]=React.useState("");
+  const [sel,setSel]=React.useState(0);
+  const [selB,setSelB]=React.useState(null);
+  const [imgs,setImgs]=React.useState({});           // idx → HTMLImageElement
+  const [fontOk,setFontOk]=React.useState(false);
+  const mainRef=React.useRef(); const thumbRefs=React.useRef([]); const drag=React.useRef(null); const stop=React.useRef(false);
+  const cutsRef=React.useRef(cuts); cutsRef.current=cuts;
+  React.useEffect(()=>{ loadSnsFont().then(()=>setFontOk(true)); },[]);
+  const up=(i,patch)=>setCuts(cs=>cs.map((c,k)=>k===i?{...c,...patch}:c));
+  const upB=(i,bid,patch)=>setCuts(cs=>cs.map((c,k)=>k===i?{...c,bubbles:c.bubbles.map(b=>b.id===bid?{...b,...patch}:b)}:c));
+  // 그림 불러오기 (dataURL → 이미지)
+  React.useEffect(()=>{ cuts.forEach((c,i)=>{ if(c.img&&(!imgs[i]||imgs[i]._src!==c.img)){ const im=new Image(); im.onload=()=>{ im._src=c.img; setImgs(m=>({...m,[i]:im})); }; im.src=c.img; } }); // eslint-disable-next-line
+  },[cuts]);
+  // 그리기
+  React.useEffect(()=>{ if(!fontOk) return;
+    cuts.forEach((c,i)=>{ const cv=thumbRefs.current[i]; if(cv) toonDraw(cv,c,imgs[i]); });
+    const c=cuts[sel]; if(c&&mainRef.current) toonDraw(mainRef.current,c,imgs[sel]);
+  },[cuts,imgs,sel,fontOk]);
+
+  const drawOne=async(i, list, coverUrl)=>{
+    const c=list[i];
+    const who=chars?` Characters (keep exactly the same look in every panel): ${chars}.`:"";
+    const base=`${TOON_STYLE}${who} Scene: ${c.scene}. Vertical 4:5 single comic panel.`
+      +(c.kind==="cover"?" Cover illustration: the main characters together, cheerful, facing the viewer. Keep the top 35% as calm plain background for a big title.":" Keep the upper 30% of the panel as calm plain background for speech bubbles.")
+      +TOON_NOTEXT;
+    up(i,{status:"busy"});
+    try{
+      const j=coverUrl&&c.kind!=="cover"
+        ? await gptImgCall({ action:"edit", model:"gpt-image-2", quality:"medium", size:"1088x1360", images:[coverUrl],
+            prompt:"Use the reference image ONLY for the characters' appearance (same faces, hair, outfits, colors) and the art style. Draw a completely new panel. "+base })
+        : await gptImgCall({ action:"generate", model:"gpt-image-2", quality:"medium", size:"1088x1360", prompt:base });
+      gptUsageAdd(j.usd);
+      const url="data:image/jpeg;base64,"+j.image;
+      up(i,{img:url,status:"ok"});
+      return url;
+    }catch(e){ up(i,{status:"error"}); setMsg("✗ "+(i===0?"표지":i+"컷")+" 그림 실패: "+e.message); return null; }
+  };
+
+  const make=async()=>{
+    if(!text.trim()){ setMsg("먼저 위에서 블로그 글을 가져와 주세요"); return; }
+    stop.current=false; setBusy("story"); setMsg("콘티 짜는 중… (30초 안팎)"); setCuts([]); setImgs({}); setSel(0);
+    let sb=null;
+    try{
+      const raw=await callClaude([{role:"user",content:`아래 블로그 글을 인스타툰(인스타그램 웹툰)으로 바꾼다. 표지 1장 + 정확히 ${cutCount}컷, 한 장에 한 컷.
+[글 제목] ${title||""}
+[글 본문]
+${text.slice(0,9000)}
+
+[규칙]
+- 글의 핵심 정보(조건·금액·순서·주의점)가 컷의 대사와 내레이션에 자연스럽게 들어가게. 사실은 글에 있는 것만.
+- 등장인물은 이 글에 맞게 1~3명(예: 휴대폰 글이면 고객과 매장 직원). 사람은 귀여운 웹툰 캐릭터로. characters 에 영어로 나이대·머리·옷 색까지 구체적으로(모든 컷에서 같은 모습이 되게).
+- 컷마다: scene(영어, 누가 어디서 어떤 표정·동작인지, 글자 없는 그림), lines(말풍선 1~2개, 각 25자 안쪽, who 는 말하는 사람), narr(설명 박스, 필요할 때만 40자 안쪽, 없으면 "").
+- 표지: title(14자 안쪽, 궁금하게), sub(22자 안쪽), scene(영어).
+- 마지막 컷은 정리 한마디. 광고 문구·과장 금지.
+- caption: 인스타 캡션 3~5줄(핵심 요약 + 저장 유도 한 줄), tags: 해시태그 8~12개(# 없이).
+순수 JSON만: {"characters":"...","cover":{"title":"...","sub":"...","scene":"..."},"cuts":[{"scene":"...","lines":[{"who":"...","text":"..."}],"narr":"..."}],"caption":"...","tags":["..."]}`}],
+        "You turn Korean blog posts into instatoon storyboards. Output ONLY valid JSON.",5000,"claude-sonnet-4-5-20250929");
+      sb=safeParseJson(raw);
+    }catch(e){ setBusy(""); setMsg("✗ 콘티 실패: "+e.message); return; }
+    if(!sb||!sb.cover||!Array.isArray(sb.cuts)||!sb.cuts.length){ setBusy(""); setMsg("✗ 콘티를 못 읽었어요 — 다시 눌러 주세요"); return; }
+    const list=[{ kind:"cover", scene:sb.cover.scene||"", title:sb.cover.title||title||"", sub:sb.cover.sub||"", narr:"", narrPos:"bottom", bubbles:[], status:"wait" },
+      ...sb.cuts.slice(0,cutCount).map(c=>({ kind:"cut", scene:c.scene||"", narr:c.narr||"", narrPos:"bottom", bubbles:toonBubbles(c.lines), status:"wait" }))];
+    setChars(sb.characters||""); setCaption(sb.caption||""); setTags((sb.tags||[]).map(t=>"#"+String(t).replace(/^#/,"")).join(" "));
+    setCuts(list); cutsRef.current=list;
+    setBusy("draw");
+    // 표지 먼저 → 표지를 참고해서 나머지 (캐릭터 모습 유지)
+    setMsg(`그리는 중 1/${list.length} — 표지`);
+    const cover=await drawOne(0,list,null);
+    for(let i=1;i<list.length;i++){
+      if(stop.current){ setMsg("멈췄어요 — 남은 컷은 「🔄 이 컷 다시 그리기」로 그릴 수 있어요"); break; }
+      setMsg(`그리는 중 ${i+1}/${list.length}`);
+      await drawOne(i,list,cover);
+    }
+    setBusy(""); if(!stop.current) setMsg("✓ 다 그렸어요 — 말풍선은 끌어서 옮기고, 글자는 오른쪽에서 고칠 수 있어요");
+  };
+  const redraw=async i=>{ setBusy("one"); setMsg(`${i===0?"표지":i+"컷"} 다시 그리는 중…`);
+    const coverUrl=i===0?null:cutsRef.current[0]?.img||null;
+    const u=await drawOne(i,cutsRef.current,coverUrl); setBusy(""); if(u) setMsg("✓ 다시 그렸어요"); };
+
+  // 말풍선 끌기
+  const toPt=e=>{ const r=mainRef.current.getBoundingClientRect(); return { x:(e.clientX-r.left)*TOON_W/r.width, y:(e.clientY-r.top)*TOON_H/r.height }; };
+  const onDown=e=>{ const c=cuts[sel]; if(!c) return; const p=toPt(e);
+    const hit=[...(c.bubbles||[])].reverse().find(b=>b._r&&p.x>=b._r.x&&p.x<=b._r.x+b._r.w&&p.y>=b._r.y&&p.y<=b._r.y+b._r.h);
+    if(hit){ setSelB(hit.id); drag.current={ id:hit.id, dx:p.x-hit._r.x, dy:p.y-hit._r.y }; } else setSelB(null); };
+  const onMove=e=>{ if(!drag.current) return; const p=toPt(e); const d=drag.current;
+    upB(sel,d.id,{ x:Math.max(0,(p.x-d.dx)/TOON_W), y:Math.max(0,(p.y-d.dy)/TOON_H) }); };
+  const onUp=()=>{ drag.current=null; };
+
+  const name=i=>`${(title||"인스타툰").replace(/[\\/:*?"<>|]/g,"").slice(0,20)}_${String(i+1).padStart(2,"0")}.png`;
+  const saveOne=async i=>{ const cv=document.createElement("canvas"); toonDraw(cv,cuts[i],imgs[i]); await snsDownload(cv,name(i)); };
+  const saveAll=async()=>{ for(let i=0;i<cuts.length;i++){ await saveOne(i); await new Promise(r=>setTimeout(r,350)); } };
+
+  const S={ btn:(bg,dis)=>({padding:"9px 16px",borderRadius:"8px",border:"none",background:dis?"#30363d":bg,color:"#fff",fontWeight:700,fontSize:"14px",cursor:dis?"default":"pointer",fontFamily:"'Noto Sans KR',sans-serif"}),
+    small:{padding:"5px 10px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",fontSize:"12px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"},
+    input:{width:"100%",padding:"8px 10px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"},
+    label:{display:"block",fontSize:"12px",color:"#8b949e",marginBottom:"4px"} };
+  const c=cuts[sel], b=c&&(c.bubbles||[]).find(x=>x.id===selB);
+  const nImg=cutCount+1;
+  return <div>
+    <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",margin:"14px 0"}}>
+      <button style={S.btn("#8250df",!!busy||!text.trim())} disabled={!!busy||!text.trim()} onClick={make}>{cuts.length?"🔄 인스타툰 다시 만들기":"🎨 인스타툰 만들기"}</button>
+      {busy==="draw"&&<button style={S.btn("#da3633",false)} onClick={()=>{ stop.current=true; }}>멈추기</button>}
+      <span style={{fontSize:"12px",color:"#8b949e"}}>표지 + {cutCount}컷 = GPT 이미지 {nImg}장 · 약 ${(nImg*0.05).toFixed(2)}</span>
+      {msg&&<span style={{fontSize:"13px",color:msg.startsWith("✗")?"#f85149":msg.startsWith("✓")?"#3fb950":"#d29922"}}>{busy&&"⏳ "}{msg}</span>}
+    </div>
+    {cuts.length>0&&<div style={{background:"#0d1117",border:"1px solid #21262d",borderRadius:"12px",padding:"14px"}}>
+      <div style={{display:"flex",gap:"8px",overflowX:"auto",paddingBottom:"8px",marginBottom:"12px"}}>
+        {cuts.map((x,i)=><div key={i} style={{flex:"none",textAlign:"center"}}>
+          <canvas ref={el=>thumbRefs.current[i]=el} onClick={()=>{ setSel(i); setSelB(null); }}
+            style={{width:"96px",height:"120px",borderRadius:"6px",cursor:"pointer",outline:sel===i?"3px solid #a371f7":"1px solid #30363d"}}/>
+          <div style={{fontSize:"11px",color:x.status==="error"?"#f85149":"#8b949e"}}>{i===0?"표지":i+"컷"}{x.status==="busy"?" ⏳":x.status==="error"?" ✗":""}</div>
+        </div>)}
+      </div>
+      {c&&<div style={{display:"flex",gap:"16px",flexWrap:"wrap",alignItems:"flex-start"}}>
+        <canvas ref={mainRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+          style={{width:"min(432px,100%)",aspectRatio:"4/5",borderRadius:"10px",border:"1px solid #30363d",cursor:"grab",background:"#fff"}}/>
+        <div style={{flex:"1 1 300px",minWidth:"280px"}}>
+          <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"12px"}}>
+            <button style={S.small} disabled={!!busy} onClick={()=>redraw(sel)}>🔄 이 {sel===0?"표지":"컷"} 다시 그리기</button>
+            <button style={S.small} onClick={()=>saveOne(sel)}>⬇ 이 장 저장</button>
+            <button style={{...S.small,background:"#238636",borderColor:"#238636",color:"#fff"}} onClick={saveAll}>⬇ 전체 {cuts.length}장 저장</button>
+          </div>
+          {sel===0?<>
+            <span style={S.label}>표지 제목</span><input style={{...S.input,marginBottom:"8px"}} value={c.title||""} onChange={e=>up(0,{title:e.target.value})}/>
+            <span style={S.label}>부제</span><input style={{...S.input,marginBottom:"8px"}} value={c.sub||""} onChange={e=>up(0,{sub:e.target.value})}/>
+          </>:<>
+            <span style={S.label}>말풍선 <span style={{color:"#6e7681"}}>(그림에서 눌러서 고르고 끌어서 옮기기)</span></span>
+            {(c.bubbles||[]).map(x=><div key={x.id} onClick={()=>setSelB(x.id)} style={{border:`1px solid ${selB===x.id?"#a371f7":"#30363d"}`,borderRadius:"8px",padding:"8px",marginBottom:"6px"}}>
+              <textarea style={{...S.input,height:"56px"}} value={x.text} onChange={e=>upB(sel,x.id,{text:e.target.value})}/>
+              <div style={{display:"flex",gap:"4px",marginTop:"6px",flexWrap:"wrap",alignItems:"center"}}>
+                <span style={{fontSize:"11px",color:"#8b949e"}}>꼬리</span>
+                {[["bl","↙"],["br","↘"],["tl","↖"],["tr","↗"],["none","없음"]].map(([k,l])=><button key={k} style={{...S.small,padding:"2px 8px",background:x.tail===k?"#8250df":"#21262d"}} onClick={()=>upB(sel,x.id,{tail:k})}>{l}</button>)}
+                <span style={{fontSize:"11px",color:"#8b949e",marginLeft:"6px"}}>폭</span>
+                <input type="range" min="0.25" max="0.9" step="0.05" value={x.w||0.48} onChange={e=>upB(sel,x.id,{w:Number(e.target.value)})}/>
+                <button style={{...S.small,marginLeft:"auto",color:"#f85149"}} onClick={()=>up(sel,{bubbles:c.bubbles.filter(y=>y.id!==x.id)})}>삭제</button>
+              </div>
+            </div>)}
+            <button style={{...S.small,marginBottom:"12px"}} onClick={()=>up(sel,{bubbles:[...(c.bubbles||[]),{id:toonId(),kind:"speech",text:"새 대사",x:0.3,y:0.1,w:0.45,tail:"bl"}]})}>+ 말풍선 추가</button>
+          </>}
+          <span style={S.label}>설명 박스 (비우면 없음)</span>
+          <textarea style={{...S.input,height:"50px",marginBottom:"6px"}} value={c.narr||""} onChange={e=>up(sel,{narr:e.target.value})}/>
+          <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
+            {[["top","위"],["bottom","아래"]].map(([k,l])=><button key={k} style={{...S.small,background:(c.narrPos||"bottom")===k?"#8250df":"#21262d"}} onClick={()=>up(sel,{narrPos:k})}>{l}</button>)}
+          </div>
+          <details><summary style={{fontSize:"12px",color:"#8b949e",cursor:"pointer"}}>그림 설명 (다시 그릴 때 이걸로 그려요)</summary>
+            <textarea style={{...S.input,height:"80px",marginTop:"6px"}} value={c.scene||""} onChange={e=>up(sel,{scene:e.target.value})}/>
+            <span style={{...S.label,marginTop:"6px"}}>등장인물 (모든 컷 공통)</span>
+            <textarea style={{...S.input,height:"60px"}} value={chars} onChange={e=>setChars(e.target.value)}/>
+          </details>
+        </div>
+      </div>}
+      <div style={{marginTop:"14px"}}>
+        <span style={S.label}>캡션</span>
+        <textarea style={{...S.input,height:"90px",marginBottom:"6px"}} value={caption} onChange={e=>setCaption(e.target.value)}/>
+        <span style={S.label}>해시태그</span>
+        <textarea style={{...S.input,height:"50px",marginBottom:"6px"}} value={tags} onChange={e=>setTags(e.target.value)}/>
+        <button style={S.small} onClick={()=>navigator.clipboard.writeText(caption+"\n\n"+tags).then(()=>setMsg("✓ 캡션+해시태그를 복사했어요")).catch(()=>{})}>📋 캡션+해시태그 복사</button>
+      </div>
+    </div>}
+  </div>;
+}
+
 function SnsConvertTab({ setActive }){
   const [src,setSrc]=React.useState(()=>{ try{ return localStorage.getItem("sns_src")||"url"; }catch(e){ return "url"; } });   // url | paste | id
   const [ids,setIds]=React.useState(()=>{ try{ return JSON.parse(localStorage.getItem("sns_blog_ids")||"[]"); }catch(e){ return []; } });
@@ -12105,6 +12333,8 @@ function SnsConvertTab({ setActive }){
   const [photos,setPhotos]=React.useState([]);              // {id,name,url,img}
   const [count,setCount]=React.useState(7);
   const [tpl,setTpl]=React.useState(()=>{ try{ return localStorage.getItem("sns_tpl")||"bottom"; }catch(e){ return "bottom"; } });
+  const [toon,setToon]=React.useState(()=>{ try{ return localStorage.getItem("sns_toon")==="1"; }catch(e){ return false; } });     // 🎨 인스타툰 모드
+  const [toonCuts,setToonCuts]=React.useState(()=>{ try{ return Number(localStorage.getItem("sns_toon_cuts"))||8; }catch(e){ return 8; } });
   const [accent,setAccent]=React.useState(SNS_ACCENTS[0]);
   const [logoUrl,setLogoUrl]=React.useState(()=>{ try{ return localStorage.getItem("sns_logo")||""; }catch(e){ return ""; } });
   const [logoImg,setLogoImg]=React.useState(null);
@@ -12656,11 +12886,17 @@ ${outShape}`;
           </div>
           {!doInsta&&<div style={{fontSize:"11px",color:"#8b949e",marginTop:"4px"}}>쓰레드 첫 글용 표지 카드 1장도 같이 만들어요</div>}
         </div>
-        {doInsta&&<div><span style={S.label}>카드 장수</span>
+        {toon&&<div><span style={S.label}>컷 수 (+ 표지 1장)</span>
+          <select style={S.input} value={toonCuts} onChange={e=>{ const n=Number(e.target.value); setToonCuts(n); keep("sns_toon_cuts",String(n)); }}>{[4,5,6,7,8].map(n=><option key={n} value={n}>{n}컷</option>)}</select>
+        </div>}
+        {!toon&&doInsta&&<div><span style={S.label}>카드 장수</span>
           <select style={S.input} value={count} onChange={e=>setCount(Number(e.target.value))}>{[5,6,7,8,9,10].map(n=><option key={n} value={n}>{n}장</option>)}</select>
         </div>}
         <div><span style={S.label}>디자인</span>
-          <select style={S.input} value={tpl} onChange={e=>{ setTpl(e.target.value); keep("sns_tpl",e.target.value); }}>{SNS_TEMPLATES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select>
+          <select style={S.input} value={toon?"toon":tpl} onChange={e=>{ const v=e.target.value; if(v==="toon"){ setToon(true); keep("sns_toon","1"); return; } setToon(false); keep("sns_toon","0"); setTpl(v); keep("sns_tpl",v); }}>
+            {SNS_TEMPLATES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
+            <option value="toon">🎨 인스타툰</option>
+          </select>
         </div>
         <div><span style={S.label}>강조색</span>
           <div style={{display:"flex",gap:"6px",paddingTop:"4px"}}>{SNS_ACCENTS.map(c=><button key={c} onClick={()=>setAccent(c)} style={{width:"28px",height:"28px",borderRadius:"50%",background:c,border:accent===c?"3px solid #58a6ff":"1px solid #30363d",cursor:"pointer"}}/>)}</div>
@@ -12685,7 +12921,8 @@ ${outShape}`;
           </div>}
         </div>
       </div>
-      <div style={{display:"flex",gap:"8px",marginTop:"14px",alignItems:"center",flexWrap:"wrap"}}>
+      {toon&&<InstaToonMaker title={title} text={text} cutCount={toonCuts}/>}
+      {!toon&&<div style={{display:"flex",gap:"8px",marginTop:"14px",alignItems:"center",flexWrap:"wrap"}}>
         <button style={S.btn("#1f6feb",busy||!text.trim())} disabled={!!busy||!text.trim()} onClick={convert}>{(cards.length||threads.length)?"🔄 다시 만들기":`✨ ${doInsta&&doThreads?"인스타·쓰레드":doInsta?"인스타":"쓰레드"}로 바꾸기`}</button>
         {doInsta&&<label style={{display:"flex",gap:"5px",alignItems:"center",fontSize:"13px",color:"#c9d1d9",cursor:"pointer"}}>
           <input type="checkbox" checked={autoLay} onChange={e=>{ setAutoLay(e.target.checked); keep("sns_autolayout",e.target.checked?"1":"0"); }}/> 바꾼 뒤 🤖 AI 자동 배치까지</label>}
@@ -12695,11 +12932,11 @@ ${outShape}`;
         {made.insta&&cards.length>0&&<button style={S.btn("#9a6700",busy)} disabled={!!busy} onClick={reDesign}>🎲 다른 디자인</button>}
         {designName&&made.insta&&<span style={{fontSize:"12px",color:"#8b949e"}}>지금 디자인: {designName}</span>}
         {msg&&<span style={{fontSize:"13px",color:msg.startsWith("✗")?"#f85149":msg.startsWith("✓")?"#3fb950":"#d29922"}}>{busy&&"⏳ "}{msg}</span>}
-      </div>
+      </div>}
     </div>
 
     {/* 3. 결과 */}
-    {(made.insta||made.threads)&&<div style={S.card}>
+    {!toon&&(made.insta||made.threads)&&<div style={S.card}>
       <div style={{display:"flex",gap:"8px",marginBottom:"14px",flexWrap:"wrap"}}>
         {made.insta&&<button style={S.chip(view==="insta")} onClick={()=>setView("insta")}>📸 인스타그램</button>}
         {made.threads&&<button style={S.chip(view==="threads")} onClick={()=>setView("threads")}>🧵 쓰레드</button>}
