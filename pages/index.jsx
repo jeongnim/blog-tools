@@ -11499,9 +11499,9 @@ function GscTab(){
     if(!data) return; stopRef.current=false; setBusy("inspect");
     let c=cache, n=0, fail=0;
     const day=86400000;
-    // 다시 검사할 필요가 있는 글만: 미검사 · 오류 · 색인 안 됨(하루 지남) · 색인됨(7일 지남)
-    const todo=data.posts.filter(p=>{ const r=c[p.key]; if(!r||r.error) return true; const age=Date.now()-(r.at||0);
-      return r.verdict==="PASS"?age>7*day:age>day; });
+    // 다시 검사할 필요가 있는 글만: 미검사 · 오류 · 색인 안 됨(하루 지남) — 색인된 글은 건너뜀 (그 줄 버튼으로는 검사 가능)
+    const todo=data.posts.filter(p=>{ const r=c[p.key]; if(!r||r.error) return true; if(r.verdict==="PASS") return false;
+      return Date.now()-(r.at||0)>day; });
     for(const p of todo){
       if(stopRef.current) break;
       setMsg(`검사 중 ${++n}/${todo.length} — ${p.title}`);
@@ -11509,7 +11509,7 @@ function GscTab(){
       catch(e){ fail++; }
       await new Promise(r=>setTimeout(r,400));
     }
-    if(!stopRef.current) setMsg(todo.length?`검사 끝 — ${todo.length-fail}개 확인${fail?`, 실패 ${fail}개`:""}`:"다시 검사할 글이 없어요 (색인된 글은 7일, 안 된 글은 하루 지나면 다시 검사)");
+    if(!stopRef.current) setMsg(todo.length?`검사 끝 — ${todo.length-fail}개 확인${fail?`, 실패 ${fail}개`:""}`:"다시 검사할 글이 없어요 (색인된 글은 건너뛰고, 안 된 글은 하루 지나면 다시 검사)");
     setBusy("");
   };
   const loadPerf=async()=>{ const b=blog; setBusy("perf"); try{ const d=await api({action:"perf",blog:b,days:28}); if(d.error) setMsg(d.error); else putStore(b,{ perf:d, perfAt:Date.now() }); }catch(e){ setMsg(e.message); } setBusy(""); };
@@ -11584,7 +11584,7 @@ function GscTab(){
         </table>
       </div>
       <div style={{color:"#484f58",fontSize:"12px",marginTop:"10px",lineHeight:1.7}}>
-        · 색인 검사는 하루 블로그당 약 2,000건까지 무료예요. 이미 색인된 글은 7일, 안 된 글은 하루가 지나야 다시 검사해요.<br/>
+        · 색인 검사는 하루 블로그당 약 2,000건까지 무료예요. 이미 색인된 글은 다시 검사하지 않아요 (그 줄의 검사 버튼으로는 가능) · 안 된 글은 하루가 지나야 다시 검사해요.<br/>
         · "색인 요청 ↗"을 누르면 서치콘솔이 열려요 — 거기서 '색인 생성 요청'을 누르세요 (API로는 요청이 안 돼요).<br/>
         · 새 글은 보통 며칠~몇 주 뒤에 색인돼요. "발견만 됨"은 구글이 주소는 알지만 아직 안 읽은 상태예요.
       </div>
