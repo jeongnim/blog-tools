@@ -15079,16 +15079,40 @@ function PasswordGate({children}){
   const [err,setErr]=useState("");
   const [loading,setLoading]=useState(false);
 
+  // 탭·창을 닫으면 다시 로그인: 로그인한 탭에만 sessionStorage 표시(bp_tab)를 남긴다 (탭을 닫으면 사라짐).
+  // 표시가 없는 탭으로 열면 — 이미 로그인된 다른 탭이 열려 있으면 그대로 통과, 없으면 서버 로그아웃 후 비밀번호 화면.
+  // PC 자동화 전용 브라우저(navigator.webdriver)는 예외 — 자동화는 실행할 때마다 직접 로그인한다.
   useEffect(()=>{
     let alive=true;
+    const TAB="bp_tab";
+    const hasMark=()=>{ try{ return sessionStorage.getItem(TAB)==="1"; }catch(e){ return true; } };
+    const setMark=()=>{ try{ sessionStorage.setItem(TAB,"1"); }catch(e){} };
+    let bc=null;
+    try{ bc=new BroadcastChannel("bp_auth"); }catch(e){}
+    if(bc) bc.onmessage=e=>{ if(e.data==="ping"&&hasMark()) bc.postMessage("pong"); };
+    const otherTabAlive=()=>new Promise(res=>{
+      if(!bc) return res(false);
+      const t=setTimeout(()=>res(false),400);
+      const on=e=>{ if(e.data==="pong"){ clearTimeout(t); bc.removeEventListener("message",on); res(true); } };
+      bc.addEventListener("message",on);
+      bc.postMessage("ping");
+    });
     (async()=>{
       try{
         const r=await fetch("/api/auth-status");
         const d=await r.json();
-        if(alive) setAuth(!!d.ok);
+        let ok=!!d.ok;
+        if(ok&&!hasMark()&&!navigator.webdriver){
+          if(await otherTabAlive()) setMark();            // 로그인된 탭이 따로 열려 있음 → 이 탭도 통과
+          else{
+            ok=false;                                      // 창을 닫았다 다시 연 것 → 로그아웃
+            try{ await fetch("/api/verify-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"logout"})}); }catch(e){}
+          }
+        }
+        if(alive) setAuth(ok);
       }catch(e){ if(alive) setAuth(false); }
     })();
-    return ()=>{ alive=false; };
+    return ()=>{ alive=false; try{ bc&&bc.close(); }catch(e){} };
   },[]);
 
   // API가 401을 돌려주면(세션 만료 등) 즉시 잠금 화면으로 되돌린다
@@ -15112,7 +15136,7 @@ function PasswordGate({children}){
     try{
       const r=await fetch("/api/verify-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
       const d=await r.json();
-      if(d.ok){ setPw(""); setAuth(true); }
+      if(d.ok){ setPw(""); try{ sessionStorage.setItem("bp_tab","1"); }catch(e){} setAuth(true); }
       else{ setErr(d.error||"비밀번호가 틀렸습니다."); }
     }catch(e){ setErr("오류가 발생했습니다. 다시 시도해주세요."); }
     setLoading(false);
@@ -15231,6 +15255,7 @@ export default function BlogTools(){
         body:JSON.stringify({action:"logout"}),
       });
     }catch(e){}
+    try{ sessionStorage.removeItem("bp_tab"); }catch(e){}
     location.reload();
   };
   const [isMobile]=useState(()=>typeof window!=="undefined"&&window.matchMedia("(pointer:coarse)").matches);
