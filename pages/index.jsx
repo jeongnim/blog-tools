@@ -1122,6 +1122,7 @@ function buildFullPrompt(item,styleId,ratio,lang){
 
 // ── 본문을 5개 단락으로 나눠 단락별 이미지 장면을 뽑는다 (화면 상태와 무관 — 자동화에서도 호출) ──
 async function analyzeImageSections(postMeta, postContent, opts={}) {
+  const aiModel=opts.model||"claude-haiku-4-5-20251001", aiTokens=opts.maxTokens||3500;
   // ── Claude가 본문을 5개 단락으로 나누고 각 단락의 '장면'을 묘사 ──
   // opts.headings 가 있으면(자동 글쓰기) 5개 대신 소제목 1개당 1장 — 인용구 수 = 이미지 수
   const heads=(opts.headings||[]).map(h=>String(h||"").trim()).filter(Boolean);
@@ -1195,7 +1196,7 @@ Return ONLY valid JSON, no markdown:
 ]}`;
 
   const raw=await callClaude([{role:"user",content:analysisReq}],
-    "You are an expert at analyzing blog posts and writing image generation prompts. Base every section and scene strictly on the given post content — never invent details or facts the post does not contain. When the post is about a specific named program, app or product, name it explicitly and reproduce its real screen or real design as accurately as you can from your knowledge; only fall back to a generic scene when the section is not about a specific product/program. Output ONLY valid JSON.",3500,"claude-haiku-4-5-20251001");
+    "You are an expert at analyzing blog posts and writing image generation prompts. Base every section and scene strictly on the given post content — never invent details or facts the post does not contain. When the post is about a specific named program, app or product, name it explicitly and reproduce its real screen or real design as accurately as you can from your knowledge; only fall back to a generic scene when the section is not about a specific product/program. Output ONLY valid JSON.",aiTokens,aiModel);
 
   if(!raw||raw.trim()==="") throw new Error("단락 분석 응답이 비어있습니다.");
   const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
@@ -15203,7 +15204,23 @@ async function autoWriteOne({ topic, mainKeyword, mode="hq", region="" , imageRa
   let sections=[];
   // 인용구(▶ 소제목) 수 = 이미지 수. 마지막 정리/마무리/요약은 구분선이라 제외
   const autoHeads=autoHeadings(meta.content);
-  try{ sections=await analyzeImageSections(meta, meta.content, {...(allowUi?{ koreaUi:true }:{ noUi:true }), headings:autoHeads}); }catch(e){ autoLog(`[${mainKeyword}] 이미지 장면 실패: ${e.message}`); }
+  try{ sections=await analyzeImageSections(meta, meta.content, {...(allowUi?{ koreaUi:true }:{ noUi:true }), headings:autoHeads}); }
+  catch(e){
+    autoLog(`[${mainKeyword}] 이미지 장면 실패: ${e.message} → 한 번 더 (Sonnet)`);
+    try{ sections=await analyzeImageSections(meta, meta.content, {...(allowUi?{ koreaUi:true }:{ noUi:true }), headings:autoHeads, model:"claude-sonnet-4-5-20250929", maxTokens:8000}); }
+    catch(e2){ autoLog(`[${mainKeyword}] 이미지 장면 다시 실패: ${e2.message} → 소제목별 기본 장면으로 채움`); }
+  }
+  // 그래도 비면 소제목마다 기본 장면 (이미지가 0장으로 끝나지 않게)
+  if(!sections.length){
+    const heads=autoHeads.length?autoHeads:[meta.title||mainKeyword];
+    const basics=["A Korean person's hands holding a smartphone at a bright cafe table, the screen softly blurred and unreadable, natural daylight.",
+      "A Korean young adult sitting on a sofa at home looking at a smartphone with a relieved smile, screen turned away from the camera.",
+      "Close-up of a smartphone lying on a wooden desk next to a coffee cup, the screen dark and blank, soft morning light.",
+      "A Korean person walking on a city street while checking a smartphone, the screen not visible, shallow depth of field.",
+      "Two Korean friends at a cafe looking at a smartphone together, smiling, the screen blurred and unreadable."];
+    sections=heads.map((h,i)=>({ sectionTitle:h, sectionDesc:h, imageType:"scene", productName:"", scene:basics[i%basics.length], sceneKo:h }));
+    autoLog(`[${mainKeyword}] 기본 장면 ${sections.length}개로 이미지 준비`);
+  }
   // 실제 제품 사진을 첨부할 수 없으니 제품 타입은 "사용 장면"으로 바꿔 그린다 (가짜 제품 디자인 방지: 브랜드명 빼고 일반 기기로)
   const images=sections.map((x,i)=>{
     let item=x.imageType==="product"?{...x,imageType:"scene",scene:String(x.scene||"").replace(new RegExp((x.productName||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"),"a smartphone")}:x;
