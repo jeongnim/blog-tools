@@ -6050,16 +6050,13 @@ const EMOJI_CATEGORIES = [
 // ─── TAB: 동영상 압축 (FFmpeg.wasm) ────────────────────────────────────────
 // ─── TAB: 동영상 압축 (FFmpeg.wasm) ────────────────────────────────────────
 function VideoTab(){
-  const [file,setFile]=useState(null);
-  const [preview,setPreview]=useState(null);
-  const [status,setStatus]=useState("idle"); // idle|loading|ready|processing|done|error
-  const [progress,setProgress]=useState(0);
+  // 여러 영상을 올려서 같은 옵션으로 차례대로 압축
+  const [items,setItems]=useState([]);   // {id,file,name,size,url,meta:{dur,w,h},status:"wait"|"run"|"done"|"error",progress,resultUrl,resultSize,err}
+  const [selId,setSelId]=useState(null);
+  const [engine,setEngine]=useState("idle"); // idle|loading|ready|error
+  const [running,setRunning]=useState(false);
   const [log,setLog]=useState("");
-  const [resultUrl,setResultUrl]=useState(null);
-  const [origSize,setOrigSize]=useState(0);
-  const [resultSize,setResultSize]=useState(0);
   const [dragOver,setDragOver]=useState(false);
-  const [meta,setMeta]=useState(null);   // {dur,w,h} — 예상 용량 계산용
   const [opts,setOpts]=useState({
     crf:"28",         // 압축 품질 (18=고화질, 28=기본, 40=저용량)
     preset:"medium",  // 인코딩 속도
@@ -6069,11 +6066,22 @@ function VideoTab(){
   });
   const ffmpegRef=useRef(null);
   const fileInputRef=useRef(null);
+  const stopRef=useRef(false);
+  const curRef=useRef(null);          // 지금 압축 중인 영상 id (진행률 표시용)
+  const itemsRef=useRef(items); itemsRef.current=items;
+  const upItem=(id,patch)=>setItems(a=>a.map(x=>x.id===id?{...x,...patch}:x));
 
   // FFmpeg.wasm 로드 (0.11.x - crossOriginIsolated 불필요)
+  const loadScript=(src)=>new Promise((res,rej)=>{
+    if(document.querySelector(`script[src="${src}"]`)){res();return;}
+    const s=document.createElement("script");
+    s.crossOrigin="anonymous";
+    s.src=src; s.onload=res; s.onerror=rej;
+    document.head.appendChild(s);
+  });
   const loadFFmpeg=async()=>{
     if(ffmpegRef.current) return ffmpegRef.current;
-    setStatus("loading");
+    setEngine("loading");
     setLog("FFmpeg 엔진 로딩 중... (최초 1회 약 25MB 다운로드)");
     try{
       await loadScript("https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js");
@@ -6083,49 +6091,96 @@ function VideoTab(){
       const ff=createFFmpeg({
         log:false,
         logger:({message})=>setLog(message),
-        progress:({ratio})=>setProgress(Math.round(ratio*100)),
+        progress:({ratio})=>{ const id=curRef.current; if(id) upItem(id,{progress:Math.max(0,Math.min(99,Math.round(ratio*100)))}); },
         corePath:"https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js",
       });
       await ff.load();
       ffmpegRef.current=ff;
-      setStatus("ready");
-      setLog("");
+      setEngine("ready"); setLog("");
       return ff;
     }catch(e){
-      setStatus("error");
-      setLog("FFmpeg 로드 실패: "+e.message);
+      setEngine("error"); setLog("FFmpeg 로드 실패: "+e.message);
       return null;
     }
   };
 
-  const loadScript=(src)=>new Promise((res,rej)=>{
-    if(document.querySelector(`script[src="${src}"]`)){res();return;}
-    const s=document.createElement("script");
-    s.crossOrigin="anonymous";
-    s.src=src; s.onload=res; s.onerror=rej;
-    document.head.appendChild(s);
-  });
-
-  const onFile=(f)=>{
-    if(!f||!f.type.startsWith("video/")) return;
-    setFile(f);
-    setOrigSize(f.size);
-    setResultUrl(null);
-    setResultSize(0);
-    setProgress(0);
-    setLog("");
-    setStatus("ready");
-    const url=URL.createObjectURL(f);
-    setPreview(url);
-    setMeta(null);
-    const v=document.createElement("video"); v.preload="metadata"; v.muted=true;
-    v.onloadedmetadata=()=>{ if(isFinite(v.duration)&&v.duration>0) setMeta({ dur:v.duration, w:v.videoWidth||0, h:v.videoHeight||0 }); };
-    v.src=url;
+  // ── 영상 넣기 (여러 개)
+  const addFiles=(list)=>{
+    const vids=[...(list||[])].filter(f=>f&&f.type&&f.type.startsWith("video/"));
+    if(!vids.length) return;
+    const add=vids.map(f=>({ id:"v"+Date.now()+Math.random(), file:f, name:f.name, size:f.size, url:URL.createObjectURL(f), meta:null, status:"wait", progress:0, resultUrl:null, resultSize:0, err:"" }));
+    setItems(a=>[...a,...add]);
+    setSelId(s=>s||add[0].id);
+    add.forEach(it=>{
+      const v=document.createElement("video"); v.preload="metadata"; v.muted=true;
+      v.onloadedmetadata=()=>{ if(isFinite(v.duration)&&v.duration>0) upItem(it.id,{ meta:{ dur:v.duration, w:v.videoWidth||0, h:v.videoHeight||0 } }); };
+      v.src=it.url;
+    });
   };
+  const removeItem=id=>{ if(running&&curRef.current===id) return;
+    setItems(a=>{ const it=a.find(x=>x.id===id); if(it){ try{ URL.revokeObjectURL(it.url); if(it.resultUrl) URL.revokeObjectURL(it.resultUrl); }catch(e){} } return a.filter(x=>x.id!==id); });
+    setSelId(s=>s===id?null:s); };
+  const clearAll=()=>{ if(running) return; itemsRef.current.forEach(it=>{ try{ URL.revokeObjectURL(it.url); if(it.resultUrl) URL.revokeObjectURL(it.resultUrl); }catch(e){} }); setItems([]); setSelId(null); setLog(""); };
+
+  // ── 한 개 압축
+  const compressOne=async(ff,it)=>{
+    curRef.current=it.id;
+    upItem(it.id,{status:"run",progress:0,err:"",resultUrl:null,resultSize:0});
+    const ext=(it.name.split(".").pop()||"mp4").toLowerCase();
+    const inputName="in_"+Date.now()+"."+ext, outputName="out_"+Date.now()+"."+opts.format;
+    try{
+      const fetchFile=window._ffFetchFile||(async(f)=>new Uint8Array(await f.arrayBuffer()));
+      ff.FS("writeFile", inputName, await fetchFile(it.file));
+      const args=["-i",inputName];
+      if(opts.format==="mp4"||opts.format==="mov") args.push("-c:v","libx264","-crf",opts.crf,"-preset",opts.preset);
+      else if(opts.format==="webm") args.push("-c:v","libvpx-vp9","-crf",opts.crf,"-b:v","0");
+      args.push("-c:a","aac","-b:a","128k");
+      if(opts.scale!=="original") args.push("-vf",`scale=${opts.scale}:-2`);
+      if(opts.fps!=="original") args.push("-r",opts.fps);
+      args.push("-movflags","+faststart",outputName);
+      await ff.run(...args);
+      const data=ff.FS("readFile", outputName);
+      const blob=new Blob([data.buffer],{type:`video/${opts.format}`});
+      upItem(it.id,{status:"done",progress:100,resultUrl:URL.createObjectURL(blob),resultSize:blob.size,outExt:opts.format});
+    }catch(e){
+      upItem(it.id,{status:"error",err:e.message||String(e)});
+    }
+    // 메모리 비우기
+    try{ ff.FS("unlink",inputName); }catch(e){}
+    try{ ff.FS("unlink",outputName); }catch(e){}
+    curRef.current=null;
+  };
+  // ── 전체 (대기·실패만, 위에서부터 차례로)
+  const runAll=async(onlyId)=>{
+    if(running) return;
+    const ff=await loadFFmpeg(); if(!ff) return;
+    stopRef.current=false; setRunning(true);
+    const todo=itemsRef.current.filter(x=>onlyId?x.id===onlyId:(x.status==="wait"||x.status==="error"));
+    for(let k=0;k<todo.length;k++){
+      if(stopRef.current) break;
+      const it=itemsRef.current.find(x=>x.id===todo[k].id); if(!it) continue;
+      setLog(`(${k+1}/${todo.length}) ${it.name} 압축 중...`);
+      await compressOne(ff,it);
+    }
+    setRunning(false);
+    setLog(stopRef.current?"⏹ 멈췄어요 — 남은 영상은 「전체 압축 시작」을 다시 누르면 이어서 해요":"✓ 끝났어요");
+  };
+
+  const outName=it=>`${it.name.replace(/\.[^.]+$/,"")}_압축.${it.outExt||opts.format}`;
+  const download=it=>{ if(!it.resultUrl) return; const a=document.createElement("a"); a.href=it.resultUrl; a.download=outName(it); document.body.appendChild(a); a.click(); a.remove(); };
+  const downloadAll=async()=>{ for(const it of itemsRef.current.filter(x=>x.status==="done")){ download(it); await new Promise(r=>setTimeout(r,500)); } };
+
+  const fmtSz=n=>{
+    if(!n) return "-";
+    if(n>1024*1024*1024) return (n/1024/1024/1024).toFixed(2)+"GB";
+    if(n>1024*1024) return (n/1024/1024).toFixed(1)+"MB";
+    return (n/1024).toFixed(0)+"KB";
+  };
+  const fmtDur=d=>{ const m=Math.floor(d/60), ss=Math.round(d%60); return m?`${m}분 ${ss}초`:`${ss}초`; };
   // ── 예상 용량 (대략): 해상도·프레임·품질(CRF 6 오르면 약 절반)·속도·포맷으로 어림
-  const estSize=o=>{
-    if(!meta||!meta.dur) return null;
-    const origK=origSize*8/meta.dur/1000;                         // 원본 kbps
+  const estSize=(o,it)=>{
+    const meta=it&&it.meta; if(!meta||!meta.dur) return null;
+    const origK=it.size*8/meta.dur/1000;
     const w0=meta.w||1920, h0=meta.h||1080;
     const W=o.scale==="original"?w0:Number(o.scale), H=Math.round(h0*W/w0);
     const fps=o.fps==="original"?30:Number(o.fps);
@@ -6133,68 +6188,17 @@ function VideoTab(){
     const presetF={ultrafast:1.6,fast:1.08,medium:1,slow:0.92}[o.preset]||1;
     const fmtF=o.format==="webm"?0.7:1;
     let vk=0.07*W*H*Math.pow(fps,0.85)*Math.pow(30,0.15)*Math.pow(2,(23-crf)/6)/1000*presetF*fmtF;
-    if(origK>0) vk=Math.min(vk,Math.max(200,(origK-128)*1.15));   // 원본보다 크게 늘지는 않게
-    const bytes=(vk+128)*1000/8*meta.dur;
-    return { mid:bytes, lo:bytes*0.7, hi:bytes*1.35 };
+    if(origK>0) vk=Math.min(vk,Math.max(200,(origK-128)*1.15));
+    return (vk+128)*1000/8*meta.dur;
   };
-
-  const compress=async()=>{
-    if(!file) return;
-    const ff=await loadFFmpeg();
-    if(!ff){return;}
-    setStatus("processing");
-    setProgress(0);
-    setLog("파일 읽는 중...");
-    try{
-      const fetchFile=window._ffFetchFile||(async(f)=>new Uint8Array(await f.arrayBuffer()));
-      const ext=file.name.split(".").pop().toLowerCase();
-      const inputName="input."+ext;
-      const outputName="output."+opts.format;
-
-      ff.FS("writeFile", inputName, await fetchFile(file));
-      setLog("압축 시작...");
-
-      // FFmpeg 명령 구성 (0.11.x: ff.run 사용)
-      const args=["-i",inputName];
-      // 비디오 코덱
-      if(opts.format==="mp4"||opts.format==="mov"){
-        args.push("-c:v","libx264","-crf",opts.crf,"-preset",opts.preset);
-      } else if(opts.format==="webm"){
-        args.push("-c:v","libvpx-vp9","-crf",opts.crf,"-b:v","0");
-      }
-      // 오디오
-      args.push("-c:a","aac","-b:a","128k");
-      // 해상도
-      if(opts.scale!=="original") args.push("-vf",`scale=${opts.scale}:-2`);
-      // FPS
-      if(opts.fps!=="original") args.push("-r",opts.fps);
-      args.push("-movflags","+faststart",outputName);
-
-      await ff.run(...args);
-
-      const data=ff.FS("readFile", outputName);
-      const blob=new Blob([data.buffer],{type:`video/${opts.format}`});
-      setResultUrl(URL.createObjectURL(blob));
-      setResultSize(blob.size);
-      setStatus("done");
-      setLog("압축 완료!");
-      setProgress(100);
-    }catch(e){
-      setStatus("error");
-      setLog("오류: "+e.message);
-    }
-  };
-
-  const fmtSz=n=>{
-    if(n===0) return "-";
-    if(n>1024*1024*1024) return (n/1024/1024/1024).toFixed(2)+"GB";
-    if(n>1024*1024) return (n/1024/1024).toFixed(1)+"MB";
-    return (n/1024).toFixed(0)+"KB";
-  };
-  const saving=resultSize&&origSize?Math.round((1-resultSize/origSize)*100):null;
-  const est=estSize(opts);
-  const estOf=patch=>{ const e=estSize({...opts,...patch}); return e?"약 "+fmtSz(e.mid):""; };
-  const fmtDur=d=>{ const m=Math.floor(d/60), ss=Math.round(d%60); return m?`${m}분 ${ss}초`:`${ss}초`; };
+  // 전체 합계 예상
+  const estAll=o=>{ let sum=0, n=0; items.forEach(it=>{ const e=estSize(o,it); if(e){ sum+=e; n++; } }); return n?{sum,n}:null; };
+  const estOf=patch=>{ const e=estAll({...opts,...patch}); return e?"약 "+fmtSz(e.sum):""; };
+  const est=estAll(opts);
+  const origAll=items.reduce((a,x)=>a+x.size,0);
+  const doneList=items.filter(x=>x.status==="done");
+  const todoCount=items.filter(x=>x.status==="wait"||x.status==="error").length;
+  const sel=items.find(x=>x.id===selId)||items[0]||null;
 
   const crfOptions=[
     {val:"18",label:"고화질",desc:"파일 큼"},
@@ -6222,40 +6226,34 @@ function VideoTab(){
     {val:"24",label:"24fps"},
     {val:"15",label:"15fps"},
   ];
-
-  const isProcessing=status==="processing"||status==="loading";
+  const optLock=running;   // 압축 중에는 옵션 고정
+  const small={padding:"4px 9px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",fontSize:"12px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"};
+  const stTxt=it=>it.status==="run"?<span style={{color:"#58a6ff"}}>⏳ {it.progress}%</span>
+    :it.status==="done"?<span style={{color:"#3fb950"}}>✅ 완료</span>
+    :it.status==="error"?<span style={{color:"#ff7b72"}} title={it.err}>❌ 실패</span>
+    :<span style={{color:"#8b949e"}}>대기</span>;
+  const onDrop=e=>{e.preventDefault();setDragOver(false);addFiles(e.dataTransfer.files);};
 
   return <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+    <input ref={fileInputRef} type="file" accept="video/*" multiple style={{display:"none"}}
+      onChange={e=>{ addFiles(e.target.files); e.target.value=""; }}/>
 
     {/* 업로드 */}
-    {!file&&<div
+    {!items.length&&<div
       onClick={()=>fileInputRef.current?.click()} onTouchEnd={e=>{e.preventDefault();fileInputRef.current?.click();}}
-      onDrop={e=>{e.preventDefault();setDragOver(false);onFile(e.dataTransfer.files[0]);}}
-      onDragOver={e=>{e.preventDefault();setDragOver(true);}}
-      onDragLeave={()=>setDragOver(false)}
+      onDrop={onDrop} onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)}
       style={{border:`2px dashed ${dragOver?"#58a6ff":"#30363d"}`,borderRadius:"12px",
         padding:"48px 20px",textAlign:"center",cursor:"pointer",
         background:dragOver?"#1f6feb11":"#0d1117",transition:"all .2s"}}>
       <div style={{fontSize:"48px",marginBottom:"12px"}}>🎬</div>
-      <div style={{color:"#c9d1d9",fontSize:"18px",fontWeight:700,marginBottom:"6px"}}>동영상을 드래그하거나 클릭하여 업로드</div>
-      <div style={{color:"#484f58",fontSize:"15px"}}>MP4, MOV, AVI, WEBM, MKV 등 모든 형식</div>
-      <input ref={fileInputRef} type="file" accept="video/*" style={{display:"none"}}
-        onChange={e=>onFile(e.target.files[0])}/>
+      <div style={{color:"#c9d1d9",fontSize:"18px",fontWeight:700,marginBottom:"6px"}}>동영상을 드래그하거나 클릭하여 업로드 (여러 개 가능)</div>
+      <div style={{color:"#484f58",fontSize:"15px"}}>MP4, MOV, AVI, WEBM, MKV 등 모든 형식 · 같은 옵션으로 차례대로 압축해요</div>
     </div>}
 
-    {file&&<div style={{display:"grid",gridTemplateColumns:"280px 1fr",gap:"14px",alignItems:"start"}}>
+    {items.length>0&&<div style={{display:"grid",gridTemplateColumns:"280px 1fr",gap:"14px",alignItems:"start"}}>
 
       {/* ─ 왼쪽: 옵션 ─ */}
-      <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-
-        {/* 파일 정보 */}
-        <div style={{background:"#161b22",borderRadius:"10px",padding:"12px 14px",border:"1px solid #30363d"}}>
-          <div style={{color:"#c9d1d9",fontSize:"15px",fontWeight:600,
-            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:"4px"}}>
-            🎬 {file.name}
-          </div>
-          <div style={{color:"#484f58",fontSize:"13px"}}>{fmtSz(origSize)}{meta&&` · ${fmtDur(meta.dur)}${meta.w?` · ${meta.w}×${meta.h}`:""} · 약 ${(origSize*8/meta.dur/1e6).toFixed(1)}Mbps`}</div>
-        </div>
+      <div style={{display:"flex",flexDirection:"column",gap:"10px",opacity:optLock?.6:1,pointerEvents:optLock?"none":"auto"}}>
 
         {/* 압축 품질 */}
         <div style={{background:"#161b22",borderRadius:"10px",padding:"14px",border:"1px solid #30363d"}}>
@@ -6269,7 +6267,7 @@ function VideoTab(){
                   color:opts.crf===o.val?"#58a6ff":"#8b949e",
                   cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",textAlign:"left"}}>
                 <span style={{fontWeight:opts.crf===o.val?700:400}}>{o.label}</span>
-                <span style={{fontSize:"12px",color:"#484f58"}}>{o.desc}{meta&&<b style={{color:"#8b949e",marginLeft:"6px"}}>{estOf({crf:o.val})}</b>}</span>
+                <span style={{fontSize:"12px",color:"#484f58"}}>{o.desc}{est&&<b style={{color:"#8b949e",marginLeft:"6px"}}>{estOf({crf:o.val})}</b>}</span>
               </button>
             ))}
           </div>
@@ -6285,7 +6283,7 @@ function VideoTab(){
                   background:opts.scale===o.val?"#3fb95022":"transparent",
                   color:opts.scale===o.val?"#3fb950":"#8b949e",
                   cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:opts.scale===o.val?700:400}}>
-                {o.label}{meta&&<div style={{fontSize:"11px",color:"#6e7681",fontWeight:400}}>{estOf({scale:o.val})}</div>}
+                {o.label}{est&&<div style={{fontSize:"11px",color:"#6e7681",fontWeight:400}}>{estOf({scale:o.val})}</div>}
               </button>
             ))}
           </div>
@@ -6302,7 +6300,7 @@ function VideoTab(){
                     background:opts.fps===o.val?"#ffa65722":"transparent",
                     color:opts.fps===o.val?"#ffa657":"#8b949e",
                     cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px"}}>
-                  {o.label}{meta&&<div style={{fontSize:"11px",color:"#6e7681"}}>{estOf({fps:o.val})}</div>}
+                  {o.label}{est&&<div style={{fontSize:"11px",color:"#6e7681"}}>{estOf({fps:o.val})}</div>}
                 </button>
               ))}
             </div>
@@ -6316,7 +6314,7 @@ function VideoTab(){
                     background:opts.format===f?"#d2a8ff22":"transparent",
                     color:opts.format===f?"#d2a8ff":"#8b949e",
                     cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700}}>
-                  {f.toUpperCase()}{meta&&<div style={{fontSize:"11px",color:"#6e7681",fontWeight:400}}>{estOf({format:f})}</div>}
+                  {f.toUpperCase()}{est&&<div style={{fontSize:"11px",color:"#6e7681",fontWeight:400}}>{estOf({format:f})}</div>}
                 </button>
               ))}
             </div>
@@ -6334,99 +6332,85 @@ function VideoTab(){
                   color:opts.preset===o.val?"#79c0ff":"#8b949e",
                   cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",
                   fontWeight:opts.preset===o.val?700:400}}>
-                {o.label}{meta&&<div style={{fontSize:"11px",color:"#6e7681",fontWeight:400}}>{estOf({preset:o.val})}</div>}
+                {o.label}{est&&<div style={{fontSize:"11px",color:"#6e7681",fontWeight:400}}>{estOf({preset:o.val})}</div>}
               </button>
             ))}
           </div>
         </div>
-
-        {/* 예상 결과 */}
-        {est&&<div style={{background:"#161b22",borderRadius:"10px",padding:"12px 14px",border:"1px solid #1f6feb55"}}>
-          <div style={{fontSize:"13px",color:"#8b949e",fontWeight:700,marginBottom:"4px"}}>📊 예상 결과 (대략)</div>
-          <div style={{fontSize:"18px",color:"#58a6ff",fontWeight:800}}>약 {fmtSz(est.lo)} ~ {fmtSz(est.hi)}</div>
-          <div style={{fontSize:"12px",color:est.mid>=origSize?"#f0883e":"#8b949e",marginTop:"4px"}}>
-            {est.mid>=origSize?"⚠ 원본보다 커질 수 있어요 — 품질을 낮추거나 해상도를 줄여 보세요"
-              :`원본 ${fmtSz(origSize)} → 약 ${Math.max(0,Math.round((1-est.mid/origSize)*100))}% 줄어듦`}
-          </div>
-          <div style={{fontSize:"11px",color:"#484f58",marginTop:"4px"}}>움직임이 많은 영상은 더 크게, 정지 화면이 많으면 더 작게 나와요</div>
-        </div>}
-
-        {/* 압축 버튼 */}
-        <button onClick={compress} disabled={isProcessing}
-          style={{padding:"13px",background:isProcessing?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",
-            border:"none",borderRadius:"10px",color:isProcessing?"#484f58":"#fff",
-            cursor:isProcessing?"not-allowed":"pointer",fontSize:"16px",fontWeight:700,
-            fontFamily:"'Noto Sans KR',sans-serif",transition:"all .2s"}}>
-          {status==="loading"?"⏳ FFmpeg 로딩 중...":isProcessing?"⏳ 압축 중...":"🎬 압축 시작"}
-        </button>
-
-        {/* 결과 다운로드 */}
-        {status==="done"&&resultUrl&&<>
-          <div style={{background:"#0d2019",border:"1px solid #2ea04344",borderRadius:"10px",padding:"12px 14px"}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
-              <span style={{color:"#8b949e",fontSize:"14px"}}>원본</span>
-              <span style={{color:"#8b949e",fontSize:"14px",fontWeight:600}}>{fmtSz(origSize)}</span>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px"}}>
-              <span style={{color:"#3fb950",fontSize:"14px"}}>결과</span>
-              <span style={{color:"#3fb950",fontSize:"14px",fontWeight:700}}>{fmtSz(resultSize)}</span>
-            </div>
-            {saving!=null&&<div style={{textAlign:"center",color:saving>0?"#3fb950":"#ff7b72",fontSize:"18px",fontWeight:700}}>
-              {saving>0?`▼ ${saving}% 압축`:saving<0?`▲ ${Math.abs(saving)}% 증가`:"변화 없음"}
-            </div>}
-          </div>
-          <a href={resultUrl} download={`compressed.${opts.format}`}
-            style={{display:"block",padding:"11px",background:"#2ea043",borderRadius:"10px",
-              color:"#fff",textDecoration:"none",fontSize:"15px",fontWeight:700,
-              textAlign:"center",fontFamily:"'Noto Sans KR',sans-serif"}}>
-            ⬇️ 결과 다운로드
-          </a>
-        </>}
-
-        <button onClick={()=>{setFile(null);setPreview(null);setResultUrl(null);setStatus("idle");setLog("");}}
-          style={{padding:"9px",background:"none",border:"1px solid #30363d",borderRadius:"8px",
-            color:"#8b949e",cursor:"pointer",fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif"}}>
-          🗑️ 새 파일 업로드
-        </button>
+        <div style={{fontSize:"11px",color:"#484f58"}}>옵션은 목록의 모든 영상에 똑같이 적용돼요. 옆 숫자는 전체 합계 예상이에요.</div>
       </div>
 
-      {/* ─ 오른쪽: 미리보기 + 로그 ─ */}
+      {/* ─ 오른쪽: 목록 + 미리보기 ─ */}
       <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
 
-        {/* 동영상 미리보기 */}
-        <div style={{background:"#0d1117",borderRadius:"12px",overflow:"hidden",border:"1px solid #30363d"}}>
-          {preview&&<video src={resultUrl||preview} controls
-            style={{width:"100%",maxHeight:"400px",display:"block",background:"#000"}}/>}
-          {resultUrl&&<div style={{padding:"8px 12px",fontSize:"13px",color:"#3fb950",background:"#0d2019",
-            borderTop:"1px solid #2ea04333"}}>
-            ✅ 압축 완료 — 위 영상은 결과물 미리보기입니다
-          </div>}
+        {/* 대기 목록 */}
+        <div onDrop={onDrop} onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)}
+          style={{background:"#161b22",borderRadius:"10px",border:`1px solid ${dragOver?"#58a6ff":"#30363d"}`,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 70px 80px 80px 110px 28px",gap:"6px",padding:"8px 12px",fontSize:"12px",color:"#8b949e",fontWeight:700,borderBottom:"1px solid #30363d"}}>
+            <span>파일 ({items.length}개)</span><span>원본</span><span>예상</span><span>상태</span><span>결과</span><span/>
+          </div>
+          <div style={{maxHeight:"320px",overflowY:"auto"}}>
+            {items.map(it=>{ const e=estSize(opts,it); const on=sel&&sel.id===it.id;
+              return <div key={it.id} onClick={()=>setSelId(it.id)}
+                style={{display:"grid",gridTemplateColumns:"1fr 70px 80px 80px 110px 28px",gap:"6px",alignItems:"center",padding:"7px 12px",fontSize:"13px",cursor:"pointer",
+                  background:on?"#1f6feb18":"transparent",borderBottom:"1px solid #21262d"}}>
+                <span style={{color:"#c9d1d9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.name}>
+                  🎬 {it.name}{it.meta&&<span style={{color:"#484f58",fontSize:"11px"}}> · {fmtDur(it.meta.dur)}{it.meta.w?` · ${it.meta.w}×${it.meta.h}`:""}</span>}
+                </span>
+                <span style={{color:"#8b949e"}}>{fmtSz(it.size)}</span>
+                <span style={{color:e&&e>=it.size?"#f0883e":"#8b949e"}}>{e?"약 "+fmtSz(e):"…"}</span>
+                <span style={{fontSize:"12px"}}>{stTxt(it)}</span>
+                <span>{it.status==="done"
+                  ?<button style={{...small,color:"#3fb950"}} onClick={ev=>{ev.stopPropagation();download(it);}}>{fmtSz(it.resultSize)} ⬇</button>
+                  :it.status==="error"&&!running?<button style={small} onClick={ev=>{ev.stopPropagation();runAll(it.id);}}>다시</button>:null}</span>
+                <span onClick={ev=>{ev.stopPropagation();removeItem(it.id);}} title="목록에서 빼기"
+                  style={{color:"#6e7681",cursor:running&&curRef.current===it.id?"default":"pointer",textAlign:"center"}}>✕</span>
+              </div>; })}
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",padding:"8px 12px",borderTop:"1px solid #30363d",flexWrap:"wrap"}}>
+            <button style={small} onClick={()=>fileInputRef.current?.click()}>+ 영상 더 넣기</button>
+            <span style={{fontSize:"12px",color:"#8b949e"}}>합계: 원본 {fmtSz(origAll)}{est&&<> → 예상 <b style={{color:"#58a6ff"}}>약 {fmtSz(est.sum*0.7)} ~ {fmtSz(est.sum*1.35)}</b></>}
+              {doneList.length>0&&<> · 완료 {doneList.length}개 {fmtSz(doneList.reduce((a,x)=>a+x.resultSize,0))}</>}</span>
+          </div>
         </div>
 
-        {/* 진행 상태 */}
-        {isProcessing&&<div style={{background:"#161b22",borderRadius:"10px",padding:"16px",border:"1px solid #30363d"}}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px"}}>
-            <span style={{color:"#8b949e",fontSize:"15px"}}>⏳ 압축 진행 중...</span>
-            <span style={{color:"#58a6ff",fontWeight:700,fontSize:"15px"}}>{progress}%</span>
-          </div>
-          <div style={{height:"6px",background:"#21262d",borderRadius:"3px",overflow:"hidden"}}>
-            <div style={{height:"100%",width:`${progress}%`,
-              background:"linear-gradient(90deg,#1f6feb,#58a6ff)",
-              borderRadius:"3px",transition:"width .3s"}}/>
-          </div>
-          <div style={{color:"#484f58",fontSize:"13px",marginTop:"8px",fontFamily:"monospace",
-            whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-            {log||"처리 중..."}
+        {/* 실행 버튼 */}
+        <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+          {!running
+            ?<button onClick={()=>runAll()} disabled={!todoCount||engine==="loading"}
+              style={{flex:"2 1 200px",padding:"13px",background:!todoCount?"#21262d":"linear-gradient(135deg,#1f6feb,#388bfd)",border:"none",borderRadius:"10px",
+                color:!todoCount?"#484f58":"#fff",cursor:!todoCount?"not-allowed":"pointer",fontSize:"16px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}>
+              {engine==="loading"?"⏳ FFmpeg 로딩 중...":`🎬 전체 압축 시작 (${todoCount}개)`}
+            </button>
+            :<button onClick={()=>{ stopRef.current=true; setLog("⏹ 지금 영상까지만 하고 멈춰요..."); }}
+              style={{flex:"2 1 200px",padding:"13px",background:"#da3633",border:"none",borderRadius:"10px",color:"#fff",cursor:"pointer",fontSize:"16px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}>
+              ⏹ 멈추기
+            </button>}
+          <button onClick={downloadAll} disabled={!doneList.length}
+            style={{flex:"1 1 160px",padding:"13px",background:doneList.length?"#238636":"#21262d",border:"none",borderRadius:"10px",
+              color:doneList.length?"#fff":"#484f58",cursor:doneList.length?"pointer":"not-allowed",fontSize:"15px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif"}}>
+            ⬇ 완료된 것 전체 받기 ({doneList.length})
+          </button>
+          <button onClick={clearAll} disabled={running}
+            style={{padding:"13px 14px",background:"none",border:"1px solid #30363d",borderRadius:"10px",color:"#8b949e",cursor:running?"not-allowed":"pointer",fontSize:"14px",fontFamily:"'Noto Sans KR',sans-serif"}}>
+            🗑️ 모두 비우기
+          </button>
+        </div>
+        {(log||running)&&<div style={{color:engine==="error"?"#ff7b72":"#8b949e",fontSize:"13px",fontFamily:"monospace",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{log}</div>}
+        {doneList.length>1&&<div style={{fontSize:"12px",color:"#484f58"}}>전체 받기 때 브라우저가 "여러 파일 다운로드"를 물으면 허용을 눌러 주세요.</div>}
+
+        {/* 미리보기 (고른 영상) */}
+        {sel&&<div style={{background:"#0d1117",borderRadius:"12px",overflow:"hidden",border:"1px solid #30363d"}}>
+          <video key={sel.id+(sel.resultUrl||"")} src={sel.resultUrl||sel.url} controls
+            style={{width:"100%",maxHeight:"360px",display:"block",background:"#000"}}/>
+          <div style={{padding:"8px 12px",fontSize:"13px",color:sel.resultUrl?"#3fb950":"#8b949e",background:sel.resultUrl?"#0d2019":"#161b22"}}>
+            {sel.resultUrl?`✅ 결과물 미리보기 — ${sel.name} · ${fmtSz(sel.size)} → ${fmtSz(sel.resultSize)} (${Math.round((1-sel.resultSize/sel.size)*100)}% 줄어듦)`:`원본 미리보기 — ${sel.name}`}
           </div>
         </div>}
 
-        {/* 에러 */}
-        {status==="error"&&<div style={{background:"#2d1117",border:"1px solid #da363333",
-          borderRadius:"10px",padding:"14px",color:"#ff7b72",fontSize:"15px"}}>
+        {engine==="error"&&<div style={{background:"#2d1117",border:"1px solid #da363333",borderRadius:"10px",padding:"14px",color:"#ff7b72",fontSize:"14px"}}>
           ⚠️ {log}
-          <div style={{marginTop:"8px",fontSize:"13px",color:"#484f58"}}>
-            FFmpeg.wasm은 브라우저 환경에 따라 동작하지 않을 수 있습니다. SharedArrayBuffer가 필요합니다.
-          </div>
+          <div style={{marginTop:"8px",fontSize:"13px",color:"#484f58"}}>FFmpeg.wasm은 브라우저 환경에 따라 동작하지 않을 수 있습니다.</div>
         </div>}
 
         {/* 안내 */}
@@ -6434,9 +6418,9 @@ function VideoTab(){
           fontSize:"13px",color:"#484f58",lineHeight:"1.8"}}>
           <div style={{color:"#8b949e",fontWeight:600,marginBottom:"4px"}}>💡 사용 안내</div>
           · 모든 처리는 <strong style={{color:"#c9d1d9"}}>브라우저 내에서만</strong> 이루어져 서버로 업로드되지 않습니다<br/>
+          · 여러 개는 <strong style={{color:"#c9d1d9"}}>위에서부터 하나씩 차례로</strong> 압축해요 (동시에 하면 메모리가 부족해요)<br/>
           · FFmpeg.wasm 첫 로드 시 약 20MB 다운로드가 필요합니다<br/>
-          · 대용량 파일(1GB+)은 브라우저 메모리 한계로 실패할 수 있습니다<br/>
-          · 일부 브라우저에서 <strong style={{color:"#c9d1d9"}}>SharedArrayBuffer</strong> 제한으로 동작하지 않을 수 있습니다
+          · 대용량 파일(1GB+)을 여러 개 넣으면 실패할 수 있어요 — 몇 개씩 나눠서 돌려 주세요
         </div>
       </div>
     </div>}
