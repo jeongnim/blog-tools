@@ -419,7 +419,7 @@ function blogKeysSave(m){ try{ localStorage.setItem(LS_BLOG_KEYS,JSON.stringify(
 const KEY_SVCS=[
   { id:"claude",    field:"key",       group:"write", label:"Claude",    ph:"sk-ant-...", ok:v=>/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(v), use:"글쓰기·SNS 변환·장면 구성 등 AI 대부분" },
   { id:"openai",    field:"openai",    group:"write", label:"OpenAI",    ph:"sk-proj-...", ok:v=>/^sk-[A-Za-z0-9_\-]{20,}$/.test(v), use:"GPT 이미지" },
-  { id:"gemini",    field:"gemini",    group:"media", label:"Gemini",    ph:"AIza...", ok:v=>/^AIza[0-9A-Za-z_\-]{30,}$/.test(v), use:"AI 영상(Veo) · 나레이션 음성" },
+  { id:"gemini",    field:"gemini",    group:"media", label:"Gemini",    ph:"AIza... 또는 AQ....", ok:v=>/^(AIza[0-9A-Za-z_\-]{30,}|AQ\.[0-9A-Za-z_\-.]{20,})$/.test(v), use:"AI 영상(Veo) · 나레이션 음성" },
   { id:"pixverse",  field:"pixverse",  group:"media", label:"PixVerse",  ph:"PixVerse API 키", ok:v=>v.length>=10&&!/\s/.test(v), use:"AI 영상 움직임" },
   { id:"replicate", field:"replicate", group:"media", label:"Replicate", ph:"r8_...", ok:v=>/^r8_[A-Za-z0-9]{20,}$/.test(v), use:"(안 씀)", hidden:true },
 ];
@@ -6059,6 +6059,7 @@ function VideoTab(){
   const [origSize,setOrigSize]=useState(0);
   const [resultSize,setResultSize]=useState(0);
   const [dragOver,setDragOver]=useState(false);
+  const [meta,setMeta]=useState(null);   // {dur,w,h} — 예상 용량 계산용
   const [opts,setOpts]=useState({
     crf:"28",         // 압축 품질 (18=고화질, 28=기본, 40=저용량)
     preset:"medium",  // 인코딩 속도
@@ -6116,6 +6117,25 @@ function VideoTab(){
     setStatus("ready");
     const url=URL.createObjectURL(f);
     setPreview(url);
+    setMeta(null);
+    const v=document.createElement("video"); v.preload="metadata"; v.muted=true;
+    v.onloadedmetadata=()=>{ if(isFinite(v.duration)&&v.duration>0) setMeta({ dur:v.duration, w:v.videoWidth||0, h:v.videoHeight||0 }); };
+    v.src=url;
+  };
+  // ── 예상 용량 (대략): 해상도·프레임·품질(CRF 6 오르면 약 절반)·속도·포맷으로 어림
+  const estSize=o=>{
+    if(!meta||!meta.dur) return null;
+    const origK=origSize*8/meta.dur/1000;                         // 원본 kbps
+    const w0=meta.w||1920, h0=meta.h||1080;
+    const W=o.scale==="original"?w0:Number(o.scale), H=Math.round(h0*W/w0);
+    const fps=o.fps==="original"?30:Number(o.fps);
+    const crf=Number(o.crf);
+    const presetF={ultrafast:1.6,fast:1.08,medium:1,slow:0.92}[o.preset]||1;
+    const fmtF=o.format==="webm"?0.7:1;
+    let vk=0.07*W*H*Math.pow(fps,0.85)*Math.pow(30,0.15)*Math.pow(2,(23-crf)/6)/1000*presetF*fmtF;
+    if(origK>0) vk=Math.min(vk,Math.max(200,(origK-128)*1.15));   // 원본보다 크게 늘지는 않게
+    const bytes=(vk+128)*1000/8*meta.dur;
+    return { mid:bytes, lo:bytes*0.7, hi:bytes*1.35 };
   };
 
   const compress=async()=>{
@@ -6172,6 +6192,9 @@ function VideoTab(){
     return (n/1024).toFixed(0)+"KB";
   };
   const saving=resultSize&&origSize?Math.round((1-resultSize/origSize)*100):null;
+  const est=estSize(opts);
+  const estOf=patch=>{ const e=estSize({...opts,...patch}); return e?"약 "+fmtSz(e.mid):""; };
+  const fmtDur=d=>{ const m=Math.floor(d/60), ss=Math.round(d%60); return m?`${m}분 ${ss}초`:`${ss}초`; };
 
   const crfOptions=[
     {val:"18",label:"고화질",desc:"파일 큼"},
@@ -6231,7 +6254,7 @@ function VideoTab(){
             overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:"4px"}}>
             🎬 {file.name}
           </div>
-          <div style={{color:"#484f58",fontSize:"13px"}}>{fmtSz(origSize)}</div>
+          <div style={{color:"#484f58",fontSize:"13px"}}>{fmtSz(origSize)}{meta&&` · ${fmtDur(meta.dur)}${meta.w?` · ${meta.w}×${meta.h}`:""} · 약 ${(origSize*8/meta.dur/1e6).toFixed(1)}Mbps`}</div>
         </div>
 
         {/* 압축 품질 */}
@@ -6246,7 +6269,7 @@ function VideoTab(){
                   color:opts.crf===o.val?"#58a6ff":"#8b949e",
                   cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",textAlign:"left"}}>
                 <span style={{fontWeight:opts.crf===o.val?700:400}}>{o.label}</span>
-                <span style={{fontSize:"12px",color:"#484f58"}}>{o.desc}</span>
+                <span style={{fontSize:"12px",color:"#484f58"}}>{o.desc}{meta&&<b style={{color:"#8b949e",marginLeft:"6px"}}>{estOf({crf:o.val})}</b>}</span>
               </button>
             ))}
           </div>
@@ -6262,7 +6285,7 @@ function VideoTab(){
                   background:opts.scale===o.val?"#3fb95022":"transparent",
                   color:opts.scale===o.val?"#3fb950":"#8b949e",
                   cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px",fontWeight:opts.scale===o.val?700:400}}>
-                {o.label}
+                {o.label}{meta&&<div style={{fontSize:"11px",color:"#6e7681",fontWeight:400}}>{estOf({scale:o.val})}</div>}
               </button>
             ))}
           </div>
@@ -6279,7 +6302,7 @@ function VideoTab(){
                     background:opts.fps===o.val?"#ffa65722":"transparent",
                     color:opts.fps===o.val?"#ffa657":"#8b949e",
                     cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"13px"}}>
-                  {o.label}
+                  {o.label}{meta&&<div style={{fontSize:"11px",color:"#6e7681"}}>{estOf({fps:o.val})}</div>}
                 </button>
               ))}
             </div>
@@ -6293,7 +6316,7 @@ function VideoTab(){
                     background:opts.format===f?"#d2a8ff22":"transparent",
                     color:opts.format===f?"#d2a8ff":"#8b949e",
                     cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"14px",fontWeight:700}}>
-                  {f.toUpperCase()}
+                  {f.toUpperCase()}{meta&&<div style={{fontSize:"11px",color:"#6e7681",fontWeight:400}}>{estOf({format:f})}</div>}
                 </button>
               ))}
             </div>
@@ -6311,11 +6334,22 @@ function VideoTab(){
                   color:opts.preset===o.val?"#79c0ff":"#8b949e",
                   cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",fontSize:"12px",
                   fontWeight:opts.preset===o.val?700:400}}>
-                {o.label}
+                {o.label}{meta&&<div style={{fontSize:"11px",color:"#6e7681",fontWeight:400}}>{estOf({preset:o.val})}</div>}
               </button>
             ))}
           </div>
         </div>
+
+        {/* 예상 결과 */}
+        {est&&<div style={{background:"#161b22",borderRadius:"10px",padding:"12px 14px",border:"1px solid #1f6feb55"}}>
+          <div style={{fontSize:"13px",color:"#8b949e",fontWeight:700,marginBottom:"4px"}}>📊 예상 결과 (대략)</div>
+          <div style={{fontSize:"18px",color:"#58a6ff",fontWeight:800}}>약 {fmtSz(est.lo)} ~ {fmtSz(est.hi)}</div>
+          <div style={{fontSize:"12px",color:est.mid>=origSize?"#f0883e":"#8b949e",marginTop:"4px"}}>
+            {est.mid>=origSize?"⚠ 원본보다 커질 수 있어요 — 품질을 낮추거나 해상도를 줄여 보세요"
+              :`원본 ${fmtSz(origSize)} → 약 ${Math.max(0,Math.round((1-est.mid/origSize)*100))}% 줄어듦`}
+          </div>
+          <div style={{fontSize:"11px",color:"#484f58",marginTop:"4px"}}>움직임이 많은 영상은 더 크게, 정지 화면이 많으면 더 작게 나와요</div>
+        </div>}
 
         {/* 압축 버튼 */}
         <button onClick={compress} disabled={isProcessing}
@@ -10285,6 +10319,30 @@ function BlogShortsMaker(){
   const prevRef=React.useRef(); const imgCache=React.useRef({}); const [imgTick,setImgTick]=React.useState(0);
   const dragRef=React.useRef(null);
 
+  // 🎨 인스타툰 쇼츠: SNS 변환에서 만든 마지막 인스타툰
+  const [toonInfo,setToonInfo]=React.useState(null);      // {title, n, cover(dataURL 작은 것), at}
+  const toonImport=()=>{
+    const pk=window.__toonLast; if(!pk) return;
+    const frames=[];
+    pk.cuts.forEach((c,i)=>{ const im=pk.imgs[i]; if(!im) return;
+      frames.push({ id:"toon_"+Date.now()+"_"+i, name:i===0?"표지":i+"컷", dataUrl:toonShortsFrame(c,im), toon:true }); });
+    if(frames.length<2){ setMsg("✗ 인스타툰 그림이 2장 이상 있어야 해요"); return; }
+    setPhotos(frames); setText(toonScript(pk)); setPlan(null); setResult(null); setSel(0); setCurLink("");
+    setMsg(`✓ 인스타툰 ${frames.length}장을 가져왔어요 (표지→컷 순서 그대로 장면이 돼요) → ① 구성 만들기`);
+  };
+  React.useEffect(()=>{
+    const info=()=>{ const pk=window.__toonLast; if(!pk){ setToonInfo(null); return; }
+      let cover="";
+      try{ const i0=pk.cuts.findIndex((c,i)=>pk.imgs[i]); if(i0>=0){ const t=document.createElement("canvas"); toonDraw(t,pk.cuts[i0],pk.imgs[i0]);
+        const sm=document.createElement("canvas"); sm.width=216; sm.height=270; sm.getContext("2d").drawImage(t,0,0,216,270); cover=sm.toDataURL("image/jpeg",0.8); } }catch(e){}
+      setToonInfo({ title:pk.title, n:pk.cuts.filter((c,i)=>pk.imgs[i]).length, total:pk.cuts.length, cover, at:pk.at }); };
+    const go=()=>{ if(!window.__toonToShorts) return; window.__toonToShorts=false; setSrcTab("toon"); mlsSet("vm_src","toon"); info(); toonImport(); };
+    let t=null; const upd=()=>{ clearTimeout(t); t=setTimeout(info,600); };
+    info(); go();
+    window.addEventListener("toon-updated",upd); window.addEventListener("toon-to-shorts",go);
+    return ()=>{ clearTimeout(t); window.removeEventListener("toon-updated",upd); window.removeEventListener("toon-to-shorts",go); };
+  },[]); // eslint-disable-line
+
   React.useEffect(()=>{ // SNS 변환 탭에서 「릴스 만들기」로 넘어온 글·사진
     const take=()=>{ const d=window.__snsToShorts; if(!d) return; window.__snsToShorts=null;
       setText(d.text||""); setPhotos(d.photos||[]); setPlan(null); setResult(null); setSel(0); setCurLink(d.link||""); setMsg("✓ SNS 변환에서 처음 가져온 글·사진 그대로 넘어왔어요"); };
@@ -10389,6 +10447,7 @@ function BlogShortsMaker(){
     try{
       const use=photos.slice(0,10);
       const content=[];
+      const isToon=use.length>0&&use.every(p=>p.toon);
       for(let i=0;i<use.length;i++){ const t=await shortsThumb(use[i].dataUrl,512);
         content.push({type:"text",text:`사진 ${i+1}`}); content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:t.split(",")[1]}}); }
       const lenRule=lengthMode==="auto"
@@ -10397,9 +10456,12 @@ function BlogShortsMaker(){
       content.push({type:"text",text:`[블로그 본문]\n${text.trim().slice(0,7000)}\n\n`+
 `위 사진 ${use.length}장과 블로그 본문으로 9:16 세로 쇼츠(릴스) 구성을 만들어라.
 규칙:
-- 장면 = 사진 1장. 글 흐름에 맞게 순서를 바꿔도 되고, 내용과 안 맞는 사진은 빼도 된다(최소 3장, 사진 수가 적으면 전부).
+${isToon?`- 이 사진들은 인스타툰(웹툰)이다. 사진 1(표지)부터 마지막 사진까지 순서 그대로, 모든 사진을 한 번씩 장면으로 쓴다(빼거나 순서 바꾸기 금지).
+- 장면 길이 3~6초(말풍선을 읽을 시간). ${lenRule} 어떤 경우에도 60초를 넘지 말 것.
+- captions: 그림 안에 이미 말풍선 글씨가 있으니 장면마다 짧은 자막 1개(한 줄 12자 이내)만. 말풍선 내용을 그대로 반복하지 말고 상황을 한마디로.
+- effect 는 zoom-in, zoom-out 위주(그림이 화면 가운데에 있음).`:`- 장면 = 사진 1장. 글 흐름에 맞게 순서를 바꿔도 되고, 내용과 안 맞는 사진은 빼도 된다(최소 3장, 사진 수가 적으면 전부).
 - 장면 길이 2.5~6초. ${lenRule} 어떤 경우에도 60초를 넘지 말 것.
-- captions: 장면마다 화면 자막 1~2개(장면 안에서 순서대로 바뀜). 한 줄 12자 이내, 최대 2줄(줄바꿈은 \\n). 말하듯 짧게.
+- captions: 장면마다 화면 자막 1~2개(장면 안에서 순서대로 바뀜). 한 줄 12자 이내, 최대 2줄(줄바꿈은 \\n). 말하듯 짧게.`}
   흐름: 첫 장면은 시선을 끄는 질문이나 결론 → 핵심 정보 → 마지막 장면은 정리·가벼운 권유. 과장·단정·구매 유도 금지.
 - hl: 그 자막에서 색으로 강조할 단어 하나(자막에 글자 그대로 있는 단어). 없으면 "".
 - effect: zoom-in, zoom-out, pan-left, pan-right, pan-up, pan-down 중 사진 구도에 맞게. 같은 효과를 연속으로 쓰지 말 것.
@@ -10416,6 +10478,9 @@ function BlogShortsMaker(){
         caps:(s.captions||[]).slice(0,2).map(c=>({text:String(c.text||"").slice(0,40),hl:String(c.hl||"")})),
         narration:String(s.narration||""), motion:String(s.motion||""), ai:false, suggest:picks.has(Number(s.photo)), adj:{...BSM_ADJ0}
       }));
+      // 인스타툰: 표지→컷 순서 그대로, 빠진 컷은 채움
+      if(isToon){ const by={}; scenes.forEach(sc=>{ if(!by[sc.pid]) by[sc.pid]=sc; });
+        scenes=use.map(p=>by[p.id]||{pid:p.id,sec:4,effect:"zoom-in",caps:[],narration:"",motion:"",ai:false,adj:{...BSM_ADJ0}}); }
       // 사진 10장 넘게 올렸으면 남은 사진도 뒤에 붙임 (자막 없이)
       photos.slice(10).forEach(p=>scenes.push({pid:p.id,sec:3.5,effect:"zoom-in",caps:[],narration:"",motion:"",ai:false,adj:{...BSM_ADJ0}}));
       if(!scenes.length) throw new Error("장면을 만들지 못했어요");
@@ -10586,7 +10651,7 @@ function BlogShortsMaker(){
         <button style={S.small} disabled={busy==="render"} onClick={resetAll} title="페이지를 닫기 전까지는 다른 메뉴로 갔다 와도 그대로 남아 있어요">🔄 처음부터</button>
       </div>
       <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap"}}>
-        {[["url","🔗 블로그 주소"],["id","🆔 블로그 아이디로 불러오기"],["paste","📋 직접 넣기"]].map(([k,l])=>
+        {[["url","🔗 블로그 주소"],["id","🆔 블로그 아이디로 불러오기"],["toon","🎨 인스타툰 쇼츠"],["paste","📋 직접 넣기"]].map(([k,l])=>
           <button key={k} onClick={()=>{ setSrcTab(k); mlsSet("vm_src",k); }} style={{padding:"6px 12px",borderRadius:"8px",border:"1px solid "+(srcTab===k?"#1f6feb":"#30363d"),background:srcTab===k?"#1f6feb22":"#161b22",color:srcTab===k?"#58a6ff":"#8b949e",cursor:"pointer",fontSize:"13px",fontWeight:600}}>{l}</button>)}
       </div>
       {srcTab==="url"&&<div style={{display:"flex",gap:"8px",marginBottom:"10px"}}>
@@ -10613,6 +10678,17 @@ function BlogShortsMaker(){
               <button style={{...S.small,flex:"none"}} onClick={()=>markSdone(p.link,!d)}>{d?"표시 지우기":"✓ 표시"}</button>
             </div>; })}
         </div>}
+      </div>}
+      {srcTab==="toon"&&<div style={{marginBottom:"10px"}}>
+        {toonInfo?<div style={{display:"flex",gap:"12px",alignItems:"center",padding:"10px",border:"1px solid #30363d",borderRadius:"10px",background:"#161b22"}}>
+          {toonInfo.cover&&<img src={toonInfo.cover} alt="" style={{width:"72px",height:"90px",objectFit:"cover",borderRadius:"6px",flex:"none"}}/>}
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{color:"#e6edf3",fontSize:"14px",fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{toonInfo.title}</div>
+            <div style={{color:"#8b949e",fontSize:"12px",marginTop:"4px"}}>그림 {toonInfo.n}/{toonInfo.total}장 · {new Date(toonInfo.at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})} 만듦 · 말풍선·제목까지 그려진 그대로, 9:16 가운데에 넣어요</div>
+          </div>
+          <button style={{...S.btn("#238636",!!busy||toonInfo.n<2),whiteSpace:"nowrap"}} disabled={!!busy||toonInfo.n<2} onClick={toonImport}>이 인스타툰으로 가져오기</button>
+        </div>
+        :<div style={{fontSize:"13px",color:"#8b949e"}}>아직 만든 인스타툰이 없어요 — 「SNS 변환 → 🎨 인스타툰」에서 먼저 만들어 주세요. (페이지를 새로고침하면 사라지니, 만든 뒤 바로 넘어오세요)</div>}
       </div>}
       {srcTab==="paste"&&<div style={{fontSize:"13px",color:"#8b949e",marginBottom:"10px"}}>아래에 사진을 올리고 본문을 붙여넣어 주세요.</div>}
       <div onClick={()=>fileRef.current.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();addPhotos(e.dataTransfer.files);}}
@@ -12115,6 +12191,16 @@ const TOON_NOTEXT=" Absolutely no text, letters, numbers, speech bubbles, captio
 const TOON_HAND="'Gaegu','Jua',"+SNS_FONT;             // 말풍선 손글씨
 const TOON_PEN="'Nanum Pen Script','Gaegu',"+SNS_FONT;  // 내레이션 손글씨
 const TOON_TITLE_FONTS=[["jua","주아 (둥글고 굵음)"],["blackhan","검은고딕 (아주 굵음)"],["dohyeon","도현 (반듯하고 굵음)"]];
+// 말풍선·설명 글꼴: m = 같은 크기에서 보이는 글씨 크기 맞춤 배율 (개구 기준)
+const TOON_BFONTS=[
+  { k:"gaegu", label:"개구 (손글씨)", fam:"'Gaegu'", w:700, m:1 },
+  { k:"nanumpen", label:"나눔펜 (손글씨)", fam:"'Nanum Pen Script'", w:400, m:1.12 },
+  { k:"jua", label:"주아 (둥글게)", fam:"'Jua'", w:400, m:0.85 },
+  { k:"dohyeon", label:"도현 (반듯하게)", fam:"'Do Hyeon'", w:400, m:0.9 },
+  { k:"pretendard", label:"프리텐다드 (깔끔)", fam:"'SNS Pretendard','Pretendard'", w:700, m:0.8 },
+];
+const toonBF=k=>TOON_BFONTS.find(x=>x.k===k)||TOON_BFONTS[0];
+const toonCss=(k,size)=>{ const f=toonBF(k); return `${f.w} ${Math.round(size)}px ${f.fam}, ${SNS_FONT}`; };
 const TOON_KINDS=[["talk","💬 대화"],["shout","💥 외침"],["think","💭 생각"],["black","⬛ 강조"],["memo","✏️ 메모"]];
 const TOON_KIND_W={ talk:0.46, shout:0.5, think:0.44, black:0.62, memo:0.32 };
 let toonSeq=1;
@@ -12130,11 +12216,12 @@ function toonBubbles(lines, top=0.13){
 function toonLayout(ctx, cut){
   const M=34;
   let lines=[];
-  if(cut.narr&&cut.narr.trim()){ ctx.font=`60px ${TOON_PEN}`; lines=snsWrap(ctx,cut.narr.trim(),TOON_W-120).slice(0,3); }
-  const nh=lines.length?lines.length*64+34:0;
+  const nf=cut.nFont||"nanumpen", nsz=54*toonBF(nf).m*(cut.nSize||1), nlh=nsz*1.08;
+  if(cut.narr&&cut.narr.trim()){ ctx.font=toonCss(nf,nsz); lines=snsWrap(ctx,cut.narr.trim(),TOON_W-120).slice(0,4); }
+  const nh=lines.length?lines.length*nlh+34:0;
   const top=cut.narrPos!=="bottom";
   const panel={ x:M, y:M+(top?nh:0), w:TOON_W-M*2, h:TOON_H-M*2-nh };
-  return { panel, lines, nh, ny:top?M+10:panel.y+panel.h+16 };
+  return { panel, lines, nh, ny:top?M+10:panel.y+panel.h+16, nfont:toonCss(nf,nsz), nlh };
 }
 function toonCover(ctx, img, box){
   const s=Math.max(box.w/img.width,box.h/img.height), w=img.width*s, h=img.height*s;
@@ -12157,8 +12244,8 @@ function toonDraw(canvas, cut, img){
     if(img) toonCover(ctx,img,p); else empty(p);
     ctx.restore();
     ctx.strokeStyle="#1b1b1b"; ctx.lineWidth=6; snsRoundRect(ctx,p.x,p.y,p.w,p.h,30); ctx.stroke();
-    if(L.lines.length){ ctx.fillStyle="#222"; ctx.font=`60px ${TOON_PEN}`; ctx.textAlign="center";
-      L.lines.forEach((l,i)=>ctx.fillText(l,TOON_W/2,L.ny+i*64)); ctx.textAlign="left"; }
+    if(L.lines.length){ ctx.fillStyle="#222"; ctx.font=L.nfont; ctx.textAlign="center";
+      L.lines.forEach((l,i)=>ctx.fillText(l,TOON_W/2,L.ny+i*L.nlh)); ctx.textAlign="left"; }
   }
   (cut.bubbles||[]).forEach(b=>{ b._r=toonBubble(ctx,b); });
 }
@@ -12178,9 +12265,15 @@ function toonTitle(ctx, cut){
     if(lines.length<=3&&lines.every(l=>ctx.measureText(l).width<=maxW)) break;
   }
   lines=lines.slice(0,3);
+  // 사용자가 정한 제목 크기 배율 (넘치면 화면 폭에 맞게 다시 줄임)
+  size=size*(cut.tScale||1);
+  ctx.font=F(size);
+  const widest=Math.max(1,...lines.map(l=>ctx.measureText(l).width));
+  if(widest>TOON_W-50) size=size*(TOON_W-50)/widest;
   const lh=size*1.12;
   const rb=String(cut.ribbon||"").trim(), sub=String(cut.sub||"").trim();
-  const rbH=rb?92:0, subH=sub?92:0;
+  const rS=cut.rScale||1, sS=cut.sScale||1;
+  const rbH=rb?92*rS:0, subH=sub?92*sS:0;
   const blockH=rbH+lines.length*lh+subH;
   const pos=cut.tPos||"bottom";
   const y0=pos==="top"?80:pos==="middle"?(TOON_H-blockH)/2:TOON_H-blockH-100;
@@ -12192,13 +12285,13 @@ function toonTitle(ctx, cut){
   let y=y0;
   // 리본 (살짝 기울어진 띠)
   if(rb){
-    ctx.font=`400 48px "Jua", ${SNS_FONT}`;
-    const tw=ctx.measureText(rb).width, w=tw+90, h=72, x=(TOON_W-w)/2;
+    ctx.font=`400 ${Math.round(48*rS)}px "Jua", ${SNS_FONT}`;
+    const tw=ctx.measureText(rb).width, w=tw+90*rS, h=72*rS, x=(TOON_W-w)/2;
     ctx.save(); ctx.translate(TOON_W/2,y+h/2); ctx.rotate(-0.035); ctx.translate(-TOON_W/2,-(y+h/2));
     const path=()=>{ ctx.beginPath(); ctx.moveTo(x-18,y); ctx.lineTo(x+w+18,y); ctx.lineTo(x+w,y+h/2); ctx.lineTo(x+w+18,y+h); ctx.lineTo(x-18,y+h); ctx.lineTo(x,y+h/2); ctx.closePath(); };
     ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.translate(0,7); path(); ctx.fill(); ctx.translate(0,-7);
     ctx.fillStyle="#FF5A5F"; path(); ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=5; ctx.stroke();
-    ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.fillText(rb,TOON_W/2,y+12); ctx.textAlign="left";
+    ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.fillText(rb,TOON_W/2,y+12*rS); ctx.textAlign="left";
     ctx.restore();
     y+=rbH;
   }
@@ -12218,29 +12311,27 @@ function toonTitle(ctx, cut){
   });
   // 부제
   if(sub){
-    ctx.font=`400 60px "Jua", ${SNS_FONT}`;
+    ctx.font=`400 ${Math.round(60*sS)}px "Jua", ${SNS_FONT}`;
     const tw=ctx.measureText(sub).width, x=(TOON_W-tw)/2, sy=y+14;
-    ctx.strokeStyle="#1b1b1b"; ctx.lineWidth=13; ctx.strokeText(sub,x,sy);
+    ctx.strokeStyle="#1b1b1b"; ctx.lineWidth=13*sS; ctx.strokeText(sub,x,sy);
     ctx.fillStyle="#fff"; ctx.fillText(sub,x,sy);
   }
 }
 
 // ── 말풍선 5종: talk 둥근 대화, shout 뾰족 외침, think 구름 생각, black 검은 강조, memo 손글씨(풍선 없음)
-function toonBubbleFont(kind){
-  if(kind==="shout") return { font:`400 46px "Jua", ${SNS_FONT}`, lh:56 };
-  if(kind==="black") return { font:`400 42px "Jua", ${SNS_FONT}`, lh:54 };
-  if(kind==="memo")  return { font:`700 60px ${TOON_HAND}`, lh:64 };
-  return { font:`700 56px ${TOON_HAND}`, lh:60 };
-}
+// 말풍선 기본 글꼴·크기 (종류별) — b.font / b.fs(글씨 배율) / b.padS(여백 배율) 로 바꿀 수 있음
+const TOON_KIND_FONT={ talk:"gaegu", think:"gaegu", memo:"gaegu", shout:"jua", black:"jua" };
+const TOON_KIND_SIZE={ talk:56, think:56, memo:60, shout:54, black:50 };
 function toonBubbleRect(ctx,b){
-  const kind=toonKind(b.kind), f=toonBubbleFont(kind);
-  ctx.font=f.font;
-  const pad=kind==="shout"?44:kind==="think"?40:kind==="memo"?10:30, lh=f.lh;
+  const kind=toonKind(b.kind), fk=b.font||TOON_KIND_FONT[kind];
+  const size=TOON_KIND_SIZE[kind]*toonBF(fk).m*(b.fs||1), font=toonCss(fk,size);
+  ctx.font=font;
+  const pad=(kind==="shout"?44:kind==="think"?40:kind==="memo"?10:30)*(b.padS||1), lh=size*1.14;
   const maxW=Math.max(200,(b.w||TOON_KIND_W[kind])*TOON_W);
-  const lines=snsWrap(ctx,b.text||" ",maxW-pad*2).slice(0,5);
-  const w=Math.min(maxW,Math.max(...lines.map(l=>ctx.measureText(l).width))+pad*2+8), h=lines.length*lh+pad*2-6;
+  const lines=snsWrap(ctx,b.text||" ",Math.max(80,maxW-pad*2)).slice(0,6);
+  const w=Math.min(Math.max(maxW,pad*2+80),Math.max(...lines.map(l=>ctx.measureText(l).width))+pad*2+8), h=lines.length*lh+pad*2-6;
   const x=Math.max(14,Math.min(TOON_W-w-14,b.x*TOON_W)), y=Math.max(14,Math.min(TOON_H-h-14,b.y*TOON_H));
-  return { x, y, w, h, lines, pad, lh, kind, font:f.font };
+  return { x, y, w, h, lines, pad, lh, kind, font };
 }
 function toonBubble(ctx,b){
   const r=toonBubbleRect(ctx,b), k=r.kind, cx=r.x+r.w/2, cy=r.y+r.h/2;
@@ -12296,10 +12387,38 @@ function toonBubble(ctx,b){
 async function toonFonts(cuts){
   const all=cuts.map(c=>[c.title,c.sub,c.ribbon,c.narr,...(c.bubbles||[]).map(b=>b.text)].join(" ")).join(" ")+" 가나다라마바사아자차카타파하 0123456789!?~";
   const tf=[...new Set(cuts.filter(c=>c.kind==="cover").map(c=>c.tFont||"jua"))];
-  await Promise.all([snsEnsureFont("jua",400,all), snsEnsureFont("gaegu",700,all), snsEnsureFont("nanumpen",400,all), ...tf.map(k=>snsEnsureFont(k,400,all))]);
+  const bf=[...new Set(cuts.flatMap(c=>[c.nFont,...(c.bubbles||[]).map(b=>b.font)]).filter(Boolean))];
+  await Promise.all([snsEnsureFont("jua",400,all), snsEnsureFont("gaegu",700,all), snsEnsureFont("nanumpen",400,all), ...tf.map(k=>snsEnsureFont(k,400,all)),
+    ...bf.map(k=>snsEnsureFont(k,toonBF(k).w,all))]);
 }
 
-function InstaToonMaker({ title, text, cutCount, photos }){
+// 인스타툰 한 장(4:5, 말풍선까지) → 9:16 쇼츠 장면: 가로 꽉 차게 가운데, 위아래는 같은 그림을 흐리게
+function toonShortsFrame(cut, img){
+  const t=document.createElement("canvas"); toonDraw(t,cut,img);
+  const W=1080, H=1920, c=document.createElement("canvas"); c.width=W; c.height=H;
+  const x=c.getContext("2d");
+  x.fillStyle="#fff"; x.fillRect(0,0,W,H);
+  try{ x.filter="blur(36px) brightness(0.92)"; const s=H/t.height*1.08, w=t.width*s; x.drawImage(t,(W-w)/2,-(t.height*s-H)/2,w,t.height*s); }catch(e){}
+  x.filter="none";
+  const y=Math.round((H-TOON_H)/2);
+  x.fillStyle="rgba(0,0,0,0.18)"; x.fillRect(0,y+8,W,TOON_H);
+  x.drawImage(t,0,y,W,TOON_H);
+  return c.toDataURL("image/jpeg",0.9);
+}
+function toonScript(pack){
+  const out=[pack.title||""];
+  (pack.cuts||[]).forEach((c,i)=>{
+    if(c.kind==="cover"){ out.push(`[표지] ${String(c.title||"").replace(/\n/g," ")}${c.sub?" — "+c.sub:""}`); return; }
+    const parts=[];
+    if(c.narr) parts.push(c.narr);
+    (c.bubbles||[]).forEach(b=>{ if(b.text) parts.push(`${b.who?b.who+": ":""}${b.text}`); });
+    out.push(`[${i}컷] ${parts.join(" / ")}`);
+  });
+  if(pack.caption) out.push("\n[캡션]\n"+pack.caption);
+  return out.join("\n").trim();
+}
+
+function InstaToonMaker({ title, text, cutCount, photos, goShorts }){
   const [cuts,setCuts]=React.useState([]);          // [{kind:"cover"|"cut", scene, screen, title,highlight,ribbon,sub,tFont,accent,tPos, narr,narrPos, bubbles, img(dataURL), status}]
   const [chars,setChars]=React.useState("");
   const [caption,setCaption]=React.useState("");
@@ -12322,7 +12441,7 @@ function InstaToonMaker({ title, text, cutCount, photos }){
   const up=(i,patch)=>setCuts(cs=>cs.map((c,k)=>k===i?{...c,...patch}:c));
   const upB=(i,bid,patch)=>setCuts(cs=>cs.map((c,k)=>k===i?{...c,bubbles:c.bubbles.map(b=>b.id===bid?{...b,...patch}:b)}:c));
   // 글꼴 (글자가 바뀌면 그 글자도 받아옴)
-  const fontKey=cuts.map(c=>[c.title,c.sub,c.ribbon,c.narr,c.tFont,...(c.bubbles||[]).map(b=>b.text)].join("|")).join("#");
+  const fontKey=cuts.map(c=>[c.title,c.sub,c.ribbon,c.narr,c.tFont,c.nFont,...(c.bubbles||[]).map(b=>b.text+"/"+(b.font||""))].join("|")).join("#");
   React.useEffect(()=>{ let off=false; const t=setTimeout(()=>{ Promise.all([loadSnsFont(),toonFonts(cutsRef.current)]).then(()=>{ if(!off) setFontTick(n=>n+1); }); },cuts.length?250:0);
     return ()=>{ off=true; clearTimeout(t); }; // eslint-disable-next-line
   },[fontKey]);
@@ -12335,6 +12454,13 @@ function InstaToonMaker({ title, text, cutCount, photos }){
     const c=cuts[sel]; if(c&&mainRef.current) toonDraw(mainRef.current,c,imgs[sel]);
   },[cuts,imgs,sel,fontTick]);
 
+  // 쇼츠 탭이 가져갈 수 있게 지금 인스타툰을 공유 (페이지를 닫기 전까지)
+  React.useEffect(()=>{ if(!cuts.length) return;
+    window.__toonLast={ title:(cuts[0]&&String(cuts[0].title||"").replace(/\n/g," "))||title||"인스타툰", cuts, imgs, caption:caption+(tags?"\n\n"+tags:""), at:Date.now() };
+    window.dispatchEvent(new Event("toon-updated"));
+  },[cuts,imgs,caption,tags]); // eslint-disable-line
+  const sendShorts=()=>{ if(!cuts.some((c,i)=>imgs[i])){ setMsg("✗ 그림이 아직 없어요"); return; }
+    window.__toonToShorts=true; window.dispatchEvent(new Event("toon-to-shorts")); if(goShorts) goShorts(); };
   const titleSpace=pos=>pos==="top"?" Keep the top third a bit simpler (no faces there) because a big title will be overlaid there."
     :pos==="middle"?" Keep the main subjects toward the upper and lower parts, the center a bit simpler for a big title overlay."
     :" Keep the main subjects in the upper and middle area; the bottom third a bit simpler (no faces there) because a big title will be overlaid there.";
@@ -12442,7 +12568,15 @@ ${text.slice(0,9000)}
 
   const name=i=>`${(title||"인스타툰").replace(/[\\/:*?"<>|]/g,"").slice(0,20)}_${String(i+1).padStart(2,"0")}.png`;
   const saveOne=async i=>{ const cv=document.createElement("canvas"); toonDraw(cv,cuts[i],imgs[i]); await snsDownload(cv,name(i)); };
-  const saveAll=async()=>{ for(let i=0;i<cuts.length;i++){ await saveOne(i); await new Promise(r=>setTimeout(r,350)); } };
+  const saveCaption=()=>{
+    const bl=new Blob(["\ufeff"+`${caption}\n\n${tags}`.trim()+"\n"],{ type:"text/plain;charset=utf-8" });
+    const a=document.createElement("a"); a.href=URL.createObjectURL(bl); a.download=`${(title||"인스타툰").replace(/[\\/:*?"<>|]/g,"").slice(0,20)}_캡션.txt`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  };
+  const saveAll=async()=>{ for(let i=0;i<cuts.length;i++){ await saveOne(i); await new Promise(r=>setTimeout(r,350)); } if(caption.trim()||tags.trim()) saveCaption(); };
+  // 이 말풍선의 글꼴·크기를 모든 컷 말풍선에 / 이 컷 설명 글꼴·크기를 모든 컷에
+  const applyBubbleAll=x=>{ setCuts(cs=>cs.map(c=>({...c,bubbles:(c.bubbles||[]).map(y=>({...y,font:x.font,fs:x.fs,padS:x.padS}))}))); setMsg("✓ 모든 컷 말풍선에 같은 글꼴·크기를 적용했어요"); };
+  const applyNarrAll=c=>{ setCuts(cs=>cs.map(y=>y.kind==="cut"?{...y,nFont:c.nFont,nSize:c.nSize}:y)); setMsg("✓ 모든 컷 설명에 같은 글꼴·크기를 적용했어요"); };
 
   const S={ btn:(bg,dis)=>({padding:"9px 16px",borderRadius:"8px",border:"none",background:dis?"#30363d":bg,color:"#fff",fontWeight:700,fontSize:"14px",cursor:dis?"default":"pointer",fontFamily:"'Noto Sans KR',sans-serif"}),
     small:{padding:"5px 10px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",fontSize:"12px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"},
@@ -12486,7 +12620,8 @@ ${text.slice(0,9000)}
           <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"12px"}}>
             <button style={S.small} disabled={!!busy} onClick={()=>redraw(sel)}>🔄 이 {sel===0?"표지":"컷"} 다시 그리기</button>
             <button style={S.small} onClick={()=>saveOne(sel)}>⬇ 이 장 저장</button>
-            <button style={{...S.small,background:"#238636",borderColor:"#238636",color:"#fff"}} onClick={saveAll}>⬇ 전체 {cuts.length}장 저장</button>
+            <button style={{...S.small,background:"#238636",borderColor:"#238636",color:"#fff"}} onClick={saveAll}>⬇ 전체 {cuts.length}장 + 캡션.txt 저장</button>
+            <button style={{...S.small,background:"#1f6feb",borderColor:"#1f6feb",color:"#fff"}} disabled={!!busy} onClick={sendShorts}>🎬 쇼츠로 만들기</button>
           </div>
           {sel===0?<>
             <span style={S.label}>표지 제목 <span style={{color:"#6e7681"}}>(엔터로 줄 나누기, 2~3줄)</span></span>
@@ -12507,6 +12642,13 @@ ${text.slice(0,9000)}
               <span style={{width:"10px"}}/>
               {[["top","위"],["middle","가운데"],["bottom","아래"]].map(([k,l])=><button key={k} style={{...S.small,...on((c.tPos||"bottom")===k)}} onClick={()=>up(0,{tPos:k})}>{l}</button>)}
             </div>
+            <span style={S.label}>크기</span>
+            {[["tScale","제목",0.7,1.3],["rScale","리본",0.6,1.6],["sScale","부제",0.6,1.6]].map(([k,l,mn,mx])=><div key={k} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"4px"}}>
+              <span style={{fontSize:"12px",color:"#c9d1d9",width:"34px"}}>{l}</span>
+              <input type="range" min={mn} max={mx} step="0.05" value={c[k]||1} onChange={e=>up(0,{[k]:Number(e.target.value)})} style={{flex:1}}/>
+              <span style={{fontSize:"11px",color:"#8b949e",width:"40px"}}>{Math.round((c[k]||1)*100)}%</span>
+            </div>)}
+            <div style={{height:"8px"}}/>
           </>:<>
             <span style={S.label}>말풍선 <span style={{color:"#6e7681"}}>(그림에서 눌러서 고르고 끌어서 옮기기)</span></span>
             {(c.bubbles||[]).map(x=><div key={x.id} onClick={()=>setSelB(x.id)} style={{border:`1px solid ${selB===x.id?"#a371f7":"#30363d"}`,borderRadius:"8px",padding:"8px",marginBottom:"6px"}}>
@@ -12522,12 +12664,35 @@ ${text.slice(0,9000)}
                 <input type="range" min="0.2" max="0.9" step="0.05" value={x.w||0.46} onChange={e=>upB(sel,x.id,{w:Number(e.target.value)})}/>
                 <button style={{...S.small,marginLeft:"auto",color:"#f85149"}} onClick={()=>up(sel,{bubbles:c.bubbles.filter(y=>y.id!==x.id)})}>삭제</button>
               </div>
+              <div style={{display:"flex",gap:"6px",marginTop:"6px",flexWrap:"wrap",alignItems:"center"}}>
+                <span style={{fontSize:"11px",color:"#8b949e"}}>글꼴</span>
+                <select value={x.font||TOON_KIND_FONT[toonKind(x.kind)]} onChange={e=>upB(sel,x.id,{font:e.target.value})}
+                  style={{padding:"3px 6px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px"}}>
+                  {TOON_BFONTS.map(f=><option key={f.k} value={f.k}>{f.label}</option>)}
+                </select>
+                <button style={{...S.small,padding:"2px 8px"}} onClick={()=>applyBubbleAll(x)}>모든 컷에 적용</button>
+              </div>
+              {[["fs","글씨 크기",0.7,1.6],["padS","풍선 여백",0.5,2]].map(([k,l,mn,mx])=><div key={k} style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"4px"}}>
+                <span style={{fontSize:"11px",color:"#8b949e",width:"58px"}}>{l}</span>
+                <input type="range" min={mn} max={mx} step="0.05" value={x[k]||1} onChange={e=>upB(sel,x.id,{[k]:Number(e.target.value)})} style={{flex:1}}/>
+                <span style={{fontSize:"11px",color:"#8b949e",width:"40px"}}>{Math.round((x[k]||1)*100)}%</span>
+              </div>)}
             </div>)}
             <button style={{...S.small,marginBottom:"12px"}} onClick={()=>up(sel,{bubbles:[...(c.bubbles||[]),{id:toonId(),kind:"talk",text:"새 대사",x:0.3,y:0.2,w:TOON_KIND_W.talk,tail:"bl"}]})}>+ 말풍선 추가</button>
             <span style={S.label}>손글씨 설명 (컷 위·아래 흰 여백, 비우면 없음)</span>
             <textarea style={{...S.input,height:"50px",marginBottom:"6px"}} value={c.narr||""} onChange={e=>up(sel,{narr:e.target.value})}/>
             <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
               {[["top","컷 위"],["bottom","컷 아래"]].map(([k,l])=><button key={k} style={{...S.small,...on((c.narrPos||"top")===k)}} onClick={()=>up(sel,{narrPos:k})}>{l}</button>)}
+              <select value={c.nFont||"nanumpen"} onChange={e=>up(sel,{nFont:e.target.value})}
+                style={{padding:"3px 6px",background:"#0d1117",border:"1px solid #30363d",borderRadius:"6px",color:"#e6edf3",fontSize:"12px"}}>
+                {TOON_BFONTS.map(f=><option key={f.k} value={f.k}>{f.label}</option>)}
+              </select>
+              <button style={S.small} onClick={()=>applyNarrAll(c)}>모든 컷에 적용</button>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"12px"}}>
+              <span style={{fontSize:"11px",color:"#8b949e",width:"58px"}}>설명 크기</span>
+              <input type="range" min="0.7" max="1.5" step="0.05" value={c.nSize||1} onChange={e=>up(sel,{nSize:Number(e.target.value)})} style={{flex:1}}/>
+              <span style={{fontSize:"11px",color:"#8b949e",width:"40px"}}>{Math.round((c.nSize||1)*100)}%</span>
             </div>
             <span style={S.label}>📱 폰 화면 메뉴 <span style={{color:"#6e7681"}}>(넣으면 폰을 크게 그려요 · 예: 설정 &gt; 배터리 · 바꾼 뒤 다시 그리기)</span></span>
             <input style={{...S.input,marginBottom:"12px"}} value={c.screen||""} onChange={e=>up(sel,{screen:e.target.value})}/>
@@ -12544,7 +12709,10 @@ ${text.slice(0,9000)}
         <textarea style={{...S.input,height:"90px",marginBottom:"6px"}} value={caption} onChange={e=>setCaption(e.target.value)}/>
         <span style={S.label}>해시태그</span>
         <textarea style={{...S.input,height:"50px",marginBottom:"6px"}} value={tags} onChange={e=>setTags(e.target.value)}/>
-        <button style={S.small} onClick={()=>navigator.clipboard.writeText(caption+"\n\n"+tags).then(()=>setMsg("✓ 캡션+해시태그를 복사했어요")).catch(()=>{})}>📋 캡션+해시태그 복사</button>
+        <div style={{display:"flex",gap:"6px"}}>
+          <button style={S.small} onClick={()=>navigator.clipboard.writeText(caption+"\n\n"+tags).then(()=>setMsg("✓ 캡션+해시태그를 복사했어요")).catch(()=>setMsg("✗ 복사가 막혔어요 — 「캡션 저장」으로 받아 주세요"))}>📋 캡션+해시태그 복사</button>
+          <button style={S.small} onClick={saveCaption}>⬇ 캡션 저장(.txt)</button>
+        </div>
       </div>
     </div>}
   </div>;
@@ -13156,7 +13324,7 @@ ${outShape}`;
           </div>}
         </div>
       </div>
-      {toon&&<InstaToonMaker title={title} text={text} cutCount={toonCuts} photos={photos}/>}
+      {toon&&<InstaToonMaker title={title} text={text} cutCount={toonCuts} photos={photos} goShorts={()=>setActive&&setActive("videomake-ai")}/>}
       {!toon&&<div style={{display:"flex",gap:"8px",marginTop:"14px",alignItems:"center",flexWrap:"wrap"}}>
         <button style={S.btn("#1f6feb",busy||!text.trim())} disabled={!!busy||!text.trim()} onClick={convert}>{(cards.length||threads.length)?"🔄 다시 만들기":`✨ ${doInsta&&doThreads?"인스타·쓰레드":doInsta?"인스타":"쓰레드"}로 바꾸기`}</button>
         {doInsta&&<label style={{display:"flex",gap:"5px",alignItems:"center",fontSize:"13px",color:"#c9d1d9",cursor:"pointer"}}>
@@ -13260,7 +13428,10 @@ ${outShape}`;
         <div style={{marginTop:"18px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={S.label}>캡션</span>
-            <button style={S.small} onClick={()=>copy(`${caption}\n\n${tags}`,"cap")}>{copied==="cap"?"✓ 복사됨":"캡션+해시태그 복사"}</button>
+            <span style={{display:"flex",gap:"6px"}}>
+              <button style={S.small} onClick={()=>copy(`${caption}\n\n${tags}`,"cap")}>{copied==="cap"?"✓ 복사됨":"캡션+해시태그 복사"}</button>
+              <button style={S.small} onClick={saveCaption}>⬇ 캡션 저장(.txt)</button>
+            </span>
           </div>
           <textarea style={{...S.input,height:"170px",lineHeight:1.6}} value={caption} onChange={e=>setCaption(e.target.value)}/>
           <span style={{...S.label,marginTop:"8px"}}>해시태그</span>
