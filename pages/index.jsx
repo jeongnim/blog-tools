@@ -677,7 +677,7 @@ const WRITE_SUBTABS=[
   {id:"autowrite", icon:"🏷️", label:"카테고리별 키워드추출"},
   {id:"keyword",   icon:"🔍", label:"키워드 글쓰기"},
   {id:"analyze",   icon:"📊", label:"글분석"},
-  {id:"snsconvert", icon:"📱", label:"SNS 변환(인스타·쓰레드)"},
+  {id:"snsconvert", icon:"📱", label:"SNS 변환"},
   {id:"rewrite",   icon:"🔗", label:"기사 리라이팅", hidden:true},
   {id:"emoji",     icon:"😃", label:"이모지", hidden:true},
 ];
@@ -7491,13 +7491,56 @@ async function loadHotKeywords(onStep){
   return {items, googleCount:google.length, trendError:t.error||null, fetchedAt:Date.now()};
 }
 
+// ── 카테고리만: 그 카테고리 후보를 따로 더 뽑아서 확인 (📱 휴대폰 관련 = 스마트폰·앱 + IT·가전)
+const HOT_PHONE="📱 휴대폰 관련";
+const HOT_PHONE_CATS=["스마트폰·앱","IT·가전"];
+const hotCatsOf=k=>k===HOT_PHONE?HOT_PHONE_CATS:[k];
+const hotIsCompany=()=>{ try{ return /bandphone/i.test(location.hostname); }catch(e){ return false; } };
+const hotScore=x=>Math.log10((x.monthly||300)+10)*Math.min(x.rise||1.3,6);
+async function loadHotCategory(catKey, onStep){
+  const cats=hotCatsOf(catKey);
+  const now=new Date(); const md=`${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일`;
+  const phone=catKey===HOT_PHONE;
+  onStep&&onStep(`AI가 "${catKey}" 키워드 고르는 중…`);
+  const prompt=`오늘은 ${md}이다. 한국 네이버에서 지금부터 6주 안에 검색이 몰리는 "${cats.join(" / ")}" 분야 검색어를 30개 만들어라.
+- 사람들이 네이버 검색창에 실제로 치는 1~3어절. 블로그 글로 쓸 수 있는 말만.
+- 이 시기의 시즌 이슈 + 요즘 화제(신제품·업데이트·이벤트·할인·정책 변화)를 섞어서.${phone?`
+- 휴대폰 판매점 블로그용이다: 신제품 출시·사전예약, 기종변경, 번호이동, 공시지원금·선택약정, 요금제(5G·알뜰폰), 블랙프라이데이·연말 폰 할인, 자급제, 중고폰 시세, 데이터 옮기기·백업, 아이폰·갤럭시 설정 팁, 키즈폰·효도폰 같은 주제를 골고루.`:""}
+- 특정 모델명은 실제로 있는 것만.
+순수 JSON만: {"items":[{"keyword":"...","category":"${cats[0]}${cats[1]?`|${cats[1]}`:""}","why":"왜 지금 뜨는지 한 줄(15자 안팎)"}]}`;
+  const raw=await callClaude([{role:"user",content:prompt}],"You pick Korean seasonal and trending search keywords. Output ONLY valid JSON.",3000,"claude-haiku-4-5-20251001");
+  const flat=t=>String(t).replace(/\s+/g,"");
+  let items=(safeParseJson(raw)?.items||[]).filter(x=>x?.keyword).map(x=>({ keyword:String(x.keyword).trim(), category:cats.includes(x.category)?x.category:cats[0], src:"season", why:x.why||"" }));
+  items=items.filter((x,i,a)=>a.findIndex(y=>flat(y.keyword)===flat(x.keyword))===i).slice(0,40);
+  onStep&&onStep(`네이버 검색어 트렌드로 ${items.length}개 확인 중…`);
+  const t=await fetch("/api/hot-keywords",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({keywords:items.map(x=>x.keyword)})}).then(r=>r.json()).catch(e=>({trends:{},error:e.message}));
+  onStep&&onStep("월 검색수 붙이는 중…");
+  const vols=await fetchMonthlyVolumes(items.map(x=>x.keyword)).catch(()=>({}));
+  items.forEach(x=>{ const tr=t.trends?.[x.keyword]; x.rise=tr?.rise??null; x.spark=tr?.spark||null; x.monthly=vols[x.keyword]?.monthly??null; x.hot=x.rise!=null&&x.rise>=1.1; });
+  return { items, trendError:t.error||null, fetchedAt:Date.now() };
+}
+
 function HotKeywordPanel({category,onPick}){
   const [data,setData]=useState(()=>{ try{ const c=JSON.parse(localStorage.getItem("hot_kw_v2")||"null"); return c&&Date.now()-c.fetchedAt<HOT_TTL?c:null; }catch(e){ return null; } });
   const [busy,setBusy]=useState(false);
   const [step,setStep]=useState("");
   const [err,setErr]=useState("");
-  const [scope,setScope]=useState("all");
+  // 카테고리만: 고른 카테고리 기억 (회사 사이트는 처음부터 📱 휴대폰 관련)
+  const [hotCat,setHotCat]=useState(()=>{ try{ return localStorage.getItem("hot_cat")||(hotIsCompany()?HOT_PHONE:""); }catch(e){ return ""; } });
+  const [scope,setScope]=useState(()=>{ try{ return localStorage.getItem("hot_scope")||(hotIsCompany()?"cat":"all"); }catch(e){ return "all"; } });
+  const [catData,setCatData]=useState({});      // 카테고리 → {items, fetchedAt}
   const [open,setOpen]=useState(true);
+  const keepScope=(sc,c)=>{ try{ localStorage.setItem("hot_scope",sc); if(c!=null) localStorage.setItem("hot_cat",c); }catch(e){} };
+  const loadCat=async(c,force)=>{
+    if(!c) return;
+    if(!force){ try{ const x=JSON.parse(localStorage.getItem("hot_cat_v1:"+c)||"null"); if(x&&Date.now()-x.fetchedAt<HOT_TTL){ setCatData(m=>({...m,[c]:x})); return; } }catch(e){} }
+    setBusy(true); setErr("");
+    try{ const d=await loadHotCategory(c,setStep); setCatData(m=>({...m,[c]:d})); try{ localStorage.setItem("hot_cat_v1:"+c,JSON.stringify(d)); }catch(e){} }
+    catch(e){ setErr(e.message||"불러오기 실패"); }
+    setBusy(false); setStep("");
+  };
+  useEffect(()=>{ if(scope==="cat"&&hotCat&&!catData[hotCat]) loadCat(hotCat); // eslint-disable-next-line
+  },[scope,hotCat]);
   const load=async()=>{
     setBusy(true); setErr("");
     try{ const d=await loadHotKeywords(setStep); setData(d); try{ localStorage.setItem("hot_kw_v2",JSON.stringify(d)); }catch(e){} }
@@ -7506,9 +7549,16 @@ function HotKeywordPanel({category,onPick}){
   };
   useEffect(()=>{ if(!data&&!busy) load(); /* 처음 열 때 한 번 */ // eslint-disable-next-line
   },[]);
-  useEffect(()=>{ if(!category) setScope("all"); },[category]);
   const all=data?.items||[];
-  const list=scope==="cat"&&category?all.filter(x=>x.category===category&&!x.filler):all.slice(0,30);
+  let list;
+  if(scope==="cat"&&hotCat){
+    const cs=hotCatsOf(hotCat), flat=t=>String(t).replace(/\s+/g,"");
+    const merged=[...all.filter(x=>cs.includes(x.category)&&x.hot), ...((catData[hotCat]?.items)||[])]
+      .filter((x,i,a)=>a.findIndex(y=>flat(y.keyword)===flat(x.keyword))===i);
+    const hot=merged.filter(x=>x.hot||(x.src==="google"&&x.rise==null)).sort((a,b)=>hotScore(b)-hotScore(a)).map(x=>({...x,filler:false}));
+    const rest=merged.filter(x=>!hot.includes(x)&&x.rise!=null).sort((a,b)=>hotScore(b)-hotScore(a)).slice(0,Math.max(0,10-hot.length)).map(x=>({...x,filler:true}));
+    list=[...hot,...rest].slice(0,30);
+  }else list=all.slice(0,30);
   const fmt=n=>n==null?"-":Number(n).toLocaleString();
   const ago=t=>{ const m=Math.round((Date.now()-t)/60000); return m<1?"방금":m<60?`${m}분 전`:`${Math.round(m/60)}시간 전`; };
   const pill=(on)=>({padding:"5px 12px",borderRadius:"14px",cursor:"pointer",fontSize:"13px",fontWeight:700,fontFamily:"'Noto Sans KR',sans-serif",
@@ -7517,23 +7567,28 @@ function HotKeywordPanel({category,onPick}){
     <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
       <span onClick={()=>setOpen(o=>!o)} style={{color:"#f0883e",fontSize:"16px",fontWeight:700,cursor:"pointer"}}>🔥 지금 뜨는 검색어 <span style={{fontSize:"11px",color:"#8b949e"}}>{open?"▲":"▼"}</span></span>
       {open&&<>
-        <button onClick={()=>setScope("all")} style={pill(scope==="all")}>전체</button>
-        <button onClick={()=>category&&setScope("cat")} disabled={!category} title={category?"":"아래 STEP 1에서 카테고리를 고르면 켜져요"}
-          style={{...pill(scope==="cat"),opacity:category?1:.4,cursor:category?"pointer":"not-allowed"}}>{category?`${category}만`:"카테고리만"}</button>
+        <button onClick={()=>{ setScope("all"); keepScope("all"); }} style={pill(scope==="all")}>전체</button>
+        <select value={hotCat} onChange={e=>{ const c=e.target.value; setHotCat(c); setScope(c?"cat":"all"); keepScope(c?"cat":"all",c); }}
+          style={{...pill(scope==="cat"),appearance:"auto",paddingRight:"6px"}}>
+          <option value="">카테고리만 ▾</option>
+          <option value={HOT_PHONE}>{HOT_PHONE}</option>
+          {NAVER_AUTO_CATEGORIES.map(g=><optgroup key={g.group} label={g.group}>{g.items.map(i=><option key={i.value} value={i.value}>{i.label}</option>)}</optgroup>)}
+        </select>
+        {scope!=="cat"&&hotCat&&<button onClick={()=>{ setScope("cat"); keepScope("cat"); }} style={pill(false)}>{hotCat}만</button>}
       </>}
-      <span style={{marginLeft:"auto",color:"#484f58",fontSize:"12px"}}>{data?`${ago(data.fetchedAt)} 불러옴`:""}</span>
-      <button onClick={load} disabled={busy} style={{padding:"5px 12px",borderRadius:"6px",border:"1px solid #30363d",background:"#0d1117",color:busy?"#484f58":"#c9d1d9",fontSize:"13px",cursor:busy?"wait":"pointer",fontFamily:"'Noto Sans KR',sans-serif"}}>{busy?"불러오는 중…":"🔄 새로고침"}</button>
+      <span style={{marginLeft:"auto",color:"#484f58",fontSize:"12px"}}>{scope==="cat"&&catData[hotCat]?`${ago(catData[hotCat].fetchedAt)} 불러옴`:data?`${ago(data.fetchedAt)} 불러옴`:""}</span>
+      <button onClick={()=>scope==="cat"&&hotCat?loadCat(hotCat,true):load()} disabled={busy} style={{padding:"5px 12px",borderRadius:"6px",border:"1px solid #30363d",background:"#0d1117",color:busy?"#484f58":"#c9d1d9",fontSize:"13px",cursor:busy?"wait":"pointer",fontFamily:"'Noto Sans KR',sans-serif"}}>{busy?"불러오는 중…":"🔄 새로고침"}</button>
     </div>
     {open&&<>
       <div style={{color:"#484f58",fontSize:"12px",lineHeight:1.6}}>구글 급상승 + 시즌 키워드를 네이버 검색어 트렌드로 확인해 <b style={{color:"#8b949e"}}>최근 2주 검색이 오른 것</b>만 보여줘요 · 키워드를 누르면 키워드 글쓰기로 넘어가 바로 분석해요</div>
       {busy&&<div style={{color:"#8b949e",fontSize:"13px"}}>⏳ {step}</div>}
       {err&&<div style={{color:"#ff7b72",fontSize:"13px"}}>⚠️ {err}</div>}
       {data?.trendError&&<div style={{color:"#ffa657",fontSize:"12px"}}>네이버 검색어 트렌드: {data.trendError} (상승률 없이 보여줘요)</div>}
-      {data&&!busy&&list.length===0&&<div style={{color:"#8b949e",fontSize:"13px"}}>{scope==="cat"?`지금 "${category}"에서 오르는 검색어가 없어요. [전체]를 눌러 보세요.`:"오르는 검색어를 못 찾았어요. 잠시 뒤 새로고침해 보세요."}</div>}
+      {data&&!busy&&list.length===0&&<div style={{color:"#8b949e",fontSize:"13px"}}>{scope==="cat"?`지금 "${hotCat}"에서 오르는 검색어가 없어요. 🔄 새로고침이나 [전체]를 눌러 보세요.`:"오르는 검색어를 못 찾았어요. 잠시 뒤 새로고침해 보세요."}</div>}
       {list.length>0&&<div style={{display:"flex",flexDirection:"column",gap:"2px"}}>
         {list.map((x,i)=>{
           const up=x.rise!=null?Math.round((x.rise-1)*100):null;
-          return <div key={x.keyword} title={x.filler?"최근 2주 상승폭이 10% 미만이라 15위를 채우려고 넣은 키워드예요":""} style={{display:"flex",alignItems:"center",gap:"10px",padding:"7px 10px",borderRadius:"8px",background:i%2?"transparent":"#0d111788",flexWrap:"wrap",opacity:x.filler?.55:1}}>
+          return <div key={x.keyword} title={x.filler?"최근 2주 상승폭이 10% 미만이지만 목록을 채우려고 넣은 키워드예요":""} style={{display:"flex",alignItems:"center",gap:"10px",padding:"7px 10px",borderRadius:"8px",background:i%2?"transparent":"#0d111788",flexWrap:"wrap",opacity:x.filler?.55:1}}>
             <span style={{color:"#484f58",fontSize:"12px",width:"20px",textAlign:"right"}}>{i+1}</span>
             <button onClick={()=>onPick(x.keyword,x.category)} title={x.why||""}
               style={{background:"none",border:"none",padding:0,color:"#e6edf3",fontSize:"15px",fontWeight:700,cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif",textAlign:"left"}}
