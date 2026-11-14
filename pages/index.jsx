@@ -659,6 +659,7 @@ const TABS=[
   {id:"write",   icon:"✍️",  label:"글쓰기",     isGroup:true},
   {id:"missing", icon:"📡",  label:"네이버 노출 확인"},
   {id:"gsc",     icon:"🌐",  label:"구글 색인 확인"},
+  {id:"influencer", icon:"👶", label:"인플루언서 찾기"},
   {id:"image",   icon:"🖼️", label:"이미지 편집", isGroup:true},
 ];
 
@@ -13454,7 +13455,290 @@ ${outShape}`;
   </div>;
 }
 
-const TOOL_MAP={gsc:GscTab,keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:ImageGenTab,crop:CropResizeTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab,videodl:VideoDownloadTab,snsconvert:SnsConvertTab};
+// ═══ 👶 인플루언서 찾기 — 육아 공구 제안용: 아이디 모으기(웹검색·브랜드 언급·직접) → 인스타 공식 API로 지표 → 점수순 표·엑셀 ═══
+const INF_KEY="inf_v1";
+const INF_MARKS=["","제안함","답장옴","진행","제외"];
+const INF_KW_DEFAULT=["육아 공구 인스타그램","육아맘 공구 오픈 인스타","아기 공동구매 인스타그램 육아","초등맘 공구 인스타","육아템 공구 인스타 추천","키즈 공구 인스타그램 맘스타그램"];
+function infLoad(){ try{ return JSON.parse(localStorage.getItem(INF_KEY)||"{}")||{}; }catch(e){ return {}; } }
+function infSave(o){ try{ localStorage.setItem(INF_KEY,JSON.stringify(o)); }catch(e){} }
+const infNorm=u=>String(u||"").trim().replace(/^@/,"").replace(/^https?:\/\/(www\.)?instagram\.com\//i,"").replace(/[/?#].*$/,"").toLowerCase();
+const infValid=u=>/^[a-z0-9._]{2,30}$/.test(u)&&!/^(p|reel|reels|explore|stories|accounts|tv|direct)$/.test(u);
+// 점수 0~100: 조회수/팔로워 40 · 댓글률 30 · 최근 활동 15 · 공구 경험 15
+function infScore(d){
+  if(!d) return 0;
+  let s=0;
+  if(d.viewRate!=null) s+=Math.min(d.viewRate,2)/2*40;
+  else if(d.avgLikes!=null&&d.followers) s+=Math.min(d.avgLikes/d.followers/0.05,1)*25;   // 릴스가 없으면 좋아요로 대신 (조금 낮게)
+  if(d.commentRate!=null) s+=Math.min(d.commentRate/0.01,1)*30;                           // 팔로워의 1% 가 댓글 달면 만점
+  if(d.lastPostDays!=null) s+=d.lastPostDays<=7?15:d.lastPostDays<=30?8:0;
+  if(d.gonggu>0) s+=15;
+  return Math.round(s);
+}
+
+function InfluencerTab(){
+  const init=React.useMemo(infLoad,[]);
+  const [cands,setCands]=React.useState(init.cands||{});      // username → {src, at, status:"new"|"ok"|"fail", d, err, mark, memo}
+  const [kw,setKw]=React.useState(init.kw||INF_KW_DEFAULT.join("\n"));
+  const [brands,setBrands]=React.useState(init.brands||"");
+  const [paste,setPaste]=React.useState("");
+  const [f,setF]=React.useState({ minF:1000, maxF:"", days:60, gg:false, hideDone:false, hideFail:true, ...(init.f||{}) });
+  const [conn,setConn]=React.useState(null);                    // null=확인 중 | {ok,me} | {error}
+  const [busy,setBusy]=React.useState("");
+  const [msg,setMsg]=React.useState("");
+  const [prog,setProg]=React.useState(null);
+  const [sort,setSort]=React.useState("score");
+  const stop=React.useRef(false);
+  const candsRef=React.useRef(cands); candsRef.current=cands;
+  React.useEffect(()=>{ infSave({ cands, kw, brands, f }); },[cands,kw,brands,f]);
+  const upC=(u,patch)=>setCands(c=>({...c,[u]:{...(c[u]||{}),...patch}}));
+
+  const api=async body=>{ const r=await fetch("/api/ig-influencer",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) }); return r.json().catch(()=>({error:"응답 오류 "+r.status})); };
+  const check=async()=>{ setConn(null); const j=await api({action:"status"}); setConn(j); };
+  React.useEffect(()=>{ check(); },[]); // eslint-disable-line
+
+  // 후보 추가
+  const addMany=(list,src)=>{ let n=0; const add={};
+    list.map(infNorm).filter(infValid).forEach(u=>{ if(!candsRef.current[u]&&!add[u]){ add[u]={ src, at:Date.now(), status:"new", mark:"", memo:"" }; n++; } });
+    if(n) setCands(c=>({...add,...c}));
+    return n; };
+
+  // ① 웹에서 아이디 찾기 (AI 웹검색)
+  const findWeb=async()=>{
+    const kws=kw.split("\n").map(s=>s.trim()).filter(Boolean);
+    if(!kws.length){ setMsg("검색어를 넣어 주세요"); return; }
+    stop.current=false; setBusy("web"); let total=0;
+    for(let i=0;i<kws.length;i+=2){
+      if(stop.current) break;
+      const part=kws.slice(i,i+2);
+      setMsg(`웹에서 찾는 중… ${Math.min(i+2,kws.length)}/${kws.length} (검색어 2개씩, 1분 안팎)`);
+      try{
+        const raw=await callClaudeSearch([{role:"user",content:`다음 검색어로 웹(구글·네이버 블로그·카페·기사 등)을 검색해서, 공동구매(공구)를 하거나 할 만한 한국 "육아" 인스타그램 개인 크리에이터 계정의 아이디를 최대한 많이 찾아라.
+검색어: ${part.join(" / ")}
+규칙:
+- 검색 결과에 실제로 보인 아이디만: instagram.com/아이디 주소, 또는 본문의 "인스타 @아이디" 표기. 추측해서 만들지 말 것.
+- 브랜드·쇼핑몰·업체·매장 공식 계정은 brand 로 따로 (나중에 그 계정이 언급한 인플루언서를 찾는 데 씀).
+- 아이디는 @ 없이 소문자.
+순수 JSON만: {"people":["아이디",...],"brand":["아이디",...]}`}],
+          "You find Korean parenting Instagram creators from web search results. Never invent usernames. Output only JSON.",3000,"claude-sonnet-4-5-20250929",8);
+        const j=safeParseJson(raw)||{};
+        total+=addMany(j.people||[],"웹: "+part[0]);
+        const bs=(j.brand||[]).map(infNorm).filter(infValid);
+        if(bs.length) setBrands(b=>{ const cur=new Set(b.split("\n").map(infNorm).filter(Boolean)); bs.forEach(x=>cur.add(x)); return [...cur].join("\n"); });
+      }catch(e){ setMsg("✗ 웹 검색 실패: "+e.message); }
+    }
+    setBusy(""); setMsg(`✓ 웹에서 새 후보 ${total}개 추가 — 「📊 지표 조회」를 눌러 주세요`);
+  };
+  // AI로 육아 공구 브랜드 추천
+  const suggestBrands=async()=>{
+    setBusy("brandai"); setMsg("육아 공구를 자주 하는 브랜드 계정을 찾는 중… (1분 안팎)");
+    try{
+      const raw=await callClaudeSearch([{role:"user",content:`인스타그램에서 육아 인플루언서와 공동구매(공구)를 자주 진행하는 한국 육아용품·유아식·유아의류·교육 브랜드의 인스타 공식 계정 아이디를 웹에서 찾아라. 검색 결과에서 확인된 아이디만, 추측 금지, 15~25개.
+순수 JSON만: {"brand":["아이디",...]}`}],"You find Korean baby-product brand Instagram accounts. Never invent usernames. Output only JSON.",2500,"claude-sonnet-4-5-20250929",6);
+      const j=safeParseJson(raw)||{};
+      const bs=(j.brand||[]).map(infNorm).filter(infValid);
+      setBrands(b=>{ const cur=new Set(b.split("\n").map(infNorm).filter(Boolean)); bs.forEach(x=>cur.add(x)); return [...cur].join("\n"); });
+      setMsg(`✓ 브랜드 ${bs.length}개를 칸에 넣었어요 — 「브랜드가 언급한 계정 찾기」를 눌러 주세요`);
+    }catch(e){ setMsg("✗ "+e.message); }
+    setBusy("");
+  };
+  // ② 브랜드 계정이 최근 글에서 언급한 @아이디
+  const fromBrands=async()=>{
+    const bs=[...new Set(brands.split("\n").map(infNorm).filter(infValid))];
+    if(!bs.length){ setMsg("브랜드 계정 아이디를 넣어 주세요"); return; }
+    stop.current=false; setBusy("brand"); let total=0, fail=0;
+    for(let i=0;i<bs.length;i+=5){
+      if(stop.current) break;
+      setMsg(`브랜드 글 읽는 중… ${Math.min(i+5,bs.length)}/${bs.length}`);
+      const j=await api({action:"lookup",usernames:bs.slice(i,i+5)});
+      if(j.error){ setMsg("✗ "+(j.error==="NO_TOKEN"?"인스타 연결이 아직 안 됐어요 (위 안내 참고)":j.error)); setBusy(""); return; }
+      for(const r of j.results||[]){ if(r.ok) total+=addMany(r.mentions||[],"브랜드: @"+r.username); else fail++; if(r.rate){ setMsg("⏸ 인스타 호출 한도 — 몇 분 뒤 다시 눌러 주세요"); setBusy(""); return; } }
+    }
+    setBusy(""); setMsg(`✓ 브랜드 언급에서 새 후보 ${total}개 추가${fail?` (조회 안 된 브랜드 ${fail}개)`:""}`);
+  };
+  // ③ 직접 붙여넣기
+  const addPaste=()=>{ const n=addMany(paste.split(/[\s,]+/),"직접"); setPaste(""); setMsg(`✓ ${n}개 추가`); };
+  // 조회된 인플루언서들이 언급한 계정까지 (한 단계 더)
+  const fromMentions=()=>{ let n=0; Object.entries(candsRef.current).filter(([,c])=>c.status==="ok"&&passes(c)).forEach(([u,c])=>{ n+=addMany(c.d.mentions||[],"언급: @"+u); }); setMsg(`✓ 조건에 맞는 계정들이 언급한 계정 ${n}개 추가 — 브랜드 계정도 섞여 있을 수 있어요`); };
+
+  // 📊 지표 조회 (아직 안 한 것)
+  const lookup=async(all)=>{
+    const list=Object.entries(candsRef.current).filter(([,c])=>all||c.status==="new").map(([u])=>u);
+    if(!list.length){ setMsg("조회할 후보가 없어요"); return; }
+    stop.current=false; setBusy("lookup");
+    for(let i=0;i<list.length;i+=5){
+      if(stop.current){ setMsg("⏹ 멈췄어요 — 다시 누르면 남은 것부터 해요"); break; }
+      setProg({ done:i, total:list.length });
+      const j=await api({action:"lookup",usernames:list.slice(i,i+5)});
+      if(j.error){ setMsg("✗ "+(j.error==="NO_TOKEN"?"인스타 연결이 아직 안 됐어요 (위 안내 참고)":j.error)); break; }
+      let rate=false;
+      for(const r of j.results||[]){
+        const u=infNorm(r.username);
+        if(r.rate){ rate=true; break; }
+        if(r.ok) upC(u,{ status:"ok", d:r, err:"", checked:Date.now() }); else upC(u,{ status:"fail", err:r.error });
+      }
+      if(rate){ setMsg("⏸ 인스타 호출 한도에 걸렸어요 — 몇 분 뒤(보통 10~60분) 다시 누르면 이어서 해요"); break; }
+      if(i+5>=list.length) setMsg(`✓ ${list.length}개 조회 끝`);
+      await new Promise(r=>setTimeout(r,800));
+    }
+    setProg(null); setBusy("");
+  };
+
+  // 걸러내기·정렬
+  const passes=c=>{ const d=c.d; if(!d) return false;
+    if(d.followers<(Number(f.minF)||0)) return false;
+    if(f.maxF&&d.followers>Number(f.maxF)) return false;
+    if(f.days&&d.lastPostDays!=null&&d.lastPostDays>Number(f.days)) return false;
+    if(f.gg&&!(d.gonggu>0)) return false;
+    return true; };
+  const rows=Object.entries(cands).map(([u,c])=>({u,...c,score:infScore(c.d)}))
+    .filter(r=>r.status==="ok"?passes(r):r.status==="fail"?!f.hideFail:true)
+    .filter(r=>!(f.hideDone&&(r.mark==="제외"||r.mark==="제안함")));
+  const key={ score:r=>r.score, followers:r=>r.d?.followers||0, views:r=>r.d?.avgViews||0, vr:r=>r.d?.viewRate||0, cm:r=>r.d?.avgComments||0, cr:r=>r.d?.commentRate||0, last:r=>-(r.d?.lastPostDays??9999) }[sort]||(r=>r.score);
+  rows.sort((a,b)=>(b.status==="ok")-(a.status==="ok")||key(b)-key(a));
+  const cnt={ all:Object.keys(cands).length, n:Object.values(cands).filter(c=>c.status==="new").length,
+    ok:Object.values(cands).filter(c=>c.status==="ok").length, pass:Object.values(cands).filter(c=>c.status==="ok"&&passes(c)).length };
+
+  const fmtN=n=>n==null?"-":n>=10000?(n/10000).toFixed(n>=100000?0:1)+"만":Math.round(n).toLocaleString();
+  const pct=x=>x==null?"-":(x*100).toFixed(x<0.01?2:1)+"%";
+  const csv=()=>{
+    const head=["점수","아이디","링크","이름","팔로워","게시물","평균조회수(릴스)","조회/팔로워","평균댓글","댓글률","평균좋아요","마지막글(일전)","공구흔적","이메일","카톡/오픈채팅","웹사이트","소개","출처","상태","메모"];
+    const q=v=>`"${String(v??"").replace(/"/g,'""').replace(/\n/g," ")}"`;
+    const lines=rows.filter(r=>r.status==="ok").map(r=>{ const d=r.d; return [r.score,r.u,"https://instagram.com/"+r.u,d.name,d.followers,d.posts,d.avgViews!=null?Math.round(d.avgViews):"",d.viewRate!=null?(d.viewRate*100).toFixed(1)+"%":"",d.avgComments!=null?d.avgComments.toFixed(1):"",d.commentRate!=null?(d.commentRate*100).toFixed(2)+"%":"",d.avgLikes!=null?Math.round(d.avgLikes):"",d.lastPostDays??"",d.gonggu,d.email,d.kakao?"있음":"",d.website,d.bio,r.src,r.mark,r.memo].map(q).join(","); });
+    const b=new Blob(["﻿"+head.map(q).join(",")+"\n"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=`육아인플루언서_${new Date().toISOString().slice(0,10)}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  const S={ card:{background:"#0d1117",border:"1px solid #21262d",borderRadius:"12px",padding:"14px",marginBottom:"12px"},
+    h:{fontSize:"15px",fontWeight:700,color:"#58a6ff",marginBottom:"8px"},
+    input:{width:"100%",padding:"8px 10px",background:"#161b22",border:"1px solid #30363d",borderRadius:"8px",color:"#e6edf3",fontSize:"13px",fontFamily:"'Noto Sans KR',sans-serif",boxSizing:"border-box"},
+    btn:(bg,dis)=>({padding:"8px 14px",borderRadius:"8px",border:"none",background:dis?"#30363d":bg,color:"#fff",fontWeight:700,fontSize:"13px",cursor:dis?"default":"pointer",fontFamily:"'Noto Sans KR',sans-serif",whiteSpace:"nowrap"}),
+    small:{padding:"4px 9px",borderRadius:"6px",border:"1px solid #30363d",background:"#21262d",color:"#c9d1d9",fontSize:"12px",cursor:"pointer",fontFamily:"'Noto Sans KR',sans-serif"},
+    th:{padding:"7px 6px",fontSize:"12px",color:"#8b949e",fontWeight:700,textAlign:"right",whiteSpace:"nowrap",cursor:"pointer",borderBottom:"1px solid #30363d",position:"sticky",top:0,background:"#161b22"},
+    td:{padding:"6px",fontSize:"13px",color:"#c9d1d9",textAlign:"right",whiteSpace:"nowrap",borderBottom:"1px solid #21262d"} };
+  const B=!!busy;
+  const TH=({k,children,left})=><th style={{...S.th,textAlign:left?"left":"right",color:sort===k?"#58a6ff":"#8b949e"}} onClick={()=>k&&setSort(k)}>{children}{sort===k?" ▼":""}</th>;
+
+  return <div>
+    {/* 연결 상태 */}
+    <div style={{...S.card,display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
+      <span style={{fontSize:"14px",fontWeight:700,color:"#e6edf3"}}>📷 인스타 연결</span>
+      {conn===null?<span style={{color:"#8b949e",fontSize:"13px"}}>확인 중…</span>
+        :conn.ok?<span style={{color:"#3fb950",fontSize:"13px"}}>✓ @{conn.me.username} 로 조회해요 (읽기만 — 팔로우·좋아요·DM 안 함)</span>
+        :<span style={{color:"#f0883e",fontSize:"13px"}}>{conn.error==="NO_TOKEN"?"아직 연결 안 됨 — 아래 순서대로 한 번만 설정해 주세요":"✗ "+conn.error}</span>}
+      <button style={S.small} onClick={check}>다시 확인</button>
+      {conn&&!conn.ok&&<details style={{width:"100%",fontSize:"13px",color:"#c9d1d9",lineHeight:1.8}} open={conn.error==="NO_TOKEN"}>
+        <summary style={{cursor:"pointer",color:"#8b949e"}}>연결 방법 (처음 한 번)</summary>
+        1. 회사 인스타 앱 → 설정에서 <b>프로페셔널(비즈니스) 계정</b>인지 확인, <b>회사 페이스북 페이지와 연결</b><br/>
+        2. developers.facebook.com → 내 앱 → <b>앱 만들기</b> (유형: 비즈니스) → 제품에서 <b>Instagram Graph API</b> 추가<br/>
+        3. 도구 → <b>그래프 API 탐색기</b> → 그 앱 선택 → 권한 <code>instagram_basic, pages_show_list, pages_read_engagement, business_management</code> 체크 → <b>토큰 생성</b> (회사 페이지 선택)<br/>
+        4. 토큰 옆 ⓘ → <b>액세스 토큰 도구에서 열기</b> → <b>액세스 토큰 연장</b> (60일짜리로)<br/>
+        5. Vercel(회사 사이트) → Settings → Environment Variables 에 <code>IG_ACCESS_TOKEN</code> = 그 토큰 → <b>Redeploy</b><br/>
+        <span style={{color:"#f0883e"}}>토큰은 비밀번호예요 — 채팅·메신저에 올리지 마세요. 60일마다 4번을 다시 해서 바꿔 넣어야 해요.</span>
+      </details>}
+    </div>
+
+    {/* 후보 모으기 */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:"12px",marginBottom:"12px"}}>
+      <div style={{...S.card,marginBottom:0}}>
+        <div style={S.h}>① 웹에서 아이디 찾기</div>
+        <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"6px"}}>검색어 한 줄에 하나 · 검색 결과에 실제로 나온 아이디만 모아요 (Claude 웹검색 사용)</div>
+        <textarea style={{...S.input,height:"110px"}} value={kw} onChange={e=>setKw(e.target.value)}/>
+        <div style={{display:"flex",gap:"6px",marginTop:"8px"}}>
+          <button style={S.btn("#1f6feb",B)} disabled={B} onClick={findWeb}>🔎 웹에서 찾기</button>
+          <button style={S.small} onClick={()=>setKw(INF_KW_DEFAULT.join("\n"))}>기본 검색어</button>
+        </div>
+      </div>
+      <div style={{...S.card,marginBottom:0}}>
+        <div style={S.h}>② 공구 브랜드가 언급한 계정</div>
+        <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"6px"}}>육아 브랜드 인스타 아이디 한 줄에 하나 → 그 브랜드 최근 글의 @언급을 모아요 (이미 공구해 본 사람들)</div>
+        <textarea style={{...S.input,height:"110px"}} value={brands} onChange={e=>setBrands(e.target.value)} placeholder={"예)\nbrand_a\nbrand_b"}/>
+        <div style={{display:"flex",gap:"6px",marginTop:"8px",flexWrap:"wrap"}}>
+          <button style={S.btn("#1f6feb",B)} disabled={B} onClick={fromBrands}>🏷 브랜드가 언급한 계정 찾기</button>
+          <button style={S.small} disabled={B} onClick={suggestBrands}>🤖 브랜드 추천받기</button>
+        </div>
+      </div>
+      <div style={{...S.card,marginBottom:0}}>
+        <div style={S.h}>③ 직접 넣기</div>
+        <div style={{fontSize:"12px",color:"#8b949e",marginBottom:"6px"}}>아이디나 인스타 주소를 줄바꿈·띄어쓰기로 여러 개</div>
+        <textarea style={{...S.input,height:"110px"}} value={paste} onChange={e=>setPaste(e.target.value)} placeholder={"@아이디\nhttps://instagram.com/아이디"}/>
+        <div style={{display:"flex",gap:"6px",marginTop:"8px"}}>
+          <button style={S.btn("#238636",!paste.trim())} disabled={!paste.trim()} onClick={addPaste}>+ 후보에 넣기</button>
+        </div>
+      </div>
+    </div>
+
+    {/* 조회 */}
+    <div style={{...S.card,display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+      <span style={{fontSize:"13px",color:"#c9d1d9"}}>후보 <b>{cnt.all}</b> · 미조회 <b style={{color:"#d29922"}}>{cnt.n}</b> · 조회됨 {cnt.ok} · 조건 맞음 <b style={{color:"#3fb950"}}>{cnt.pass}</b></span>
+      <button style={S.btn("#8250df",B||!cnt.n)} disabled={B||!cnt.n} onClick={()=>lookup(false)}>📊 지표 조회 ({cnt.n}개)</button>
+      {B&&<button style={S.btn("#da3633",false)} onClick={()=>{ stop.current=true; }}>멈추기</button>}
+      <button style={S.small} disabled={B||!cnt.pass} onClick={fromMentions} title="조건에 맞는 계정들이 글에서 언급한 다른 계정을 후보에 추가">🔗 이 사람들이 언급한 계정도 찾기</button>
+      <button style={S.small} disabled={B||!cnt.ok} onClick={()=>{ if(confirm("조회한 지표를 모두 새로 받을까요? (호출이 많이 들어요)")) lookup(true); }}>↻ 전체 새로 조회</button>
+      {prog&&<span style={{fontSize:"12px",color:"#d29922"}}>⏳ {prog.done}/{prog.total}</span>}
+      {msg&&<span style={{fontSize:"13px",color:msg.startsWith("✗")?"#f85149":msg.startsWith("✓")?"#3fb950":"#d29922"}}>{msg}</span>}
+    </div>
+
+    {/* 거르기 */}
+    <div style={{...S.card,display:"flex",gap:"12px",alignItems:"center",flexWrap:"wrap",fontSize:"13px",color:"#c9d1d9"}}>
+      <span>팔로워 <input style={{...S.input,width:"80px",display:"inline-block"}} type="number" value={f.minF} onChange={e=>setF({...f,minF:e.target.value})}/> 이상</span>
+      <span><input style={{...S.input,width:"90px",display:"inline-block"}} type="number" placeholder="제한 없음" value={f.maxF} onChange={e=>setF({...f,maxF:e.target.value})}/> 이하</span>
+      <span>마지막 글 <input style={{...S.input,width:"60px",display:"inline-block"}} type="number" value={f.days} onChange={e=>setF({...f,days:e.target.value})}/>일 이내</span>
+      <label><input type="checkbox" checked={f.gg} onChange={e=>setF({...f,gg:e.target.checked})}/> 공구 흔적 있는 계정만</label>
+      <label><input type="checkbox" checked={f.hideDone} onChange={e=>setF({...f,hideDone:e.target.checked})}/> 제안함·제외 숨기기</label>
+      <label><input type="checkbox" checked={f.hideFail} onChange={e=>setF({...f,hideFail:e.target.checked})}/> 조회 안 된 계정 숨기기</label>
+      <span style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
+        <button style={{...S.small,background:"#238636",borderColor:"#238636",color:"#fff"}} disabled={!cnt.pass} onClick={csv}>⬇ 엑셀(CSV) 받기</button>
+        <button style={{...S.small,color:"#f85149"}} onClick={()=>{ if(confirm("후보 목록을 모두 지울까요? (상태·메모도 지워져요)")) setCands({}); }}>목록 비우기</button>
+      </span>
+    </div>
+
+    {/* 표 */}
+    <div style={{...S.card,padding:0,overflow:"auto",maxHeight:"70vh"}}>
+      <table style={{borderCollapse:"collapse",width:"100%"}}>
+        <thead><tr>
+          <TH k="score">점수</TH><TH left>계정</TH><TH k="followers">팔로워</TH><TH k="views">평균 조회수</TH><TH k="vr">조회/팔로워</TH>
+          <TH k="cm">평균 댓글</TH><TH k="cr">댓글률</TH><TH k="last">마지막 글</TH><TH>공구</TH><TH left>연락처</TH><TH left>출처</TH><TH left>상태·메모</TH>
+        </tr></thead>
+        <tbody>
+          {rows.length===0&&<tr><td colSpan={12} style={{...S.td,textAlign:"center",color:"#8b949e",padding:"24px"}}>위 ①②③으로 후보를 모은 뒤 「📊 지표 조회」를 눌러 주세요</td></tr>}
+          {rows.slice(0,500).map(r=>{ const d=r.d;
+            return <tr key={r.u} style={{opacity:r.mark==="제외"?0.45:1}}>
+              <td style={{...S.td,fontWeight:800,color:r.score>=60?"#3fb950":r.score>=35?"#d29922":"#8b949e"}}>{r.status==="ok"?r.score:"-"}</td>
+              <td style={{...S.td,textAlign:"left",maxWidth:"240px",overflow:"hidden",textOverflow:"ellipsis"}}>
+                <a href={"https://instagram.com/"+r.u} target="_blank" rel="noreferrer" style={{color:"#58a6ff",textDecoration:"none",fontWeight:700}}>@{r.u}</a>
+                {d?.name&&<span style={{color:"#8b949e",fontSize:"12px"}}> {d.name}</span>}
+                {r.status==="new"&&<span style={{color:"#d29922",fontSize:"11px"}}> 미조회</span>}
+                {r.status==="fail"&&<div style={{color:"#f85149",fontSize:"11px",whiteSpace:"normal"}}>{r.err}</div>}
+                {d?.bio&&<div style={{color:"#6e7681",fontSize:"11px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={d.bio}>{d.bio}</div>}
+              </td>
+              <td style={S.td}>{fmtN(d?.followers)}</td>
+              <td style={S.td}>{d?.avgViews!=null?fmtN(d.avgViews):"-"}{d?.reelCount?<span style={{color:"#6e7681",fontSize:"11px"}}> (릴스{d.reelCount})</span>:null}</td>
+              <td style={{...S.td,color:d?.viewRate>=1?"#3fb950":"#c9d1d9"}}>{pct(d?.viewRate)}</td>
+              <td style={S.td}>{d?.avgComments!=null?d.avgComments.toFixed(1):"-"}</td>
+              <td style={{...S.td,color:d?.commentRate>=0.005?"#3fb950":"#c9d1d9"}}>{pct(d?.commentRate)}</td>
+              <td style={{...S.td,color:d?.lastPostDays>30?"#f0883e":"#c9d1d9"}}>{d?.lastPostDays!=null?(d.lastPostDays===0?"오늘":d.lastPostDays+"일 전"):"-"}</td>
+              <td style={S.td}>{d?.gonggu?<a href={d.gongguLink} target="_blank" rel="noreferrer" style={{color:"#d2a8ff"}}>{d.gonggu}건</a>:"-"}</td>
+              <td style={{...S.td,textAlign:"left",fontSize:"12px"}}>{d?.email&&<div>✉ {d.email}</div>}{d?.kakao&&<div>💬 카톡</div>}{d?.website&&<a href={d.website} target="_blank" rel="noreferrer" style={{color:"#8b949e"}}>🔗 링크</a>}</td>
+              <td style={{...S.td,textAlign:"left",fontSize:"11px",color:"#6e7681",maxWidth:"140px",overflow:"hidden",textOverflow:"ellipsis"}} title={r.src}>{r.src}</td>
+              <td style={{...S.td,textAlign:"left"}}>
+                <select value={r.mark||""} onChange={e=>upC(r.u,{mark:e.target.value})} style={{...S.input,width:"auto",padding:"3px 4px",fontSize:"12px"}}>
+                  {INF_MARKS.map(m=><option key={m} value={m}>{m||"—"}</option>)}
+                </select>
+                <input value={r.memo||""} onChange={e=>upC(r.u,{memo:e.target.value})} placeholder="메모" style={{...S.input,width:"120px",padding:"3px 6px",fontSize:"12px",marginLeft:"4px",display:"inline-block"}}/>
+              </td>
+            </tr>; })}
+        </tbody>
+      </table>
+    </div>
+    <div style={{fontSize:"12px",color:"#6e7681",lineHeight:1.7}}>
+      · 점수 = 조회수/팔로워(40) + 댓글률(30, 팔로워의 1%가 댓글이면 만점) + 최근 활동(15) + 공구 흔적(15) · 최근 글 15개 기준<br/>
+      · 조회수는 릴스에만 있어요 · 개인 계정·나이 제한 계정은 조회가 안 돼요 · 인스타 호출 한도에 걸리면 몇 분 뒤 이어서 하면 돼요<br/>
+      · 공구 제안 DM은 직접, 하루 10~20개 정도로 나눠 보내세요 (한꺼번에 보내면 스팸으로 막힐 수 있어요)
+    </div>
+  </div>;
+}
+
+const TOOL_MAP={influencer:InfluencerTab,gsc:GscTab,keyword:KeywordTab,autowrite:AutoWriteTab,analyze:AnalyzeTab,rewrite:ArticleRewriteTab,ocr:OcrTab,convert:ConvertTab,missing:MissingTab,restore:RestoreTab,video:VideoTab,videogif:VideoGifTab,exif:ExifTab,localimg:ImageGenTab,crop:CropResizeTab,resize:ResizeTab,imgcompress:ImgCompressTab,emoji:EmojiTab,"videomake-ai":VideoMakeAiTab,"videomake-ken":VideoMakeKenTab,"videomake-sub":VideoMakeSubTab,videodl:VideoDownloadTab,snsconvert:SnsConvertTab};
 
 
 // ─── 블로그 글쓰기 공통 프롬프트 빌더 ───────────────────────────────────────
